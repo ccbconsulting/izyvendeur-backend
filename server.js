@@ -141,6 +141,17 @@ async function envoyerMessageWhatsApp(destinataire, texte) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Serveur IzyVendeur demarre sur le port ${PORT}`);
+
+// On attend que l'etat (catalogue + commandes) soit charge - depuis PostgreSQL en production,
+// depuis data.json en local - avant d'accepter la moindre requete. Voir conversation.js / db.js.
+async function demarrer() {
+  await conversation.init();
+  app.listen(PORT, () => {
+    console.log(`Serveur IzyVendeur demarre sur le port ${PORT}`);
+  });
+}
+
+demarrer().catch((erreur) => {
+  console.error("Echec du demarrage du serveur :", erreur);
+  process.exit(1);
 });

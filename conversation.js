@@ -11,45 +11,29 @@
 // (plusieurs clients peuvent discuter en meme temps avec le meme marchand), et sauvegarde l'etat
 // (catalogue + commandes) dans un fichier data.json a cote du serveur, pour survivre aux redemarrages.
 
-const fs = require("fs");
-const path = require("path");
-const { SEED_CATALOG, PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE } = require("./catalog");
+const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE } = require("./catalog");
+const db = require("./db");
 
-const DATA_FILE = path.join(__dirname, "data.json");
 const RESERVING_STATUSES = ["Confirmée", "Expédiée"];
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "2", "3"];
 
 // ---------------- Chargement / sauvegarde de l'etat (catalogue + commandes) ----------------
+// L'etat vit en memoire pendant que le serveur tourne (comme avant), pour que toute la logique de
+// conversation reste simple et synchrone. Ce qui change : d'ou il est charge au demarrage, et ou il
+// est sauvegarde a chaque modification -> voir db.js (PostgreSQL en production, fichier local en dev).
 
-function loadState() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, "utf8");
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.catalog && parsed.orders) {
-        if (!parsed.settings) parsed.settings = { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE };
-        return parsed;
-      }
-    }
-  } catch (erreur) {
-    console.error("Erreur de lecture de data.json, on repart du catalogue de depart :", erreur);
-  }
-  return {
-    catalog: JSON.parse(JSON.stringify(SEED_CATALOG)),
-    orders: [],
-    nextId: 1,
-    settings: { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE }
-  };
+let state = null;
+
+// A appeler une seule fois, au demarrage du serveur, AVANT de traiter le moindre message.
+async function init() {
+  state = await db.initState();
 }
 
-let state = loadState();
-
 function saveState() {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2));
-  } catch (erreur) {
-    console.error("Erreur d'ecriture de data.json (l'etat ne sera pas conserve au redemarrage) :", erreur);
-  }
+  if (!state) return;
+  db.persist(state).catch((erreur) => {
+    console.error("Erreur de sauvegarde de l'etat (la derniere modification pourrait etre perdue au redemarrage) :", erreur);
+  });
 }
 
 // ---------------- Sessions de conversation, une par numero de client ----------------
@@ -429,16 +413,17 @@ function logTrace(trace) {
 // ---------------- Point d'entree public ----------------
 
 function handleMessage(fromPhone, text) {
+  if (!state) return "Le service redemarre, un instant s'il vous plait...";
   const session = getSession(fromPhone);
   return processMessage(session, text);
 }
 
 function getOrders() {
-  return state.orders;
+  return state ? state.orders : [];
 }
 
 function getCatalog() {
-  return state.catalog;
+  return state ? state.catalog : [];
 }
 
-module.exports = { handleMessage, getOrders, getCatalog };
+module.exports = { init, handleMessage, getOrders, getCatalog };

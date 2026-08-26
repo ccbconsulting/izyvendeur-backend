@@ -9,30 +9,51 @@ C'est la pièce qui manquait au prototype IzyVendeur pour recevoir de vrais mess
 
 1. Créez un compte sur [github.com](https://github.com) si vous n'en avez pas.
 2. Créez un nouveau dépôt (bouton vert "New").
-3. Uploadez-y tous les fichiers de ce dossier (`server.js`, `package.json`, `.gitignore`, `.env.example`, `README.md`) — utilisez le bouton "Add file > Upload files" sur la page du dépôt, glissez les fichiers, puis "Commit changes".
+3. Uploadez-y tous les fichiers de ce dossier (`server.js`, `db.js`, `conversation.js`, `catalog.js`, `package.json`, `.gitignore`, `.env.example`, `README.md`) — utilisez le bouton "Add file > Upload files" sur la page du dépôt, glissez les fichiers, puis "Commit changes".
    - Ne mettez jamais le fichier `.env` (avec vos vrais secrets) sur GitHub — le `.gitignore` fourni l'exclut automatiquement si vous utilisez git en ligne de commande.
 
-### 2. Créer le service sur Render
+### 2. Créer la base de données PostgreSQL (gratuite)
+
+Avant de créer le service web, créez d'abord la base : c'est elle qui va conserver le catalogue et les
+commandes de façon durable, même quand Render redéploie ou redémarre le serveur.
+
+1. Sur Render, cliquez "New +" > "PostgreSQL".
+2. **Name** : `izyvendeur-db` (ou ce que vous voulez).
+3. **Region** : la même que celle que vous choisirez pour le service web (à l'étape suivante).
+4. **Instance Type** : Free.
+5. Cliquez "Create Database". Après quelques secondes, Render affiche la page de la base.
+6. Copiez la valeur **"Internal Database URL"** (pas "External") — c'est l'adresse de connexion à la
+   base, elle ressemble à `postgresql://izyvendeur:xxxxx@dpg-xxxxx/izyvendeur_db`. Vous en aurez besoin
+   juste après. (L'option "Internal" est plus rapide et gratuite en usage réseau car le service web et la
+   base tournent sur le même réseau interne Render.)
+
+### 3. Créer le service sur Render
 
 1. Allez sur [render.com](https://render.com) et créez un compte (vous pouvez vous inscrire avec votre compte GitHub, c'est plus simple).
 2. Cliquez "New +" > "Web Service".
 3. Connectez votre dépôt GitHub (celui créé à l'étape 1).
 4. Réglages du service :
    - **Name** : `izyvendeur-backend` (ou ce que vous voulez)
-   - **Region** : la plus proche (Europe si disponible)
+   - **Region** : la même que la base de données créée à l'étape précédente
    - **Branch** : `main`
    - **Runtime** : Node
    - **Build Command** : `npm install`
    - **Start Command** : `npm start`
    - **Instance Type** : Free
-5. Dans la section **Environment Variables**, ajoutez ces 3 variables (les mêmes que dans `.env.example`) :
+5. Dans la section **Environment Variables**, ajoutez ces 4 variables (les mêmes que dans `.env.example`) :
    - `VERIFY_TOKEN` → inventez une chaîne secrète (ex: `izyvendeur-2026-secret`), notez-la, vous en aurez besoin juste après.
    - `WHATSAPP_TOKEN` → le token d'accès **permanent** généré via Utilisateur Système (Business Settings > System Users). Pas le token temporaire de 24h.
    - `PHONE_NUMBER_ID` → le Phone Number ID de votre VRAI numéro (visible dans WhatsApp Manager > Numéros de téléphone > roue crantée, ou dans l'API Setup), pas celui du numéro de test.
+   - `DATABASE_URL` → collez l'"Internal Database URL" copiée à l'étape 2.
 6. Cliquez "Create Web Service". Render va installer et démarrer le serveur (2-3 minutes).
 7. Une fois déployé, Render vous donne une adresse du type : `https://izyvendeur-backend.onrender.com`
 
-### 3. Brancher l'adresse dans Meta
+**Important** : si un service `izyvendeur-backend` existe déjà (sans base de données) et que vous ajoutez
+`DATABASE_URL` dessus, le tout premier démarrage repart du catalogue de départ (les anciennes commandes
+enregistrées dans l'ancien `data.json` ne sont pas migrées automatiquement — dites-le moi si vous voulez
+garder une commande de test précise, je peux écrire un petit script de migration ponctuel).
+
+### 4. Brancher l'adresse dans Meta
 
 1. Retournez dans le tableau de bord Meta for Developers > votre app > cas d'utilisation WhatsApp > Étape 2 > "Configurer des webhooks".
 2. **URL de rappel** : `https://izyvendeur-backend.onrender.com/webhook` (bien ajouter `/webhook` à la fin).
@@ -40,7 +61,7 @@ C'est la pièce qui manquait au prototype IzyVendeur pour recevoir de vrais mess
 4. Cliquez "Vérifier et enregistrer". Si tout est correct, Meta valide instantanément (le serveur répond au défi de vérification).
 5. Abonnez-vous au champ `messages` si Meta vous le demande (case à cocher séparée, souvent juste en dessous).
 
-### 4. Tester en vrai
+### 5. Tester en vrai
 
 Envoyez un message WhatsApp depuis votre téléphone personnel vers votre numéro business. Vous devriez recevoir une réponse automatique de test en quelques secondes. Vous pouvez aussi surveiller les logs en direct dans l'onglet "Logs" de Render pour voir le message arriver côté serveur.
 
@@ -65,20 +86,22 @@ Le serveur ne se contente plus d'une réponse générique : il reprend exactemen
 - Si le client confirme, le message de confirmation automatique (personnalisable dans `catalog.js` via
   `DEFAULT_AUTO_CONFIRM_MESSAGE`) est envoyé et la commande passe au statut "Confirmée".
 
-**Où sont sauvegardées les données ?** Dans un fichier `data.json` créé automatiquement à côté du
-serveur (catalogue + commandes). Il survit à la mise en veille/réveil du plan gratuit Render, mais est
-réinitialisé à chaque nouveau déploiement (upload de fichiers modifiés). Les conversations en cours
-(à quelle étape en est chaque client) sont, elles, uniquement en mémoire : si le serveur redémarre en
-plein milieu d'une commande, le client devra reformuler sa demande depuis le début.
+**Où sont sauvegardées les données ?** Dans une vraie base de données PostgreSQL (fichier `db.js`),
+tant que la variable `DATABASE_URL` est configurée (voir étape 2) — catalogue et commandes survivent
+maintenant aussi bien à la mise en veille/réveil du plan gratuit Render qu'aux redéploiements (upload de
+fichiers modifiés) : plus rien n'est perdu. Si `DATABASE_URL` n'est pas définie (par exemple en test
+local sans base installée), le serveur retombe automatiquement sur un fichier `data.json` local, comme
+avant. Les conversations en cours (à quelle étape en est chaque client) restent, elles, uniquement en
+mémoire : si le serveur redémarre en plein milieu d'une commande, le client devra reformuler sa demande
+depuis le début — ça reste un comportement acceptable pour cette étape.
 
 ## Et après ?
 
-- **Remplacer `data.json` par une vraie base de données** (ex. PostgreSQL, offert gratuitement par
-  Render) pour ne plus rien perdre au redéploiement, et pour supporter plusieurs marchands en même temps
-  (aujourd'hui, `catalog.js` ne contient qu'un seul catalogue, celui de la boutique de démonstration).
 - **Multi-marchands** : une fois "Fournisseur de technologie" validé côté Meta, utiliser l'"Embedded
-  Signup" pour que chaque marchand connecte son propre numéro WhatsApp, et faire correspondre chaque
-  message entrant (via son `phone_number_id`) au bon catalogue/marchand.
+  Signup" pour que chaque marchand connecte son propre numéro WhatsApp. Côté base de données, `db.js` est
+  déjà structuré pour ça (une ligne par marchand, identifiée par une clé) — il restera à faire
+  correspondre chaque message entrant (via son `phone_number_id`) au bon marchand plutôt qu'au marchand
+  unique `"default"` codé en dur aujourd'hui.
 - **Back-office connecté** : brancher les vues Catalogue / Commandes / Rapports du prototype HTML sur ce
   même serveur (au lieu du `localStorage` du navigateur), pour que le marchand gère son stock et ses
   commandes en temps réel.
