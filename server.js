@@ -18,6 +18,55 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const GRAPH_API_VERSION = "v21.0";
 
+// --- Securite : echappement HTML ---
+// Le telephone et l'adresse affiches sur /commandes viennent du TEXTE TAPE PAR LE CLIENT WhatsApp (pas
+// du catalogue, controle par vous). Sans cet echappement, un client mal intentionne pourrait taper une
+// "adresse" contenant du code HTML/JavaScript qui s'executerait dans votre navigateur des que vous
+// ouvrez la page /commandes (faille XSS classique). On echappe systematiquement tout ce qui vient du
+// client avant de l'inserer dans une page HTML.
+function echapperHtml(valeur) {
+  return String(valeur == null ? "" : valeur)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// --- Securite : protection de la page /commandes par mot de passe ---
+// Cette page affiche les numeros de telephone et adresses de vos clients : elle ne doit pas etre
+// consultable par n'importe qui tombant sur l'URL. Definissez ADMIN_USER et ADMIN_PASSWORD dans les
+// variables d'environnement (Render > Environment) pour l'activer. Par securite, si ADMIN_PASSWORD
+// n'est pas defini, l'acces est refuse plutot que laisse ouvert par defaut.
+function protegerAcces(req, res, next) {
+  const utilisateurAttendu = process.env.ADMIN_USER || "admin";
+  const motDePasseAttendu = process.env.ADMIN_PASSWORD;
+
+  if (!motDePasseAttendu) {
+    res.status(503).send(
+      "Tableau de bord protege : la variable d'environnement ADMIN_PASSWORD n'est pas configuree sur " +
+      "Render. Ajoutez-la (Environment > Add Environment Variable) pour activer l'acces a cette page."
+    );
+    return;
+  }
+
+  const enTete = req.headers.authorization || "";
+  const [schema, encode] = enTete.split(" ");
+  if (schema === "Basic" && encode) {
+    const decode = Buffer.from(encode, "base64").toString("utf8");
+    const separateur = decode.indexOf(":");
+    const utilisateur = decode.slice(0, separateur);
+    const motDePasse = decode.slice(separateur + 1);
+    if (utilisateur === utilisateurAttendu && motDePasse === motDePasseAttendu) {
+      next();
+      return;
+    }
+  }
+
+  res.set("WWW-Authenticate", 'Basic realm="IzyVendeur"');
+  res.status(401).send("Authentification requise pour consulter cette page.");
+}
+
 // --- Verification simple pour savoir si le serveur tourne (utile pour Render + pour vous) ---
 app.get("/", (req, res) => {
   res.send("IzyVendeur backend : en ligne. Le webhook est sur /webhook. Les commandes recues sont visibles sur /commandes.");
@@ -83,20 +132,21 @@ Email : info@ccbconsulting.org</p>
 
 // --- Page simple pour voir les commandes generees par le moteur de conversation ---
 // (en attendant un vrai tableau de bord connecte au meme serveur)
-app.get("/commandes", (req, res) => {
+// Protegee par mot de passe (protegerAcces) car elle affiche les coordonnees de vos clients.
+app.get("/commandes", protegerAcces, (req, res) => {
   const orders = conversation.getOrders().slice().reverse();
   const lignes = orders.map((o) => {
     const articles = (o.items || [])
-      .map((it) => it.produit + " (" + it.couleur + " " + it.taille + ") x" + it.quantite)
+      .map((it) => echapperHtml(it.produit) + " (" + echapperHtml(it.couleur) + " " + echapperHtml(it.taille) + ") x" + echapperHtml(it.quantite))
       .join("<br/>");
     return (
       "<tr><td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
       "<td>" + new Date(o.dateISO).toLocaleString("fr-FR") + "</td>" +
       "<td>" + articles + "</td>" +
       "<td>" + (o.prix || 0).toLocaleString("fr-FR") + " FCFA</td>" +
-      "<td>" + (o.telephone || "") + "</td>" +
-      "<td>" + (o.adresse || "") + "</td>" +
-      "<td>" + o.statut + "</td></tr>"
+      "<td>" + echapperHtml(o.telephone) + "</td>" +
+      "<td>" + echapperHtml(o.adresse) + "</td>" +
+      "<td>" + echapperHtml(o.statut) + "</td></tr>"
     );
   }).join("");
   res.send(
@@ -151,8 +201,14 @@ app.post("/webhook", async (req, res) => {
     const texteRecu = message.text?.body || "";
 
     if (!texteRecu) {
-      // Message sans texte (image, audio, etc.) : le moteur actuel ne sait traiter que du texte.
-      console.log(`Message non-texte recu de ${from} (type: ${message.type}) — ignore pour l'instant.`);
+      // Message sans texte (image, audio, document, sticker, localisation...) : le moteur actuel ne
+      // sait traiter que du texte. On repond quand meme quelque chose plutot que de rester
+      // completement silencieux (un silence total ressemble a une panne, meme si ce n'en est pas une).
+      console.log(`Message non-texte recu de ${from} (type: ${message.type}) — reponse d'orientation envoyee.`);
+      await envoyerMessageWhatsApp(
+        from,
+        "Je ne peux lire que du texte pour l'instant 🙏 Merci de m'écrire votre demande en quelques mots (ex : « Sac noir »)."
+      );
       return;
     }
 

@@ -17,6 +17,13 @@ const db = require("./db");
 const RESERVING_STATUSES = ["Confirmée", "Expédiée"];
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "2", "3"];
 
+// Garde-fou anti-inondation : au-dela de ce nombre de commandes "Nouvelle" (jamais confirmees) creees
+// par le MEME numero WhatsApp reel dans cette fenetre de temps, on refuse d'en creer une de plus tant
+// qu'une commande precedente n'a pas ete traitee. Fenetre courte pour ne viser que le spam rapide, pas
+// un client fidele qui revient a plusieurs reprises sur plusieurs jours/semaines.
+const MAX_PENDING_ORDERS_PER_PHONE = 3;
+const PENDING_ORDERS_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 heures
+
 // ---------------- Chargement / sauvegarde de l'etat (catalogue + commandes) ----------------
 // L'etat vit en memoire pendant que le serveur tourne (comme avant), pour que toute la logique de
 // conversation reste simple et synchrone. Ce qui change : d'ou il est charge au demarrage, et ou il
@@ -59,6 +66,10 @@ function freshSession() {
 
 function getSession(fromPhone) {
   if (!sessions[fromPhone]) sessions[fromPhone] = freshSession();
+  // Toujours re-tamponner le numero WhatsApp reel (verifie par Meta, donc impossible a falsifier par
+  // le client) - y compris apres un reset de session - pour pouvoir limiter le nombre de commandes non
+  // confirmees par numero, independamment du telephone de livraison que le client tape lui-meme.
+  sessions[fromPhone].fromPhone = fromPhone;
   return sessions[fromPhone];
 }
 
@@ -90,6 +101,15 @@ function parseAffirmative(text) {
   const t = text.toLowerCase().trim();
   if (t === "o") return true;
   return /^(oui|ouais|ouep|d['’]accord|daccord|ok(?:ay)?|yes|exact(?:ement)?|parfait|je\s*confirme|confirm(?:e|é)?|c['’]est\s*(?:ça|bon)|banco|allons[- ]y|top)\b/.test(t);
+}
+
+// Reconnait les reponses par lesquelles un client decline/refuse ("non", "rien d'autre", "c'est tout"...) —
+// utilise notamment pour savoir si un client qui a deja un panier en cours veut le finaliser plutot que
+// d'ajouter un nouvel article, meme en reponse a une question ouverte ("quel autre article souhaitez-vous ?").
+function parseNegative(text) {
+  const t = text.toLowerCase().trim();
+  if (t === "n") return true;
+  return /^(non|nan+|no|nope|rien\s*d['’]autre|rien\s*de\s*plus|c['’]est\s*tout|[çc]a\s*suffit|stop|arr[êe]te[rz]?|n[ée]gatif)\b/.test(t);
 }
 
 function itemsTotal(items) {
@@ -220,7 +240,8 @@ function createOrderFromCart(sess) {
     adresse: sess.adresse,
     statut: "Nouvelle",
     raisonAnnulation: null,
-    source: "whatsapp"
+    source: "whatsapp",
+    fromWhatsapp: sess.fromPhone || null
   };
   state.orders.push(order);
   saveState();
@@ -250,12 +271,31 @@ function processMessage(session, text) {
   const trace = { message: text, entites: {}, verification: null, action: null };
 
   if (session.stage === "awaiting_quantity") {
+    // Si le client change d'article pendant qu'on lui demande la quantite (au lieu de repondre par
+    // un nombre), on repart sur ce nouvel article plutot que de rester coince a redemander "combien ?".
+    const otherProduct = matchProduct(text);
+    if (otherProduct && otherProduct !== session.productId) {
+      session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+      session.stage = "idle";
+      trace.action = "Client change d'article pendant la demande de quantité — nouvelle sélection prise en compte";
+      logTrace(trace);
+      return processMessage(session, text);
+    }
     const product0 = state.catalog.filter((p) => p.id === session.productId)[0];
     const variant0 = product0 ? product0.variantes.filter((v) => v.couleur === session.couleur && v.taille === session.taille)[0] : null;
     const virt0 = variant0 ? virtualStock(product0.id, variant0) : 0;
     const qty = parseQuantity(text);
     trace.entites = { "Quantité demandée": qty != null ? qty : "—", "Stock virtuel disponible": virt0 };
     if (qty == null || qty < 1) {
+      if (parseNegative(text) || parseWantsSomethingElse(text)) {
+        // Le client abandonne cet article en cours de saisie de quantite ("non", "laisse tomber"...) :
+        // on efface la selection au lieu de redemander une quantite indefiniment.
+        session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+        session.stage = "idle";
+        trace.action = "Client abandonne cet article pendant la demande de quantité — sélection effacée";
+        logTrace(trace);
+        return "Pas de souci, on laisse cet article de côté. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+      }
       trace.action = "Quantité non comprise — nouvelle demande";
       logTrace(trace);
       return "Merci d'indiquer un nombre de pièces (ex : 1, 2, 3…).";
@@ -281,6 +321,15 @@ function processMessage(session, text) {
       logTrace(trace);
       return "Très bien, quel autre article souhaitez-vous ?";
     }
+    const directProduct = !parseNegative(text) ? matchProduct(text) : null;
+    if (directProduct) {
+      // Le client a nomme directement l'article suivant au lieu de repondre "oui" : on traite sa
+      // demande tout de suite plutot que de la perdre en finalisant le panier a sa place.
+      session.stage = "idle";
+      trace.action = "Client a nommé directement un nouvel article plutôt que de répondre oui/non — traitement immédiat";
+      logTrace(trace);
+      return processMessage(session, text);
+    }
     session.stage = "awaiting_delivery";
     trace.action = "Panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
     logTrace(trace);
@@ -289,11 +338,46 @@ function processMessage(session, text) {
 
   if (session.stage === "awaiting_delivery") {
     const phoneMatch = text.match(/(\+?237)?[\s.-]?[62]\d{7,8}/);
+    // Si le client essaie d'ajouter un article a ce stade au lieu de donner ses coordonnees (ex :
+    // "attendez, je veux aussi un sac noir"), on evite de confondre le nom de l'article avec son
+    // adresse de livraison. On ne le fait que sans numero dans le message, tant que l'adresse n'est
+    // pas deja connue, et seulement si le message est court OU contient un mot clair d'ajout
+    // ("aussi", "encore", "ajouter"...) — pour ne pas mal interpreter une vraie adresse qui
+    // contiendrait par hasard un mot du catalogue (ex: un nom de quartier).
+    const additiveIntent = /\b(aussi|encore|ajout|en\s*plus)\b/i.test(text);
+    if (!phoneMatch && !session.adresse && (text.trim().length <= 20 || additiveIntent)) {
+      const directProduct = matchProduct(text);
+      if (directProduct) {
+        session.stage = "idle";
+        trace.entites = { "Réponse client": text };
+        trace.action = "Client tente d'ajouter un article pendant la collecte des infos de livraison — traitement immédiat";
+        logTrace(trace);
+        return processMessage(session, text);
+      }
+    }
     let remaining = text;
     if (phoneMatch) { session.telephone = phoneMatch[0].trim(); remaining = text.replace(phoneMatch[0], "").trim(); }
-    if (remaining && remaining.replace(/[,\-\s]/g, "").length > 3) session.adresse = remaining.replace(/^[,\-\s]+/, "");
+    // Longueur plafonnee : evite qu'un message-fleuve (accidentel ou volontairement genant) ne
+    // devienne une "adresse" illisible dans la page Commandes du marchand.
+    if (remaining && remaining.replace(/[,\-\s]/g, "").length > 3) session.adresse = remaining.replace(/^[,\-\s]+/, "").slice(0, 200);
     trace.entites = { "Téléphone": session.telephone || "—", "Adresse": session.adresse || "—" };
     if (session.telephone && session.adresse) {
+      // Garde-fou anti-inondation : un meme numero WhatsApp (verifie par Meta, non falsifiable par le
+      // client) ne peut pas creer en rafale un nombre illimite de commandes jamais confirmees - ca
+      // eviterait qu'une personne mal intentionnee ne remplisse la page Commandes du marchand de
+      // fausses commandes. Fenetre glissante courte pour ne pas bloquer un client fidele revenant
+      // plusieurs fois sur plusieurs jours.
+      const now = Date.now();
+      const pendingCount = state.orders.filter((o) => {
+        if (o.fromWhatsapp !== session.fromPhone || o.statut !== "Nouvelle") return false;
+        const age = now - new Date(o.dateISO).getTime();
+        return age >= 0 && age < PENDING_ORDERS_WINDOW_MS;
+      }).length;
+      if (pendingCount >= MAX_PENDING_ORDERS_PER_PHONE) {
+        trace.action = "Trop de commandes non confirmées en attente pour ce numéro (" + pendingCount + ") — nouvelle commande refusée";
+        logTrace(trace);
+        return "Vous avez déjà " + pendingCount + " commande(s) en attente de confirmation. Merci de confirmer ou d'annuler l'une d'entre elles avant d'en passer une nouvelle — notre équipe reste disponible si besoin.";
+      }
       const order = createOrderFromCart(session);
       session.pendingOrderId = order.id;
       session.stage = "awaiting_order_confirmation";
@@ -312,17 +396,34 @@ function processMessage(session, text) {
   if (session.stage === "awaiting_order_confirmation") {
     const pendingOrder = state.orders.filter((x) => x.id === session.pendingOrderId)[0];
     trace.entites = { "Réponse client": text };
-    let reply;
+
     if (pendingOrder && parseAffirmative(text)) {
       applyStatusChange(pendingOrder, "Confirmée");
       trace.action = "Client confirme — commande " + orderRef(pendingOrder) + " passée automatiquement en Confirmée";
-      reply = (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
-    } else if (pendingOrder) {
-      trace.action = "Pas de confirmation claire — commande " + orderRef(pendingOrder) + " reste en Nouvelle, à confirmer manuellement";
-      reply = "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.";
-    } else {
-      reply = "Très bien, votre commande reste enregistrée.";
+      const reply = (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
+      Object.assign(session, freshSession());
+      logTrace(trace);
+      return reply;
     }
+
+    if (pendingOrder && parseNegative(text)) {
+      trace.action = "Client décline la confirmation automatique — commande " + orderRef(pendingOrder) + " reste en Nouvelle, à confirmer manuellement";
+      const reply = "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.";
+      Object.assign(session, freshSession());
+      logTrace(trace);
+      return reply;
+    }
+
+    if (pendingOrder) {
+      // Reponse ni clairement oui ni clairement non (ex: une question sur la livraison) : on ne
+      // referme pas la conversation pour ne pas perdre le lien avec cette commande deja creee,
+      // on redemande simplement une confirmation claire au lieu de supposer un refus.
+      trace.action = "Réponse ambiguë — nouvelle demande de confirmation claire pour " + orderRef(pendingOrder);
+      logTrace(trace);
+      return "Je n'ai pas bien compris. Confirmez-vous votre commande " + orderRef(pendingOrder) + " ? Répondez simplement par oui ou non — notre équipe reviendra vers vous pour toute autre question.";
+    }
+
+    const reply = "Très bien, votre commande reste enregistrée.";
     Object.assign(session, freshSession());
     logTrace(trace);
     return reply;
@@ -348,6 +449,15 @@ function processMessage(session, text) {
     "Couleur": couleur || "—",
     "Taille": taille || "—"
   };
+
+  if (!produitId && session.cart.length > 0 && parseNegative(text)) {
+    // Le client a deja un panier en cours et repond par une negation a la question ouverte
+    // "quel autre article souhaitez-vous ?" : il veut finaliser sa commande, pas repartir de zero.
+    session.stage = "awaiting_delivery";
+    trace.action = "Client ne veut rien ajouter de plus — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
+    logTrace(trace);
+    return "Voici votre panier :\n" + describeItems(session.cart) + "\nTotal : " + formatFcfa(itemsTotal(session.cart)) + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.";
+  }
 
   if (!produitId) {
     trace.action = "Précision demandée : quel article ?";

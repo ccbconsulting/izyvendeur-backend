@@ -45,6 +45,10 @@ commandes de façon durable, même quand Render redéploie ou redémarre le serv
    - `WHATSAPP_TOKEN` → le token d'accès **permanent** généré via Utilisateur Système (Business Settings > System Users). Pas le token temporaire de 24h.
    - `PHONE_NUMBER_ID` → le Phone Number ID de votre VRAI numéro (visible dans WhatsApp Manager > Numéros de téléphone > roue crantée, ou dans l'API Setup), pas celui du numéro de test.
    - `DATABASE_URL` → collez l'"Internal Database URL" copiée à l'étape 2.
+   - `ADMIN_USER` → un nom d'utilisateur pour protéger la page `/commandes` (ex : `admin`).
+   - `ADMIN_PASSWORD` → un mot de passe de votre choix, connu de vous seul. **Sans cette variable, la
+     page `/commandes` refuse l'accès** (par sécurité — elle affiche les téléphones et adresses de vos
+     clients, elle ne doit pas être ouverte à n'importe qui tombant sur l'URL).
 6. Cliquez "Create Web Service". Render va installer et démarrer le serveur (2-3 minutes).
 7. Une fois déployé, Render vous donne une adresse du type : `https://izyvendeur-backend.onrender.com`
 
@@ -94,6 +98,22 @@ local sans base installée), le serveur retombe automatiquement sur un fichier `
 avant. Les conversations en cours (à quelle étape en est chaque client) restent, elles, uniquement en
 mémoire : si le serveur redémarre en plein milieu d'une commande, le client devra reformuler sa demande
 depuis le début — ça reste un comportement acceptable pour cette étape.
+
+## Protections contre les abus
+
+Comme n'importe quel numéro WhatsApp peut écrire au bot, quelques protections évitent qu'une personne
+mal intentionnée puisse s'en servir pour nuire au service ou à vos clients :
+
+- **Page `/commandes` protégée par mot de passe** (`ADMIN_USER` / `ADMIN_PASSWORD`) car elle affiche les
+  téléphones et adresses de vos clients.
+- **Tout texte tapé par un client est échappé avant d'être affiché** sur `/commandes`, pour empêcher
+  qu'une "adresse" contenant du code puisse s'exécuter dans votre navigateur.
+- **Un même numéro WhatsApp ne peut pas créer plus de 3 commandes non confirmées en 2 heures** — au-delà,
+  le bot demande de confirmer ou traiter les précédentes avant d'en accepter une nouvelle, pour éviter
+  qu'on remplisse votre page Commandes de fausses commandes.
+- **L'adresse de livraison est limitée à 200 caractères** pour éviter les messages-fleuves.
+- **Le bot répond toujours quelque chose**, même à un message qu'il ne comprend pas (photo, audio,
+  texte incompréhensible) — plutôt que de rester silencieux, ce qui pourrait ressembler à une panne.
 
 ## Et après ?
 
