@@ -74,7 +74,7 @@ contactant à l'adresse ci-dessous.</p>
 
 <h2>Contact</h2>
 <p>CCB CONSULTING SARL — Douala, Cameroun<br/>
-Email : ludovic.difo@gmail.com</p>
+Email : info@ccbconsulting.org</p>
 
 <footer>Cette politique peut être mise à jour périodiquement pour refléter l'évolution du service.</footer>
 </body>
