@@ -95,6 +95,13 @@ function parseQuantity(text) {
   return null;
 }
 
+// Reconnait les phrases par lesquelles un client signale qu'il veut abandonner l'article en cours
+// de selection sans en nommer un nouveau ("je veux autre chose", "un autre article"...).
+function parseWantsSomethingElse(text) {
+  const t = text.toLowerCase();
+  return /\b(autre\s+chose|un\s+autre\s+article|un\s+autre\s+produit|autre\s+article|autre\s+produit|pas\s+celui[\s-]l[àa]|pas\s+ça|pas\s+ca|change(?:r)?\s+d['’]article|change(?:r)?\s+d['’]avis|oublie[rz]?\s+(?:ça|ca|cela)|annule[rz]?\s+(?:ça|ca|cela)?|laisse\s+tomber|recommen[cç]ons|recommencer)\b/.test(t);
+}
+
 function parseAffirmative(text) {
   const t = text.toLowerCase().trim();
   if (t === "o") return true;
@@ -338,7 +345,16 @@ function processMessage(session, text) {
   }
 
   // Etat "idle" (ou reprise en cours) : on essaie de reconnaitre article / couleur / taille.
-  const produitId = matchProduct(text) || session.productId;
+  let produitId = matchProduct(text);
+  if (!produitId && session.productId && parseWantsSomethingElse(text)) {
+    // Le client signale clairement qu'il veut autre chose, sans nommer un article precis :
+    // on efface la selection en cours au lieu de rester coince dessus.
+    session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+    trace.action = "Client veut changer d'article — sélection précédente effacée";
+    logTrace(trace);
+    return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+  }
+  produitId = produitId || session.productId;
   const couleur = matchCouleur(text) || (produitId === session.productId ? session.couleur : null);
   let taille = matchTaille(text) || (produitId === session.productId ? session.taille : null);
   session.productId = produitId; session.couleur = couleur; session.taille = taille;
