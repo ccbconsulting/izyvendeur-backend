@@ -79,6 +79,20 @@ function formatFcfa(n) {
   return (n || 0).toLocaleString("fr-FR") + " FCFA";
 }
 
+// ---------------- Petites touches de chaleur dans le dialogue ----------------
+// Un mot gentil avant d'enchainer sur la suite, pour que le client se sente bien accueilli - avec
+// plusieurs variantes tirees au hasard pour ne pas repeter exactement la meme phrase a chaque fois
+// (ce qui sonnerait robotique au bout de quelques messages).
+function piocheParmi(liste) {
+  return liste[Math.floor(Math.random() * liste.length)];
+}
+
+const OUVERTURES_PRODUIT = ["Excellent choix !", "Très bon choix !", "Superbe choix !", "Vous avez bon goût !", "Beau choix !"];
+const OUVERTURES_COULEUR = ["Jolie couleur !", "Bon choix de couleur !", "Ça va très bien !", "Très élégant !"];
+const OUVERTURES_DISPO = ["Parfait,", "Très bien,", "Super,", "Excellente nouvelle,"];
+const OUVERTURES_AJOUT = ["Très bien !", "Parfait !", "Excellent !", "Noté !", "Top !"];
+const OUVERTURES_RECAP = ["Très bien !", "Parfait, on y est presque !", "Super !"];
+
 function parseQuantity(text) {
   const m = text.match(/\d+/);
   if (m) return parseInt(m[0], 10);
@@ -124,6 +138,10 @@ function describeItems(items) {
 
 function orderRef(o) {
   return "CMD-" + String(o.id).padStart(4, "0");
+}
+
+function messageRecapPanier(cart) {
+  return piocheParmi(OUVERTURES_RECAP) + " Voici votre panier :\n" + describeItems(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.";
 }
 
 function distinctValues(getter) {
@@ -310,7 +328,7 @@ function processMessage(session, text) {
     session.stage = "awaiting_more_items";
     trace.action = "Article ajouté au panier — proposition d'ajouter un autre article";
     logTrace(trace);
-    return "Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article à votre commande ? (oui / non)";
+    return piocheParmi(OUVERTURES_AJOUT) + " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article à votre commande ? (oui / non)";
   }
 
   if (session.stage === "awaiting_more_items") {
@@ -333,7 +351,7 @@ function processMessage(session, text) {
     session.stage = "awaiting_delivery";
     trace.action = "Panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
     logTrace(trace);
-    return "Voici votre panier :\n" + describeItems(session.cart) + "\nTotal : " + formatFcfa(itemsTotal(session.cart)) + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.";
+    return messageRecapPanier(session.cart);
   }
 
   if (session.stage === "awaiting_delivery") {
@@ -383,14 +401,14 @@ function processMessage(session, text) {
       session.stage = "awaiting_order_confirmation";
       trace.action = "Commande " + orderRef(order) + " créée (statut Nouvelle) — récapitulatif envoyé, confirmation demandée";
       logTrace(trace);
-      return "Récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\nLivraison : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)";
+      return "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\nLivraison : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)";
     }
     const missing = [];
     if (!session.telephone) missing.push("numéro de téléphone");
     if (!session.adresse) missing.push("adresse de livraison");
     trace.action = "Information manquante demandée : " + missing.join(" et ");
     logTrace(trace);
-    return "Il me manque encore : " + missing.join(" et ") + ".";
+    return "Presque ! Il me manque encore : " + missing.join(" et ") + ".";
   }
 
   if (session.stage === "awaiting_order_confirmation") {
@@ -430,18 +448,32 @@ function processMessage(session, text) {
   }
 
   // Etat "idle" (ou reprise en cours) : on essaie de reconnaitre article / couleur / taille.
-  let produitId = matchProduct(text);
-  if (!produitId && session.productId && parseWantsSomethingElse(text)) {
-    // Le client signale clairement qu'il veut autre chose, sans nommer un article precis :
-    // on efface la selection en cours au lieu de rester coince dessus.
+  const produitReconnu = matchProduct(text);
+  const couleurReconnue = matchCouleur(text);
+  const tailleReconnue = matchTaille(text);
+
+  // Garde-fou : le client a deja un article en cours de selection (couleur et/ou taille encore en
+  // attente, ex: "Baskets" -> bot demande la couleur) et son message ne reconnait ni produit, ni
+  // couleur, ni taille - MAIS exprime clairement un refus/abandon ("non", "annule", "un autre
+  // article"...). Sans ce garde-fou le bot redemandait indefiniment la meme precision (couleur ou
+  // taille) quoi que le client reponde, car session.productId reste "collant" d'un tour a l'autre.
+  if (!produitReconnu && !couleurReconnue && !tailleReconnue && session.productId && (parseNegative(text) || parseWantsSomethingElse(text))) {
     session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
-    trace.action = "Client veut changer d'article — sélection précédente effacée";
+    trace.entites = { "Réponse client": text };
+    if (session.cart.length > 0) {
+      session.stage = "awaiting_delivery";
+      trace.action = "Client abandonne cette sélection en cours — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
+      logTrace(trace);
+      return messageRecapPanier(session.cart);
+    }
+    trace.action = "Client abandonne cette sélection en cours — sélection effacée";
     logTrace(trace);
     return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
   }
-  produitId = produitId || session.productId;
-  const couleur = matchCouleur(text) || (produitId === session.productId ? session.couleur : null);
-  let taille = matchTaille(text) || (produitId === session.productId ? session.taille : null);
+
+  let produitId = produitReconnu || session.productId;
+  const couleur = couleurReconnue || (produitId === session.productId ? session.couleur : null);
+  let taille = tailleReconnue || (produitId === session.productId ? session.taille : null);
   session.productId = produitId; session.couleur = couleur; session.taille = taille;
 
   trace.entites = {
@@ -456,7 +488,7 @@ function processMessage(session, text) {
     session.stage = "awaiting_delivery";
     trace.action = "Client ne veut rien ajouter de plus — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
     logTrace(trace);
-    return "Voici votre panier :\n" + describeItems(session.cart) + "\nTotal : " + formatFcfa(itemsTotal(session.cart)) + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.";
+    return messageRecapPanier(session.cart);
   }
 
   if (!produitId) {
@@ -471,7 +503,10 @@ function processMessage(session, text) {
   if (!couleur) {
     trace.action = "Précision demandée : quelle couleur ?";
     logTrace(trace);
-    return product.nom + " — quelle couleur souhaitez-vous ? Disponible en : " + availableColors.join(", ") + ".";
+    // Le petit mot gentil ne sort que quand le produit vient d'etre reconnu dans CE message (pas a
+    // chaque relance si la couleur n'est toujours pas comprise, ce qui sonnerait faux/repetitif).
+    const ouverture = produitReconnu ? piocheParmi(OUVERTURES_PRODUIT) + " " : "";
+    return ouverture + product.nom + " — quelle couleur souhaitez-vous ? Disponible en : " + availableColors.join(", ") + ".";
   }
 
   const sizesForColor = product.variantes.filter((v) => v.couleur === couleur).map((v) => v.taille);
@@ -484,7 +519,8 @@ function processMessage(session, text) {
   if (!taille) {
     trace.action = "Précision demandée : quelle taille ?";
     logTrace(trace);
-    return "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".";
+    const ouverture = couleurReconnue ? piocheParmi(OUVERTURES_COULEUR) + " " : "";
+    return ouverture + "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".";
   }
 
   const variant = product.variantes.filter((v) => v.couleur === couleur && v.taille === taille)[0];
@@ -512,7 +548,7 @@ function processMessage(session, text) {
   trace.action = "Article disponible — quantité demandée";
   session.stage = "awaiting_quantity";
   logTrace(trace);
-  return "Il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?";
+  return piocheParmi(OUVERTURES_DISPO) + " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?";
 }
 
 function logTrace(trace) {
