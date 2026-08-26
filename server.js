@@ -23,6 +23,64 @@ app.get("/", (req, res) => {
   res.send("IzyVendeur backend : en ligne. Le webhook est sur /webhook. Les commandes recues sont visibles sur /commandes.");
 });
 
+// --- Politique de confidentialite (URL publique requise par Meta pour la revue de l'application) ---
+app.get("/politique-confidentialite", (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Politique de confidentialité — IzyVendeur</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #222; }
+  h1 { font-size: 1.6em; }
+  h2 { font-size: 1.2em; margin-top: 1.8em; }
+  footer { margin-top: 3em; font-size: 0.9em; color: #666; }
+</style>
+</head>
+<body>
+<h1>Politique de confidentialité — IzyVendeur</h1>
+<p><em>Dernière mise à jour : août 2026</em></p>
+
+<p>IzyVendeur est un service édité par CCB CONSULTING SARL (Douala, Cameroun) qui permet à des
+commerçants de recevoir et traiter automatiquement les commandes de leurs clients via WhatsApp. Cette
+page explique quelles données sont traitées lorsque vous échangez avec un commerçant utilisant
+IzyVendeur, et comment elles sont utilisées.</p>
+
+<h2>Quelles données sont collectées</h2>
+<p>Lorsque vous écrivez au numéro WhatsApp d'un commerçant utilisant IzyVendeur, nous traitons :
+votre numéro de téléphone WhatsApp, le contenu des messages échangés (pour comprendre votre demande :
+article, couleur, taille, quantité), et les informations que vous fournissez volontairement pour
+finaliser une commande (adresse de livraison, numéro de contact).</p>
+
+<h2>Pourquoi ces données sont traitées</h2>
+<p>Ces informations servent uniquement à répondre à vos demandes, vérifier la disponibilité des
+articles, créer et suivre votre commande, et vous transmettre les confirmations et informations de
+livraison correspondantes, pour le compte du commerçant que vous avez contacté.</p>
+
+<h2>Avec qui ces données sont partagées</h2>
+<p>Vos données sont visibles par le commerçant à qui vous avez écrit (pour traiter votre commande) et
+transitent par la plateforme WhatsApp Business (Meta) qui achemine les messages. Nous ne vendons ni ne
+louons vos données à des tiers, et ne les partageons pas à des fins publicitaires.</p>
+
+<h2>Combien de temps ces données sont conservées</h2>
+<p>Les informations de commande sont conservées le temps nécessaire au traitement de votre commande et
+au suivi du service après-vente, puis archivées ou supprimées selon les besoins légaux et opérationnels
+du commerçant.</p>
+
+<h2>Vos droits</h2>
+<p>Vous pouvez à tout moment demander l'accès, la correction ou la suppression de vos données en nous
+contactant à l'adresse ci-dessous.</p>
+
+<h2>Contact</h2>
+<p>CCB CONSULTING SARL — Douala, Cameroun<br/>
+Email : ludovic.difo@gmail.com</p>
+
+<footer>Cette politique peut être mise à jour périodiquement pour refléter l'évolution du service.</footer>
+</body>
+</html>`);
+});
+
 // --- Page simple pour voir les commandes generees par le moteur de conversation ---
 // (en attendant un vrai tableau de bord connecte au meme serveur)
 app.get("/commandes", (req, res) => {
