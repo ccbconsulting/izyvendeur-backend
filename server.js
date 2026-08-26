@@ -8,6 +8,7 @@
 
 require("dotenv").config();
 const express = require("express");
+const conversation = require("./conversation");
 
 const app = express();
 app.use(express.json());
@@ -19,7 +20,36 @@ const GRAPH_API_VERSION = "v21.0";
 
 // --- Verification simple pour savoir si le serveur tourne (utile pour Render + pour vous) ---
 app.get("/", (req, res) => {
-  res.send("IzyVendeur backend : en ligne. Le webhook est sur /webhook.");
+  res.send("IzyVendeur backend : en ligne. Le webhook est sur /webhook. Les commandes recues sont visibles sur /commandes.");
+});
+
+// --- Page simple pour voir les commandes generees par le moteur de conversation ---
+// (en attendant un vrai tableau de bord connecte au meme serveur)
+app.get("/commandes", (req, res) => {
+  const orders = conversation.getOrders().slice().reverse();
+  const lignes = orders.map((o) => {
+    const articles = (o.items || [])
+      .map((it) => it.produit + " (" + it.couleur + " " + it.taille + ") x" + it.quantite)
+      .join("<br/>");
+    return (
+      "<tr><td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
+      "<td>" + new Date(o.dateISO).toLocaleString("fr-FR") + "</td>" +
+      "<td>" + articles + "</td>" +
+      "<td>" + (o.prix || 0).toLocaleString("fr-FR") + " FCFA</td>" +
+      "<td>" + (o.telephone || "") + "</td>" +
+      "<td>" + (o.adresse || "") + "</td>" +
+      "<td>" + o.statut + "</td></tr>"
+    );
+  }).join("");
+  res.send(
+    "<html><head><meta charset='utf-8'><title>Commandes IzyVendeur</title>" +
+    "<style>body{font-family:sans-serif;padding:20px;} table{border-collapse:collapse;width:100%;} " +
+    "td,th{border:1px solid #ccc;padding:8px;text-align:left;font-size:14px;} th{background:#f2f2f2;}</style>" +
+    "</head><body><h2>Commandes reçues (" + orders.length + ")</h2>" +
+    "<table><tr><th>N°</th><th>Date</th><th>Articles</th><th>Total</th><th>Téléphone</th><th>Adresse</th><th>Statut</th></tr>" +
+    (lignes || "<tr><td colspan='7'>Aucune commande pour l'instant.</td></tr>") +
+    "</table></body></html>"
+  );
 });
 
 // --- ETAPE 1 : Verification du webhook par Meta ---
@@ -62,12 +92,16 @@ app.post("/webhook", async (req, res) => {
     const from = message.from; // numero du client, format international sans "+"
     const texteRecu = message.text?.body || "";
 
+    if (!texteRecu) {
+      // Message sans texte (image, audio, etc.) : le moteur actuel ne sait traiter que du texte.
+      console.log(`Message non-texte recu de ${from} (type: ${message.type}) — ignore pour l'instant.`);
+      return;
+    }
+
     console.log(`Message recu de ${from} : "${texteRecu}"`);
 
-    // --- Reponse automatique simple (a remplacer plus tard par la vraie logique du simulateur) ---
-    const reponse =
-      "Merci pour votre message ! Ceci est une reponse automatique de test IzyVendeur. " +
-      "Un vendeur va bientot connecter la vraie logique (catalogue, stock, commande) ici.";
+    // --- Vraie logique de conversation IzyVendeur (catalogue, stock, panier, commande) ---
+    const reponse = conversation.handleMessage(from, texteRecu);
 
     await envoyerMessageWhatsApp(from, reponse);
   } catch (erreur) {

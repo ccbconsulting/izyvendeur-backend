@@ -48,6 +48,37 @@ Envoyez un message WhatsApp depuis votre téléphone personnel vers votre numér
 
 Le plan gratuit "s'endort" après 15 minutes sans trafic, et met quelques secondes à se réveiller au message suivant (léger délai la première fois). Pour un usage réel avec des clients, il faudra passer sur un plan payant (à partir de quelques dollars/mois) une fois qu'on avance vers la production — mais pour tester et développer, le gratuit suffit largement.
 
+## La logique de conversation (catalogue, stock, panier, commande)
+
+Le serveur ne se contente plus d'une réponse générique : il reprend exactement la logique du prototype
+(fichier `conversation.js`, avec le catalogue de départ dans `catalog.js`).
+
+- Chaque client (identifié par son numéro WhatsApp) a sa propre conversation en cours, donc plusieurs
+  clients peuvent discuter en même temps sans se mélanger.
+- Le moteur reconnaît l'article, la couleur et la taille demandés en cherchant dans le catalogue — pas
+  de dictionnaire à maintenir à la main, tout nouvel article du catalogue est reconnu automatiquement.
+- Le stock "virtuel" (stock réel moins ce qui est déjà réservé par des commandes Confirmée/Expédiée) est
+  vérifié avant de proposer l'article.
+- Le client peut ajouter plusieurs articles dans son panier avant de passer à la livraison.
+- Une fois le numéro et l'adresse de livraison reçus, une vraie commande est créée (visible sur
+  `/commandes`, une page simple listant toutes les commandes reçues).
+- Si le client confirme, le message de confirmation automatique (personnalisable dans `catalog.js` via
+  `DEFAULT_AUTO_CONFIRM_MESSAGE`) est envoyé et la commande passe au statut "Confirmée".
+
+**Où sont sauvegardées les données ?** Dans un fichier `data.json` créé automatiquement à côté du
+serveur (catalogue + commandes). Il survit à la mise en veille/réveil du plan gratuit Render, mais est
+réinitialisé à chaque nouveau déploiement (upload de fichiers modifiés). Les conversations en cours
+(à quelle étape en est chaque client) sont, elles, uniquement en mémoire : si le serveur redémarre en
+plein milieu d'une commande, le client devra reformuler sa demande depuis le début.
+
 ## Et après ?
 
-Ce serveur ne fait qu'une réponse automatique générique pour l'instant. La prochaine étape sera d'y brancher la vraie logique du simulateur IzyVendeur (catalogue, vérification de stock, panier multi-articles, confirmation de commande) — actuellement dans le prototype HTML, elle devra être réécrite côté serveur avec une vraie base de données partagée entre tous les marchands.
+- **Remplacer `data.json` par une vraie base de données** (ex. PostgreSQL, offert gratuitement par
+  Render) pour ne plus rien perdre au redéploiement, et pour supporter plusieurs marchands en même temps
+  (aujourd'hui, `catalog.js` ne contient qu'un seul catalogue, celui de la boutique de démonstration).
+- **Multi-marchands** : une fois "Fournisseur de technologie" validé côté Meta, utiliser l'"Embedded
+  Signup" pour que chaque marchand connecte son propre numéro WhatsApp, et faire correspondre chaque
+  message entrant (via son `phone_number_id`) au bon catalogue/marchand.
+- **Back-office connecté** : brancher les vues Catalogue / Commandes / Rapports du prototype HTML sur ce
+  même serveur (au lieu du `localStorage` du navigateur), pour que le marchand gère son stock et ses
+  commandes en temps réel.
