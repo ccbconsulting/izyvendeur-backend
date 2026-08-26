@@ -1,0 +1,17 @@
+{
+  "name": "izyvendeur-backend",
+  "version": "1.0.0",
+  "description": "Backend minimal (preuve de concept) pour recevoir les messages WhatsApp via webhook Meta et repondre automatiquement.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5"
+  }
+}
