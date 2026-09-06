@@ -12,6 +12,7 @@
 require("dotenv").config();
 const path = require("path");
 const express = require("express");
+const bcrypt = require("bcryptjs");
 const db = require("./db");
 const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
@@ -41,14 +42,29 @@ async function chargerMarchands() {
 }
 
 // --- Securite : protection des pages/API d'administration par mot de passe ---
-// Meme principe qu'avant le multi-marchand : ADMIN_USER/ADMIN_PASSWORD protegent l'acces (un seul
-// operateur pour l'instant - vous - tant que l'onboarding des marchands reste manuel). Par securite, si
-// ADMIN_PASSWORD n'est pas defini, l'acces est refuse plutot que laisse ouvert par defaut.
-function protegerAcces(req, res, next) {
-  const utilisateurAttendu = process.env.ADMIN_USER || "admin";
-  const motDePasseAttendu = process.env.ADMIN_PASSWORD;
+// Deux roles possibles, determines a partir des identifiants Basic Auth fournis :
+//   - "superadmin" : ADMIN_USER/ADMIN_PASSWORD (variables d'environnement Render, comme avant le
+//     multi-marchand). C'est vous : acces a TOUS les marchands, creation de marchands, et gestion des
+//     identifiants de chacun (creation, modification, reinitialisation apres oubli).
+//   - "marchand" : les identifiants propres a UN marchand (adminUser/adminPassword stockes dans son
+//     enregistrement). Acces limite aux donnees de ce marchand uniquement.
+// Par securite, si ADMIN_PASSWORD n'est pas defini, l'acces est refuse plutot que laisse ouvert par
+// defaut (personne ne pourrait alors se connecter, meme un marchand, tant que ce n'est pas corrige).
+function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
+  if (!motDePasseStocke) return false;
+  if (/^\$2[aby]\$/.test(motDePasseStocke)) {
+    try { return bcrypt.compareSync(motDePasseFourni, motDePasseStocke); } catch (erreur) { return false; }
+  }
+  // Compatibilite avec d'anciens mots de passe enregistres avant l'introduction du hashage (ex: le
+  // marchand "default" migre automatiquement depuis les variables d'environnement historiques).
+  return motDePasseFourni === motDePasseStocke;
+}
 
-  if (!motDePasseAttendu) {
+function protegerAcces(req, res, next) {
+  const superUtilisateur = process.env.ADMIN_USER || "admin";
+  const superMotDePasse = process.env.ADMIN_PASSWORD;
+
+  if (!superMotDePasse) {
     res.status(503).send(
       "Tableau de bord protege : la variable d'environnement ADMIN_PASSWORD n'est pas configuree sur " +
       "Render. Ajoutez-la (Environment > Add Environment Variable) pour activer l'acces a cette page."
@@ -63,9 +79,20 @@ function protegerAcces(req, res, next) {
     const separateur = decode.indexOf(":");
     const utilisateur = decode.slice(0, separateur);
     const motDePasse = decode.slice(separateur + 1);
-    if (utilisateur === utilisateurAttendu && motDePasse === motDePasseAttendu) {
+
+    if (utilisateur === superUtilisateur && motDePasse === superMotDePasse) {
+      req.auth = { role: "superadmin", merchantId: null, adminUser: utilisateur };
       next();
       return;
+    }
+
+    for (const id of Object.keys(engines)) {
+      const m = engines[id].merchant;
+      if (m.adminUser && utilisateur === m.adminUser && motDePasseCorrespond(motDePasse, m.adminPassword)) {
+        req.auth = { role: "marchand", merchantId: id, adminUser: utilisateur };
+        next();
+        return;
+      }
     }
   }
 
@@ -73,10 +100,31 @@ function protegerAcces(req, res, next) {
   res.status(401).send("Authentification requise pour consulter cette page.");
 }
 
+// Verifie que l'utilisateur authentifie (req.auth) a le droit d'agir sur le marchand `id` : le
+// super-administrateur peut toujours, un marchand uniquement sur lui-meme. Repond 403 sinon.
+function verifierPortee(req, res, id) {
+  if (req.auth.role === "superadmin" || req.auth.merchantId === id) return true;
+  res.status(403).json({ erreur: "Accès non autorisé à ce marchand." });
+  return false;
+}
+
 function getMarchandOu404(req, res) {
   const entry = engines[req.params.id];
   if (!entry) { res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id }); return null; }
   return entry;
+}
+
+// Combine les deux verifications precedentes : utilisee par toutes les routes /api/:id/...
+function getMarchandAutorise(req, res) {
+  if (!verifierPortee(req, res, req.params.id)) return null;
+  return getMarchandOu404(req, res);
+}
+
+function genererMotDePasseAleatoire() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"; // sans caracteres ambigus
+  let mdp = "";
+  for (let i = 0; i < 10; i++) mdp += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return mdp;
 }
 
 // --- Verification simple pour savoir si le serveur tourne (utile pour Render + pour vous) ---
@@ -153,22 +201,33 @@ app.get("/admin", protegerAcces, (req, res) => {
 
 // ---------------- API d'administration (protegee) ----------------
 
+// Le super-administrateur voit tous les marchands ; un marchand ne voit que lui-meme (l'interface
+// n'affiche donc jamais a un marchand la liste des autres marchands, meme leur nom).
 app.get("/api/marchands", protegerAcces, (req, res) => {
-  res.json(Object.values(engines).map((e) => ({ id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type })));
+  const tous = Object.values(engines).map((e) => ({
+    id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null
+  }));
+  if (req.auth.role === "superadmin") return res.json(tous);
+  res.json(tous.filter((m) => m.id === req.auth.merchantId));
 });
 
 // Ajoute un nouveau marchand (onboarding manuel : vous configurez son numero WhatsApp cote Meta a part,
 // puis l'enregistrez ici avec le meme phone_number_id pour que le webhook sache lui router ses messages).
+// Reserve au super-administrateur. adminUser/adminPassword sont les identifiants initiaux de connexion du
+// marchand a /admin ; le mot de passe est hashe avant stockage (le marchand pourra le changer lui-meme
+// ensuite depuis l'onglet "Mon compte").
 app.post("/api/marchands", protegerAcces, async (req, res) => {
-  const { id, nom, type, phoneNumberId } = req.body || {};
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const { id, nom, type, phoneNumberId, adminUser, adminPassword } = req.body || {};
   if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
   if (type !== "catalogue" && type !== "service") return res.status(400).json({ erreur: "type doit être 'catalogue' ou 'service'." });
   if (engines[id]) return res.status(409).json({ erreur: "Un marchand avec cet id existe déjà." });
+  if (!adminUser || !adminPassword) return res.status(400).json({ erreur: "adminUser et adminPassword sont requis pour créer les identifiants de connexion du marchand." });
   const merchant = {
     id, nom, type,
     phoneNumberId: phoneNumberId || null,
-    adminUser: process.env.ADMIN_USER || "admin",
-    adminPassword: process.env.ADMIN_PASSWORD || null
+    adminUser,
+    adminPassword: bcrypt.hashSync(String(adminPassword), 10)
   };
   await db.addMerchant(merchant);
   const engine = type === "service" ? createServiceEngine(id) : createCatalogEngine(id);
@@ -176,19 +235,70 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
   engines[id] = { merchant, engine };
   if (merchant.phoneNumberId) phoneNumberIndex[merchant.phoneNumberId] = id;
   console.log("Nouveau marchand ajoute via l'API : " + id + " (" + type + ")");
-  res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type });
+  res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type, adminUser: merchant.adminUser });
+});
+
+// Qui suis-je ? Utilise par l'interface d'administration pour savoir si l'utilisateur connecte est le
+// super-administrateur (acces a tout, gestion des marchands et de leurs identifiants) ou un marchand
+// (limite a ses propres donnees, peut seulement changer son propre mot de passe).
+app.get("/api/moi", protegerAcces, (req, res) => {
+  res.json({ role: req.auth.role, merchantId: req.auth.merchantId, adminUser: req.auth.adminUser });
+});
+
+// Creation, modification ou reinitialisation des identifiants de connexion d'un marchand.
+//   - Le super-administrateur peut le faire pour N'IMPORTE QUEL marchand (changer son nom d'utilisateur,
+//     lui definir un nouveau mot de passe, ou lui en generer un aleatoirement) — utilise notamment quand un
+//     marchand oublie son mot de passe et vous contacte pour le faire reinitialiser.
+//   - Un marchand peut le faire UNIQUEMENT pour lui-meme, et UNIQUEMENT pour changer son propre mot de
+//     passe (pas son nom d'utilisateur).
+app.put("/api/:id/identifiants", protegerAcces, async (req, res) => {
+  const id = req.params.id;
+  if (!verifierPortee(req, res, id)) return;
+  const entry = engines[id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + id });
+
+  const { adminUser, newPassword, genererMotDePasse } = req.body || {};
+
+  if (req.auth.role !== "superadmin" && adminUser !== undefined) {
+    return res.status(403).json({ erreur: "Seul le super-administrateur peut changer le nom d'utilisateur." });
+  }
+
+  const patch = {};
+  let motDePasseEnClair = null;
+
+  if (adminUser) patch.adminUser = String(adminUser);
+
+  if (genererMotDePasse) {
+    motDePasseEnClair = genererMotDePasseAleatoire();
+    patch.adminPassword = bcrypt.hashSync(motDePasseEnClair, 10);
+  } else if (newPassword) {
+    if (String(newPassword).length < 6) return res.status(400).json({ erreur: "Le mot de passe doit contenir au moins 6 caractères." });
+    motDePasseEnClair = String(newPassword);
+    patch.adminPassword = bcrypt.hashSync(motDePasseEnClair, 10);
+  }
+
+  if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
+
+  const maj = await db.updateMerchantCreds(id, patch);
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+
+  entry.merchant.adminUser = maj.adminUser;
+  entry.merchant.adminPassword = maj.adminPassword;
+
+  console.log("Identifiants mis a jour pour le marchand '" + id + "' par " + req.auth.role + " (" + req.auth.adminUser + ").");
+  res.json({ id, adminUser: maj.adminUser, nouveauMotDePasse: motDePasseEnClair || undefined });
 });
 
 // -- Marchand catalogue --
 
 app.get("/api/:id/catalogue", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getCatalog());
 });
 
 app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const nouveau = entry.engine.updateCatalog(req.body);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
@@ -196,13 +306,13 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
 });
 
 app.get("/api/:id/commandes", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getOrders());
 });
 
 app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { statut, raisonAnnulation } = req.body || {};
   const order = entry.engine.updateOrderStatus(req.params.orderId, statut, raisonAnnulation);
@@ -213,13 +323,13 @@ app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
 // -- Marchand service (prise de rendez-vous) --
 
 app.get("/api/:id/services", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   res.json(entry.engine.getServices());
 });
 
 app.put("/api/:id/services", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   const nouveau = entry.engine.updateServices(req.body);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
@@ -227,13 +337,13 @@ app.put("/api/:id/services", protegerAcces, (req, res) => {
 });
 
 app.get("/api/:id/rendezvous", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   res.json(entry.engine.getAppointments());
 });
 
 app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   const { statut, raisonAnnulation } = req.body || {};
   const appt = entry.engine.updateAppointmentStatus(req.params.apptId, statut, raisonAnnulation);
@@ -244,12 +354,12 @@ app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
 // -- Parametres : commun aux deux types (autoConfirmMessage, + horaires/dureeCreneauMinutes pour service) --
 
 app.get("/api/:id/parametres", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   res.json(entry.engine.getSettings());
 });
 
 app.put("/api/:id/parametres", protegerAcces, (req, res) => {
-  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
   res.json(entry.engine.updateSettings(req.body || {}));
 });
 

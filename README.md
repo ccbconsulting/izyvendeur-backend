@@ -98,12 +98,14 @@ l'installation existante continue de fonctionner à l'identique.
 1. Côté Meta : ajoutez le numéro WhatsApp du marchand à votre app (WhatsApp Manager > Numéros de
    téléphone > Ajouter), notez son **Phone Number ID**, et abonnez votre app aux événements de son WABA
    si nécessaire (comme pour votre propre numéro).
-2. Ouvrez `/admin` (protégé par `ADMIN_USER`/`ADMIN_PASSWORD`) et cliquez **"+ Nouveau marchand"** :
-   indiquez un identifiant technique (ex: `don-william`), un nom, le type (`catalogue` ou `service`), et
-   collez le Phone Number ID noté à l'étape 1.
-3. Le marchand apparaît aussitôt dans le sélecteur en haut de `/admin` — vous pouvez y configurer son
-   catalogue/stock (ou ses services et ses horaires), et il commence à recevoir de vrais messages
-   WhatsApp sur son propre numéro immédiatement.
+2. Connectez-vous sur `/admin` avec vos identifiants de super-administrateur (`ADMIN_USER`/
+   `ADMIN_PASSWORD`) et cliquez **"+ Nouveau marchand"** : indiquez un identifiant technique (ex:
+   `don-william`), un nom, le type (`catalogue` ou `service`), le Phone Number ID noté à l'étape 1, et un
+   nom d'utilisateur + mot de passe **propres à ce marchand** — ce sont ces identifiants (pas les vôtres)
+   qu'il utilisera pour se connecter à `/admin` et gérer lui-même ses données.
+3. Le marchand apparaît aussitôt dans le sélecteur en haut de `/admin` (visible par vous uniquement,
+   voir section suivante) — vous pouvez y configurer son catalogue/stock (ou ses services et ses
+   horaires), et il commence à recevoir de vrais messages WhatsApp sur son propre numéro immédiatement.
 
 (Cette étape reste manuelle pour l'instant — l'onboarding en libre-service, où le marchand connecterait
 lui-même son numéro via l'"Embedded Signup" de Meta sans intervention de votre part, est un chantier
@@ -156,8 +158,20 @@ pour cette étape.
 
 ## Interface d'administration (`/admin`)
 
-Remplace l'ancienne page `/commandes` en lecture seule (qui redirige maintenant vers `/admin`). Protégée
-par `ADMIN_USER`/`ADMIN_PASSWORD`, elle permet, marchand par marchand :
+Remplace l'ancienne page `/commandes` en lecture seule (qui redirige maintenant vers `/admin`). Deux
+niveaux d'accès, selon les identifiants utilisés pour se connecter :
+
+- **Super-administrateur** (vous, via `ADMIN_USER`/`ADMIN_PASSWORD`) : voit tous les marchands dans un
+  sélecteur en haut de la page, peut en créer de nouveaux, et gère les identifiants de connexion de
+  chacun depuis l'onglet **Mon compte** — changer le nom d'utilisateur, définir un nouveau mot de passe,
+  ou en générer un aléatoirement (typiquement quand un marchand vous contacte parce qu'il a oublié le
+  sien).
+- **Marchand** (via le nom d'utilisateur/mot de passe propres à ce marchand, créés par vous à son
+  onboarding) : ne voit que ses propres données — aucune trace des autres marchands, même leur nom.
+  Depuis l'onglet **Mon compte**, il peut changer lui-même son mot de passe (mais pas son nom
+  d'utilisateur, réservé au super-administrateur).
+
+Selon le type du marchand consulté, l'interface permet :
 
 - **Catalogue & stock** (marchands catalogue) : voir et modifier articles, variantes, prix, stock réel
   et seuil d'alerte (surligné quand le stock est sous le seuil), ajouter/supprimer des articles ou des
@@ -169,14 +183,19 @@ par `ADMIN_USER`/`ADMIN_PASSWORD`, elle permet, marchand par marchand :
   (Nouvelle/Confirmé/Honoré/Absent/Annulé), avec raison d'annulation.
 - **Paramètres** : message de confirmation automatique (les deux types), et pour un marchand service,
   en plus la durée des créneaux et les horaires d'ouverture par jour de la semaine.
+- **Mon compte** : gestion des identifiants de connexion (voir ci-dessus).
 
 ## Protections contre les abus
 
 Comme n'importe quel numéro WhatsApp peut écrire au bot, quelques protections évitent qu'une personne
 mal intentionnée puisse s'en servir pour nuire au service ou à vos clients :
 
-- **`/admin` et toute l'API protégées par mot de passe** (`ADMIN_USER` / `ADMIN_PASSWORD`) car elles
-  affichent les téléphones, adresses et noms de vos clients.
+- **`/admin` et toute l'API protégées par mot de passe**, avec un accès strictement limité à ses propres
+  données pour chaque marchand (voir section précédente) — car elles affichent les téléphones, adresses
+  et noms de ses clients.
+- **Mots de passe des marchands stockés hashés** (bcrypt) en base, jamais en clair — seul le mot de passe
+  du super-administrateur reste une variable d'environnement (récupérable directement depuis Render en
+  cas d'oubli, sans dépendre d'une fonctionnalité de récupération dans l'application).
 - **Tout texte tapé par un client est affiché de façon sûre** (pas d'insertion HTML brute), pour empêcher
   qu'une "adresse" ou un "nom" contenant du code puisse s'exécuter dans votre navigateur.
 - **Un même numéro WhatsApp ne peut pas créer plus de 3 commandes (ou rendez-vous) non confirmé(e)s en 2
@@ -193,7 +212,8 @@ mal intentionnée puisse s'en servir pour nuire au service ou à vos clients :
 
 - **Onboarding en libre-service** : construire un flux "Embedded Signup" pour que chaque nouveau marchand
   connecte lui-même son numéro WhatsApp, sans que vous ayez à l'ajouter manuellement depuis `/admin`.
-- **Comptes marchands séparés** : aujourd'hui, un seul couple `ADMIN_USER`/`ADMIN_PASSWORD` protège tous
-  les marchands (vous êtes le seul opérateur) — à terme, chaque marchand pourrait avoir son propre accès,
-  limité à ses propres données (le registre stocke déjà un identifiant/mot de passe par marchand, prêt
-  pour cette évolution).
+- **Récupération de mot de passe par email** : aujourd'hui, un marchand qui oublie son mot de passe vous
+  contacte et vous le réinitialisez depuis `/admin` (onglet Mon compte du marchand concerné) — un lien de
+  réinitialisation envoyé automatiquement par email est envisageable plus tard, mais nécessite de
+  connecter un service d'envoi d'email (ex: Resend, SendGrid) et de stocker l'adresse email de chaque
+  marchand.

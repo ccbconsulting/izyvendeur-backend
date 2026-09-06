@@ -126,6 +126,35 @@ async function addMerchant(m) {
   return m;
 }
 
+// Met a jour les identifiants (nom d'utilisateur et/ou mot de passe deja hashe) d'UN marchand existant,
+// sans toucher a ses autres champs (nom, type, phone_number_id). Utilise pour : la creation d'un mot de
+// passe initial par le super-administrateur, la reinitialisation d'un mot de passe oublie, et le
+// changement de mot de passe par le marchand lui-meme. Retourne le marchand mis a jour, ou null s'il
+// n'existe pas.
+async function updateMerchantCreds(id, patch) {
+  if (pool) {
+    await ensureMerchantsTable();
+    const res = await pool.query(
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password FROM merchants WHERE id = $1",
+      [id]
+    );
+    if (!res.rows.length) return null;
+    const m = rowToMerchant(res.rows[0]);
+    if (patch.adminUser !== undefined) m.adminUser = patch.adminUser;
+    if (patch.adminPassword !== undefined) m.adminPassword = patch.adminPassword;
+    await insertMerchant(m);
+    return m;
+  }
+
+  const liste = fs.existsSync(MERCHANTS_FILE) ? JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8")) : [];
+  const idx = liste.findIndex((x) => x.id === id);
+  if (idx === -1) return null;
+  if (patch.adminUser !== undefined) liste[idx].adminUser = patch.adminUser;
+  if (patch.adminPassword !== undefined) liste[idx].adminPassword = patch.adminPassword;
+  fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
+  return liste[idx];
+}
+
 // ---------------- Etat d'un marchand (catalogue+commandes, ou services+rendez-vous) ----------------
 
 async function ensureAppStateTable() {
@@ -188,4 +217,11 @@ async function persistMerchantState(merchantKey, state) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(toutEtats, null, 2));
 }
 
-module.exports = { initRegistry, addMerchant, initMerchantState, persistMerchantState, usingDatabase: !!pool };
+module.exports = {
+  initRegistry,
+  addMerchant,
+  updateMerchantCreds,
+  initMerchantState,
+  persistMerchantState,
+  usingDatabase: !!pool
+};
