@@ -54,6 +54,12 @@
   .panneau-analyse div { margin-bottom: 4px; }
   .controles-rapport { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
   .controles-rapport > div { display: flex; flex-direction: column; }
+  .bloc-photos { margin: 10px 0; }
+  .miniatures-photos { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .miniature { position: relative; width: 80px; height: 80px; }
+  .miniature img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
+  .miniature button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; line-height: 18px; border-radius: 50%; font-size: 0.85em; }
+  .bulle.bot img { max-width: 220px; border-radius: 8px; display: block; margin-bottom: 6px; }
 </style>
 </head>
 <body>
@@ -165,6 +171,23 @@ async function renderCatalogue() {
   const catalogue = await api("/api/" + marchandActif.id + "/catalogue");
   let local = JSON.parse(JSON.stringify(catalogue));
 
+  // La photo, elle, s'enregistre immediatement (upload direct vers le serveur), contrairement au reste
+  // du catalogue qui reste local tant que "Enregistrer le catalogue" n'est pas cliqué — d'où la nécessité
+  // que l'article existe déjà côté serveur (dejaEnregistre) avant de pouvoir lui ajouter une photo.
+  function rendreBlocPhotos(p, pi, dejaEnregistre) {
+    if (!dejaEnregistre) {
+      return "<p class='raison'>Enregistrez d'abord le catalogue pour pouvoir ajouter des photos à ce nouvel article.</p>";
+    }
+    const photos = p.photos || [];
+    return "<div class='bloc-photos'>" +
+      (photos.length ? "<div class='miniatures-photos'>" + photos.map((url) =>
+        "<div class='miniature'><img src=\"" + esc(url) + "\" alt='' /><button data-suppr-photo='" + pi + ":" + esc(url) + "' class='danger'>×</button></div>"
+      ).join("") + "</div>" : "<p class='raison'>Aucune photo pour cet article — le bot n'en enverra pas tant qu'aucune n'est ajoutée.</p>") +
+      "<input type='file' accept='image/png,image/jpeg,image/webp' data-fichier-photo='" + pi + "' /> " +
+      "<button data-ajouter-photo='" + pi + "'>+ Ajouter une photo</button>" +
+      "</div>";
+  }
+
   function redraw() {
     zone.innerHTML =
       "<h2>Catalogue &amp; stock</h2>" +
@@ -175,6 +198,7 @@ async function renderCatalogue() {
             "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder='Catégorie' />" +
             "<button data-suppr-produit='" + pi + "' class='danger'>Supprimer l'article</button>" +
           "</div>" +
+          rendreBlocPhotos(p, pi, catalogue.some((c) => c.id === p.id)) +
           "<table class='table-variantes'><tr><th>Couleur</th><th>Taille</th><th>Prix (FCFA)</th><th>Stock réel</th><th>Stock virtuel</th><th>Seuil alerte</th><th></th></tr>" +
           p.variantes.map((v, vi) =>
             "<tr>" +
@@ -225,6 +249,34 @@ async function renderCatalogue() {
       local.push({ id: "p" + Date.now(), nom: "Nouvel article", cat: "", variantes: [{ couleur: "", taille: "", prix: 0, stockReel: 0, seuilAlerte: 0 }] });
       redraw();
     };
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-ajouter-photo]"), (btn) => {
+      btn.onclick = async () => {
+        const pi = Number(btn.dataset.ajouterPhoto);
+        const fichierInput = zone.querySelector("[data-fichier-photo='" + pi + "']");
+        const fichier = fichierInput.files[0];
+        if (!fichier) { alert("Choisissez d'abord une image."); return; }
+        const donnees = new FormData();
+        donnees.append("photo", fichier);
+        btn.disabled = true;
+        try {
+          await fetch("/api/" + marchandActif.id + "/catalogue/" + encodeURIComponent(local[pi].id) + "/photos", { method: "POST", body: donnees })
+            .then(async (r) => { if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erreur || r.statusText); } });
+          renderCatalogue();
+        } catch (e) { alert("Erreur : " + e.message); btn.disabled = false; }
+      };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr-photo]"), (btn) => {
+      btn.onclick = async () => {
+        const idx = btn.dataset.supprPhoto.indexOf(":");
+        const pi = Number(btn.dataset.supprPhoto.slice(0, idx));
+        const url = btn.dataset.supprPhoto.slice(idx + 1);
+        if (!confirm("Supprimer cette photo ?")) return;
+        try {
+          await api("/api/" + marchandActif.id + "/catalogue/" + encodeURIComponent(local[pi].id) + "/photos", { method: "DELETE", body: JSON.stringify({ url }) });
+          renderCatalogue();
+        } catch (e) { alert("Erreur : " + e.message); }
+      };
+    });
     document.getElementById("btnSauverCatalogue").onclick = async () => {
       try {
         await api("/api/" + marchandActif.id + "/catalogue", { method: "PUT", body: JSON.stringify(local) });
@@ -558,7 +610,12 @@ async function renderSimulateur() {
       "<h2>Simulateur WhatsApp</h2>" +
       "<p class='raison'>Testez le bot ici comme si vous étiez un client. Ce numéro de test est totalement séparé de vos vraies commandes/rendez-vous et de votre vrai stock : rien de ce qui se passe ici n'affecte vos clients réels.</p>" +
       "<div id='chatFenetre' class='chat-fenetre'>" +
-        (historique.length ? historique.map((m) => "<div class='bulle " + (m.de === "client" ? "client" : "bot") + "'>" + esc(m.texte) + "</div>").join("") : "<p class='raison'>Envoyez un premier message pour démarrer la simulation…</p>") +
+        (historique.length ? historique.map((m) =>
+          "<div class='bulle " + (m.de === "client" ? "client" : "bot") + "'>" +
+            (m.traceAssociee && m.traceAssociee.photo ? "<img src=\"" + esc(m.traceAssociee.photo) + "\" alt='Photo article' />" : "") +
+            esc(m.texte) +
+          "</div>"
+        ).join("") : "<p class='raison'>Envoyez un premier message pour démarrer la simulation…</p>") +
       "</div>" +
       "<div class='zone-saisie-chat'>" +
         "<input id='champMessageSimu' placeholder='Écrivez comme le ferait un client…' />" +
@@ -601,7 +658,8 @@ async function renderSimulateur() {
     const entites = Object.keys(trace.entites || {}).map((k) => "<div><strong>" + esc(k) + " :</strong> " + esc(trace.entites[k]) + "</div>").join("");
     return entites +
       (trace.verification ? "<div><strong>Vérification :</strong> " + esc(trace.verification) + "</div>" : "") +
-      "<div><strong>Action :</strong> " + esc(trace.action) + "</div>";
+      "<div><strong>Action :</strong> " + esc(trace.action) + "</div>" +
+      (trace.photo ? "<div><strong>Photo envoyée :</strong> oui (voir la bulle ci-dessus)</div>" : "");
   }
 
   dessiner();
