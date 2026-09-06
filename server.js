@@ -484,6 +484,71 @@ app.post("/api/:id/conversations/:telephone/repondre", protegerAcces, async (req
   res.json({ ok: true });
 });
 
+// -- Tableau de bord : statistiques resumees (commun aux deux types) --
+
+app.get("/api/:id/tableau-de-bord", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  res.json(entry.engine.getTableauDeBord());
+});
+
+// -- Simulateur WhatsApp : permet au marchand de tester le bot depuis l'interface admin,
+// sans jamais toucher aux vraies conversations/commandes/rendez-vous des clients (voir
+// PHONE_SIMULATEUR dans conversation.js / conversationService.js). --
+
+app.post("/api/:id/simulateur/message", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const { message } = req.body || {};
+  if (!message || !String(message).trim()) return res.status(400).json({ erreur: "message requis." });
+  res.json(entry.engine.handleMessageSimulateur(String(message)));
+});
+
+app.post("/api/:id/simulateur/reset", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  entry.engine.resetSimulateur();
+  res.json({ ok: true });
+});
+
+// -- Rapports et inventaire : reserves aux marchands de type catalogue --
+
+app.get("/api/:id/rapports/commandes", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const { periode, date, articleId } = req.query || {};
+  const dateReference = date ? new Date(String(date)) : new Date();
+  res.json(entry.engine.getRapportCommandes({
+    periode: periode ? String(periode) : "jour",
+    dateReference,
+    articleId: articleId ? String(articleId) : null,
+  }));
+});
+
+app.get("/api/:id/inventaire/actuel", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  res.json(entry.engine.getInventaireActuel());
+});
+
+app.get("/api/:id/inventaire/instantanes", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  res.json(entry.engine.listerInstantanesInventaire());
+});
+
+app.post("/api/:id/inventaire/instantanes", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const { nom } = req.body || {};
+  res.status(201).json(entry.engine.enregistrerInstantaneInventaire(nom && String(nom).trim() ? String(nom).trim() : "Instantané"));
+});
+
+app.delete("/api/:id/inventaire/instantanes/:snapshotId", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const ok = entry.engine.supprimerInstantaneInventaire(req.params.snapshotId);
+  if (!ok) return res.status(404).json({ erreur: "Instantané introuvable." });
+  res.json({ ok: true });
+});
+
 // ---------------- Webhook WhatsApp ----------------
 
 // --- ETAPE 1 : Verification du webhook par Meta ---

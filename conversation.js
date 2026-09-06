@@ -15,6 +15,7 @@ const sh = require("./shared");
 const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
 const RESERVING_STATUSES = ["Confirmée", "Expédiée"];
+const STATUT_LIST = ["Nouvelle", "Confirmée", "Expédiée", "Livrée", "Annulée"];
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "2", "3"];
 
 // Garde-fou anti-inondation : au-dela de ce nombre de commandes "Nouvelle" (jamais confirmees) creees
@@ -35,9 +36,16 @@ function seedState() {
     catalog: JSON.parse(JSON.stringify(SEED_CATALOG)),
     orders: [],
     nextId: 1,
-    settings: { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE }
+    settings: { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE },
+    inventorySnapshots: [] // instantanés d'inventaire enregistrés depuis l'onglet Rapports (voir plus bas)
   };
 }
+
+// Numero de telephone reserve, utilise UNIQUEMENT par le Simulateur WhatsApp de /admin (jamais un vrai
+// client). Les commandes creees sous ce numero sont marquees source:"simulateur" et exclues partout
+// ailleurs (stock virtuel reel, listes/rapports de commandes) pour qu'un test depuis /admin ne puisse
+// JAMAIS affecter ce que voient les vrais clients ni polluer les vraies statistiques du marchand.
+const PHONE_SIMULATEUR = "SIMULATEUR";
 
 // `options.envoyer(destinataire, texte)` envoie un message WhatsApp a N'IMPORTE QUEL numero (utilise pour
 // les reponses manuelles du marchand a un client mis en pause) ; `options.notifierMarchand(typeAlerte,
@@ -58,6 +66,7 @@ function createCatalogEngine(merchantKey, options) {
   async function init() {
     state = await db.initMerchantState(merchantKey, seedState);
     if (!state.settings) state.settings = { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE };
+    if (!state.inventorySnapshots) state.inventorySnapshots = [];
   }
 
   function saveState() {
@@ -140,6 +149,7 @@ function createCatalogEngine(merchantKey, options) {
   function reservedQty(productId, couleur, taille) {
     let sum = 0;
     state.orders.forEach((o) => {
+      if (o.source === "simulateur") return; // jamais d'impact du Simulateur sur le stock reel
       if (RESERVING_STATUSES.indexOf(o.statut) === -1) return;
       (o.items || []).forEach((it) => {
         if (it.productId === productId && it.couleur === couleur && it.taille === taille) sum += it.quantite || 1;
@@ -224,7 +234,7 @@ function createCatalogEngine(merchantKey, options) {
       adresse: sess.adresse,
       statut: "Nouvelle",
       raisonAnnulation: null,
-      source: "whatsapp",
+      source: sess.fromPhone === PHONE_SIMULATEUR ? "simulateur" : "whatsapp",
       fromWhatsapp: sess.fromPhone || null
     };
     state.orders.push(order);
@@ -260,7 +270,7 @@ function createCatalogEngine(merchantKey, options) {
         session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
         session.stage = "idle";
         trace.action = "Client change d'article pendant la demande de quantité — nouvelle sélection prise en compte";
-        logTrace(trace);
+        logTrace(session, trace);
         return processMessage(session, text);
       }
       const product0 = state.catalog.filter((p) => p.id === session.productId)[0];
@@ -273,23 +283,23 @@ function createCatalogEngine(merchantKey, options) {
           session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
           session.stage = "idle";
           trace.action = "Client abandonne cet article pendant la demande de quantité — sélection effacée";
-          logTrace(trace);
+          logTrace(session, trace);
           return "Pas de souci, on laisse cet article de côté. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
         }
         trace.action = "Quantité non comprise — nouvelle demande";
-        logTrace(trace);
+        logTrace(session, trace);
         return "Merci d'indiquer un nombre de pièces (ex : 1, 2, 3…).";
       }
       if (qty > virt0) {
         trace.action = "Quantité demandée supérieure au stock virtuel disponible";
-        logTrace(trace);
+        logTrace(session, trace);
         return "Il ne me reste que " + virt0 + " pièce(s) disponible(s) pour " + product0.nom + " " + variant0.couleur + " " + variant0.taille + ". Combien en voulez-vous (max " + virt0 + ") ?";
       }
       session.cart.push({ productId: product0.id, produit: product0.nom, couleur: variant0.couleur, taille: variant0.taille, quantite: qty, prixUnitaire: variant0.prix });
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
       session.stage = "awaiting_more_items";
       trace.action = "Article ajouté au panier — proposition d'ajouter un autre article";
-      logTrace(trace);
+      logTrace(session, trace);
       return piocheParmi(OUVERTURES_AJOUT) + " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article à votre commande ? (oui / non)";
     }
 
@@ -298,19 +308,19 @@ function createCatalogEngine(merchantKey, options) {
       if (parseAffirmative(text)) {
         session.stage = "idle";
         trace.action = "Client souhaite ajouter un autre article au panier";
-        logTrace(trace);
+        logTrace(session, trace);
         return "Très bien, quel autre article souhaitez-vous ?";
       }
       const directProduct = !parseNegative(text) ? matchProduct(text) : null;
       if (directProduct) {
         session.stage = "idle";
         trace.action = "Client a nommé directement un nouvel article plutôt que de répondre oui/non — traitement immédiat";
-        logTrace(trace);
+        logTrace(session, trace);
         return processMessage(session, text);
       }
       session.stage = "awaiting_delivery";
       trace.action = "Panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
-      logTrace(trace);
+      logTrace(session, trace);
       return messageRecapPanier(session.cart);
     }
 
@@ -323,7 +333,7 @@ function createCatalogEngine(merchantKey, options) {
           session.stage = "idle";
           trace.entites = { "Réponse client": text };
           trace.action = "Client tente d'ajouter un article pendant la collecte des infos de livraison — traitement immédiat";
-          logTrace(trace);
+          logTrace(session, trace);
           return processMessage(session, text);
         }
       }
@@ -340,21 +350,21 @@ function createCatalogEngine(merchantKey, options) {
         }).length;
         if (pendingCount >= MAX_PENDING_ORDERS_PER_PHONE) {
           trace.action = "Trop de commandes non confirmées en attente pour ce numéro (" + pendingCount + ") — nouvelle commande refusée";
-          logTrace(trace);
+          logTrace(session, trace);
           return "Vous avez déjà " + pendingCount + " commande(s) en attente de confirmation. Merci de confirmer ou d'annuler l'une d'entre elles avant d'en passer une nouvelle — notre équipe reste disponible si besoin.";
         }
         const order = createOrderFromCart(session);
         session.pendingOrderId = order.id;
         session.stage = "awaiting_order_confirmation";
         trace.action = "Commande " + orderRef(order) + " créée (statut Nouvelle) — récapitulatif envoyé, confirmation demandée";
-        logTrace(trace);
+        logTrace(session, trace);
         return "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\nLivraison : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)";
       }
       const missing = [];
       if (!session.telephone) missing.push("numéro de téléphone");
       if (!session.adresse) missing.push("adresse de livraison");
       trace.action = "Information manquante demandée : " + missing.join(" et ");
-      logTrace(trace);
+      logTrace(session, trace);
       return "Presque ! Il me manque encore : " + missing.join(" et ") + ".";
     }
 
@@ -376,7 +386,7 @@ function createCatalogEngine(merchantKey, options) {
         );
         const reply = (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
         Object.assign(session, freshSession());
-        logTrace(trace);
+        logTrace(session, trace);
         return reply;
       }
 
@@ -384,19 +394,19 @@ function createCatalogEngine(merchantKey, options) {
         trace.action = "Client décline la confirmation automatique — commande " + orderRef(pendingOrder) + " reste en Nouvelle, à confirmer manuellement";
         const reply = "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.";
         Object.assign(session, freshSession());
-        logTrace(trace);
+        logTrace(session, trace);
         return reply;
       }
 
       if (pendingOrder) {
         trace.action = "Réponse ambiguë — nouvelle demande de confirmation claire pour " + orderRef(pendingOrder);
-        logTrace(trace);
+        logTrace(session, trace);
         return "Je n'ai pas bien compris. Confirmez-vous votre commande " + orderRef(pendingOrder) + " ? Répondez simplement par oui ou non — notre équipe reviendra vers vous pour toute autre question.";
       }
 
       const reply = "Très bien, votre commande reste enregistrée.";
       Object.assign(session, freshSession());
-      logTrace(trace);
+      logTrace(session, trace);
       return reply;
     }
 
@@ -410,11 +420,11 @@ function createCatalogEngine(merchantKey, options) {
       if (session.cart.length > 0) {
         session.stage = "awaiting_delivery";
         trace.action = "Client abandonne cette sélection en cours — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
-        logTrace(trace);
+        logTrace(session, trace);
         return messageRecapPanier(session.cart);
       }
       trace.action = "Client abandonne cette sélection en cours — sélection effacée";
-      logTrace(trace);
+      logTrace(session, trace);
       return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
     }
 
@@ -432,13 +442,13 @@ function createCatalogEngine(merchantKey, options) {
     if (!produitId && session.cart.length > 0 && parseNegative(text)) {
       session.stage = "awaiting_delivery";
       trace.action = "Client ne veut rien ajouter de plus — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
-      logTrace(trace);
+      logTrace(session, trace);
       return messageRecapPanier(session.cart);
     }
 
     if (!produitId) {
       trace.action = "Précision demandée : quel article ?";
-      logTrace(trace);
+      logTrace(session, trace);
       return "Bonjour ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
     }
 
@@ -447,7 +457,7 @@ function createCatalogEngine(merchantKey, options) {
 
     if (!couleur) {
       trace.action = "Précision demandée : quelle couleur ?";
-      logTrace(trace);
+      logTrace(session, trace);
       const ouverture = produitReconnu ? piocheParmi(OUVERTURES_PRODUIT) + " " : "";
       return ouverture + product.nom + " — quelle couleur souhaitez-vous ? Disponible en : " + availableColors.join(", ") + ".";
     }
@@ -461,7 +471,7 @@ function createCatalogEngine(merchantKey, options) {
     }
     if (!taille) {
       trace.action = "Précision demandée : quelle taille ?";
-      logTrace(trace);
+      logTrace(session, trace);
       const ouverture = couleurReconnue ? piocheParmi(OUVERTURES_COULEUR) + " " : "";
       return ouverture + "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".";
     }
@@ -470,7 +480,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!variant) {
       trace.action = "Combinaison introuvable — options proposées";
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
-      logTrace(trace);
+      logTrace(session, trace);
       return "Désolée, je n'ai pas cette combinaison pour " + product.nom + ". Options disponibles : " + product.variantes.map((v) => v.couleur + " " + v.taille).join(", ") + ".";
     }
 
@@ -481,7 +491,7 @@ function createCatalogEngine(merchantKey, options) {
       const alternatives = product.variantes.filter((v) => virtualStock(product.id, v) > 0);
       trace.action = "Rupture détectée — alternatives proposées";
       session.couleur = null; session.taille = null;
-      logTrace(trace);
+      logTrace(session, trace);
       if (alternatives.length) {
         return "Désolée, " + product.nom + " " + variant.couleur + " " + variant.taille + " est en rupture 😕. Il me reste : " + alternatives.map((v) => v.couleur + " " + v.taille + " (" + virtualStock(product.id, v) + ")").join(", ") + ". Lequel voulez-vous ?";
       }
@@ -490,11 +500,14 @@ function createCatalogEngine(merchantKey, options) {
 
     trace.action = "Article disponible — quantité demandée";
     session.stage = "awaiting_quantity";
-    logTrace(trace);
+    logTrace(session, trace);
     return piocheParmi(OUVERTURES_DISPO) + " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?";
   }
 
-  function logTrace(trace) {
+  // Enregistre la trace ET la garde sur la session (utilise par le Simulateur de /admin pour afficher le
+  // panneau d'analyse en direct — voir handleMessageSimulateur ci-dessous).
+  function logTrace(session, trace) {
+    if (session) session.derniereTrace = trace;
     console.log("[" + merchantKey + "][conversation] « " + trace.message + " » -> " + JSON.stringify(trace.entites) + (trace.verification ? " | " + trace.verification : "") + " => " + trace.action);
   }
 
@@ -535,8 +548,185 @@ function createCatalogEngine(merchantKey, options) {
     return true;
   }
 
+  // Ne renvoie JAMAIS les commandes creees par le Simulateur (source:"simulateur") — invisibles dans la
+  // vraie liste de commandes du marchand et exclues de toutes les statistiques (tableau de bord, rapports).
   function getOrders() {
-    return state ? state.orders : [];
+    if (!state) return [];
+    return state.orders.filter((o) => o.source !== "simulateur");
+  }
+
+  // ---------------- Simulateur WhatsApp (onglet /admin, teste le VRAI moteur sans toucher aux vraies
+  // donnees) ----------------
+
+  // Envoie un message "comme si" il venait d'un client, sous le numero reserve PHONE_SIMULATEUR. Retourne
+  // a la fois la reponse du bot et la derniere trace d'analyse (entites reconnues, verification de stock,
+  // action prise) pour que /admin affiche le panneau "Moteur IA — extraction en direct" du prototype.
+  function handleMessageSimulateur(text) {
+    const session = getSession(PHONE_SIMULATEUR);
+    session.derniereTrace = null;
+    const reponse = handleMessage(PHONE_SIMULATEUR, text);
+    return { reponse, trace: session.derniereTrace };
+  }
+
+  // Efface entierement la session de simulation ET toute commande/pause qu'elle aurait creee — pour
+  // repartir d'un etat neutre entre deux tests (bouton "Reinitialiser" de l'onglet Simulateur).
+  function resetSimulateur() {
+    delete sessions[PHONE_SIMULATEUR];
+    delete conversationsHumain[PHONE_SIMULATEUR];
+    if (state) {
+      const avant = state.orders.length;
+      state.orders = state.orders.filter((o) => o.fromWhatsapp !== PHONE_SIMULATEUR);
+      if (state.orders.length !== avant) saveState();
+    }
+  }
+
+  // ---------------- Tableau de bord ----------------
+
+  function sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function getTableauDeBord() {
+    if (!state) return null;
+    const toutes = getOrders();
+    const actives = toutes.filter((o) => o.statut !== "Annulée");
+    const aujourdhui = actives.filter((o) => sameDay(new Date(o.dateISO), new Date()));
+
+    const lowStock = [];
+    state.catalog.forEach((p) => {
+      p.variantes.forEach((v) => {
+        const virt = virtualStock(p.id, v);
+        const seuil = Number(v.seuilAlerte) || 0;
+        if (virt <= seuil) {
+          lowStock.push({ produit: p.nom, couleur: v.couleur, taille: v.taille, stockReel: v.stockReel, stockVirtuel: virt, seuil });
+        }
+      });
+    });
+    lowStock.sort((a, b) => a.stockVirtuel - b.stockVirtuel);
+
+    const sparkline7j = [];
+    for (let d = 6; d >= 0; d--) {
+      const jour = new Date();
+      jour.setDate(jour.getDate() - d);
+      sparkline7j.push(actives.filter((o) => sameDay(new Date(o.dateISO), jour)).length);
+    }
+
+    const quantites = {};
+    actives.forEach((o) => (o.items || []).forEach((it) => {
+      quantites[it.produit] = (quantites[it.produit] || 0) + (Number(it.quantite) || 0);
+    }));
+    const topProduits = Object.keys(quantites)
+      .map((nom) => ({ nom, quantite: quantites[nom] }))
+      .sort((a, b) => b.quantite - a.quantite)
+      .slice(0, 4);
+
+    return {
+      commandesAujourdhui: aujourdhui.length,
+      caJour: aujourdhui.reduce((s, o) => s + (o.prix || 0), 0),
+      alertesStock: lowStock.length,
+      ruptures: lowStock.filter((v) => v.stockVirtuel <= 0).length,
+      conversationsEnAttente: sh.listerConversationsEnAttente(conversationsHumain).length,
+      sparkline7j,
+      topProduits,
+      stockASurveiller: lowStock
+    };
+  }
+
+  // ---------------- Rapports (periode) ----------------
+
+  function debutPeriode(periode, dateReference) {
+    const d = new Date(dateReference);
+    if (periode === "semaine") {
+      const jourSemaine = (d.getDay() + 6) % 7; // 0 = lundi
+      d.setDate(d.getDate() - jourSemaine);
+    } else if (periode === "mois") {
+      d.setDate(1);
+    }
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  function finPeriode(periode, debut) {
+    const f = new Date(debut);
+    if (periode === "jour") f.setDate(f.getDate() + 1);
+    else if (periode === "semaine") f.setDate(f.getDate() + 7);
+    else f.setMonth(f.getMonth() + 1);
+    return f;
+  }
+
+  // Rapport agrege sur une periode (jour/semaine/mois autour de `dateReference`), filtrable par article.
+  function getRapportCommandes({ periode, dateReference, articleId }) {
+    const debut = debutPeriode(periode || "jour", dateReference || new Date().toISOString());
+    const fin = finPeriode(periode || "jour", debut);
+    const dansPeriode = getOrders().filter((o) => {
+      const d = new Date(o.dateISO);
+      return d >= debut && d < fin;
+    });
+    const filtrees = articleId && articleId !== "tous"
+      ? dansPeriode.filter((o) => (o.items || []).some((it) => it.productId === articleId))
+      : dansPeriode;
+
+    const parStatut = {};
+    STATUT_LIST.forEach((s) => (parStatut[s] = 0));
+    let ca = 0;
+    const quantitesParArticle = {};
+    filtrees.forEach((o) => {
+      parStatut[o.statut] = (parStatut[o.statut] || 0) + 1;
+      if (o.statut !== "Annulée") {
+        ca += o.prix || 0;
+        (o.items || []).forEach((it) => {
+          if (articleId && articleId !== "tous" && it.productId !== articleId) return;
+          quantitesParArticle[it.produit] = (quantitesParArticle[it.produit] || 0) + (Number(it.quantite) || 0);
+        });
+      }
+    });
+
+    return {
+      debutISO: debut.toISOString(),
+      finISO: fin.toISOString(),
+      nbCommandes: filtrees.length,
+      chiffreAffaires: ca,
+      parStatut,
+      parArticle: Object.keys(quantitesParArticle).map((nom) => ({ nom, quantite: quantitesParArticle[nom] })).sort((a, b) => b.quantite - a.quantite)
+    };
+  }
+
+  // ---------------- Inventaire : instantanes enregistres + comparaison ----------------
+
+  function getInventaireActuel() {
+    if (!state) return [];
+    const lignes = [];
+    state.catalog.forEach((p) => {
+      p.variantes.forEach((v) => {
+        lignes.push({ produit: p.nom, couleur: v.couleur, taille: v.taille, stockReel: v.stockReel, prix: v.prix });
+      });
+    });
+    return lignes;
+  }
+
+  function listerInstantanesInventaire() {
+    return state ? state.inventorySnapshots : [];
+  }
+
+  function enregistrerInstantaneInventaire(nom) {
+    if (!state) return null;
+    const snapshot = {
+      id: "inv" + Date.now(),
+      nom: nom && String(nom).trim() ? String(nom).trim() : "Instantané du " + new Date().toLocaleDateString("fr-FR"),
+      dateISO: new Date().toISOString(),
+      lignes: getInventaireActuel()
+    };
+    state.inventorySnapshots.push(snapshot);
+    saveState();
+    return snapshot;
+  }
+
+  function supprimerInstantaneInventaire(id) {
+    if (!state) return false;
+    const avant = state.inventorySnapshots.length;
+    state.inventorySnapshots = state.inventorySnapshots.filter((s) => s.id !== id);
+    if (state.inventorySnapshots.length !== avant) { saveState(); return true; }
+    return false;
   }
 
   // Renvoie le catalogue avec, pour chaque variante, un "stockVirtuel" calcule a la volee (stock reel
@@ -592,7 +782,15 @@ function createCatalogEngine(merchantKey, options) {
     updateCatalog,
     updateOrderStatus,
     getConversationsEnAttente,
-    repondreConversationHumain
+    repondreConversationHumain,
+    handleMessageSimulateur,
+    resetSimulateur,
+    getTableauDeBord,
+    getRapportCommandes,
+    listerInstantanesInventaire,
+    enregistrerInstantaneInventaire,
+    supprimerInstantaneInventaire,
+    getInventaireActuel
   };
 }
 

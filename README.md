@@ -173,6 +173,26 @@ niveaux d'accès, selon les identifiants utilisés pour se connecter :
 
 Selon le type du marchand consulté, l'interface permet :
 
+- **Tableau de bord** (les deux types, premier onglet affiché) : vue d'ensemble en un coup d'œil —
+  commandes (ou rendez-vous pris) du jour, chiffre d'affaires du jour, conversations en attente d'un
+  humain, activité des 7 derniers jours (mini-graphique), top 4 des articles ou services les plus
+  demandés, et en plus pour un marchand catalogue les articles sous le seuil d'alerte de stock, ou pour
+  un marchand service les rendez-vous des 7 prochains jours.
+- **Simulateur WhatsApp** (les deux types) : permet de tester le bot directement depuis `/admin`, comme
+  si on était un client, avec un vrai échange de messages à l'écran et un bouton "Réinitialiser". Ce
+  numéro de test est totalement séparé des vrais clients : rien de ce qui s'y passe ne crée de commande
+  ou de rendez-vous réel, n'affecte le stock réel, ni n'apparaît dans le tableau de bord ou les listes
+  Commandes/Rendez-vous. Pour un marchand catalogue, un panneau "Analyse du dernier message" affiche en
+  plus ce que le bot a compris (article/couleur/taille reconnus, vérification de stock, action prise) —
+  utile pour comprendre pourquoi le bot répond d'une certaine façon. Ce panneau d'analyse n'existe pas
+  encore côté marchand service (l'instrumentation du moteur de conversation service pour ce panneau est
+  un chantier futur, non bloquant : le simulateur y fonctionne normalement, juste sans le détail).
+- **Rapports** (marchands catalogue uniquement) : rapport de ventes sur une période (jour/semaine/mois,
+  avec une date de référence choisie), filtrable par article — nombre de commandes, chiffre d'affaires,
+  répartition par statut, quantités vendues par article — ainsi que des "instantanés d'inventaire" :
+  enregistrer une photo datée de tout le stock à un instant T (par exemple avant/après une livraison),
+  consultable ou supprimable plus tard. Pas encore d'équivalent pour les marchands service dans cette
+  version (à ajouter plus tard si le besoin se confirme : rapport de rendez-vous par période/service).
 - **Catalogue & stock** (marchands catalogue) : voir et modifier articles, variantes, prix, stock réel
   et seuil d'alerte (surligné quand le stock est sous le seuil), ajouter/supprimer des articles ou des
   variantes. Une colonne **Stock virtuel** (lecture seule) montre en plus le stock réel moins ce qui est

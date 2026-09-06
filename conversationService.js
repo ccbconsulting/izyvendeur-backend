@@ -45,7 +45,11 @@ function seedState() {
   };
 }
 
-// Voir conversation.js pour le detail de `options.envoyer`/`options.notifierMarchand(typeAlerte, params)`.
+// Voir conversation.js pour le detail de `options.envoyer`/`options.notifierMarchand(typeAlerte, params)`
+// et de PHONE_SIMULATEUR (numero reserve pour le Simulateur WhatsApp de /admin, jamais un vrai client —
+// les rendez-vous crees sous ce numero sont marques source:"simulateur" et exclus partout ailleurs).
+const PHONE_SIMULATEUR = "SIMULATEUR";
+
 function createServiceEngine(merchantKey, options) {
   let state = null;
   const sessions = {};
@@ -198,6 +202,7 @@ function createServiceEngine(merchantKey, options) {
   function isSlotFree(slotStart, dureeMinutes) {
     const slotEnd = slotStart.getTime() + dureeMinutes * 60000;
     return !state.appointments.some((a) => {
+      if (a.source === "simulateur") return false; // jamais d'impact du Simulateur sur les vrais creneaux
       if (RESERVING_STATUSES_RDV.indexOf(a.statut) === -1) return false;
       const aStart = new Date(a.dateISO).getTime();
       const aEnd = aStart + (a.dureeMinutes || dureeMinutes) * 60000;
@@ -275,7 +280,7 @@ function createServiceEngine(merchantKey, options) {
       telephone: session.fromPhone,
       statut: "Nouvelle",
       raisonAnnulation: null,
-      source: "whatsapp",
+      source: session.fromPhone === PHONE_SIMULATEUR ? "simulateur" : "whatsapp",
       fromWhatsapp: session.fromPhone || null
     };
     state.appointments.push(appt);
@@ -490,9 +495,79 @@ function createServiceEngine(merchantKey, options) {
     return true;
   }
 
-  function getAppointments() { return state ? state.appointments : []; }
+  // Ne renvoie jamais les rendez-vous crees par le Simulateur (source:"simulateur") — invisibles dans la
+  // vraie liste de rendez-vous du marchand et exclus du tableau de bord.
+  function getAppointments() {
+    if (!state) return [];
+    return state.appointments.filter((a) => a.source !== "simulateur");
+  }
   function getServices() { return state ? state.services : []; }
   function getSettings() { return state ? state.settings : {}; }
+
+  // ---------------- Simulateur WhatsApp (onglet /admin, teste le VRAI moteur sans toucher aux vraies
+  // donnees). Contrairement au moteur catalogue, ce moteur n'a pas (encore) de panneau de trace/analyse
+  // detaille : `trace` reste toujours null ici, /admin masque simplement ce panneau pour un marchand
+  // service.
+  function handleMessageSimulateur(text) {
+    const reponse = handleMessage(PHONE_SIMULATEUR, text);
+    return { reponse, trace: null };
+  }
+
+  function resetSimulateur() {
+    delete sessions[PHONE_SIMULATEUR];
+    delete conversationsHumain[PHONE_SIMULATEUR];
+    if (state) {
+      const avant = state.appointments.length;
+      state.appointments = state.appointments.filter((a) => a.fromWhatsapp !== PHONE_SIMULATEUR);
+      if (state.appointments.length !== avant) saveState();
+    }
+  }
+
+  // ---------------- Tableau de bord (adapte aux rendez-vous) ----------------
+
+  function sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function getTableauDeBord() {
+    if (!state) return null;
+    const toutes = getAppointments();
+    const actives = toutes.filter((a) => a.statut !== "Annulé");
+    const creesAujourdhui = actives.filter((a) => sameDay(new Date(a.createdAtISO || a.dateISO), new Date()));
+
+    const now = new Date();
+    const dans7Jours = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
+    const prochainsRdv = actives
+      .filter((a) => (a.statut === "Nouvelle" || a.statut === "Confirmé") && new Date(a.dateISO) >= now && new Date(a.dateISO) <= dans7Jours)
+      .sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO))
+      .slice(0, 10)
+      .map((a) => ({ reference: "RDV-" + String(a.id).padStart(4, "0"), service: a.service, clientNom: a.clientNom, dateISO: a.dateISO, statut: a.statut }));
+
+    const sparkline7j = [];
+    for (let d = 6; d >= 0; d--) {
+      const jour = new Date();
+      jour.setDate(jour.getDate() - d);
+      sparkline7j.push(actives.filter((a) => sameDay(new Date(a.createdAtISO || a.dateISO), jour)).length);
+    }
+
+    const compteurs = {};
+    actives.forEach((a) => { compteurs[a.service] = (compteurs[a.service] || 0) + 1; });
+    const topServices = Object.keys(compteurs)
+      .map((nom) => ({ nom, quantite: compteurs[nom] }))
+      .sort((a, b) => b.quantite - a.quantite)
+      .slice(0, 4);
+
+    return {
+      commandesAujourdhui: creesAujourdhui.length,
+      caJour: creesAujourdhui.reduce((s, a) => s + (a.prix || 0), 0),
+      alertesStock: 0,
+      ruptures: 0,
+      conversationsEnAttente: sh.listerConversationsEnAttente(conversationsHumain).length,
+      sparkline7j,
+      topProduits: topServices,
+      prochainsRendezVous: prochainsRdv
+    };
+  }
 
   function updateSettings(patch) {
     if (!state) return;
@@ -527,7 +602,10 @@ function createServiceEngine(merchantKey, options) {
     updateServices,
     updateAppointmentStatus,
     getConversationsEnAttente,
-    repondreConversationHumain
+    repondreConversationHumain,
+    handleMessageSimulateur,
+    resetSimulateur,
+    getTableauDeBord
   };
 }
 
