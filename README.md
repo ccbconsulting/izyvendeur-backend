@@ -1,7 +1,15 @@
-# IzyVendeur — Backend (preuve de concept)
+# IzyVendeur — Backend (multi-marchand)
 
-Petit serveur qui reçoit les messages WhatsApp (via le webhook Meta) et répond automatiquement.
-C'est la pièce qui manquait au prototype IzyVendeur pour recevoir de vrais messages clients.
+Serveur qui reçoit les messages WhatsApp (via le webhook Meta) et répond automatiquement, pour
+plusieurs marchands à la fois — chacun avec son propre numéro WhatsApp, son propre catalogue ou ses
+propres services, et ses propres commandes ou rendez-vous, sans jamais se mélanger.
+
+Deux types de marchand sont pris en charge :
+
+- **catalogue** : vente de produits par variantes (couleur/taille), panier, livraison — le module
+  d'origine (coiffeur → non, plutôt boutique mode/cosmétique/accessoires).
+- **service** : prise de rendez-vous (coiffeur, institut de beauté, clinique...) — le client nomme un
+  service, indique un jour/une heure, le bot vérifie la disponibilité et confirme.
 
 ## Déploiement sur Render.com (gratuit pour démarrer)
 
@@ -9,7 +17,7 @@ C'est la pièce qui manquait au prototype IzyVendeur pour recevoir de vrais mess
 
 1. Créez un compte sur [github.com](https://github.com) si vous n'en avez pas.
 2. Créez un nouveau dépôt (bouton vert "New").
-3. Uploadez-y tous les fichiers de ce dossier (`server.js`, `db.js`, `conversation.js`, `catalog.js`, `package.json`, `.gitignore`, `.env.example`, `README.md`) — utilisez le bouton "Add file > Upload files" sur la page du dépôt, glissez les fichiers, puis "Commit changes".
+3. Uploadez-y tous les fichiers de ce dossier (`server.js`, `db.js`, `conversation.js`, `conversationService.js`, `catalog.js`, `services.js`, `shared.js`, le dossier `public/` avec `admin.html` dedans, `package.json`, `.gitignore`, `.env.example`, `README.md`) — utilisez le bouton "Add file > Upload files" sur la page du dépôt, glissez les fichiers (et le dossier `public/`), puis "Commit changes".
    - Ne mettez jamais le fichier `.env` (avec vos vrais secrets) sur GitHub — le `.gitignore` fourni l'exclut automatiquement si vous utilisez git en ligne de commande.
 
 ### 2. Créer la base de données PostgreSQL (gratuite)
@@ -42,13 +50,13 @@ commandes de façon durable, même quand Render redéploie ou redémarre le serv
    - **Instance Type** : Free
 5. Dans la section **Environment Variables**, ajoutez ces 4 variables (les mêmes que dans `.env.example`) :
    - `VERIFY_TOKEN` → inventez une chaîne secrète (ex: `izyvendeur-2026-secret`), notez-la, vous en aurez besoin juste après.
-   - `WHATSAPP_TOKEN` → le token d'accès **permanent** généré via Utilisateur Système (Business Settings > System Users). Pas le token temporaire de 24h.
-   - `PHONE_NUMBER_ID` → le Phone Number ID de votre VRAI numéro (visible dans WhatsApp Manager > Numéros de téléphone > roue crantée, ou dans l'API Setup), pas celui du numéro de test.
+   - `WHATSAPP_TOKEN` → le token d'accès **permanent** généré via Utilisateur Système (Business Settings > System Users). Pas le token temporaire de 24h. Ce même token sert pour TOUS les marchands (il faut juste que le Système Utilisateur ait accès à chacun de leurs WABA).
+   - `PHONE_NUMBER_ID` → le Phone Number ID de VOTRE numéro à vous (le premier marchand, migré automatiquement en marchand `"default"` au premier démarrage) — visible dans WhatsApp Manager > Numéros de téléphone > roue crantée, ou dans l'API Setup. Les marchands suivants n'ont pas besoin de variable d'environnement : ils s'ajoutent depuis l'interface `/admin` (voir plus bas).
    - `DATABASE_URL` → collez l'"Internal Database URL" copiée à l'étape 2.
-   - `ADMIN_USER` → un nom d'utilisateur pour protéger la page `/commandes` (ex : `admin`).
-   - `ADMIN_PASSWORD` → un mot de passe de votre choix, connu de vous seul. **Sans cette variable, la
-     page `/commandes` refuse l'accès** (par sécurité — elle affiche les téléphones et adresses de vos
-     clients, elle ne doit pas être ouverte à n'importe qui tombant sur l'URL).
+   - `ADMIN_USER` → un nom d'utilisateur pour protéger l'interface d'administration `/admin` (ex : `admin`).
+   - `ADMIN_PASSWORD` → un mot de passe de votre choix, connu de vous seul. **Sans cette variable,
+     `/admin` et toute l'API refusent l'accès** (par sécurité — elles affichent les téléphones, adresses
+     et noms de vos clients, elles ne doivent pas être ouvertes à n'importe qui tombant sur l'URL).
 6. Cliquez "Create Web Service". Render va installer et démarrer le serveur (2-3 minutes).
 7. Une fois déployé, Render vous donne une adresse du type : `https://izyvendeur-backend.onrender.com`
 
@@ -73,10 +81,41 @@ Envoyez un message WhatsApp depuis votre téléphone personnel vers votre numér
 
 Le plan gratuit "s'endort" après 15 minutes sans trafic, et met quelques secondes à se réveiller au message suivant (léger délai la première fois). Pour un usage réel avec des clients, il faudra passer sur un plan payant (à partir de quelques dollars/mois) une fois qu'on avance vers la production — mais pour tester et développer, le gratuit suffit largement.
 
-## La logique de conversation (catalogue, stock, panier, commande)
+## Comment un message arrive au bon marchand
 
-Le serveur ne se contente plus d'une réponse générique : il reprend exactement la logique du prototype
-(fichier `conversation.js`, avec le catalogue de départ dans `catalog.js`).
+Meta indique toujours, dans chaque message reçu, le `phone_number_id` du numéro WhatsApp qui l'a reçu.
+Le serveur tient un registre des marchands (table `merchants` en base, ou `merchants.json` en local) qui
+associe chaque `phone_number_id` à un marchand et son type — c'est ce qui permet à un seul serveur de
+gérer plusieurs marchands, chacun avec son propre numéro, sans jamais mélanger leurs catalogues, leurs
+services, leurs commandes ou leurs rendez-vous.
+
+Au tout premier démarrage, si le registre est vide, un marchand `"default"` (type catalogue) est recréé
+automatiquement à partir des variables d'environnement historiques (`PHONE_NUMBER_ID`) — rien à faire,
+l'installation existante continue de fonctionner à l'identique.
+
+## Ajouter un nouveau marchand
+
+1. Côté Meta : ajoutez le numéro WhatsApp du marchand à votre app (WhatsApp Manager > Numéros de
+   téléphone > Ajouter), notez son **Phone Number ID**, et abonnez votre app aux événements de son WABA
+   si nécessaire (comme pour votre propre numéro).
+2. Ouvrez `/admin` (protégé par `ADMIN_USER`/`ADMIN_PASSWORD`) et cliquez **"+ Nouveau marchand"** :
+   indiquez un identifiant technique (ex: `don-william`), un nom, le type (`catalogue` ou `service`), et
+   collez le Phone Number ID noté à l'étape 1.
+3. Le marchand apparaît aussitôt dans le sélecteur en haut de `/admin` — vous pouvez y configurer son
+   catalogue/stock (ou ses services et ses horaires), et il commence à recevoir de vrais messages
+   WhatsApp sur son propre numéro immédiatement.
+
+(Cette étape reste manuelle pour l'instant — l'onboarding en libre-service, où le marchand connecterait
+lui-même son numéro via l'"Embedded Signup" de Meta sans intervention de votre part, est un chantier
+séparé, à construire une fois qu'on aura validé la formule avec quelques marchands pilotes.)
+
+## La logique de conversation
+
+Deux moteurs de conversation distincts, un par type de marchand — chaque marchand a sa propre instance
+avec son propre état et ses propres sessions de conversation en cours, ce qui évite tout mélange entre
+marchands même si deux clients de deux marchands différents écrivent au même moment.
+
+**Marchand catalogue** (fichier `conversation.js`, catalogue de départ dans `catalog.js`) :
 
 - Chaque client (identifié par son numéro WhatsApp) a sa propre conversation en cours, donc plusieurs
   clients peuvent discuter en même temps sans se mélanger.
@@ -85,43 +124,76 @@ Le serveur ne se contente plus d'une réponse générique : il reprend exactemen
 - Le stock "virtuel" (stock réel moins ce qui est déjà réservé par des commandes Confirmée/Expédiée) est
   vérifié avant de proposer l'article.
 - Le client peut ajouter plusieurs articles dans son panier avant de passer à la livraison.
-- Une fois le numéro et l'adresse de livraison reçus, une vraie commande est créée (visible sur
-  `/commandes`, une page simple listant toutes les commandes reçues).
-- Si le client confirme, le message de confirmation automatique (personnalisable dans `catalog.js` via
-  `DEFAULT_AUTO_CONFIRM_MESSAGE`) est envoyé et la commande passe au statut "Confirmée".
+- Une fois le numéro et l'adresse de livraison reçus, une vraie commande est créée, visible et gérable
+  depuis `/admin` (onglet Commandes).
+- Si le client confirme, le message de confirmation automatique (personnalisable depuis `/admin` >
+  Paramètres) est envoyé et la commande passe au statut "Confirmée".
+
+**Marchand service** (fichier `conversationService.js`, services de départ dans `services.js`) :
+
+- Le client nomme un service (reconnu de la même façon que les articles côté catalogue) ; le moteur lui
+  demande un jour et une heure si ce n'est pas déjà précisé dans le même message.
+- La disponibilité est vérifiée par rapport aux horaires d'ouverture et à la durée de créneau configurés
+  (une seule ressource à la fois par marchand — ex: un seul fauteuil/praticien — avec des créneaux de
+  durée fixe ; chaque service occupe un nombre entier de créneaux selon sa propre durée).
+- Si le créneau demandé n'est pas libre, jusqu'à 3 créneaux proches sont proposés (le jour même, ou les
+  jours suivants si le jour demandé est complet).
+- Une fois un créneau choisi et le nom du client obtenu, un rendez-vous est créé (statut "Nouvelle",
+  déjà réservé pour empêcher qu'un autre client ne prenne le même créneau entre-temps), visible et
+  gérable depuis `/admin` (onglet Rendez-vous). La confirmation du client passe le statut à "Confirmé".
+- Services, horaires d'ouverture, durée de créneau et message de confirmation se configurent tous depuis
+  `/admin` (onglets Services et Paramètres).
 
 **Où sont sauvegardées les données ?** Dans une vraie base de données PostgreSQL (fichier `db.js`),
-tant que la variable `DATABASE_URL` est configurée (voir étape 2) — catalogue et commandes survivent
-maintenant aussi bien à la mise en veille/réveil du plan gratuit Render qu'aux redéploiements (upload de
-fichiers modifiés) : plus rien n'est perdu. Si `DATABASE_URL` n'est pas définie (par exemple en test
-local sans base installée), le serveur retombe automatiquement sur un fichier `data.json` local, comme
-avant. Les conversations en cours (à quelle étape en est chaque client) restent, elles, uniquement en
-mémoire : si le serveur redémarre en plein milieu d'une commande, le client devra reformuler sa demande
-depuis le début — ça reste un comportement acceptable pour cette étape.
+tant que la variable `DATABASE_URL` est configurée (voir étape 2) — catalogue/services et
+commandes/rendez-vous de chaque marchand survivent aussi bien à la mise en veille/réveil du plan gratuit
+Render qu'aux redéploiements : plus rien n'est perdu. Si `DATABASE_URL` n'est pas définie (par exemple en
+test local sans base installée), le serveur retombe automatiquement sur des fichiers `data.json` et
+`merchants.json` locaux. Les conversations en cours (à quelle étape en est chaque client) restent, elles,
+uniquement en mémoire : si le serveur redémarre en plein milieu d'une commande ou d'une prise de
+rendez-vous, le client devra reformuler sa demande depuis le début — ça reste un comportement acceptable
+pour cette étape.
+
+## Interface d'administration (`/admin`)
+
+Remplace l'ancienne page `/commandes` en lecture seule (qui redirige maintenant vers `/admin`). Protégée
+par `ADMIN_USER`/`ADMIN_PASSWORD`, elle permet, marchand par marchand :
+
+- **Catalogue & stock** (marchands catalogue) : voir et modifier articles, variantes, prix, stock réel
+  et seuil d'alerte (surligné quand le stock est sous le seuil), ajouter/supprimer des articles ou des
+  variantes.
+- **Commandes** (marchands catalogue) : voir toutes les commandes reçues et changer leur statut
+  (Nouvelle/Confirmée/Expédiée/Livrée/Annulée), avec raison d'annulation.
+- **Services** (marchands service) : voir et modifier la liste des services (nom, durée, prix).
+- **Rendez-vous** (marchands service) : voir tous les rendez-vous et changer leur statut
+  (Nouvelle/Confirmé/Honoré/Absent/Annulé), avec raison d'annulation.
+- **Paramètres** : message de confirmation automatique (les deux types), et pour un marchand service,
+  en plus la durée des créneaux et les horaires d'ouverture par jour de la semaine.
 
 ## Protections contre les abus
 
 Comme n'importe quel numéro WhatsApp peut écrire au bot, quelques protections évitent qu'une personne
 mal intentionnée puisse s'en servir pour nuire au service ou à vos clients :
 
-- **Page `/commandes` protégée par mot de passe** (`ADMIN_USER` / `ADMIN_PASSWORD`) car elle affiche les
-  téléphones et adresses de vos clients.
-- **Tout texte tapé par un client est échappé avant d'être affiché** sur `/commandes`, pour empêcher
-  qu'une "adresse" contenant du code puisse s'exécuter dans votre navigateur.
-- **Un même numéro WhatsApp ne peut pas créer plus de 3 commandes non confirmées en 2 heures** — au-delà,
-  le bot demande de confirmer ou traiter les précédentes avant d'en accepter une nouvelle, pour éviter
-  qu'on remplisse votre page Commandes de fausses commandes.
-- **L'adresse de livraison est limitée à 200 caractères** pour éviter les messages-fleuves.
+- **`/admin` et toute l'API protégées par mot de passe** (`ADMIN_USER` / `ADMIN_PASSWORD`) car elles
+  affichent les téléphones, adresses et noms de vos clients.
+- **Tout texte tapé par un client est affiché de façon sûre** (pas d'insertion HTML brute), pour empêcher
+  qu'une "adresse" ou un "nom" contenant du code puisse s'exécuter dans votre navigateur.
+- **Un même numéro WhatsApp ne peut pas créer plus de 3 commandes (ou rendez-vous) non confirmé(e)s en 2
+  heures** — au-delà, le bot demande de confirmer ou traiter les précédent(e)s avant d'en accepter un(e)
+  nouveau/nouvelle, pour éviter qu'on remplisse votre back-office de faux enregistrements.
+- **L'adresse de livraison est limitée à 200 caractères** (et le nom de rendez-vous à 80) pour éviter les
+  messages-fleuves.
+- **Un rendez-vous "Nouvelle" (pas encore confirmé) bloque déjà le créneau**, pour empêcher que deux
+  clients réservent la même place avant que le premier n'ait répondu.
 - **Le bot répond toujours quelque chose**, même à un message qu'il ne comprend pas (photo, audio,
   texte incompréhensible) — plutôt que de rester silencieux, ce qui pourrait ressembler à une panne.
 
 ## Et après ?
 
-- **Multi-marchands** : une fois "Fournisseur de technologie" validé côté Meta, utiliser l'"Embedded
-  Signup" pour que chaque marchand connecte son propre numéro WhatsApp. Côté base de données, `db.js` est
-  déjà structuré pour ça (une ligne par marchand, identifiée par une clé) — il restera à faire
-  correspondre chaque message entrant (via son `phone_number_id`) au bon marchand plutôt qu'au marchand
-  unique `"default"` codé en dur aujourd'hui.
-- **Back-office connecté** : brancher les vues Catalogue / Commandes / Rapports du prototype HTML sur ce
-  même serveur (au lieu du `localStorage` du navigateur), pour que le marchand gère son stock et ses
-  commandes en temps réel.
+- **Onboarding en libre-service** : construire un flux "Embedded Signup" pour que chaque nouveau marchand
+  connecte lui-même son numéro WhatsApp, sans que vous ayez à l'ajouter manuellement depuis `/admin`.
+- **Comptes marchands séparés** : aujourd'hui, un seul couple `ADMIN_USER`/`ADMIN_PASSWORD` protège tous
+  les marchands (vous êtes le seul opérateur) — à terme, chaque marchand pourrait avoir son propre accès,
+  limité à ses propres données (le registre stocke déjà un identifiant/mot de passe par marchand, prêt
+  pour cette évolution).

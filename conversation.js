@@ -1,18 +1,17 @@
-// IzyVendeur - Moteur de conversation (porte depuis le prototype HTML "Simulateur WhatsApp")
+// IzyVendeur - Moteur de conversation "catalogue" (vente de produits par variantes)
 //
-// Ce module reproduit exactement la logique du simulateur du prototype :
-//   - reconnaissance de l'article/couleur/taille demandes dans le message du client
-//   - verification du stock virtuel (stock reel moins les commandes deja Confirmee/Expediee)
-//   - panier multi-articles, demande des infos de livraison, recapitulatif, confirmation
-//   - creation d'une vraie commande, avec message de confirmation automatique
+// Reproduit la logique du prototype "Simulateur WhatsApp" : reconnaissance de l'article/couleur/taille
+// demandes dans le message du client, verification du stock virtuel (stock reel moins les commandes deja
+// Confirmee/Expediee), panier multi-articles, demande des infos de livraison, recapitulatif, confirmation.
 //
-// Difference principale avec le prototype : au lieu de vivre dans le navigateur (localStorage,
-// une seule "session" a la fois), ce module garde une conversation en cours PAR NUMERO DE CLIENT
-// (plusieurs clients peuvent discuter en meme temps avec le meme marchand), et sauvegarde l'etat
-// (catalogue + commandes) dans un fichier data.json a cote du serveur, pour survivre aux redemarrages.
+// Depuis le passage au multi-marchand : ce module exporte une FACTORY (createCatalogEngine(merchantKey))
+// au lieu d'un singleton. Chaque marchand "catalogue" possede sa propre instance, avec son propre etat
+// (catalogue + commandes + parametres) et ses propres sessions de conversation en cours - aucun risque de
+// melanger les clients ou le stock de deux marchands differents, meme s'ils ecrivent au meme moment.
 
-const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE } = require("./catalog");
+const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, SEED_CATALOG } = require("./catalog");
 const db = require("./db");
+const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = require("./shared");
 
 const RESERVING_STATUSES = ["Confirmée", "Expédiée"];
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "2", "3"];
@@ -24,552 +23,513 @@ const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux"
 const MAX_PENDING_ORDERS_PER_PHONE = 3;
 const PENDING_ORDERS_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 heures
 
-// ---------------- Chargement / sauvegarde de l'etat (catalogue + commandes) ----------------
-// L'etat vit en memoire pendant que le serveur tourne (comme avant), pour que toute la logique de
-// conversation reste simple et synchrone. Ce qui change : d'ou il est charge au demarrage, et ou il
-// est sauvegarde a chaque modification -> voir db.js (PostgreSQL en production, fichier local en dev).
-
-let state = null;
-
-// A appeler une seule fois, au demarrage du serveur, AVANT de traiter le moindre message.
-async function init() {
-  state = await db.initState();
-}
-
-function saveState() {
-  if (!state) return;
-  db.persist(state).catch((erreur) => {
-    console.error("Erreur de sauvegarde de l'etat (la derniere modification pourrait etre perdue au redemarrage) :", erreur);
-  });
-}
-
-// ---------------- Sessions de conversation, une par numero de client ----------------
-// En memoire uniquement : si le serveur redemarre en plein milieu d'une commande, le client
-// devra recommencer sa phrase. Acceptable pour cette etape ; une vraie base de donnees remplacera
-// ca plus tard (voir README).
-
-const sessions = {};
-
-function freshSession() {
-  return {
-    stage: "idle",
-    cart: [],
-    productId: null,
-    couleur: null,
-    taille: null,
-    quantite: null,
-    telephone: null,
-    adresse: null,
-    pendingOrderId: null
-  };
-}
-
-function getSession(fromPhone) {
-  if (!sessions[fromPhone]) sessions[fromPhone] = freshSession();
-  // Toujours re-tamponner le numero WhatsApp reel (verifie par Meta, donc impossible a falsifier par
-  // le client) - y compris apres un reset de session - pour pouvoir limiter le nombre de commandes non
-  // confirmees par numero, independamment du telephone de livraison que le client tape lui-meme.
-  sessions[fromPhone].fromPhone = fromPhone;
-  return sessions[fromPhone];
-}
-
-// ---------------- Utilitaires ----------------
-
-function formatFcfa(n) {
-  return (n || 0).toLocaleString("fr-FR") + " FCFA";
-}
-
-// ---------------- Petites touches de chaleur dans le dialogue ----------------
-// Un mot gentil avant d'enchainer sur la suite, pour que le client se sente bien accueilli - avec
-// plusieurs variantes tirees au hasard pour ne pas repeter exactement la meme phrase a chaque fois
-// (ce qui sonnerait robotique au bout de quelques messages).
-function piocheParmi(liste) {
-  return liste[Math.floor(Math.random() * liste.length)];
-}
-
 const OUVERTURES_PRODUIT = ["Excellent choix !", "Très bon choix !", "Superbe choix !", "Vous avez bon goût !", "Beau choix !"];
 const OUVERTURES_COULEUR = ["Jolie couleur !", "Bon choix de couleur !", "Ça va très bien !", "Très élégant !"];
 const OUVERTURES_DISPO = ["Parfait,", "Très bien,", "Super,", "Excellente nouvelle,"];
 const OUVERTURES_AJOUT = ["Très bien !", "Parfait !", "Excellent !", "Noté !", "Top !"];
 const OUVERTURES_RECAP = ["Très bien !", "Parfait, on y est presque !", "Super !"];
 
-function parseQuantity(text) {
-  const m = text.match(/\d+/);
-  if (m) return parseInt(m[0], 10);
-  const words = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10 };
-  const t = text.toLowerCase();
-  for (const w in words) {
-    if (new RegExp("\\b" + w + "\\b", "i").test(t)) return words[w];
-  }
-  return null;
-}
-
-// Reconnait les phrases par lesquelles un client signale qu'il veut abandonner l'article en cours
-// de selection sans en nommer un nouveau ("je veux autre chose", "un autre article"...).
-function parseWantsSomethingElse(text) {
-  const t = text.toLowerCase();
-  return /\b(autre\s+chose|un\s+autre\s+article|un\s+autre\s+produit|autre\s+article|autre\s+produit|pas\s+celui[\s-]l[àa]|pas\s+ça|pas\s+ca|change(?:r)?\s+d['’]article|change(?:r)?\s+d['’]avis|oublie[rz]?\s+(?:ça|ca|cela)|annule[rz]?\s+(?:ça|ca|cela)?|laisse\s+tomber|recommen[cç]ons|recommencer)\b/.test(t);
-}
-
-function parseAffirmative(text) {
-  const t = text.toLowerCase().trim();
-  if (t === "o") return true;
-  return /^(oui|ouais|ouep|d['’]accord|daccord|ok(?:ay)?|yes|exact(?:ement)?|parfait|je\s*confirme|confirm(?:e|é)?|c['’]est\s*(?:ça|bon)|banco|allons[- ]y|top)\b/.test(t);
-}
-
-// Reconnait les reponses par lesquelles un client decline/refuse ("non", "rien d'autre", "c'est tout"...) —
-// utilise notamment pour savoir si un client qui a deja un panier en cours veut le finaliser plutot que
-// d'ajouter un nouvel article, meme en reponse a une question ouverte ("quel autre article souhaitez-vous ?").
-function parseNegative(text) {
-  const t = text.toLowerCase().trim();
-  if (t === "n") return true;
-  return /^(non|nan+|no|nope|rien\s*d['’]autre|rien\s*de\s*plus|c['’]est\s*tout|[çc]a\s*suffit|stop|arr[êe]te[rz]?|n[ée]gatif)\b/.test(t);
-}
-
-function itemsTotal(items) {
-  return items.reduce((s, it) => s + it.prixUnitaire * it.quantite, 0);
-}
-
-function describeItems(items) {
-  return items
-    .map((it) => "• " + it.produit + " — " + it.couleur + " · " + it.taille + " × " + it.quantite + " — " + formatFcfa(it.prixUnitaire * it.quantite))
-    .join("\n");
-}
-
-function orderRef(o) {
-  return "CMD-" + String(o.id).padStart(4, "0");
-}
-
-function messageRecapPanier(cart) {
-  return piocheParmi(OUVERTURES_RECAP) + " Voici votre panier :\n" + describeItems(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.";
-}
-
-function distinctValues(getter) {
-  const seen = {};
-  const out = [];
-  state.catalog.forEach((p) => {
-    p.variantes.forEach((v) => {
-      const val = getter(p, v);
-      if (val && !seen[val]) {
-        seen[val] = 1;
-        out.push(val);
-      }
-    });
-  });
-  return out;
-}
-
-function findVariant(productId, couleur, taille) {
-  const p = state.catalog.filter((x) => x.id === productId)[0];
-  if (!p) return null;
-  return p.variantes.filter((v) => v.couleur === couleur && v.taille === taille)[0] || null;
-}
-
-function reservedQty(productId, couleur, taille) {
-  let sum = 0;
-  state.orders.forEach((o) => {
-    if (RESERVING_STATUSES.indexOf(o.statut) === -1) return;
-    (o.items || []).forEach((it) => {
-      if (it.productId === productId && it.couleur === couleur && it.taille === taille) sum += it.quantite || 1;
-    });
-  });
-  return sum;
-}
-
-function virtualStock(productId, variant) {
-  return Math.max(0, variant.stockReel - reservedQty(productId, variant.couleur, variant.taille));
-}
-
-// ---------------- Reconnaissance produit / couleur / taille dans le texte du client ----------------
-// Base sur le catalogue EN DIRECT : tout article/couleur/taille du catalogue est reconnaissable,
-// sans dictionnaire fige a maintenir a la main.
-
-function buildProductIndex() {
-  return state.catalog.map((p) => {
-    const extra = PROD_KEYWORDS[p.id] || [];
-    const nameWords = p.nom
-      .toLowerCase()
-      .split(/[^a-zà-ÿ0-9]+/)
-      .filter((w) => w.length >= 3 && STOPWORDS.indexOf(w) === -1);
-    const keywords = [p.nom.toLowerCase()].concat(extra, nameWords).filter((v, i, a) => a.indexOf(v) === i);
-    return { id: p.id, keywords };
-  });
-}
-
-function matchProduct(text) {
-  const t = text.toLowerCase();
-  const candidates = [];
-  buildProductIndex().forEach((entry) => {
-    entry.keywords.forEach((kw) => {
-      if (kw && t.indexOf(kw) !== -1) candidates.push({ id: entry.id, len: kw.length });
-    });
-  });
-  if (!candidates.length) return null;
-  candidates.sort((a, b) => b.len - a.len);
-  return candidates[0].id;
-}
-
-function matchCouleur(text) {
-  const t = text.toLowerCase();
-  const colors = distinctValues((p, v) => v.couleur).sort((a, b) => b.length - a.length);
-  for (let i = 0; i < colors.length; i++) {
-    if (colors[i] && t.indexOf(colors[i].toLowerCase()) !== -1) return colors[i];
-  }
-  return null;
-}
-
-function matchTaille(text) {
-  const t = " " + text.toLowerCase() + " ";
-  const tailles = distinctValues((p, v) => v.taille).sort((a, b) => b.length - a.length);
-  for (let i = 0; i < tailles.length; i++) {
-    const tv = tailles[i];
-    if (!tv) continue;
-    const esc = tv.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp("(^|[^a-zà-ÿ0-9])" + esc + "([^a-zà-ÿ0-9]|$)", "i");
-    if (re.test(t)) return tv;
-  }
-  const m = t.match(/\b(xxl|xl|xs|s|m|l)\b/i);
-  if (m) return m[1].toUpperCase();
-  const mn = t.match(/\b(3[0-9]|4[0-9])\b/);
-  if (mn) return mn[1];
-  if (t.indexOf("unique") !== -1) return "Unique";
-  return null;
-}
-
-// ---------------- Commandes ----------------
-
-function createOrderFromCart(sess) {
-  const items = sess.cart.map((it) => ({
-    productId: it.productId,
-    produit: it.produit,
-    couleur: it.couleur,
-    taille: it.taille,
-    quantite: it.quantite,
-    prixUnitaire: it.prixUnitaire,
-    prix: it.prixUnitaire * it.quantite
-  }));
-  const total = itemsTotal(items);
-  const order = {
-    id: state.nextId++,
-    dateISO: new Date().toISOString(),
-    items,
-    prix: total,
-    telephone: sess.telephone,
-    adresse: sess.adresse,
-    statut: "Nouvelle",
-    raisonAnnulation: null,
-    source: "whatsapp",
-    fromWhatsapp: sess.fromPhone || null
+function seedState() {
+  return {
+    catalog: JSON.parse(JSON.stringify(SEED_CATALOG)),
+    orders: [],
+    nextId: 1,
+    settings: { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE }
   };
-  state.orders.push(order);
-  saveState();
-  return order;
 }
 
-function applyStatusChange(order, newStatus) {
-  const oldStatus = order.statut;
-  if (oldStatus === newStatus) return;
-  (order.items || []).forEach((it) => {
-    const variant = findVariant(it.productId, it.couleur, it.taille);
-    if (!variant) return;
-    const qty = it.quantite || 1;
-    if (newStatus === "Livrée" && oldStatus !== "Livrée") variant.stockReel = Math.max(0, variant.stockReel - qty);
-    if (oldStatus === "Livrée" && newStatus !== "Livrée") variant.stockReel += qty;
-  });
-  order.statut = newStatus;
-  if (newStatus !== "Annulée") order.raisonAnnulation = null;
-  saveState();
-}
+function createCatalogEngine(merchantKey) {
+  let state = null;
+  const sessions = {};
 
-// ---------------- Coeur de la conversation ----------------
-// Reproduit exactement la machine a etats du prototype (handleUserMessage), mais retourne le texte
-// de la reponse au lieu de l'afficher dans une bulle de chat.
+  // A appeler une seule fois, au demarrage du serveur, AVANT de traiter le moindre message pour ce marchand.
+  async function init() {
+    state = await db.initMerchantState(merchantKey, seedState);
+    if (!state.settings) state.settings = { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE };
+  }
 
-function processMessage(session, text) {
-  const trace = { message: text, entites: {}, verification: null, action: null };
+  function saveState() {
+    if (!state) return;
+    db.persistMerchantState(merchantKey, state).catch((erreur) => {
+      console.error("[" + merchantKey + "] Erreur de sauvegarde de l'etat (la derniere modification pourrait etre perdue au redemarrage) :", erreur);
+    });
+  }
 
-  if (session.stage === "awaiting_quantity") {
-    // Si le client change d'article pendant qu'on lui demande la quantite (au lieu de repondre par
-    // un nombre), on repart sur ce nouvel article plutot que de rester coince a redemander "combien ?".
-    const otherProduct = matchProduct(text);
-    if (otherProduct && otherProduct !== session.productId) {
-      session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
-      session.stage = "idle";
-      trace.action = "Client change d'article pendant la demande de quantité — nouvelle sélection prise en compte";
-      logTrace(trace);
-      return processMessage(session, text);
+  function freshSession() {
+    return {
+      stage: "idle",
+      cart: [],
+      productId: null,
+      couleur: null,
+      taille: null,
+      quantite: null,
+      telephone: null,
+      adresse: null,
+      pendingOrderId: null
+    };
+  }
+
+  function getSession(fromPhone) {
+    if (!sessions[fromPhone]) sessions[fromPhone] = freshSession();
+    sessions[fromPhone].fromPhone = fromPhone;
+    return sessions[fromPhone];
+  }
+
+  function parseQuantity(text) {
+    const m = text.match(/\d+/);
+    if (m) return parseInt(m[0], 10);
+    const words = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10 };
+    const t = text.toLowerCase();
+    for (const w in words) {
+      if (new RegExp("\\b" + w + "\\b", "i").test(t)) return words[w];
     }
-    const product0 = state.catalog.filter((p) => p.id === session.productId)[0];
-    const variant0 = product0 ? product0.variantes.filter((v) => v.couleur === session.couleur && v.taille === session.taille)[0] : null;
-    const virt0 = variant0 ? virtualStock(product0.id, variant0) : 0;
-    const qty = parseQuantity(text);
-    trace.entites = { "Quantité demandée": qty != null ? qty : "—", "Stock virtuel disponible": virt0 };
-    if (qty == null || qty < 1) {
-      if (parseNegative(text) || parseWantsSomethingElse(text)) {
-        // Le client abandonne cet article en cours de saisie de quantite ("non", "laisse tomber"...) :
-        // on efface la selection au lieu de redemander une quantite indefiniment.
+    return null;
+  }
+
+  function itemsTotal(items) {
+    return items.reduce((s, it) => s + it.prixUnitaire * it.quantite, 0);
+  }
+
+  function describeItems(items) {
+    return items
+      .map((it) => "• " + it.produit + " — " + it.couleur + " · " + it.taille + " × " + it.quantite + " — " + formatFcfa(it.prixUnitaire * it.quantite))
+      .join("\n");
+  }
+
+  function orderRef(o) {
+    return "CMD-" + String(o.id).padStart(4, "0");
+  }
+
+  function messageRecapPanier(cart) {
+    return piocheParmi(OUVERTURES_RECAP) + " Voici votre panier :\n" + describeItems(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.";
+  }
+
+  function distinctValues(getter) {
+    const seen = {};
+    const out = [];
+    state.catalog.forEach((p) => {
+      p.variantes.forEach((v) => {
+        const val = getter(p, v);
+        if (val && !seen[val]) {
+          seen[val] = 1;
+          out.push(val);
+        }
+      });
+    });
+    return out;
+  }
+
+  function findVariant(productId, couleur, taille) {
+    const p = state.catalog.filter((x) => x.id === productId)[0];
+    if (!p) return null;
+    return p.variantes.filter((v) => v.couleur === couleur && v.taille === taille)[0] || null;
+  }
+
+  function reservedQty(productId, couleur, taille) {
+    let sum = 0;
+    state.orders.forEach((o) => {
+      if (RESERVING_STATUSES.indexOf(o.statut) === -1) return;
+      (o.items || []).forEach((it) => {
+        if (it.productId === productId && it.couleur === couleur && it.taille === taille) sum += it.quantite || 1;
+      });
+    });
+    return sum;
+  }
+
+  function virtualStock(productId, variant) {
+    return Math.max(0, variant.stockReel - reservedQty(productId, variant.couleur, variant.taille));
+  }
+
+  function buildProductIndex() {
+    return state.catalog.map((p) => {
+      const extra = PROD_KEYWORDS[p.id] || [];
+      const nameWords = p.nom
+        .toLowerCase()
+        .split(/[^a-zà-ÿ0-9]+/)
+        .filter((w) => w.length >= 3 && STOPWORDS.indexOf(w) === -1);
+      const keywords = [p.nom.toLowerCase()].concat(extra, nameWords).filter((v, i, a) => a.indexOf(v) === i);
+      return { id: p.id, keywords };
+    });
+  }
+
+  function matchProduct(text) {
+    const t = text.toLowerCase();
+    const candidates = [];
+    buildProductIndex().forEach((entry) => {
+      entry.keywords.forEach((kw) => {
+        if (kw && t.indexOf(kw) !== -1) candidates.push({ id: entry.id, len: kw.length });
+      });
+    });
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => b.len - a.len);
+    return candidates[0].id;
+  }
+
+  function matchCouleur(text) {
+    const t = text.toLowerCase();
+    const colors = distinctValues((p, v) => v.couleur).sort((a, b) => b.length - a.length);
+    for (let i = 0; i < colors.length; i++) {
+      if (colors[i] && t.indexOf(colors[i].toLowerCase()) !== -1) return colors[i];
+    }
+    return null;
+  }
+
+  function matchTaille(text) {
+    const t = " " + text.toLowerCase() + " ";
+    const tailles = distinctValues((p, v) => v.taille).sort((a, b) => b.length - a.length);
+    for (let i = 0; i < tailles.length; i++) {
+      const tv = tailles[i];
+      if (!tv) continue;
+      const esc = tv.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp("(^|[^a-zà-ÿ0-9])" + esc + "([^a-zà-ÿ0-9]|$)", "i");
+      if (re.test(t)) return tv;
+    }
+    const m = t.match(/\b(xxl|xl|xs|s|m|l)\b/i);
+    if (m) return m[1].toUpperCase();
+    const mn = t.match(/\b(3[0-9]|4[0-9])\b/);
+    if (mn) return mn[1];
+    if (t.indexOf("unique") !== -1) return "Unique";
+    return null;
+  }
+
+  function createOrderFromCart(sess) {
+    const items = sess.cart.map((it) => ({
+      productId: it.productId,
+      produit: it.produit,
+      couleur: it.couleur,
+      taille: it.taille,
+      quantite: it.quantite,
+      prixUnitaire: it.prixUnitaire,
+      prix: it.prixUnitaire * it.quantite
+    }));
+    const total = itemsTotal(items);
+    const order = {
+      id: state.nextId++,
+      dateISO: new Date().toISOString(),
+      items,
+      prix: total,
+      telephone: sess.telephone,
+      adresse: sess.adresse,
+      statut: "Nouvelle",
+      raisonAnnulation: null,
+      source: "whatsapp",
+      fromWhatsapp: sess.fromPhone || null
+    };
+    state.orders.push(order);
+    saveState();
+    return order;
+  }
+
+  function applyStatusChange(order, newStatus, raisonAnnulation) {
+    const oldStatus = order.statut;
+    if (oldStatus === newStatus) {
+      if (newStatus === "Annulée" && raisonAnnulation) order.raisonAnnulation = raisonAnnulation;
+      return;
+    }
+    (order.items || []).forEach((it) => {
+      const variant = findVariant(it.productId, it.couleur, it.taille);
+      if (!variant) return;
+      const qty = it.quantite || 1;
+      if (newStatus === "Livrée" && oldStatus !== "Livrée") variant.stockReel = Math.max(0, variant.stockReel - qty);
+      if (oldStatus === "Livrée" && newStatus !== "Livrée") variant.stockReel += qty;
+    });
+    order.statut = newStatus;
+    if (newStatus === "Annulée") order.raisonAnnulation = raisonAnnulation || order.raisonAnnulation || null;
+    else order.raisonAnnulation = null;
+    saveState();
+  }
+
+  function processMessage(session, text) {
+    const trace = { message: text, entites: {}, verification: null, action: null };
+
+    if (session.stage === "awaiting_quantity") {
+      const otherProduct = matchProduct(text);
+      if (otherProduct && otherProduct !== session.productId) {
         session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
         session.stage = "idle";
-        trace.action = "Client abandonne cet article pendant la demande de quantité — sélection effacée";
-        logTrace(trace);
-        return "Pas de souci, on laisse cet article de côté. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
-      }
-      trace.action = "Quantité non comprise — nouvelle demande";
-      logTrace(trace);
-      return "Merci d'indiquer un nombre de pièces (ex : 1, 2, 3…).";
-    }
-    if (qty > virt0) {
-      trace.action = "Quantité demandée supérieure au stock virtuel disponible";
-      logTrace(trace);
-      return "Il ne me reste que " + virt0 + " pièce(s) disponible(s) pour " + product0.nom + " " + variant0.couleur + " " + variant0.taille + ". Combien en voulez-vous (max " + virt0 + ") ?";
-    }
-    session.cart.push({ productId: product0.id, produit: product0.nom, couleur: variant0.couleur, taille: variant0.taille, quantite: qty, prixUnitaire: variant0.prix });
-    session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
-    session.stage = "awaiting_more_items";
-    trace.action = "Article ajouté au panier — proposition d'ajouter un autre article";
-    logTrace(trace);
-    return piocheParmi(OUVERTURES_AJOUT) + " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article à votre commande ? (oui / non)";
-  }
-
-  if (session.stage === "awaiting_more_items") {
-    trace.entites = { "Réponse client": text };
-    if (parseAffirmative(text)) {
-      session.stage = "idle";
-      trace.action = "Client souhaite ajouter un autre article au panier";
-      logTrace(trace);
-      return "Très bien, quel autre article souhaitez-vous ?";
-    }
-    const directProduct = !parseNegative(text) ? matchProduct(text) : null;
-    if (directProduct) {
-      // Le client a nomme directement l'article suivant au lieu de repondre "oui" : on traite sa
-      // demande tout de suite plutot que de la perdre en finalisant le panier a sa place.
-      session.stage = "idle";
-      trace.action = "Client a nommé directement un nouvel article plutôt que de répondre oui/non — traitement immédiat";
-      logTrace(trace);
-      return processMessage(session, text);
-    }
-    session.stage = "awaiting_delivery";
-    trace.action = "Panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
-    logTrace(trace);
-    return messageRecapPanier(session.cart);
-  }
-
-  if (session.stage === "awaiting_delivery") {
-    const phoneMatch = text.match(/(\+?237)?[\s.-]?[62]\d{7,8}/);
-    // Si le client essaie d'ajouter un article a ce stade au lieu de donner ses coordonnees (ex :
-    // "attendez, je veux aussi un sac noir"), on evite de confondre le nom de l'article avec son
-    // adresse de livraison. On ne le fait que sans numero dans le message, tant que l'adresse n'est
-    // pas deja connue, et seulement si le message est court OU contient un mot clair d'ajout
-    // ("aussi", "encore", "ajouter"...) — pour ne pas mal interpreter une vraie adresse qui
-    // contiendrait par hasard un mot du catalogue (ex: un nom de quartier).
-    const additiveIntent = /\b(aussi|encore|ajout|en\s*plus)\b/i.test(text);
-    if (!phoneMatch && !session.adresse && (text.trim().length <= 20 || additiveIntent)) {
-      const directProduct = matchProduct(text);
-      if (directProduct) {
-        session.stage = "idle";
-        trace.entites = { "Réponse client": text };
-        trace.action = "Client tente d'ajouter un article pendant la collecte des infos de livraison — traitement immédiat";
+        trace.action = "Client change d'article pendant la demande de quantité — nouvelle sélection prise en compte";
         logTrace(trace);
         return processMessage(session, text);
       }
-    }
-    let remaining = text;
-    if (phoneMatch) { session.telephone = phoneMatch[0].trim(); remaining = text.replace(phoneMatch[0], "").trim(); }
-    // Longueur plafonnee : evite qu'un message-fleuve (accidentel ou volontairement genant) ne
-    // devienne une "adresse" illisible dans la page Commandes du marchand.
-    if (remaining && remaining.replace(/[,\-\s]/g, "").length > 3) session.adresse = remaining.replace(/^[,\-\s]+/, "").slice(0, 200);
-    trace.entites = { "Téléphone": session.telephone || "—", "Adresse": session.adresse || "—" };
-    if (session.telephone && session.adresse) {
-      // Garde-fou anti-inondation : un meme numero WhatsApp (verifie par Meta, non falsifiable par le
-      // client) ne peut pas creer en rafale un nombre illimite de commandes jamais confirmees - ca
-      // eviterait qu'une personne mal intentionnee ne remplisse la page Commandes du marchand de
-      // fausses commandes. Fenetre glissante courte pour ne pas bloquer un client fidele revenant
-      // plusieurs fois sur plusieurs jours.
-      const now = Date.now();
-      const pendingCount = state.orders.filter((o) => {
-        if (o.fromWhatsapp !== session.fromPhone || o.statut !== "Nouvelle") return false;
-        const age = now - new Date(o.dateISO).getTime();
-        return age >= 0 && age < PENDING_ORDERS_WINDOW_MS;
-      }).length;
-      if (pendingCount >= MAX_PENDING_ORDERS_PER_PHONE) {
-        trace.action = "Trop de commandes non confirmées en attente pour ce numéro (" + pendingCount + ") — nouvelle commande refusée";
+      const product0 = state.catalog.filter((p) => p.id === session.productId)[0];
+      const variant0 = product0 ? product0.variantes.filter((v) => v.couleur === session.couleur && v.taille === session.taille)[0] : null;
+      const virt0 = variant0 ? virtualStock(product0.id, variant0) : 0;
+      const qty = parseQuantity(text);
+      trace.entites = { "Quantité demandée": qty != null ? qty : "—", "Stock virtuel disponible": virt0 };
+      if (qty == null || qty < 1) {
+        if (parseNegative(text) || parseWantsSomethingElse(text)) {
+          session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+          session.stage = "idle";
+          trace.action = "Client abandonne cet article pendant la demande de quantité — sélection effacée";
+          logTrace(trace);
+          return "Pas de souci, on laisse cet article de côté. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+        }
+        trace.action = "Quantité non comprise — nouvelle demande";
         logTrace(trace);
-        return "Vous avez déjà " + pendingCount + " commande(s) en attente de confirmation. Merci de confirmer ou d'annuler l'une d'entre elles avant d'en passer une nouvelle — notre équipe reste disponible si besoin.";
+        return "Merci d'indiquer un nombre de pièces (ex : 1, 2, 3…).";
       }
-      const order = createOrderFromCart(session);
-      session.pendingOrderId = order.id;
-      session.stage = "awaiting_order_confirmation";
-      trace.action = "Commande " + orderRef(order) + " créée (statut Nouvelle) — récapitulatif envoyé, confirmation demandée";
+      if (qty > virt0) {
+        trace.action = "Quantité demandée supérieure au stock virtuel disponible";
+        logTrace(trace);
+        return "Il ne me reste que " + virt0 + " pièce(s) disponible(s) pour " + product0.nom + " " + variant0.couleur + " " + variant0.taille + ". Combien en voulez-vous (max " + virt0 + ") ?";
+      }
+      session.cart.push({ productId: product0.id, produit: product0.nom, couleur: variant0.couleur, taille: variant0.taille, quantite: qty, prixUnitaire: variant0.prix });
+      session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+      session.stage = "awaiting_more_items";
+      trace.action = "Article ajouté au panier — proposition d'ajouter un autre article";
       logTrace(trace);
-      return "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\nLivraison : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)";
-    }
-    const missing = [];
-    if (!session.telephone) missing.push("numéro de téléphone");
-    if (!session.adresse) missing.push("adresse de livraison");
-    trace.action = "Information manquante demandée : " + missing.join(" et ");
-    logTrace(trace);
-    return "Presque ! Il me manque encore : " + missing.join(" et ") + ".";
-  }
-
-  if (session.stage === "awaiting_order_confirmation") {
-    const pendingOrder = state.orders.filter((x) => x.id === session.pendingOrderId)[0];
-    trace.entites = { "Réponse client": text };
-
-    if (pendingOrder && parseAffirmative(text)) {
-      applyStatusChange(pendingOrder, "Confirmée");
-      trace.action = "Client confirme — commande " + orderRef(pendingOrder) + " passée automatiquement en Confirmée";
-      const reply = (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
-      Object.assign(session, freshSession());
-      logTrace(trace);
-      return reply;
+      return piocheParmi(OUVERTURES_AJOUT) + " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article à votre commande ? (oui / non)";
     }
 
-    if (pendingOrder && parseNegative(text)) {
-      trace.action = "Client décline la confirmation automatique — commande " + orderRef(pendingOrder) + " reste en Nouvelle, à confirmer manuellement";
-      const reply = "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.";
-      Object.assign(session, freshSession());
-      logTrace(trace);
-      return reply;
-    }
-
-    if (pendingOrder) {
-      // Reponse ni clairement oui ni clairement non (ex: une question sur la livraison) : on ne
-      // referme pas la conversation pour ne pas perdre le lien avec cette commande deja creee,
-      // on redemande simplement une confirmation claire au lieu de supposer un refus.
-      trace.action = "Réponse ambiguë — nouvelle demande de confirmation claire pour " + orderRef(pendingOrder);
-      logTrace(trace);
-      return "Je n'ai pas bien compris. Confirmez-vous votre commande " + orderRef(pendingOrder) + " ? Répondez simplement par oui ou non — notre équipe reviendra vers vous pour toute autre question.";
-    }
-
-    const reply = "Très bien, votre commande reste enregistrée.";
-    Object.assign(session, freshSession());
-    logTrace(trace);
-    return reply;
-  }
-
-  // Etat "idle" (ou reprise en cours) : on essaie de reconnaitre article / couleur / taille.
-  const produitReconnu = matchProduct(text);
-  const couleurReconnue = matchCouleur(text);
-  const tailleReconnue = matchTaille(text);
-
-  // Garde-fou : le client a deja un article en cours de selection (couleur et/ou taille encore en
-  // attente, ex: "Baskets" -> bot demande la couleur) et son message ne reconnait ni produit, ni
-  // couleur, ni taille - MAIS exprime clairement un refus/abandon ("non", "annule", "un autre
-  // article"...). Sans ce garde-fou le bot redemandait indefiniment la meme precision (couleur ou
-  // taille) quoi que le client reponde, car session.productId reste "collant" d'un tour a l'autre.
-  if (!produitReconnu && !couleurReconnue && !tailleReconnue && session.productId && (parseNegative(text) || parseWantsSomethingElse(text))) {
-    session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
-    trace.entites = { "Réponse client": text };
-    if (session.cart.length > 0) {
+    if (session.stage === "awaiting_more_items") {
+      trace.entites = { "Réponse client": text };
+      if (parseAffirmative(text)) {
+        session.stage = "idle";
+        trace.action = "Client souhaite ajouter un autre article au panier";
+        logTrace(trace);
+        return "Très bien, quel autre article souhaitez-vous ?";
+      }
+      const directProduct = !parseNegative(text) ? matchProduct(text) : null;
+      if (directProduct) {
+        session.stage = "idle";
+        trace.action = "Client a nommé directement un nouvel article plutôt que de répondre oui/non — traitement immédiat";
+        logTrace(trace);
+        return processMessage(session, text);
+      }
       session.stage = "awaiting_delivery";
-      trace.action = "Client abandonne cette sélection en cours — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
+      trace.action = "Panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
       logTrace(trace);
       return messageRecapPanier(session.cart);
     }
-    trace.action = "Client abandonne cette sélection en cours — sélection effacée";
-    logTrace(trace);
-    return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
-  }
 
-  let produitId = produitReconnu || session.productId;
-  const couleur = couleurReconnue || (produitId === session.productId ? session.couleur : null);
-  let taille = tailleReconnue || (produitId === session.productId ? session.taille : null);
-  session.productId = produitId; session.couleur = couleur; session.taille = taille;
-
-  trace.entites = {
-    "Produit": produitId ? state.catalog.filter((p) => p.id === produitId)[0].nom : "—",
-    "Couleur": couleur || "—",
-    "Taille": taille || "—"
-  };
-
-  if (!produitId && session.cart.length > 0 && parseNegative(text)) {
-    // Le client a deja un panier en cours et repond par une negation a la question ouverte
-    // "quel autre article souhaitez-vous ?" : il veut finaliser sa commande, pas repartir de zero.
-    session.stage = "awaiting_delivery";
-    trace.action = "Client ne veut rien ajouter de plus — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
-    logTrace(trace);
-    return messageRecapPanier(session.cart);
-  }
-
-  if (!produitId) {
-    trace.action = "Précision demandée : quel article ?";
-    logTrace(trace);
-    return "Bonjour ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
-  }
-
-  const product = state.catalog.filter((p) => p.id === produitId)[0];
-  const availableColors = product.variantes.map((v) => v.couleur).filter((v, i, a) => a.indexOf(v) === i);
-
-  if (!couleur) {
-    trace.action = "Précision demandée : quelle couleur ?";
-    logTrace(trace);
-    // Le petit mot gentil ne sort que quand le produit vient d'etre reconnu dans CE message (pas a
-    // chaque relance si la couleur n'est toujours pas comprise, ce qui sonnerait faux/repetitif).
-    const ouverture = produitReconnu ? piocheParmi(OUVERTURES_PRODUIT) + " " : "";
-    return ouverture + product.nom + " — quelle couleur souhaitez-vous ? Disponible en : " + availableColors.join(", ") + ".";
-  }
-
-  const sizesForColor = product.variantes.filter((v) => v.couleur === couleur).map((v) => v.taille);
-  const uniqueSizes = sizesForColor.filter((v, i, a) => a.indexOf(v) === i);
-  if (!taille && uniqueSizes.length === 1) {
-    taille = uniqueSizes[0];
-    session.taille = taille;
-    trace.entites["Taille"] = taille + " (taille unique disponible)";
-  }
-  if (!taille) {
-    trace.action = "Précision demandée : quelle taille ?";
-    logTrace(trace);
-    const ouverture = couleurReconnue ? piocheParmi(OUVERTURES_COULEUR) + " " : "";
-    return ouverture + "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".";
-  }
-
-  const variant = product.variantes.filter((v) => v.couleur === couleur && v.taille === taille)[0];
-  if (!variant) {
-    trace.action = "Combinaison introuvable — options proposées";
-    session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
-    logTrace(trace);
-    return "Désolée, je n'ai pas cette combinaison pour " + product.nom + ". Options disponibles : " + product.variantes.map((v) => v.couleur + " " + v.taille).join(", ") + ".";
-  }
-
-  const virt = virtualStock(product.id, variant);
-  trace.verification = product.nom + " / " + variant.couleur + " / " + variant.taille + " → " + virt + " disponible(s) (stock réel " + variant.stockReel + ")";
-
-  if (virt <= 0) {
-    const alternatives = product.variantes.filter((v) => virtualStock(product.id, v) > 0);
-    trace.action = "Rupture détectée — alternatives proposées";
-    session.couleur = null; session.taille = null;
-    logTrace(trace);
-    if (alternatives.length) {
-      return "Désolée, " + product.nom + " " + variant.couleur + " " + variant.taille + " est en rupture 😕. Il me reste : " + alternatives.map((v) => v.couleur + " " + v.taille + " (" + virtualStock(product.id, v) + ")").join(", ") + ". Lequel voulez-vous ?";
+    if (session.stage === "awaiting_delivery") {
+      const phoneMatch = text.match(/(\+?237)?[\s.-]?[62]\d{7,8}/);
+      const additiveIntent = /\b(aussi|encore|ajout|en\s*plus)\b/i.test(text);
+      if (!phoneMatch && !session.adresse && (text.trim().length <= 20 || additiveIntent)) {
+        const directProduct = matchProduct(text);
+        if (directProduct) {
+          session.stage = "idle";
+          trace.entites = { "Réponse client": text };
+          trace.action = "Client tente d'ajouter un article pendant la collecte des infos de livraison — traitement immédiat";
+          logTrace(trace);
+          return processMessage(session, text);
+        }
+      }
+      let remaining = text;
+      if (phoneMatch) { session.telephone = phoneMatch[0].trim(); remaining = text.replace(phoneMatch[0], "").trim(); }
+      if (remaining && remaining.replace(/[,\-\s]/g, "").length > 3) session.adresse = remaining.replace(/^[,\-\s]+/, "").slice(0, 200);
+      trace.entites = { "Téléphone": session.telephone || "—", "Adresse": session.adresse || "—" };
+      if (session.telephone && session.adresse) {
+        const now = Date.now();
+        const pendingCount = state.orders.filter((o) => {
+          if (o.fromWhatsapp !== session.fromPhone || o.statut !== "Nouvelle") return false;
+          const age = now - new Date(o.dateISO).getTime();
+          return age >= 0 && age < PENDING_ORDERS_WINDOW_MS;
+        }).length;
+        if (pendingCount >= MAX_PENDING_ORDERS_PER_PHONE) {
+          trace.action = "Trop de commandes non confirmées en attente pour ce numéro (" + pendingCount + ") — nouvelle commande refusée";
+          logTrace(trace);
+          return "Vous avez déjà " + pendingCount + " commande(s) en attente de confirmation. Merci de confirmer ou d'annuler l'une d'entre elles avant d'en passer une nouvelle — notre équipe reste disponible si besoin.";
+        }
+        const order = createOrderFromCart(session);
+        session.pendingOrderId = order.id;
+        session.stage = "awaiting_order_confirmation";
+        trace.action = "Commande " + orderRef(order) + " créée (statut Nouvelle) — récapitulatif envoyé, confirmation demandée";
+        logTrace(trace);
+        return "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\nLivraison : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)";
+      }
+      const missing = [];
+      if (!session.telephone) missing.push("numéro de téléphone");
+      if (!session.adresse) missing.push("adresse de livraison");
+      trace.action = "Information manquante demandée : " + missing.join(" et ");
+      logTrace(trace);
+      return "Presque ! Il me manque encore : " + missing.join(" et ") + ".";
     }
-    return "Désolée, " + product.nom + " est actuellement en rupture sur tous les modèles. Je vous notifie dès le réassort ?";
+
+    if (session.stage === "awaiting_order_confirmation") {
+      const pendingOrder = state.orders.filter((x) => x.id === session.pendingOrderId)[0];
+      trace.entites = { "Réponse client": text };
+
+      if (pendingOrder && parseAffirmative(text)) {
+        applyStatusChange(pendingOrder, "Confirmée");
+        trace.action = "Client confirme — commande " + orderRef(pendingOrder) + " passée automatiquement en Confirmée";
+        const reply = (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
+        Object.assign(session, freshSession());
+        logTrace(trace);
+        return reply;
+      }
+
+      if (pendingOrder && parseNegative(text)) {
+        trace.action = "Client décline la confirmation automatique — commande " + orderRef(pendingOrder) + " reste en Nouvelle, à confirmer manuellement";
+        const reply = "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.";
+        Object.assign(session, freshSession());
+        logTrace(trace);
+        return reply;
+      }
+
+      if (pendingOrder) {
+        trace.action = "Réponse ambiguë — nouvelle demande de confirmation claire pour " + orderRef(pendingOrder);
+        logTrace(trace);
+        return "Je n'ai pas bien compris. Confirmez-vous votre commande " + orderRef(pendingOrder) + " ? Répondez simplement par oui ou non — notre équipe reviendra vers vous pour toute autre question.";
+      }
+
+      const reply = "Très bien, votre commande reste enregistrée.";
+      Object.assign(session, freshSession());
+      logTrace(trace);
+      return reply;
+    }
+
+    const produitReconnu = matchProduct(text);
+    const couleurReconnue = matchCouleur(text);
+    const tailleReconnue = matchTaille(text);
+
+    if (!produitReconnu && !couleurReconnue && !tailleReconnue && session.productId && (parseNegative(text) || parseWantsSomethingElse(text))) {
+      session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+      trace.entites = { "Réponse client": text };
+      if (session.cart.length > 0) {
+        session.stage = "awaiting_delivery";
+        trace.action = "Client abandonne cette sélection en cours — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
+        logTrace(trace);
+        return messageRecapPanier(session.cart);
+      }
+      trace.action = "Client abandonne cette sélection en cours — sélection effacée";
+      logTrace(trace);
+      return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+    }
+
+    let produitId = produitReconnu || session.productId;
+    const couleur = couleurReconnue || (produitId === session.productId ? session.couleur : null);
+    let taille = tailleReconnue || (produitId === session.productId ? session.taille : null);
+    session.productId = produitId; session.couleur = couleur; session.taille = taille;
+
+    trace.entites = {
+      "Produit": produitId ? state.catalog.filter((p) => p.id === produitId)[0].nom : "—",
+      "Couleur": couleur || "—",
+      "Taille": taille || "—"
+    };
+
+    if (!produitId && session.cart.length > 0 && parseNegative(text)) {
+      session.stage = "awaiting_delivery";
+      trace.action = "Client ne veut rien ajouter de plus — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
+      logTrace(trace);
+      return messageRecapPanier(session.cart);
+    }
+
+    if (!produitId) {
+      trace.action = "Précision demandée : quel article ?";
+      logTrace(trace);
+      return "Bonjour ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+    }
+
+    const product = state.catalog.filter((p) => p.id === produitId)[0];
+    const availableColors = product.variantes.map((v) => v.couleur).filter((v, i, a) => a.indexOf(v) === i);
+
+    if (!couleur) {
+      trace.action = "Précision demandée : quelle couleur ?";
+      logTrace(trace);
+      const ouverture = produitReconnu ? piocheParmi(OUVERTURES_PRODUIT) + " " : "";
+      return ouverture + product.nom + " — quelle couleur souhaitez-vous ? Disponible en : " + availableColors.join(", ") + ".";
+    }
+
+    const sizesForColor = product.variantes.filter((v) => v.couleur === couleur).map((v) => v.taille);
+    const uniqueSizes = sizesForColor.filter((v, i, a) => a.indexOf(v) === i);
+    if (!taille && uniqueSizes.length === 1) {
+      taille = uniqueSizes[0];
+      session.taille = taille;
+      trace.entites["Taille"] = taille + " (taille unique disponible)";
+    }
+    if (!taille) {
+      trace.action = "Précision demandée : quelle taille ?";
+      logTrace(trace);
+      const ouverture = couleurReconnue ? piocheParmi(OUVERTURES_COULEUR) + " " : "";
+      return ouverture + "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".";
+    }
+
+    const variant = product.variantes.filter((v) => v.couleur === couleur && v.taille === taille)[0];
+    if (!variant) {
+      trace.action = "Combinaison introuvable — options proposées";
+      session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+      logTrace(trace);
+      return "Désolée, je n'ai pas cette combinaison pour " + product.nom + ". Options disponibles : " + product.variantes.map((v) => v.couleur + " " + v.taille).join(", ") + ".";
+    }
+
+    const virt = virtualStock(product.id, variant);
+    trace.verification = product.nom + " / " + variant.couleur + " / " + variant.taille + " → " + virt + " disponible(s) (stock réel " + variant.stockReel + ")";
+
+    if (virt <= 0) {
+      const alternatives = product.variantes.filter((v) => virtualStock(product.id, v) > 0);
+      trace.action = "Rupture détectée — alternatives proposées";
+      session.couleur = null; session.taille = null;
+      logTrace(trace);
+      if (alternatives.length) {
+        return "Désolée, " + product.nom + " " + variant.couleur + " " + variant.taille + " est en rupture 😕. Il me reste : " + alternatives.map((v) => v.couleur + " " + v.taille + " (" + virtualStock(product.id, v) + ")").join(", ") + ". Lequel voulez-vous ?";
+      }
+      return "Désolée, " + product.nom + " est actuellement en rupture sur tous les modèles. Je vous notifie dès le réassort ?";
+    }
+
+    trace.action = "Article disponible — quantité demandée";
+    session.stage = "awaiting_quantity";
+    logTrace(trace);
+    return piocheParmi(OUVERTURES_DISPO) + " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?";
   }
 
-  trace.action = "Article disponible — quantité demandée";
-  session.stage = "awaiting_quantity";
-  logTrace(trace);
-  return piocheParmi(OUVERTURES_DISPO) + " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?";
+  function logTrace(trace) {
+    console.log("[" + merchantKey + "][conversation] « " + trace.message + " » -> " + JSON.stringify(trace.entites) + (trace.verification ? " | " + trace.verification : "") + " => " + trace.action);
+  }
+
+  function handleMessage(fromPhone, text) {
+    if (!state) return "Le service redemarre, un instant s'il vous plait...";
+    const session = getSession(fromPhone);
+    return processMessage(session, text);
+  }
+
+  function getOrders() {
+    return state ? state.orders : [];
+  }
+
+  function getCatalog() {
+    return state ? state.catalog : [];
+  }
+
+  function getSettings() {
+    return state ? state.settings : {};
+  }
+
+  function updateSettings(patch) {
+    if (!state) return;
+    state.settings = Object.assign({}, state.settings, patch);
+    saveState();
+    return state.settings;
+  }
+
+  // Remplace l'integralite du catalogue (utilise par l'interface d'administration). Validation minimale :
+  // on exige un tableau ; la structure detaillee de chaque article est du ressort de l'appelant (API).
+  function updateCatalog(newCatalog) {
+    if (!state || !Array.isArray(newCatalog)) return null;
+    state.catalog = newCatalog;
+    saveState();
+    return state.catalog;
+  }
+
+  function updateOrderStatus(orderId, newStatus, raisonAnnulation) {
+    if (!state) return null;
+    const order = state.orders.filter((o) => o.id === Number(orderId))[0];
+    if (!order) return null;
+    applyStatusChange(order, newStatus, raisonAnnulation);
+    return order;
+  }
+
+  return {
+    type: "catalogue",
+    init,
+    handleMessage,
+    getOrders,
+    getCatalog,
+    getSettings,
+    updateSettings,
+    updateCatalog,
+    updateOrderStatus
+  };
 }
 
-function logTrace(trace) {
-  // Visible dans les logs Render : utile pour comprendre ce que le moteur a compris, sans DOM.
-  console.log("[conversation] « " + trace.message + " » -> " + JSON.stringify(trace.entites) + (trace.verification ? " | " + trace.verification : "") + " => " + trace.action);
-}
-
-// ---------------- Point d'entree public ----------------
-
-function handleMessage(fromPhone, text) {
-  if (!state) return "Le service redemarre, un instant s'il vous plait...";
-  const session = getSession(fromPhone);
-  return processMessage(session, text);
-}
-
-function getOrders() {
-  return state ? state.orders : [];
-}
-
-function getCatalog() {
-  return state ? state.catalog : [];
-}
-
-module.exports = { init, handleMessage, getOrders, getCatalog };
+module.exports = createCatalogEngine;

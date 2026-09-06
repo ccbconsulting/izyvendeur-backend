@@ -1,25 +1,28 @@
-// IzyVendeur - Couche de persistance
+// IzyVendeur - Couche de persistance (multi-marchand)
 //
 // Deux modes, choisis automatiquement selon la presence de la variable d'environnement DATABASE_URL :
 //
-//   - DATABASE_URL definie (production, Render) -> l'etat (catalogue + commandes + parametres) est
-//     sauvegarde dans PostgreSQL, dans une table "app_state" (une ligne JSON par marchand). Contrairement
-//     a un fichier local, ca survit aux redeploiements et aux redemarrages du service.
+//   - DATABASE_URL definie (production, Render) -> tout est sauvegarde dans PostgreSQL :
+//       - table "merchants" : le REGISTRE des marchands (une ligne par marchand : id, nom, type,
+//         phone_number_id WhatsApp, identifiants admin). C'est ce registre qui permet au webhook de
+//         savoir, pour un message entrant, a quel marchand il appartient (via le phone_number_id que
+//         Meta indique toujours dans la charge utile).
+//       - table "app_state" : une ligne JSON par marchand (meme cle "merchant_key" que son id dans le
+//         registre) contenant ses donnees propres (catalogue+commandes pour un marchand "catalogue",
+//         services+rendez-vous pour un marchand "service").
 //
-//   - DATABASE_URL absente (dev local, sans base installee) -> on retombe sur l'ancien comportement :
-//     un fichier data.json a cote du serveur. Pratique pour tester rapidement en local sans avoir a
-//     installer Postgres.
+//   - DATABASE_URL absente (dev local) -> deux fichiers a cote du serveur : merchants.json (registre) et
+//     data.json (etat, un objet par merchant_key a l'interieur). Pratique pour tester sans Postgres.
 //
-// Aujourd'hui il n'existe qu'un seul marchand (MERCHANT_KEY = "default"). Le jour du passage au
-// multi-marchand, chaque marchand aura sa propre ligne (merchant_key = son phone_number_id par exemple) -
-// le reste du code (conversation.js) n'aura pas a changer.
+// Avant le passage au multi-marchand, un seul marchand existait ("default", type catalogue, branche sur
+// les variables d'environnement PHONE_NUMBER_ID/WHATSAPP_TOKEN historiques). Au demarrage, si le registre
+// est vide, on le recree automatiquement a partir de ces variables pour ne rien casser en production.
 
 const fs = require("fs");
 const path = require("path");
-const { SEED_CATALOG, DEFAULT_AUTO_CONFIRM_MESSAGE } = require("./catalog");
 
 const DATA_FILE = path.join(__dirname, "data.json");
-const MERCHANT_KEY = "default";
+const MERCHANTS_FILE = path.join(__dirname, "merchants.json");
 const DATABASE_URL = process.env.DATABASE_URL;
 
 let pool = null;
@@ -33,64 +36,156 @@ if (DATABASE_URL) {
   });
 }
 
-function seedState() {
+// ---------------- Registre des marchands ----------------
+
+async function ensureMerchantsTable() {
+  await pool.query(
+    "CREATE TABLE IF NOT EXISTS merchants (" +
+      "id TEXT PRIMARY KEY, " +
+      "nom TEXT NOT NULL, " +
+      "type TEXT NOT NULL, " + // 'catalogue' ou 'service'
+      "phone_number_id TEXT UNIQUE, " +
+      "admin_user TEXT, " +
+      "admin_password TEXT, " +
+      "created_at TIMESTAMPTZ NOT NULL DEFAULT now()" +
+    ")"
+  );
+}
+
+function defaultMerchantFromEnv() {
+  // Migration automatique : recree le marchand historique "default" a partir des variables
+  // d'environnement existantes, pour que les installations deja en production ne perdent rien.
   return {
-    catalog: JSON.parse(JSON.stringify(SEED_CATALOG)),
-    orders: [],
-    nextId: 1,
-    settings: { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE }
+    id: "default",
+    nom: "Marchand par defaut",
+    type: "catalogue",
+    phoneNumberId: process.env.PHONE_NUMBER_ID || null,
+    adminUser: process.env.ADMIN_USER || "admin",
+    adminPassword: process.env.ADMIN_PASSWORD || null
   };
 }
 
-// Charge l'etat au demarrage du serveur. Cree la table et l'insere si besoin (premiere fois).
-async function initState() {
+// A appeler une fois au demarrage. Retourne la liste des marchands connus (cree le marchand "default"
+// s'il n'y en a encore aucun).
+async function initRegistry() {
   if (pool) {
-    await pool.query(
-      "CREATE TABLE IF NOT EXISTS app_state (" +
-        "merchant_key TEXT PRIMARY KEY, " +
-        "data JSONB NOT NULL, " +
-        "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()" +
-      ")"
-    );
-    const res = await pool.query("SELECT data FROM app_state WHERE merchant_key = $1", [MERCHANT_KEY]);
+    await ensureMerchantsTable();
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
-      console.log("Etat charge depuis PostgreSQL (" + res.rows[0].data.orders.length + " commande(s)).");
-      return res.rows[0].data;
+      return res.rows.map(rowToMerchant);
     }
-    const initial = seedState();
-    await pool.query("INSERT INTO app_state (merchant_key, data) VALUES ($1, $2)", [MERCHANT_KEY, initial]);
-    console.log("Nouvelle base PostgreSQL initialisee avec le catalogue de depart.");
-    return initial;
+    const initial = defaultMerchantFromEnv();
+    await insertMerchant(initial);
+    console.log("Registre des marchands initialise avec le marchand par defaut (migration automatique).");
+    return [initial];
   }
 
-  // Pas de DATABASE_URL configuree -> comportement historique (fichier local, pour le dev).
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-      if (parsed && parsed.catalog && parsed.orders) {
-        if (!parsed.settings) parsed.settings = { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE };
-        console.log("Etat charge depuis data.json (mode local, DATABASE_URL non definie).");
-        return parsed;
-      }
+    if (fs.existsSync(MERCHANTS_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8"));
+      if (Array.isArray(parsed) && parsed.length) return parsed;
     }
   } catch (erreur) {
-    console.error("Erreur de lecture de data.json, on repart du catalogue de depart :", erreur);
+    console.error("Erreur de lecture de merchants.json, on repart du registre par defaut :", erreur);
   }
-  console.log("Aucune base ni data.json trouve : demarrage avec le catalogue de depart (mode local).");
-  return seedState();
+  const initial = [defaultMerchantFromEnv()];
+  fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(initial, null, 2));
+  return initial;
 }
 
-// Sauvegarde l'etat courant. Appelee apres chaque changement (nouvelle commande, changement de statut...).
-async function persist(state) {
+function rowToMerchant(row) {
+  return {
+    id: row.id,
+    nom: row.nom,
+    type: row.type,
+    phoneNumberId: row.phone_number_id,
+    adminUser: row.admin_user,
+    adminPassword: row.admin_password
+  };
+}
+
+async function insertMerchant(m) {
   if (pool) {
+    await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO app_state (merchant_key, data, updated_at) VALUES ($1, $2, now()) " +
-        "ON CONFLICT (merchant_key) DO UPDATE SET data = $2, updated_at = now()",
-      [MERCHANT_KEY, state]
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password) VALUES ($1,$2,$3,$4,$5,$6) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6",
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword]
     );
     return;
   }
-  fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2));
+  const liste = fs.existsSync(MERCHANTS_FILE) ? JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8")) : [];
+  const idx = liste.findIndex((x) => x.id === m.id);
+  if (idx === -1) liste.push(m); else liste[idx] = m;
+  fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
 }
 
-module.exports = { initState, persist, usingDatabase: !!pool };
+// Ajoute un nouveau marchand au registre (utilise lors de l'onboarding manuel d'un nouveau marchand).
+async function addMerchant(m) {
+  await insertMerchant(m);
+  return m;
+}
+
+// ---------------- Etat d'un marchand (catalogue+commandes, ou services+rendez-vous) ----------------
+
+async function ensureAppStateTable() {
+  await pool.query(
+    "CREATE TABLE IF NOT EXISTS app_state (" +
+      "merchant_key TEXT PRIMARY KEY, " +
+      "data JSONB NOT NULL, " +
+      "updated_at TIMESTAMPTZ NOT NULL DEFAULT now()" +
+    ")"
+  );
+}
+
+// Charge l'etat d'UN marchand (identifie par sa cle = son id dans le registre). `seedFn` fournit l'etat
+// de depart si ce marchand n'a encore jamais ete sauvegarde.
+async function initMerchantState(merchantKey, seedFn) {
+  if (pool) {
+    await ensureAppStateTable();
+    const res = await pool.query("SELECT data FROM app_state WHERE merchant_key = $1", [merchantKey]);
+    if (res.rows.length) {
+      console.log("Etat du marchand '" + merchantKey + "' charge depuis PostgreSQL.");
+      return res.rows[0].data;
+    }
+    const initial = seedFn();
+    await pool.query("INSERT INTO app_state (merchant_key, data) VALUES ($1, $2)", [merchantKey, initial]);
+    console.log("Nouvel etat PostgreSQL initialise pour le marchand '" + merchantKey + "'.");
+    return initial;
+  }
+
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
+      if (parsed && parsed[merchantKey]) {
+        console.log("Etat du marchand '" + merchantKey + "' charge depuis data.json (mode local).");
+        return parsed[merchantKey];
+      }
+    }
+  } catch (erreur) {
+    console.error("Erreur de lecture de data.json, on repart de l'etat de depart pour '" + merchantKey + "' :", erreur);
+  }
+  console.log("Aucun etat existant pour '" + merchantKey + "' : demarrage avec l'etat de depart (mode local).");
+  return seedFn();
+}
+
+// Sauvegarde l'etat courant d'UN marchand.
+async function persistMerchantState(merchantKey, state) {
+  if (pool) {
+    await ensureAppStateTable();
+    await pool.query(
+      "INSERT INTO app_state (merchant_key, data, updated_at) VALUES ($1, $2, now()) " +
+        "ON CONFLICT (merchant_key) DO UPDATE SET data = $2, updated_at = now()",
+      [merchantKey, state]
+    );
+    return;
+  }
+  let toutEtats = {};
+  if (fs.existsSync(DATA_FILE)) {
+    try { toutEtats = JSON.parse(fs.readFileSync(DATA_FILE, "utf8")) || {}; } catch (e) { toutEtats = {}; }
+  }
+  toutEtats[merchantKey] = state;
+  fs.writeFileSync(DATA_FILE, JSON.stringify(toutEtats, null, 2));
+}
+
+module.exports = { initRegistry, addMerchant, initMerchantState, persistMerchantState, usingDatabase: !!pool };

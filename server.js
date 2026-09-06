@@ -1,43 +1,49 @@
-// IzyVendeur - Backend minimal (preuve de concept)
-// Ce serveur fait 2 choses :
-//   1) Repond a la verification du webhook demandee par Meta (requete GET).
-//   2) Recoit les messages WhatsApp entrants (requete POST) et renvoie une reponse automatique simple.
+// IzyVendeur - Backend (multi-marchand)
 //
-// Une fois deploye avec une adresse publique HTTPS (ex: https://xxxx.onrender.com),
-// on branche cette adresse + "/webhook" dans le tableau de bord Meta (Etape 2 > Configurer des webhooks).
+// Ce serveur fait 3 choses :
+//   1) Repond a la verification du webhook demandee par Meta (requete GET).
+//   2) Recoit les messages WhatsApp entrants (requete POST), determine a QUEL marchand ils appartiennent
+//      (via le phone_number_id que Meta indique toujours dans la charge utile) et les fait traiter par le
+//      moteur de conversation de ce marchand (catalogue ou service, selon son type).
+//   3) Expose une interface d'administration connectee (page /admin + API /api/...) pour consulter et
+//      gerer le catalogue/stock/commandes (marchand catalogue) ou les services/rendez-vous (marchand
+//      service) de chaque marchand, a la place de l'ancienne page /commandes en lecture seule.
 
 require("dotenv").config();
+const path = require("path");
 const express = require("express");
-const conversation = require("./conversation");
+const db = require("./db");
+const createCatalogEngine = require("./conversation");
+const createServiceEngine = require("./conversationService");
 
 const app = express();
 app.use(express.json());
 
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GRAPH_API_VERSION = "v21.0";
 
-// --- Securite : echappement HTML ---
-// Le telephone et l'adresse affiches sur /commandes viennent du TEXTE TAPE PAR LE CLIENT WhatsApp (pas
-// du catalogue, controle par vous). Sans cet echappement, un client mal intentionne pourrait taper une
-// "adresse" contenant du code HTML/JavaScript qui s'executerait dans votre navigateur des que vous
-// ouvrez la page /commandes (faille XSS classique). On echappe systematiquement tout ce qui vient du
-// client avant de l'inserer dans une page HTML.
-function echapperHtml(valeur) {
-  return String(valeur == null ? "" : valeur)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// ---------------- Registre des marchands + moteurs de conversation ----------------
+// engines[merchantId] = { merchant, engine }  -- engine expose toujours handleMessage(fromPhone, texte),
+// quel que soit son type (catalogue ou service), ce qui garde le webhook simple.
+const engines = {};
+const phoneNumberIndex = {}; // phone_number_id WhatsApp -> merchantId
+
+async function chargerMarchands() {
+  const marchands = await db.initRegistry();
+  for (const m of marchands) {
+    const engine = m.type === "service" ? createServiceEngine(m.id) : createCatalogEngine(m.id);
+    await engine.init();
+    engines[m.id] = { merchant: m, engine };
+    if (m.phoneNumberId) phoneNumberIndex[m.phoneNumberId] = m.id;
+    console.log("Marchand charge : " + m.id + " (" + m.type + ")" + (m.phoneNumberId ? " — numero " + m.phoneNumberId : " — AUCUN numero WhatsApp associe"));
+  }
 }
 
-// --- Securite : protection de la page /commandes par mot de passe ---
-// Cette page affiche les numeros de telephone et adresses de vos clients : elle ne doit pas etre
-// consultable par n'importe qui tombant sur l'URL. Definissez ADMIN_USER et ADMIN_PASSWORD dans les
-// variables d'environnement (Render > Environment) pour l'activer. Par securite, si ADMIN_PASSWORD
-// n'est pas defini, l'acces est refuse plutot que laisse ouvert par defaut.
+// --- Securite : protection des pages/API d'administration par mot de passe ---
+// Meme principe qu'avant le multi-marchand : ADMIN_USER/ADMIN_PASSWORD protegent l'acces (un seul
+// operateur pour l'instant - vous - tant que l'onboarding des marchands reste manuel). Par securite, si
+// ADMIN_PASSWORD n'est pas defini, l'acces est refuse plutot que laisse ouvert par defaut.
 function protegerAcces(req, res, next) {
   const utilisateurAttendu = process.env.ADMIN_USER || "admin";
   const motDePasseAttendu = process.env.ADMIN_PASSWORD;
@@ -67,9 +73,15 @@ function protegerAcces(req, res, next) {
   res.status(401).send("Authentification requise pour consulter cette page.");
 }
 
+function getMarchandOu404(req, res) {
+  const entry = engines[req.params.id];
+  if (!entry) { res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id }); return null; }
+  return entry;
+}
+
 // --- Verification simple pour savoir si le serveur tourne (utile pour Render + pour vous) ---
 app.get("/", (req, res) => {
-  res.send("IzyVendeur backend : en ligne. Le webhook est sur /webhook. Les commandes recues sont visibles sur /commandes.");
+  res.send("IzyVendeur backend : en ligne. Le webhook est sur /webhook. L'administration est sur /admin.");
 });
 
 // --- Politique de confidentialite (URL publique requise par Meta pour la revue de l'application) ---
@@ -92,30 +104,31 @@ app.get("/politique-confidentialite", (req, res) => {
 <p><em>Dernière mise à jour : août 2026</em></p>
 
 <p>IzyVendeur est un service édité par CCB CONSULTING SARL (Douala, Cameroun) qui permet à des
-commerçants de recevoir et traiter automatiquement les commandes de leurs clients via WhatsApp. Cette
-page explique quelles données sont traitées lorsque vous échangez avec un commerçant utilisant
-IzyVendeur, et comment elles sont utilisées.</p>
+commerçants de recevoir et traiter automatiquement les commandes ou les rendez-vous de leurs clients via
+WhatsApp. Cette page explique quelles données sont traitées lorsque vous échangez avec un commerçant
+utilisant IzyVendeur, et comment elles sont utilisées.</p>
 
 <h2>Quelles données sont collectées</h2>
 <p>Lorsque vous écrivez au numéro WhatsApp d'un commerçant utilisant IzyVendeur, nous traitons :
 votre numéro de téléphone WhatsApp, le contenu des messages échangés (pour comprendre votre demande :
-article, couleur, taille, quantité), et les informations que vous fournissez volontairement pour
-finaliser une commande (adresse de livraison, numéro de contact).</p>
+article/service, couleur, taille, quantité, jour et heure souhaités), et les informations que vous
+fournissez volontairement pour finaliser une commande ou un rendez-vous (adresse de livraison, nom, numéro
+de contact).</p>
 
 <h2>Pourquoi ces données sont traitées</h2>
-<p>Ces informations servent uniquement à répondre à vos demandes, vérifier la disponibilité des
-articles, créer et suivre votre commande, et vous transmettre les confirmations et informations de
-livraison correspondantes, pour le compte du commerçant que vous avez contacté.</p>
+<p>Ces informations servent uniquement à répondre à vos demandes, vérifier la disponibilité des articles
+ou des créneaux, créer et suivre votre commande ou rendez-vous, et vous transmettre les confirmations
+correspondantes, pour le compte du commerçant que vous avez contacté.</p>
 
 <h2>Avec qui ces données sont partagées</h2>
-<p>Vos données sont visibles par le commerçant à qui vous avez écrit (pour traiter votre commande) et
+<p>Vos données sont visibles par le commerçant à qui vous avez écrit (pour traiter votre demande) et
 transitent par la plateforme WhatsApp Business (Meta) qui achemine les messages. Nous ne vendons ni ne
 louons vos données à des tiers, et ne les partageons pas à des fins publicitaires.</p>
 
 <h2>Combien de temps ces données sont conservées</h2>
-<p>Les informations de commande sont conservées le temps nécessaire au traitement de votre commande et
-au suivi du service après-vente, puis archivées ou supprimées selon les besoins légaux et opérationnels
-du commerçant.</p>
+<p>Les informations sont conservées le temps nécessaire au traitement de votre commande ou rendez-vous et
+au suivi du service après-vente, puis archivées ou supprimées selon les besoins légaux et opérationnels du
+commerçant.</p>
 
 <h2>Vos droits</h2>
 <p>Vous pouvez à tout moment demander l'accès, la correction ou la suppression de vos données en nous
@@ -130,40 +143,119 @@ Email : info@ccbconsulting.org</p>
 </html>`);
 });
 
-// --- Page simple pour voir les commandes generees par le moteur de conversation ---
-// (en attendant un vrai tableau de bord connecte au meme serveur)
-// Protegee par mot de passe (protegerAcces) car elle affiche les coordonnees de vos clients.
-app.get("/commandes", protegerAcces, (req, res) => {
-  const orders = conversation.getOrders().slice().reverse();
-  const lignes = orders.map((o) => {
-    const articles = (o.items || [])
-      .map((it) => echapperHtml(it.produit) + " (" + echapperHtml(it.couleur) + " " + echapperHtml(it.taille) + ") x" + echapperHtml(it.quantite))
-      .join("<br/>");
-    return (
-      "<tr><td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
-      "<td>" + new Date(o.dateISO).toLocaleString("fr-FR") + "</td>" +
-      "<td>" + articles + "</td>" +
-      "<td>" + (o.prix || 0).toLocaleString("fr-FR") + " FCFA</td>" +
-      "<td>" + echapperHtml(o.telephone) + "</td>" +
-      "<td>" + echapperHtml(o.adresse) + "</td>" +
-      "<td>" + echapperHtml(o.statut) + "</td></tr>"
-    );
-  }).join("");
-  res.send(
-    "<html><head><meta charset='utf-8'><title>Commandes IzyVendeur</title>" +
-    "<style>body{font-family:sans-serif;padding:20px;} table{border-collapse:collapse;width:100%;} " +
-    "td,th{border:1px solid #ccc;padding:8px;text-align:left;font-size:14px;} th{background:#f2f2f2;}</style>" +
-    "</head><body><h2>Commandes reçues (" + orders.length + ")</h2>" +
-    "<table><tr><th>N°</th><th>Date</th><th>Articles</th><th>Total</th><th>Téléphone</th><th>Adresse</th><th>Statut</th></tr>" +
-    (lignes || "<tr><td colspan='7'>Aucune commande pour l'instant.</td></tr>") +
-    "</table></body></html>"
-  );
+// --- Ancienne page /commandes : redirigee vers la nouvelle interface d'administration ---
+app.get("/commandes", (req, res) => res.redirect("/admin"));
+
+// --- Interface d'administration connectee ---
+app.get("/admin", protegerAcces, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
+// ---------------- API d'administration (protegee) ----------------
+
+app.get("/api/marchands", protegerAcces, (req, res) => {
+  res.json(Object.values(engines).map((e) => ({ id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type })));
+});
+
+// Ajoute un nouveau marchand (onboarding manuel : vous configurez son numero WhatsApp cote Meta a part,
+// puis l'enregistrez ici avec le meme phone_number_id pour que le webhook sache lui router ses messages).
+app.post("/api/marchands", protegerAcces, async (req, res) => {
+  const { id, nom, type, phoneNumberId } = req.body || {};
+  if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
+  if (type !== "catalogue" && type !== "service") return res.status(400).json({ erreur: "type doit être 'catalogue' ou 'service'." });
+  if (engines[id]) return res.status(409).json({ erreur: "Un marchand avec cet id existe déjà." });
+  const merchant = {
+    id, nom, type,
+    phoneNumberId: phoneNumberId || null,
+    adminUser: process.env.ADMIN_USER || "admin",
+    adminPassword: process.env.ADMIN_PASSWORD || null
+  };
+  await db.addMerchant(merchant);
+  const engine = type === "service" ? createServiceEngine(id) : createCatalogEngine(id);
+  await engine.init();
+  engines[id] = { merchant, engine };
+  if (merchant.phoneNumberId) phoneNumberIndex[merchant.phoneNumberId] = id;
+  console.log("Nouveau marchand ajoute via l'API : " + id + " (" + type + ")");
+  res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type });
+});
+
+// -- Marchand catalogue --
+
+app.get("/api/:id/catalogue", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  res.json(entry.engine.getCatalog());
+});
+
+app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const nouveau = entry.engine.updateCatalog(req.body);
+  if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
+  res.json(nouveau);
+});
+
+app.get("/api/:id/commandes", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  res.json(entry.engine.getOrders());
+});
+
+app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const { statut, raisonAnnulation } = req.body || {};
+  const order = entry.engine.updateOrderStatus(req.params.orderId, statut, raisonAnnulation);
+  if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
+  res.json(order);
+});
+
+// -- Marchand service (prise de rendez-vous) --
+
+app.get("/api/:id/services", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  res.json(entry.engine.getServices());
+});
+
+app.put("/api/:id/services", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  const nouveau = entry.engine.updateServices(req.body);
+  if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
+  res.json(nouveau);
+});
+
+app.get("/api/:id/rendezvous", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  res.json(entry.engine.getAppointments());
+});
+
+app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  const { statut, raisonAnnulation } = req.body || {};
+  const appt = entry.engine.updateAppointmentStatus(req.params.apptId, statut, raisonAnnulation);
+  if (!appt) return res.status(404).json({ erreur: "Rendez-vous introuvable." });
+  res.json(appt);
+});
+
+// -- Parametres : commun aux deux types (autoConfirmMessage, + horaires/dureeCreneauMinutes pour service) --
+
+app.get("/api/:id/parametres", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  res.json(entry.engine.getSettings());
+});
+
+app.put("/api/:id/parametres", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  res.json(entry.engine.updateSettings(req.body || {}));
+});
+
+// ---------------- Webhook WhatsApp ----------------
+
 // --- ETAPE 1 : Verification du webhook par Meta ---
-// Quand vous collez l'URL + le token dans le tableau de bord Meta et cliquez "Verifier et enregistrer",
-// Meta envoie une requete GET avec 3 parametres. Il faut renvoyer EXACTEMENT le "challenge" recu,
-// mais seulement si le token recu correspond bien a celui que vous avez configure.
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const tokenRecu = req.query["hub.verify_token"];
@@ -179,8 +271,6 @@ app.get("/webhook", (req, res) => {
 });
 
 // --- ETAPE 2 : Reception des messages entrants ---
-// Meta envoie une requete POST a chaque fois qu'un client ecrit au numero WhatsApp,
-// ou qu'un statut de message change (envoye/livre/lu).
 app.post("/webhook", async (req, res) => {
   // On repond tout de suite 200 a Meta pour accuser reception (sinon Meta reessaie / se plaint).
   res.sendStatus(200);
@@ -190,9 +280,17 @@ app.post("/webhook", async (req, res) => {
     const changes = entry?.changes?.[0];
     const value = changes?.value;
     const messages = value?.messages;
+    const phoneNumberId = value?.metadata?.phone_number_id;
 
     if (!messages || messages.length === 0) {
       // Ce n'est pas un nouveau message (ex: juste une mise a jour de statut) -> rien a faire.
+      return;
+    }
+
+    const merchantId = phoneNumberId && phoneNumberIndex[phoneNumberId];
+    const marchand = merchantId && engines[merchantId];
+    if (!marchand) {
+      console.warn("Message recu sur le phone_number_id " + phoneNumberId + ", qui n'est associe a AUCUN marchand connu. Message ignore.");
       return;
     }
 
@@ -201,36 +299,33 @@ app.post("/webhook", async (req, res) => {
     const texteRecu = message.text?.body || "";
 
     if (!texteRecu) {
-      // Message sans texte (image, audio, document, sticker, localisation...) : le moteur actuel ne
-      // sait traiter que du texte. On repond quand meme quelque chose plutot que de rester
-      // completement silencieux (un silence total ressemble a une panne, meme si ce n'en est pas une).
-      console.log(`Message non-texte recu de ${from} (type: ${message.type}) — reponse d'orientation envoyee.`);
+      console.log(`[${merchantId}] Message non-texte recu de ${from} (type: ${message.type}) — reponse d'orientation envoyee.`);
       await envoyerMessageWhatsApp(
         from,
-        "Je ne peux lire que du texte pour l'instant 🙏 Merci de m'écrire votre demande en quelques mots (ex : « Sac noir »)."
+        "Je ne peux lire que du texte pour l'instant 🙏 Merci de m'écrire votre demande en quelques mots.",
+        phoneNumberId
       );
       return;
     }
 
-    console.log(`Message recu de ${from} : "${texteRecu}"`);
+    console.log(`[${merchantId}] Message recu de ${from} : "${texteRecu}"`);
 
-    // --- Vraie logique de conversation IzyVendeur (catalogue, stock, panier, commande) ---
-    const reponse = conversation.handleMessage(from, texteRecu);
+    const reponse = marchand.engine.handleMessage(from, texteRecu);
 
-    await envoyerMessageWhatsApp(from, reponse);
+    await envoyerMessageWhatsApp(from, reponse, phoneNumberId);
   } catch (erreur) {
     console.error("Erreur lors du traitement du webhook :", erreur);
   }
 });
 
 // --- Fonction utilitaire : envoyer un message texte via l'API WhatsApp Cloud ---
-async function envoyerMessageWhatsApp(destinataire, texte) {
-  if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
-    console.error("WHATSAPP_TOKEN ou PHONE_NUMBER_ID manquant dans les variables d'environnement.");
+async function envoyerMessageWhatsApp(destinataire, texte, phoneNumberId) {
+  if (!WHATSAPP_TOKEN || !phoneNumberId) {
+    console.error("WHATSAPP_TOKEN ou phone_number_id manquant — impossible d'envoyer la reponse.");
     return;
   }
 
-  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${PHONE_NUMBER_ID}/messages`;
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
 
   const reponse = await fetch(url, {
     method: "POST",
@@ -256,12 +351,12 @@ async function envoyerMessageWhatsApp(destinataire, texte) {
 
 const PORT = process.env.PORT || 3000;
 
-// On attend que l'etat (catalogue + commandes) soit charge - depuis PostgreSQL en production,
-// depuis data.json en local - avant d'accepter la moindre requete. Voir conversation.js / db.js.
+// On attend que le registre des marchands + l'etat de chacun soient charges avant d'accepter la moindre
+// requete. Voir chargerMarchands() / db.js.
 async function demarrer() {
-  await conversation.init();
+  await chargerMarchands();
   app.listen(PORT, () => {
-    console.log(`Serveur IzyVendeur demarre sur le port ${PORT}`);
+    console.log(`Serveur IzyVendeur demarre sur le port ${PORT} (${Object.keys(engines).length} marchand(s) charge(s))`);
   });
 }
 
