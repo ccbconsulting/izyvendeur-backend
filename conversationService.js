@@ -45,7 +45,7 @@ function seedState() {
   };
 }
 
-// Voir conversation.js pour le detail de `options.envoyer`/`options.notifierMarchand`.
+// Voir conversation.js pour le detail de `options.envoyer`/`options.notifierMarchand(fromPhone, texteClient)`.
 function createServiceEngine(merchantKey, options) {
   let state = null;
   const sessions = {};
@@ -469,10 +469,9 @@ function createServiceEngine(merchantKey, options) {
 
     if (sh.demandeUnHumain(text)) {
       sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
-      notifierMarchand(
-        "Un client (" + fromPhone + ") souhaite parler à quelqu'un :\n« " + text + " »\n\n" +
-        "Répondez-lui depuis /admin, onglet Conversations."
-      ).catch((erreur) => console.error("[" + merchantKey + "] Echec de la notification marchand :", erreur));
+      notifierMarchand(fromPhone, text).catch((erreur) =>
+        console.error("[" + merchantKey + "] Echec de la notification marchand :", erreur)
+      );
       return sh.MESSAGE_MISE_EN_RELATION;
     }
 

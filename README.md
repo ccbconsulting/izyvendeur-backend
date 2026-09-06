@@ -212,6 +212,42 @@ Cet état (qui est en pause, depuis quand, l'historique) est gardé en mémoire 
 cours elles-mêmes : un redémarrage du serveur remet les compteurs à zéro, un compromis accepté pour
 l'instant (voir la section précédente sur la persistance des données).
 
+### Le template WhatsApp de notification (fenêtre des 24h)
+
+WhatsApp interdit d'envoyer un message texte libre à un numéro qui ne vous a pas écrit dans les 24 heures
+précédentes ("fenêtre de conversation"). Concrètement, si le numéro de notification personnel d'un
+marchand n'a pas lui-même envoyé de message à son bot récemment, l'alerte "un client veut parler à un
+humain" serait bloquée par Meta.
+
+Pour éviter cette contrainte, IzyVendeur essaie d'abord d'envoyer cette alerte via un **template WhatsApp
+pré-approuvé par Meta** (les templates peuvent être envoyés à tout moment, même en dehors de la fenêtre de
+24h) — et ne bascule sur le texte libre (donc soumis à la fenêtre de 24h) que si l'envoi du template
+échoue, par exemple parce qu'il n'a pas encore été approuvé.
+
+**Ce template doit être créé une seule fois par vous, dans le WhatsApp Manager de Meta** ("Comptes
+professionnels WhatsApp" → votre compte → **Modèles de messages** → **Créer un modèle**), avec exactement
+ces réglages (le nom et la langue doivent correspondre EXACTEMENT à ceux définis dans `server.js`, sans
+quoi IzyVendeur ne le trouvera pas et basculera silencieusement sur le texte libre) :
+
+| Champ | Valeur |
+|---|---|
+| Nom | `izyvendeur_alerte_humain` |
+| Catégorie | Utilitaire (*Utility*) |
+| Langue | Français |
+| Corps du message | `Bonjour, un client ({{1}}) souhaite être mis en relation avec un conseiller sur WhatsApp. Message du client : {{2}}. Connectez-vous à votre interface IzyVendeur (onglet Conversations) pour lui répondre.` |
+| Exemple pour {{1}} | `237670001122` |
+| Exemple pour {{2}} | `Je voudrais annuler ma commande` |
+
+Pas de bouton, pas d'en-tête, pas de pied de page nécessaires. Une fois soumis, l'approbation par Meta est
+généralement automatique et prend de quelques minutes à quelques heures (rarement jusqu'à 24h) ; en cas de
+rejet, Meta indique la raison précise (catégorie, formulation, etc.) et il suffit de corriger puis
+resoumettre.
+
+Tant que le template n'est pas encore approuvé, la fonctionnalité continue de marcher normalement via le
+texte libre — à condition, comme avant, que le numéro de notification ait écrit au bot dans les 24h. Une
+fois le template approuvé, plus besoin de cette précaution : ce sera automatique dès le prochain message
+déclenchant une alerte, sans rien à changer côté code ou configuration.
+
 ## Protections contre les abus
 
 Comme n'importe quel numéro WhatsApp peut écrire au bot, quelques protections évitent qu'une personne

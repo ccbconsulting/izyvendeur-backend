@@ -40,9 +40,12 @@ function seedState() {
 }
 
 // `options.envoyer(destinataire, texte)` envoie un message WhatsApp a N'IMPORTE QUEL numero (utilise pour
-// les reponses manuelles du marchand a un client mis en pause) ; `options.notifierMarchand(texte)` envoie
-// un message au numero de notification personnel du marchand (no-op si non configure). Les deux sont
-// fournies par server.js, qui seul connait le token WhatsApp et le phone_number_id de ce marchand.
+// les reponses manuelles du marchand a un client mis en pause) ; `options.notifierMarchand(fromPhone,
+// texteClient)` envoie une alerte au numero de notification personnel du marchand (no-op si non
+// configure) — on transmet le numero et le message du client TELS QUELS (pas de texte deja mis en forme)
+// car server.js choisit lui-meme, a cet endroit, d'envoyer un template WhatsApp approuve ou un texte
+// libre de repli. Les deux fonctions sont fournies par server.js, qui seul connait le token WhatsApp et
+// le phone_number_id de ce marchand.
 function createCatalogEngine(merchantKey, options) {
   let state = null;
   const sessions = {};
@@ -498,10 +501,9 @@ function createCatalogEngine(merchantKey, options) {
 
     if (sh.demandeUnHumain(text)) {
       sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
-      notifierMarchand(
-        "Un client (" + fromPhone + ") souhaite parler à quelqu'un :\n« " + text + " »\n\n" +
-        "Répondez-lui depuis /admin, onglet Conversations."
-      ).catch((erreur) => console.error("[" + merchantKey + "] Echec de la notification marchand :", erreur));
+      notifierMarchand(fromPhone, text).catch((erreur) =>
+        console.error("[" + merchantKey + "] Echec de la notification marchand :", erreur)
+      );
       return sh.MESSAGE_MISE_EN_RELATION;
     }
 

@@ -24,6 +24,16 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GRAPH_API_VERSION = "v21.0";
 
+// Template WhatsApp utilise pour notifier le marchand qu'un client demande a parler a un humain. Un
+// template (contrairement a un message texte libre) peut etre envoye a tout moment, meme si le numero de
+// notification du marchand n'a pas ecrit au bot dans les 24 dernieres heures — c'est pour ca qu'on
+// privilegie ce canal, avec un repli en texte libre si jamais le template n'est pas (encore) approuve par
+// Meta. Voir le README ("Mise en relation avec un humain") pour la marche a suivre exacte de creation et
+// d'approbation de ce template dans le WhatsApp Manager de Meta — le nom et la langue doivent correspondre
+// EXACTEMENT a ce qui a ete approuve la-bas.
+const NOM_TEMPLATE_ALERTE_HUMAIN = "izyvendeur_alerte_humain";
+const LANGUE_TEMPLATE_ALERTE_HUMAIN = "fr";
+
 // ---------------- Registre des marchands + moteurs de conversation ----------------
 // engines[merchantId] = { merchant, engine }  -- engine expose toujours handleMessage(fromPhone, texte),
 // quel que soit son type (catalogue ou service), ce qui garde le webhook simple.
@@ -42,12 +52,49 @@ function creerOptionsEngine(merchantKey) {
       if (!entry) return;
       await envoyerMessageWhatsApp(destinataire, texte, entry.merchant.phoneNumberId);
     },
-    notifierMarchand: async (texte) => {
+    // Recoit le numero du client et son message TELS QUELS (pas de texte deja mis en forme) : c'est ici,
+    // et seulement ici, qu'on sait s'il faut passer par un template ou par du texte libre.
+    notifierMarchand: async (fromPhone, texteClient) => {
       const entry = engines[merchantKey];
       if (!entry || !entry.merchant.phoneNotification) return;
-      await envoyerMessageWhatsApp(entry.merchant.phoneNotification, texte, entry.merchant.phoneNumberId);
+      const destinataire = entry.merchant.phoneNotification;
+      const phoneNumberId = entry.merchant.phoneNumberId;
+
+      const envoiTemplateReussi = await envoyerTemplateWhatsApp(
+        destinataire,
+        phoneNumberId,
+        NOM_TEMPLATE_ALERTE_HUMAIN,
+        LANGUE_TEMPLATE_ALERTE_HUMAIN,
+        [fromPhone, nettoyerPourTemplate(texteClient)]
+      );
+
+      if (!envoiTemplateReussi) {
+        // Repli : texte libre, qui ne passera que si ce numero a deja ecrit au bot dans les 24h
+        // (fenetre WhatsApp). Utile pendant que le template est en attente d'approbation par Meta, ou si
+        // son nom/sa langue ne correspond pas exactement a ce qui est configure ci-dessus.
+        console.warn(
+          `[${merchantKey}] Repli en texte libre pour la notification marchand ` +
+          `(le template "${NOM_TEMPLATE_ALERTE_HUMAIN}" a echoue ou n'est pas encore approuve).`
+        );
+        await envoyerMessageWhatsApp(
+          destinataire,
+          "Un client (" + fromPhone + ") souhaite parler à quelqu'un :\n« " + texteClient + " »\n\n" +
+          "Répondez-lui depuis /admin, onglet Conversations.",
+          phoneNumberId
+        );
+      }
     }
   };
+}
+
+// Nettoie un texte pour qu'il respecte les contraintes de Meta sur les variables de template : pas de
+// saut de ligne/tabulation, pas plus d'un espace consecutif, longueur raisonnable.
+function nettoyerPourTemplate(texte) {
+  return String(texte || "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/ {2,}/g, " ")
+    .trim()
+    .slice(0, 300);
 }
 
 async function chargerMarchands() {
@@ -516,6 +563,55 @@ async function envoyerMessageWhatsApp(destinataire, texte, phoneNumberId) {
     console.error(`Echec de l'envoi WhatsApp (${reponse.status}) :`, detail);
   } else {
     console.log("Reponse envoyee avec succes.");
+  }
+}
+
+// --- Fonction utilitaire : envoyer un template WhatsApp approuve via l'API Cloud ---
+// Retourne true si l'envoi a reussi, false sinon (permet a l'appelant de basculer sur un repli). Ne
+// leve jamais d'exception : toute erreur (reseau, template inexistant/non approuve, etc.) est capturee,
+// journalisee, et traduite en simple `false`.
+async function envoyerTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte) {
+  if (!WHATSAPP_TOKEN || !phoneNumberId) {
+    console.error("WHATSAPP_TOKEN ou phone_number_id manquant — impossible d'envoyer le template.");
+    return false;
+  }
+
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+
+  try {
+    const reponse = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: destinataire,
+        type: "template",
+        template: {
+          name: nomTemplate,
+          language: { code: langue },
+          components: [
+            {
+              type: "body",
+              parameters: parametresTexte.map((texte) => ({ type: "text", text: texte })),
+            },
+          ],
+        },
+      }),
+    });
+
+    if (!reponse.ok) {
+      const detail = await reponse.text();
+      console.error(`Echec de l'envoi du template WhatsApp "${nomTemplate}" (${reponse.status}) :`, detail);
+      return false;
+    }
+    console.log(`Template WhatsApp "${nomTemplate}" envoye avec succes.`);
+    return true;
+  } catch (erreur) {
+    console.error(`Erreur reseau lors de l'envoi du template WhatsApp "${nomTemplate}" :`, erreur);
+    return false;
   }
 }
 
