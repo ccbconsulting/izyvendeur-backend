@@ -123,8 +123,8 @@ function choisirMarchand(id) {
 function construireOnglets() {
   const barre = document.getElementById("barreOnglets");
   const onglets = marchandActif.type === "service"
-    ? [["services", "Services", renderServices], ["rendezvous", "Rendez-vous", renderRendezvous], ["parametres", "Paramètres", renderParametresService], ["compte", "Mon compte", renderCompte]]
-    : [["catalogue", "Catalogue & stock", renderCatalogue], ["commandes", "Commandes", renderCommandes], ["parametres", "Paramètres", renderParametresCatalogue], ["compte", "Mon compte", renderCompte]];
+    ? [["services", "Services", renderServices], ["rendezvous", "Rendez-vous", renderRendezvous], ["conversations", "Conversations", renderConversations], ["parametres", "Paramètres", renderParametresService], ["compte", "Mon compte", renderCompte]]
+    : [["catalogue", "Catalogue & stock", renderCatalogue], ["commandes", "Commandes", renderCommandes], ["conversations", "Conversations", renderConversations], ["parametres", "Paramètres", renderParametresCatalogue], ["compte", "Mon compte", renderCompte]];
   barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "' class='" + (i === 0 ? "actif" : "") + "'>" + o[1] + "</button>").join("");
   const fonctions = {};
   onglets.forEach((o) => { fonctions[o[0]] = o[2]; });
@@ -156,13 +156,14 @@ async function renderCatalogue() {
             "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder='Catégorie' />" +
             "<button data-suppr-produit='" + pi + "' class='danger'>Supprimer l'article</button>" +
           "</div>" +
-          "<table class='table-variantes'><tr><th>Couleur</th><th>Taille</th><th>Prix (FCFA)</th><th>Stock réel</th><th>Seuil alerte</th><th></th></tr>" +
+          "<table class='table-variantes'><tr><th>Couleur</th><th>Taille</th><th>Prix (FCFA)</th><th>Stock réel</th><th>Stock virtuel</th><th>Seuil alerte</th><th></th></tr>" +
           p.variantes.map((v, vi) =>
             "<tr>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='couleur' value=\"" + esc(v.couleur) + "\" /></td>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='taille' value=\"" + esc(v.taille) + "\" /></td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='prix' value='" + v.prix + "' /></td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='stockReel' value='" + v.stockReel + "' class=\"" + (v.stockReel <= (v.seuilAlerte || 0) ? "alerte-stock" : "") + "\" /></td>" +
+              "<td title=\"Stock réel moins ce qui est déjà engagé dans des commandes Confirmée/Expédiée — c'est ce nombre que le bot vérifie avant de proposer l'article à un client.\">" + (v.stockVirtuel != null ? v.stockVirtuel : v.stockReel) + "</td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='seuilAlerte' value='" + (v.seuilAlerte || 0) + "' /></td>" +
               "<td><button data-suppr-variante='" + pi + ":" + vi + "' class='danger'>×</button></td>" +
             "</tr>"
@@ -224,12 +225,13 @@ async function renderCommandes() {
   const tri = commandes.slice().reverse();
   zone.innerHTML =
     "<h2>Commandes (" + commandes.length + ")</h2>" +
-    "<table class='table-donnees'><tr><th>N°</th><th>Date</th><th>Articles</th><th>Total</th><th>Téléphone</th><th>Adresse</th><th>Statut</th></tr>" +
+    "<table class='table-donnees'><tr><th>N°</th><th>Date</th><th>Articles</th><th>Nb articles</th><th>Total</th><th>Téléphone</th><th>Adresse</th><th>Statut</th></tr>" +
     (tri.length ? tri.map((o) =>
       "<tr>" +
         "<td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
         "<td>" + esc(new Date(o.dateISO).toLocaleString("fr-FR")) + "</td>" +
         "<td>" + (o.items || []).map((it) => esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ") ×" + it.quantite).join("<br/>") + "</td>" +
+        "<td>" + (o.items || []).reduce((somme, it) => somme + (Number(it.quantite) || 0), 0) + "</td>" +
         "<td>" + (o.prix || 0).toLocaleString("fr-FR") + " FCFA</td>" +
         "<td>" + esc(o.telephone) + "</td>" +
         "<td>" + esc(o.adresse) + "</td>" +
@@ -237,7 +239,7 @@ async function renderCommandes() {
           (o.raisonAnnulation ? "<div class='raison'>Raison : " + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
       "</tr>"
-    ).join("") : "<tr><td colspan='7'>Aucune commande pour l'instant.</td></tr>") +
+    ).join("") : "<tr><td colspan='8'>Aucune commande pour l'instant.</td></tr>") +
     "</table>";
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-commande]"), (sel) => {
     sel.addEventListener("change", async () => {
@@ -399,6 +401,62 @@ async function renderParametresService() {
   };
 }
 
+// ---------------- Conversations en attente d'un humain ----------------
+
+function formaterDureeDepuis(depuisISO) {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(depuisISO).getTime()) / 60000));
+  if (minutes < 1) return "à l'instant";
+  if (minutes === 1) return "depuis 1 minute";
+  return "depuis " + minutes + " minutes";
+}
+
+async function renderConversations() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  const conversations = await api("/api/" + marchandActif.id + "/conversations");
+
+  if (!conversations.length) {
+    zone.innerHTML =
+      "<h2>Conversations</h2>" +
+      "<p>Aucun client n'attend actuellement un humain. Dès qu'un client le demande sur WhatsApp, il apparaît ici (et vous êtes averti par WhatsApp si un numéro de notification est configuré dans \"Mon compte\").</p>";
+    return;
+  }
+
+  zone.innerHTML =
+    "<h2>Conversations en attente (" + conversations.length + ")</h2>" +
+    "<p class='raison'>Le bot reste silencieux avec ces clients tant qu'ils sont listés ici. Si personne ne répond dans les 10 minutes suivant leur demande (ou votre dernière réponse), le bot reprend automatiquement la main.</p>" +
+    conversations.map((c, i) =>
+      "<div class='carte-produit'>" +
+        "<div style='display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;'>" +
+          "<strong>" + esc(c.telephone) + "</strong>" +
+          "<span class='raison'>En attente " + formaterDureeDepuis(c.depuisISO) + "</span>" +
+        "</div>" +
+        "<div style='max-height:160px; overflow-y:auto; margin:10px 0; padding:8px; background:#f6f7f9; border-radius:6px; font-size:0.9em;'>" +
+          (c.historique || []).map((m) =>
+            "<div style='margin-bottom:6px;'><strong>" + (m.de === "marchand" ? "Vous" : "Client") + " :</strong> " + esc(m.texte) + "</div>"
+          ).join("") +
+        "</div>" +
+        "<textarea data-reponse='" + i + "' rows='2' placeholder='Votre réponse au client…'></textarea>" +
+        "<div style='margin-top:8px;'><button data-envoyer='" + i + "' class='principal'>Envoyer</button></div>" +
+      "</div>"
+    ).join("");
+
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-envoyer]"), (btn) => {
+    btn.onclick = async () => {
+      const i = Number(btn.dataset.envoyer);
+      const texte = zone.querySelector("[data-reponse='" + i + "']").value.trim();
+      if (!texte) { alert("Écrivez un message avant d'envoyer."); return; }
+      try {
+        await api("/api/" + marchandActif.id + "/conversations/" + encodeURIComponent(conversations[i].telephone) + "/repondre", {
+          method: "POST",
+          body: JSON.stringify({ message: texte })
+        });
+        renderConversations();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
+  });
+}
+
 // ---------------- Mon compte (identifiants de connexion) ----------------
 
 async function renderCompte() {
@@ -417,7 +475,12 @@ async function renderCompte() {
       "<div style='margin-top:10px;'>" +
         "<button id='btnDefinirMdp' class='principal'>Définir ce mot de passe</button> " +
         "<button id='btnGenererMdp'>Générer un mot de passe aléatoire</button>" +
-      "</div>";
+      "</div>" +
+      "<h3>Numéro de notification</h3>" +
+      "<p class='raison'>Le numéro WhatsApp personnel (pas le numéro business du bot) qui reçoit un message quand un client de ce marchand demande à parler à un humain.</p>" +
+      "<label>Numéro de notification (format international sans le +, ex: 237699999999)</label>" +
+      "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
+      "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>Enregistrer</button></div>";
 
     document.getElementById("btnSauverUtilisateur").onclick = async () => {
       const nouvUtilisateur = document.getElementById("champUtilisateur").value.trim();
@@ -442,6 +505,13 @@ async function renderCompte() {
         alert("Nouveau mot de passe généré. Communiquez-le au marchand :\n\n" + rep.nouveauMotDePasse);
       } catch (e) { alert("Erreur : " + e.message); }
     };
+    document.getElementById("btnSauverNotification").onclick = async () => {
+      try {
+        await api("/api/" + marchandActif.id + "/notification", { method: "PUT", body: JSON.stringify({ phoneNotification: document.getElementById("champNotification").value.trim() || null }) });
+        alert("Numéro de notification enregistré.");
+        await demarrer();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
     return;
   }
 
@@ -454,7 +524,12 @@ async function renderCompte() {
     "<label>Confirmer le nouveau mot de passe</label>" +
     "<input id='champNouveauMdp2' type='password' />" +
     "<div style='margin-top:14px;'><button id='btnChangerMdp' class='principal'>Changer mon mot de passe</button></div>" +
-    "<p class='raison'>Une fois le changement effectué, la page se recharge : reconnectez-vous avec votre nouveau mot de passe.</p>";
+    "<p class='raison'>Une fois le changement effectué, la page se recharge : reconnectez-vous avec votre nouveau mot de passe.</p>" +
+    "<h3>Numéro de notification</h3>" +
+    "<p class='raison'>Votre numéro WhatsApp personnel (pas votre numéro business), pour être averti par message quand un client demande à parler à un humain.</p>" +
+    "<label>Numéro de notification (format international sans le +, ex: 237699999999)</label>" +
+    "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
+    "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>Enregistrer</button></div>";
 
   document.getElementById("btnChangerMdp").onclick = async () => {
     const m1 = document.getElementById("champNouveauMdp1").value;
@@ -465,6 +540,12 @@ async function renderCompte() {
       await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ newPassword: m1 }) });
       alert("Mot de passe changé avec succès. La page va se recharger : reconnectez-vous avec votre nouveau mot de passe.");
       location.reload();
+    } catch (e) { alert("Erreur : " + e.message); }
+  };
+  document.getElementById("btnSauverNotification").onclick = async () => {
+    try {
+      await api("/api/" + marchandActif.id + "/notification", { method: "PUT", body: JSON.stringify({ phoneNotification: document.getElementById("champNotification").value.trim() || null }) });
+      alert("Numéro de notification enregistré.");
     } catch (e) { alert("Erreur : " + e.message); }
   };
 }
