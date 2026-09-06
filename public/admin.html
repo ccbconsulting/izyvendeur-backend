@@ -35,6 +35,25 @@
   .chargement, .erreur { padding: 20px; color: #6b7685; }
   .erreur { color: #b3261e; }
   label { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 0.92em; }
+  .tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .tuile { border: 1px solid #e3e7ec; border-radius: 8px; padding: 14px; }
+  .tuile .valeur { font-size: 1.6em; font-weight: 700; color: #14213d; }
+  .tuile .libelle { font-size: 0.85em; color: #6b7685; margin-top: 2px; }
+  .tuile.avertissement { border-color: #e3a008; background: #fff8e6; }
+  .sparkline { display: flex; align-items: flex-end; gap: 6px; height: 90px; margin: 8px 0 4px; }
+  .sparkline .colonne { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .sparkline .barre { width: 100%; background: #14213d; border-radius: 3px 3px 0 0; min-height: 2px; }
+  .sparkline .jour-label { font-size: 0.7em; color: #6b7685; margin-top: 4px; }
+  .chat-fenetre { border: 1px solid #e3e7ec; border-radius: 8px; padding: 14px; height: 380px; overflow-y: auto; background: #f6f7f9; margin-bottom: 10px; }
+  .bulle { max-width: 75%; padding: 8px 12px; border-radius: 14px; margin-bottom: 8px; font-size: 0.92em; line-height: 1.4; white-space: pre-wrap; }
+  .bulle.client { background: #14213d; color: #fff; margin-left: auto; border-bottom-right-radius: 2px; }
+  .bulle.bot { background: #fff; border: 1px solid #e3e7ec; margin-right: auto; border-bottom-left-radius: 2px; }
+  .zone-saisie-chat { display: flex; gap: 8px; }
+  .zone-saisie-chat input { flex: 1; }
+  .panneau-analyse { border: 1px dashed #d6dbe3; border-radius: 8px; padding: 12px; font-size: 0.85em; color: #33404f; background: #fafbfc; }
+  .panneau-analyse div { margin-bottom: 4px; }
+  .controles-rapport { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+  .controles-rapport > div { display: flex; flex-direction: column; }
 </style>
 </head>
 <body>
@@ -123,8 +142,8 @@ function choisirMarchand(id) {
 function construireOnglets() {
   const barre = document.getElementById("barreOnglets");
   const onglets = marchandActif.type === "service"
-    ? [["services", "Services", renderServices], ["rendezvous", "Rendez-vous", renderRendezvous], ["conversations", "Conversations", renderConversations], ["parametres", "Paramètres", renderParametresService], ["compte", "Mon compte", renderCompte]]
-    : [["catalogue", "Catalogue & stock", renderCatalogue], ["commandes", "Commandes", renderCommandes], ["conversations", "Conversations", renderConversations], ["parametres", "Paramètres", renderParametresCatalogue], ["compte", "Mon compte", renderCompte]];
+    ? [["dashboard", "Tableau de bord", renderTableauDeBord], ["services", "Services", renderServices], ["rendezvous", "Rendez-vous", renderRendezvous], ["simulateur", "Simulateur WhatsApp", renderSimulateur], ["conversations", "Conversations", renderConversations], ["parametres", "Paramètres", renderParametresService], ["compte", "Mon compte", renderCompte]]
+    : [["dashboard", "Tableau de bord", renderTableauDeBord], ["catalogue", "Catalogue & stock", renderCatalogue], ["commandes", "Commandes", renderCommandes], ["simulateur", "Simulateur WhatsApp", renderSimulateur], ["rapports", "Rapports", renderRapports], ["conversations", "Conversations", renderConversations], ["parametres", "Paramètres", renderParametresCatalogue], ["compte", "Mon compte", renderCompte]];
   barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "' class='" + (i === 0 ? "actif" : "") + "'>" + o[1] + "</button>").join("");
   const fonctions = {};
   onglets.forEach((o) => { fonctions[o[0]] = o[2]; });
@@ -455,6 +474,227 @@ async function renderConversations() {
       } catch (e) { alert("Erreur : " + e.message); }
     };
   });
+}
+
+// ---------------- Tableau de bord ----------------
+
+async function renderTableauDeBord() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  const d = await api("/api/" + marchandActif.id + "/tableau-de-bord");
+  const estCatalogue = marchandActif.type !== "service";
+  const jours = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const maxSpark = Math.max(1, ...d.sparkline7j);
+  const aujourdhuiIndex = (new Date().getDay() + 6) % 7; // 0 = lundi
+
+  let tuiles =
+    "<div class='tuiles'>" +
+      "<div class='tuile'><div class='valeur'>" + d.commandesAujourdhui + "</div><div class='libelle'>" + (estCatalogue ? "Commandes aujourd'hui" : "Rendez-vous pris aujourd'hui") + "</div></div>" +
+      "<div class='tuile'><div class='valeur'>" + (d.caJour || 0).toLocaleString("fr-FR") + " FCFA</div><div class='libelle'>Chiffre d'affaires du jour</div></div>" +
+      "<div class='tuile" + (d.conversationsEnAttente ? " avertissement" : "") + "'><div class='valeur'>" + d.conversationsEnAttente + "</div><div class='libelle'>Conversations en attente d'un humain</div></div>";
+  if (estCatalogue) {
+    tuiles +=
+      "<div class='tuile" + (d.alertesStock ? " avertissement" : "") + "'><div class='valeur'>" + d.alertesStock + "</div><div class='libelle'>Articles à surveiller</div></div>" +
+      "<div class='tuile" + (d.ruptures ? " avertissement" : "") + "'><div class='valeur'>" + d.ruptures + "</div><div class='libelle'>Ruptures de stock</div></div>";
+  }
+  tuiles += "</div>";
+
+  const sparkline =
+    "<h3>Activité des 7 derniers jours</h3>" +
+    "<div class='sparkline'>" +
+      d.sparkline7j.map((v, i) => {
+        const jourReel = new Date(); jourReel.setDate(jourReel.getDate() - (6 - i));
+        const label = jours[(jourReel.getDay() + 6) % 7];
+        return "<div class='colonne'><div class='barre' style='height:" + Math.max(4, Math.round((v / maxSpark) * 80)) + "px' title='" + v + "'></div><div class='jour-label'>" + label + "</div></div>";
+      }).join("") +
+    "</div>";
+
+  const top =
+    "<h3>" + (estCatalogue ? "Articles les plus vendus" : "Services les plus demandés") + "</h3>" +
+    (d.topProduits.length
+      ? "<table class='table-donnees'><tr><th>" + (estCatalogue ? "Article" : "Service") + "</th><th>Quantité</th></tr>" +
+        d.topProduits.map((p) => "<tr><td>" + esc(p.nom) + "</td><td>" + p.quantite + "</td></tr>").join("") + "</table>"
+      : "<p class='raison'>Pas encore assez de données.</p>");
+
+  let bas;
+  if (estCatalogue) {
+    bas =
+      "<h3>Stock à surveiller</h3>" +
+      (d.stockASurveiller.length
+        ? "<table class='table-donnees'><tr><th>Article</th><th>Couleur</th><th>Taille</th><th>Stock réel</th><th>Stock virtuel</th><th>Seuil</th></tr>" +
+          d.stockASurveiller.map((v) =>
+            "<tr class=\"" + (v.stockVirtuel <= 0 ? "alerte-stock" : "") + "\"><td>" + esc(v.produit) + "</td><td>" + esc(v.couleur) + "</td><td>" + esc(v.taille) + "</td><td>" + v.stockReel + "</td><td>" + v.stockVirtuel + "</td><td>" + v.seuil + "</td></tr>"
+          ).join("") + "</table>"
+        : "<p class='raison'>Aucun article sous le seuil d'alerte.</p>");
+  } else {
+    bas =
+      "<h3>Prochains rendez-vous (7 prochains jours)</h3>" +
+      (d.prochainsRendezVous.length
+        ? "<table class='table-donnees'><tr><th>Réf.</th><th>Date &amp; heure</th><th>Service</th><th>Client</th><th>Statut</th></tr>" +
+          d.prochainsRendezVous.map((a) =>
+            "<tr><td>" + esc(a.reference) + "</td><td>" + esc(new Date(a.dateISO).toLocaleString("fr-FR")) + "</td><td>" + esc(a.service) + "</td><td>" + esc(a.clientNom) + "</td><td>" + esc(a.statut) + "</td></tr>"
+          ).join("") + "</table>"
+        : "<p class='raison'>Aucun rendez-vous prévu dans les 7 prochains jours.</p>");
+  }
+
+  zone.innerHTML = "<h2>Tableau de bord</h2>" + tuiles + sparkline + top + bas;
+}
+
+// ---------------- Simulateur WhatsApp ----------------
+
+// Historique de conversation affiché à l'écran, par marchand (purement visuel : la vraie session de
+// test vit côté serveur sous le numéro réservé PHONE_SIMULATEUR — voir conversation.js/conversationService.js).
+const simulateurHistoriques = {};
+
+async function renderSimulateur() {
+  const zone = document.getElementById("contenuOnglet");
+  const id = marchandActif.id;
+  if (!simulateurHistoriques[id]) simulateurHistoriques[id] = [];
+  const historique = simulateurHistoriques[id];
+  const aUneTrace = marchandActif.type !== "service";
+
+  function dessiner() {
+    zone.innerHTML =
+      "<h2>Simulateur WhatsApp</h2>" +
+      "<p class='raison'>Testez le bot ici comme si vous étiez un client. Ce numéro de test est totalement séparé de vos vraies commandes/rendez-vous et de votre vrai stock : rien de ce qui se passe ici n'affecte vos clients réels.</p>" +
+      "<div id='chatFenetre' class='chat-fenetre'>" +
+        (historique.length ? historique.map((m) => "<div class='bulle " + (m.de === "client" ? "client" : "bot") + "'>" + esc(m.texte) + "</div>").join("") : "<p class='raison'>Envoyez un premier message pour démarrer la simulation…</p>") +
+      "</div>" +
+      "<div class='zone-saisie-chat'>" +
+        "<input id='champMessageSimu' placeholder='Écrivez comme le ferait un client…' />" +
+        "<button id='btnEnvoyerSimu' class='principal'>Envoyer</button>" +
+        "<button id='btnResetSimu'>Réinitialiser</button>" +
+      "</div>" +
+      (aUneTrace ? "<h3>Analyse du dernier message</h3><div id='panneauAnalyse' class='panneau-analyse'>" + rendreTrace(historique.length ? historique[historique.length - 1].traceAssociee : null) + "</div>" : "");
+
+    const fenetre = document.getElementById("chatFenetre");
+    fenetre.scrollTop = fenetre.scrollHeight;
+
+    const champ = document.getElementById("champMessageSimu");
+    document.getElementById("btnEnvoyerSimu").onclick = envoyer;
+    champ.addEventListener("keydown", (e) => { if (e.key === "Enter") envoyer(); });
+    document.getElementById("btnResetSimu").onclick = async () => {
+      try {
+        await api("/api/" + id + "/simulateur/reset", { method: "POST" });
+        simulateurHistoriques[id] = [];
+        renderSimulateur();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
+
+    async function envoyer() {
+      const texte = champ.value.trim();
+      if (!texte) return;
+      historique.push({ de: "client", texte });
+      champ.value = "";
+      dessiner();
+      try {
+        const rep = await api("/api/" + id + "/simulateur/message", { method: "POST", body: JSON.stringify({ message: texte }) });
+        historique.push({ de: "bot", texte: rep.reponse, traceAssociee: rep.trace });
+        dessiner();
+        document.getElementById("champMessageSimu").focus();
+      } catch (e) { alert("Erreur : " + e.message); }
+    }
+  }
+
+  function rendreTrace(trace) {
+    if (!trace) return "<p class='raison'>Aucune analyse disponible pour l'instant.</p>";
+    const entites = Object.keys(trace.entites || {}).map((k) => "<div><strong>" + esc(k) + " :</strong> " + esc(trace.entites[k]) + "</div>").join("");
+    return entites +
+      (trace.verification ? "<div><strong>Vérification :</strong> " + esc(trace.verification) + "</div>" : "") +
+      "<div><strong>Action :</strong> " + esc(trace.action) + "</div>";
+  }
+
+  dessiner();
+}
+
+// ---------------- Rapports (marchand catalogue uniquement) ----------------
+
+async function renderRapports() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  const catalogue = await api("/api/" + marchandActif.id + "/catalogue");
+  const instantanes = await api("/api/" + marchandActif.id + "/inventaire/instantanes");
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+
+  zone.innerHTML =
+    "<h2>Rapports</h2>" +
+    "<div class='controles-rapport'>" +
+      "<div><label>Période</label><select id='rapportPeriode'><option value='jour'>Jour</option><option value='semaine'>Semaine</option><option value='mois'>Mois</option></select></div>" +
+      "<div><label>Date de référence</label><input type='date' id='rapportDate' value='" + aujourdhui + "' /></div>" +
+      "<div><label>Article</label><select id='rapportArticle'><option value='tous'>Tous les articles</option>" +
+        catalogue.map((p) => "<option value=\"" + esc(p.id) + "\">" + esc(p.nom) + "</option>").join("") +
+      "</select></div>" +
+      "<div><button id='btnGenererRapport' class='principal'>Générer</button></div>" +
+    "</div>" +
+    "<div id='resultatRapport'></div>" +
+    "<h3>Instantanés d'inventaire</h3>" +
+    "<p class='raison'>Enregistrez une photo de votre stock à un instant T (par exemple avant/après une livraison) pour pouvoir vous y référer plus tard.</p>" +
+    "<button id='btnNouvelInstantane'>+ Enregistrer un instantané maintenant</button>" +
+    "<div id='listeInstantanes' style='margin-top:14px;'>" + rendreListeInstantanes(instantanes) + "</div>";
+
+  function rendreListeInstantanes(liste) {
+    if (!liste.length) return "<p class='raison'>Aucun instantané enregistré pour l'instant.</p>";
+    return "<table class='table-donnees'><tr><th>Nom</th><th>Date</th><th>Lignes</th><th></th></tr>" +
+      liste.slice().reverse().map((s) =>
+        "<tr><td>" + esc(s.nom) + "</td><td>" + esc(new Date(s.dateISO).toLocaleString("fr-FR")) + "</td><td>" + s.lignes.length + " variante(s)</td>" +
+          "<td><button data-voir-instantane='" + esc(s.id) + "'>Voir</button> <button data-suppr-instantane='" + esc(s.id) + "' class='danger'>Supprimer</button></td></tr>"
+      ).join("") + "</table><div id='detailInstantane'></div>";
+  }
+
+  function brancherActionsInstantanes(liste) {
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-voir-instantane]"), (btn) => {
+      btn.onclick = () => {
+        const s = liste.filter((x) => x.id === btn.dataset.voirInstantane)[0];
+        if (!s) return;
+        document.getElementById("detailInstantane").innerHTML =
+          "<h3>" + esc(s.nom) + " — " + esc(new Date(s.dateISO).toLocaleString("fr-FR")) + "</h3>" +
+          "<table class='table-donnees'><tr><th>Article</th><th>Couleur</th><th>Taille</th><th>Stock réel</th><th>Prix</th></tr>" +
+          s.lignes.map((l) => "<tr><td>" + esc(l.produit) + "</td><td>" + esc(l.couleur) + "</td><td>" + esc(l.taille) + "</td><td>" + l.stockReel + "</td><td>" + (l.prix || 0).toLocaleString("fr-FR") + " FCFA</td></tr>").join("") +
+          "</table>";
+      };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr-instantane]"), (btn) => {
+      btn.onclick = async () => {
+        if (!confirm("Supprimer cet instantané ?")) return;
+        try {
+          await api("/api/" + marchandActif.id + "/inventaire/instantanes/" + encodeURIComponent(btn.dataset.supprInstantane), { method: "DELETE" });
+          renderRapports();
+        } catch (e) { alert("Erreur : " + e.message); }
+      };
+    });
+  }
+  brancherActionsInstantanes(instantanes);
+
+  document.getElementById("btnGenererRapport").onclick = async () => {
+    const periode = document.getElementById("rapportPeriode").value;
+    const date = document.getElementById("rapportDate").value;
+    const articleId = document.getElementById("rapportArticle").value;
+    const zoneResultat = document.getElementById("resultatRapport");
+    zoneResultat.innerHTML = "<div class='chargement'>Chargement…</div>";
+    try {
+      const r = await api("/api/" + marchandActif.id + "/rapports/commandes?periode=" + encodeURIComponent(periode) + "&date=" + encodeURIComponent(date) + "&articleId=" + encodeURIComponent(articleId));
+      zoneResultat.innerHTML =
+        "<div class='tuiles'>" +
+          "<div class='tuile'><div class='valeur'>" + r.nbCommandes + "</div><div class='libelle'>Commandes sur la période</div></div>" +
+          "<div class='tuile'><div class='valeur'>" + (r.chiffreAffaires || 0).toLocaleString("fr-FR") + " FCFA</div><div class='libelle'>Chiffre d'affaires (hors annulées)</div></div>" +
+        "</div>" +
+        "<h3>Répartition par statut</h3>" +
+        "<table class='table-donnees'><tr>" + Object.keys(r.parStatut).map((s) => "<th>" + esc(s) + "</th>").join("") + "</tr><tr>" + Object.keys(r.parStatut).map((s) => "<td>" + r.parStatut[s] + "</td>").join("") + "</tr></table>" +
+        "<h3>Quantités vendues par article</h3>" +
+        (r.parArticle.length
+          ? "<table class='table-donnees'><tr><th>Article</th><th>Quantité</th></tr>" + r.parArticle.map((a) => "<tr><td>" + esc(a.nom) + "</td><td>" + a.quantite + "</td></tr>").join("") + "</table>"
+          : "<p class='raison'>Aucune vente sur cette période.</p>");
+    } catch (e) { zoneResultat.innerHTML = "<div class='erreur'>Erreur : " + esc(e.message) + "</div>"; }
+  };
+
+  document.getElementById("btnNouvelInstantane").onclick = async () => {
+    const nom = prompt("Nom de cet instantané (ex: Avant livraison du 10/09) :", "Instantané du " + new Date().toLocaleDateString("fr-FR"));
+    if (nom === null) return;
+    try {
+      await api("/api/" + marchandActif.id + "/inventaire/instantanes", { method: "POST", body: JSON.stringify({ nom }) });
+      renderRapports();
+    } catch (e) { alert("Erreur : " + e.message); }
+  };
 }
 
 // ---------------- Mon compte (identifiants de connexion) ----------------
