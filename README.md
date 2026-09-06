@@ -212,22 +212,34 @@ Cet état (qui est en pause, depuis quand, l'historique) est gardé en mémoire 
 cours elles-mêmes : un redémarrage du serveur remet les compteurs à zéro, un compromis accepté pour
 l'instant (voir la section précédente sur la persistance des données).
 
-### Le template WhatsApp de notification (fenêtre des 24h)
+## Alertes WhatsApp envoyées au marchand
+
+Si un numéro de notification personnel est configuré pour un marchand (onglet **Mon compte**), le bot lui
+envoie directement un message WhatsApp dans deux situations :
+
+- **Un client demande à parler à un humain** (voir section précédente).
+- **Un client confirme une commande** (marchands catalogue uniquement) — dès qu'il répond "oui" au
+  récapitulatif envoyé par le bot, donc juste après le passage automatique de la commande au statut
+  Confirmée. Une commande "Nouvelle" pas encore confirmée par le client ne déclenche PAS d'alerte, pour
+  éviter de notifier le marchand pour des paniers abandonnés.
+
+### Le mécanisme des templates (fenêtre des 24h)
 
 WhatsApp interdit d'envoyer un message texte libre à un numéro qui ne vous a pas écrit dans les 24 heures
 précédentes ("fenêtre de conversation"). Concrètement, si le numéro de notification personnel d'un
-marchand n'a pas lui-même envoyé de message à son bot récemment, l'alerte "un client veut parler à un
-humain" serait bloquée par Meta.
+marchand n'a pas lui-même envoyé de message à son bot récemment, ces alertes seraient bloquées par Meta.
 
-Pour éviter cette contrainte, IzyVendeur essaie d'abord d'envoyer cette alerte via un **template WhatsApp
+Pour éviter cette contrainte, IzyVendeur essaie d'abord d'envoyer chaque alerte via un **template WhatsApp
 pré-approuvé par Meta** (les templates peuvent être envoyés à tout moment, même en dehors de la fenêtre de
 24h) — et ne bascule sur le texte libre (donc soumis à la fenêtre de 24h) que si l'envoi du template
 échoue, par exemple parce qu'il n'a pas encore été approuvé.
 
-**Ce template doit être créé une seule fois par vous, dans le WhatsApp Manager de Meta** ("Comptes
+**Ces templates doivent être créés une seule fois par vous, dans le WhatsApp Manager de Meta** ("Comptes
 professionnels WhatsApp" → votre compte → **Modèles de messages** → **Créer un modèle**), avec exactement
-ces réglages (le nom et la langue doivent correspondre EXACTEMENT à ceux définis dans `server.js`, sans
-quoi IzyVendeur ne le trouvera pas et basculera silencieusement sur le texte libre) :
+ces réglages pour chacun (le nom et la langue doivent correspondre EXACTEMENT à ceux définis dans
+`server.js`, sans quoi IzyVendeur ne les trouvera pas et basculera silencieusement sur le texte libre) :
+
+**Template "un client veut parler à un humain"**
 
 | Champ | Valeur |
 |---|---|
@@ -238,15 +250,29 @@ quoi IzyVendeur ne le trouvera pas et basculera silencieusement sur le texte lib
 | Exemple pour {{1}} | `237670001122` |
 | Exemple pour {{2}} | `Je voudrais annuler ma commande` |
 
-Pas de bouton, pas d'en-tête, pas de pied de page nécessaires. Une fois soumis, l'approbation par Meta est
-généralement automatique et prend de quelques minutes à quelques heures (rarement jusqu'à 24h) ; en cas de
-rejet, Meta indique la raison précise (catégorie, formulation, etc.) et il suffit de corriger puis
-resoumettre.
+**Template "commande confirmée"**
 
-Tant que le template n'est pas encore approuvé, la fonctionnalité continue de marcher normalement via le
-texte libre — à condition, comme avant, que le numéro de notification ait écrit au bot dans les 24h. Une
-fois le template approuvé, plus besoin de cette précaution : ce sera automatique dès le prochain message
-déclenchant une alerte, sans rien à changer côté code ou configuration.
+| Champ | Valeur |
+|---|---|
+| Nom | `izyvendeur_alerte_commande` |
+| Catégorie | Utilitaire (*Utility*) |
+| Langue | Français |
+| Corps du message | `Nouvelle commande confirmée {{1}} : {{2}}. Total : {{3}}. Téléphone client : {{4}}. Livraison : {{5}}. Consultez /admin, onglet Commandes, pour la traiter.` |
+| Exemple pour {{1}} | `CMD-0007` |
+| Exemple pour {{2}} | `Robe Rouge M x2, Sac Noir x1` |
+| Exemple pour {{3}} | `38 000 FCFA` |
+| Exemple pour {{4}} | `237670001122` |
+| Exemple pour {{5}} | `Bonapriso, Douala` |
+
+Pas de bouton, pas d'en-tête, pas de pied de page nécessaires pour aucun des deux. Une fois soumis,
+l'approbation par Meta est généralement automatique et prend de quelques minutes à quelques heures
+(rarement jusqu'à 24h) ; en cas de rejet, Meta indique la raison précise (catégorie, formulation, etc.) et
+il suffit de corriger puis resoumettre.
+
+Tant qu'un template n'est pas encore approuvé, l'alerte correspondante continue de fonctionner normalement
+via le texte libre — à condition, comme avant, que le numéro de notification ait écrit au bot dans les
+24h. Une fois un template approuvé, plus besoin de cette précaution pour cette alerte : ce sera automatique
+dès le prochain message déclenchant une alerte de ce type, sans rien à changer côté code ou configuration.
 
 ## Protections contre les abus
 

@@ -24,15 +24,33 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GRAPH_API_VERSION = "v21.0";
 
-// Template WhatsApp utilise pour notifier le marchand qu'un client demande a parler a un humain. Un
+// Templates WhatsApp utilises pour notifier le marchand (demande d'humain, commande confirmee, ...). Un
 // template (contrairement a un message texte libre) peut etre envoye a tout moment, meme si le numero de
 // notification du marchand n'a pas ecrit au bot dans les 24 dernieres heures — c'est pour ca qu'on
 // privilegie ce canal, avec un repli en texte libre si jamais le template n'est pas (encore) approuve par
-// Meta. Voir le README ("Mise en relation avec un humain") pour la marche a suivre exacte de creation et
-// d'approbation de ce template dans le WhatsApp Manager de Meta — le nom et la langue doivent correspondre
-// EXACTEMENT a ce qui a ete approuve la-bas.
-const NOM_TEMPLATE_ALERTE_HUMAIN = "izyvendeur_alerte_humain";
-const LANGUE_TEMPLATE_ALERTE_HUMAIN = "fr";
+// Meta. Voir le README pour la marche a suivre exacte de creation et d'approbation de ces templates dans
+// le WhatsApp Manager de Meta — le nom et la langue doivent correspondre EXACTEMENT a ce qui a ete
+// approuve la-bas. `texteLibreRepli(params)` construit le message de secours (texte libre, donc soumis a
+// la fenetre de 24h) a partir des memes parametres que ceux envoyes au template.
+const TEMPLATES_ALERTE_MARCHAND = {
+  humain: {
+    nom: "izyvendeur_alerte_humain",
+    langue: "fr",
+    // params: [telephoneClient, messageClient]
+    texteLibreRepli: (params) =>
+      "Un client (" + params[0] + ") souhaite parler à quelqu'un :\n« " + params[1] + " »\n\n" +
+      "Répondez-lui depuis /admin, onglet Conversations."
+  },
+  commande_confirmee: {
+    nom: "izyvendeur_alerte_commande",
+    langue: "fr",
+    // params: [reference, resumeArticles, total, telephoneClient, adresse]
+    texteLibreRepli: (params) =>
+      "Nouvelle commande confirmée " + params[0] + " :\n" + params[1] + "\nTotal : " + params[2] +
+      "\nTéléphone client : " + params[3] + "\nLivraison : " + params[4] +
+      "\n\nConsultez /admin, onglet Commandes, pour la traiter."
+  }
+};
 
 // ---------------- Registre des marchands + moteurs de conversation ----------------
 // engines[merchantId] = { merchant, engine }  -- engine expose toujours handleMessage(fromPhone, texte),
@@ -52,20 +70,27 @@ function creerOptionsEngine(merchantKey) {
       if (!entry) return;
       await envoyerMessageWhatsApp(destinataire, texte, entry.merchant.phoneNumberId);
     },
-    // Recoit le numero du client et son message TELS QUELS (pas de texte deja mis en forme) : c'est ici,
-    // et seulement ici, qu'on sait s'il faut passer par un template ou par du texte libre.
-    notifierMarchand: async (fromPhone, texteClient) => {
+    // `typeAlerte` choisit le template (voir TEMPLATES_ALERTE_MARCHAND ci-dessus) ; `params` est la liste
+    // de valeurs BRUTES (pas encore mises en forme) a inserer dans ses variables, dans l'ordre. C'est ici,
+    // et seulement ici, qu'on sait s'il faut passer par un template ou par du texte libre de secours.
+    notifierMarchand: async (typeAlerte, params) => {
       const entry = engines[merchantKey];
       if (!entry || !entry.merchant.phoneNotification) return;
+      const config = TEMPLATES_ALERTE_MARCHAND[typeAlerte];
+      if (!config) {
+        console.error(`[${merchantKey}] Type d'alerte marchand inconnu : "${typeAlerte}".`);
+        return;
+      }
       const destinataire = entry.merchant.phoneNotification;
       const phoneNumberId = entry.merchant.phoneNumberId;
+      const parametresNettoyes = params.map(nettoyerPourTemplate);
 
       const envoiTemplateReussi = await envoyerTemplateWhatsApp(
         destinataire,
         phoneNumberId,
-        NOM_TEMPLATE_ALERTE_HUMAIN,
-        LANGUE_TEMPLATE_ALERTE_HUMAIN,
-        [fromPhone, nettoyerPourTemplate(texteClient)]
+        config.nom,
+        config.langue,
+        parametresNettoyes
       );
 
       if (!envoiTemplateReussi) {
@@ -74,14 +99,9 @@ function creerOptionsEngine(merchantKey) {
         // son nom/sa langue ne correspond pas exactement a ce qui est configure ci-dessus.
         console.warn(
           `[${merchantKey}] Repli en texte libre pour la notification marchand ` +
-          `(le template "${NOM_TEMPLATE_ALERTE_HUMAIN}" a echoue ou n'est pas encore approuve).`
+          `(le template "${config.nom}" a echoue ou n'est pas encore approuve).`
         );
-        await envoyerMessageWhatsApp(
-          destinataire,
-          "Un client (" + fromPhone + ") souhaite parler à quelqu'un :\n« " + texteClient + " »\n\n" +
-          "Répondez-lui depuis /admin, onglet Conversations.",
-          phoneNumberId
-        );
+        await envoyerMessageWhatsApp(destinataire, config.texteLibreRepli(params), phoneNumberId);
       }
     }
   };

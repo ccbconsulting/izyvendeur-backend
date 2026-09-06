@@ -40,12 +40,13 @@ function seedState() {
 }
 
 // `options.envoyer(destinataire, texte)` envoie un message WhatsApp a N'IMPORTE QUEL numero (utilise pour
-// les reponses manuelles du marchand a un client mis en pause) ; `options.notifierMarchand(fromPhone,
-// texteClient)` envoie une alerte au numero de notification personnel du marchand (no-op si non
-// configure) — on transmet le numero et le message du client TELS QUELS (pas de texte deja mis en forme)
-// car server.js choisit lui-meme, a cet endroit, d'envoyer un template WhatsApp approuve ou un texte
-// libre de repli. Les deux fonctions sont fournies par server.js, qui seul connait le token WhatsApp et
-// le phone_number_id de ce marchand.
+// les reponses manuelles du marchand a un client mis en pause) ; `options.notifierMarchand(typeAlerte,
+// params)` envoie une alerte au numero de notification personnel du marchand (no-op si non configure) —
+// `typeAlerte` choisit le template ("humain", "commande_confirmee", ...) et `params` est la liste de
+// valeurs BRUTES (pas de texte deja mis en forme) a inserer dans ses variables, dans l'ordre attendu par
+// ce template. C'est server.js qui choisit, a cet endroit, d'envoyer un template WhatsApp approuve ou un
+// texte libre de repli. Les deux fonctions sont fournies par server.js, qui seul connait le token
+// WhatsApp et le phone_number_id de ce marchand.
 function createCatalogEngine(merchantKey, options) {
   let state = null;
   const sessions = {};
@@ -364,6 +365,15 @@ function createCatalogEngine(merchantKey, options) {
       if (pendingOrder && parseAffirmative(text)) {
         applyStatusChange(pendingOrder, "Confirmée");
         trace.action = "Client confirme — commande " + orderRef(pendingOrder) + " passée automatiquement en Confirmée";
+        notifierMarchand("commande_confirmee", [
+          orderRef(pendingOrder),
+          describeItems(pendingOrder.items),
+          formatFcfa(pendingOrder.prix),
+          pendingOrder.telephone || session.fromPhone || "—",
+          pendingOrder.adresse || "—"
+        ]).catch((erreur) =>
+          console.error("[" + merchantKey + "] Echec de la notification marchand (commande confirmée) :", erreur)
+        );
         const reply = (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
         Object.assign(session, freshSession());
         logTrace(trace);
@@ -501,8 +511,8 @@ function createCatalogEngine(merchantKey, options) {
 
     if (sh.demandeUnHumain(text)) {
       sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
-      notifierMarchand(fromPhone, text).catch((erreur) =>
-        console.error("[" + merchantKey + "] Echec de la notification marchand :", erreur)
+      notifierMarchand("humain", [fromPhone, text]).catch((erreur) =>
+        console.error("[" + merchantKey + "] Echec de la notification marchand (humain) :", erreur)
       );
       return sh.MESSAGE_MISE_EN_RELATION;
     }

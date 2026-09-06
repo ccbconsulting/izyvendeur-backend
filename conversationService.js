@@ -45,7 +45,7 @@ function seedState() {
   };
 }
 
-// Voir conversation.js pour le detail de `options.envoyer`/`options.notifierMarchand(fromPhone, texteClient)`.
+// Voir conversation.js pour le detail de `options.envoyer`/`options.notifierMarchand(typeAlerte, params)`.
 function createServiceEngine(merchantKey, options) {
   let state = null;
   const sessions = {};
@@ -469,8 +469,8 @@ function createServiceEngine(merchantKey, options) {
 
     if (sh.demandeUnHumain(text)) {
       sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
-      notifierMarchand(fromPhone, text).catch((erreur) =>
-        console.error("[" + merchantKey + "] Echec de la notification marchand :", erreur)
+      notifierMarchand("humain", [fromPhone, text]).catch((erreur) =>
+        console.error("[" + merchantKey + "] Echec de la notification marchand (humain) :", erreur)
       );
       return sh.MESSAGE_MISE_EN_RELATION;
     }
