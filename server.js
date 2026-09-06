@@ -13,12 +13,20 @@ require("dotenv").config();
 const path = require("path");
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const multer = require("multer");
 const db = require("./db");
+const storage = require("./storage");
 const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
 
 const app = express();
 app.use(express.json());
+
+// Upload de photos d'articles : conserve le fichier en memoire (jamais sur disque, Render l'efface de
+// toute facon a chaque redemarrage) le temps de le transferer vers R2 - voir storage.js. Une seule photo
+// a la fois par requete, plafonnee a 5 Mo (alignee sur la limite WhatsApp), le reste de la validation
+// (format d'image) se fait dans storage.js.
+const uploadPhoto = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
@@ -58,17 +66,23 @@ const TEMPLATES_ALERTE_MARCHAND = {
 const engines = {};
 const phoneNumberIndex = {}; // phone_number_id WhatsApp -> merchantId
 
-// Fournit a un moteur de conversation les deux seules fonctions dont il a besoin pour parler a WhatsApp
-// lui-meme (au lieu de renvoyer simplement une reponse au webhook) : envoyer un message a N'IMPORTE QUEL
-// numero (reponses manuelles du marchand a un client mis en pause), et notifier le numero de notification
-// personnel du marchand (no-op si non configure). Toujours resolues au moment de l'appel via `engines[
-// merchantKey]` pour rester a jour meme si le marchand change de numero/notification apres coup.
+// Fournit a un moteur de conversation les fonctions dont il a besoin pour parler a WhatsApp lui-meme (au
+// lieu de renvoyer simplement une reponse au webhook) : envoyer un message texte a N'IMPORTE QUEL numero
+// (reponses manuelles du marchand a un client mis en pause), envoyer une photo d'article (voir
+// storage.js), et notifier le numero de notification personnel du marchand (no-op si non configure).
+// Toujours resolues au moment de l'appel via `engines[merchantKey]` pour rester a jour meme si le
+// marchand change de numero/notification apres coup.
 function creerOptionsEngine(merchantKey) {
   return {
     envoyer: async (destinataire, texte) => {
       const entry = engines[merchantKey];
       if (!entry) return;
       await envoyerMessageWhatsApp(destinataire, texte, entry.merchant.phoneNumberId);
+    },
+    envoyerImage: async (destinataire, urlImage, legende) => {
+      const entry = engines[merchantKey];
+      if (!entry) return;
+      await envoyerImageWhatsApp(destinataire, urlImage, legende, entry.merchant.phoneNumberId);
     },
     // `typeAlerte` choisit le template (voir TEMPLATES_ALERTE_MARCHAND ci-dessus) ; `params` est la liste
     // de valeurs BRUTES (pas encore mises en forme) a inserer dans ses variables, dans l'ordre. C'est ici,
@@ -396,6 +410,43 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   res.json(nouveau);
 });
 
+// Photo d'un article : uploadee vers Cloudflare R2 (voir storage.js), puis son URL publique est ajoutee
+// au tableau `photos` de l'article. La toute premiere photo d'un article est celle que le bot envoie au
+// client des qu'il montre de l'interet (voir conversation.js, envoyerPhotoProduit) — pas besoin d'action
+// supplementaire une fois la photo ajoutee ici.
+app.post("/api/:id/catalogue/:productId/photos", protegerAcces, uploadPhoto.single("photo"), async (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!storage.estConfigure()) {
+    return res.status(503).json({ erreur: "Hébergement des photos non configuré sur le serveur (variables R2_* manquantes sur Render). Voir le README, section « Photos des articles »." });
+  }
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"photo\" requis)." });
+  try {
+    const url = await storage.uploaderPhotoProduit({
+      merchantKey: req.params.id,
+      productId: req.params.productId,
+      buffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+    });
+    const produit = entry.engine.ajouterPhotoProduit(req.params.productId, url);
+    if (!produit) return res.status(404).json({ erreur: "Article introuvable." });
+    res.status(201).json({ url, produit });
+  } catch (erreur) {
+    res.status(400).json({ erreur: erreur.message || "Échec de l'envoi de la photo." });
+  }
+});
+
+app.delete("/api/:id/catalogue/:productId/photos", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const { url } = req.body || {};
+  if (!url) return res.status(400).json({ erreur: "url requise." });
+  const produit = entry.engine.supprimerPhotoProduit(req.params.productId, url);
+  if (!produit) return res.status(404).json({ erreur: "Article introuvable." });
+  await storage.supprimerPhotoProduit(url); // best-effort, ne bloque jamais la reponse
+  res.json({ ok: true, produit });
+});
+
 app.get("/api/:id/commandes", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
@@ -648,6 +699,42 @@ async function envoyerMessageWhatsApp(destinataire, texte, phoneNumberId) {
     console.error(`Echec de l'envoi WhatsApp (${reponse.status}) :`, detail);
   } else {
     console.log("Reponse envoyee avec succes.");
+  }
+}
+
+// --- Fonction utilitaire : envoyer une image via l'API WhatsApp Cloud, par lien (URL publique) ---
+// Contrairement a l'API Media de Meta (upload prealable, media_id qui expire au bout de 30 jours), on
+// passe ici directement un lien "link" : WhatsApp va chercher l'image a cette URL au moment de l'envoi,
+// donc aucune notion d'expiration pour NOS photos d'articles (deja hebergees durablement sur R2, voir
+// storage.js) - contrairement aux photos qu'un CLIENT enverrait, elles, au bot (fonctionnalite differente,
+// non couverte ici).
+async function envoyerImageWhatsApp(destinataire, urlImage, legende, phoneNumberId) {
+  if (!WHATSAPP_TOKEN || !phoneNumberId) {
+    console.error("WHATSAPP_TOKEN ou phone_number_id manquant — impossible d'envoyer la photo.");
+    return;
+  }
+
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+
+  const reponse = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: destinataire,
+      type: "image",
+      image: { link: urlImage, caption: legende || undefined },
+    }),
+  });
+
+  if (!reponse.ok) {
+    const detail = await reponse.text();
+    console.error(`Echec de l'envoi de la photo WhatsApp (${reponse.status}) :`, detail);
+  } else {
+    console.log("Photo envoyee avec succes.");
   }
 }
 

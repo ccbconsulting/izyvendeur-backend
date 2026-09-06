@@ -61,6 +61,10 @@ function createCatalogEngine(merchantKey, options) {
   const conversationsHumain = {}; // memoire seulement (comme `sessions`) - voir shared.js
   const envoyer = (options && options.envoyer) || (async () => {});
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
+  // `options.envoyerImage(destinataire, url, legende)` envoie une photo d'article via WhatsApp (voir
+  // storage.js pour l'hebergement, server.js pour l'appel a l'API Graph). No-op si non fourni (compatible
+  // avec d'anciens appels/tests qui ne passent pas cette option).
+  const envoyerImage = (options && options.envoyerImage) || (async () => {});
 
   // A appeler une seule fois, au demarrage du serveur, AVANT de traiter le moindre message pour ce marchand.
   async function init() {
@@ -262,7 +266,7 @@ function createCatalogEngine(merchantKey, options) {
   }
 
   function processMessage(session, text) {
-    const trace = { message: text, entites: {}, verification: null, action: null };
+    const trace = { message: text, entites: {}, verification: null, action: null, photo: null };
 
     if (session.stage === "awaiting_quantity") {
       const otherProduct = matchProduct(text);
@@ -428,6 +432,7 @@ function createCatalogEngine(merchantKey, options) {
       return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
     }
 
+    const produitIdPrecedent = session.productId;
     let produitId = produitReconnu || session.productId;
     const couleur = couleurReconnue || (produitId === session.productId ? session.couleur : null);
     let taille = tailleReconnue || (produitId === session.productId ? session.taille : null);
@@ -453,6 +458,14 @@ function createCatalogEngine(merchantKey, options) {
     }
 
     const product = state.catalog.filter((p) => p.id === produitId)[0];
+
+    // Nouvel article identifie dans CE message (pas juste redit d'un tour a l'autre) : on envoie sa
+    // premiere photo si le marchand en a enregistre au moins une (voir ajouterPhotoProduit ci-dessous /
+    // onglet Catalogue de /admin). Ne se redeclenche pas tant que le client reste sur le meme article.
+    if (produitReconnu && produitId !== produitIdPrecedent) {
+      trace.photo = envoyerPhotoProduit(session.fromPhone, product);
+    }
+
     const availableColors = product.variantes.map((v) => v.couleur).filter((v, i, a) => a.indexOf(v) === i);
 
     if (!couleur) {
@@ -502,6 +515,25 @@ function createCatalogEngine(merchantKey, options) {
     session.stage = "awaiting_quantity";
     logTrace(session, trace);
     return piocheParmi(OUVERTURES_DISPO) + " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?";
+  }
+
+  // Envoie (ou simule l'envoi de) la premiere photo enregistree pour cet article, si le marchand en a
+  // ajoute au moins une depuis l'onglet Catalogue de /admin. Renvoie l'URL envoyee (ou null si aucune
+  // photo) — utilisee uniquement pour l'affichage du panneau d'analyse du Simulateur, jamais pour decider
+  // quoi que ce soit cote conversation elle-meme.
+  function envoyerPhotoProduit(fromPhone, product) {
+    const photos = product.photos || [];
+    if (!photos.length) return null;
+    const url = photos[0];
+    if (fromPhone === PHONE_SIMULATEUR) {
+      // Le Simulateur n'a pas de vrai numero WhatsApp destinataire : /admin affiche cette URL lui-meme
+      // dans la bulle de conversation, sans appel reseau vers l'API Graph.
+      return url;
+    }
+    envoyerImage(fromPhone, url, product.nom).catch((erreur) =>
+      console.error("[" + merchantKey + "] Echec de l'envoi de la photo de l'article \"" + product.nom + "\" :", erreur)
+    );
+    return url;
   }
 
   // Enregistre la trace ET la garde sur la session (utilise par le Simulateur de /admin pour afficher le
@@ -763,6 +795,29 @@ function createCatalogEngine(merchantKey, options) {
     return state.catalog;
   }
 
+  // Ajoute une photo (URL deja hebergee, voir storage.js) a un article. Renvoie l'article mis a jour, ou
+  // null si l'article n'existe pas.
+  function ajouterPhotoProduit(productId, url) {
+    if (!state) return null;
+    const p = state.catalog.filter((x) => x.id === productId)[0];
+    if (!p) return null;
+    if (!Array.isArray(p.photos)) p.photos = [];
+    p.photos.push(url);
+    saveState();
+    return p;
+  }
+
+  // Retire une photo (par son URL) d'un article. Ne supprime PAS le fichier sur R2 elle-meme — c'est
+  // server.js qui s'en charge (storage.supprimerPhotoProduit), cette fonction ne touche que le catalogue.
+  function supprimerPhotoProduit(productId, url) {
+    if (!state) return null;
+    const p = state.catalog.filter((x) => x.id === productId)[0];
+    if (!p) return null;
+    p.photos = (p.photos || []).filter((u) => u !== url);
+    saveState();
+    return p;
+  }
+
   function updateOrderStatus(orderId, newStatus, raisonAnnulation) {
     if (!state) return null;
     const order = state.orders.filter((o) => o.id === Number(orderId))[0];
@@ -780,6 +835,8 @@ function createCatalogEngine(merchantKey, options) {
     getSettings,
     updateSettings,
     updateCatalog,
+    ajouterPhotoProduit,
+    supprimerPhotoProduit,
     updateOrderStatus,
     getConversationsEnAttente,
     repondreConversationHumain,

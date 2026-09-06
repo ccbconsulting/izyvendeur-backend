@@ -17,7 +17,7 @@ Deux types de marchand sont pris en charge :
 
 1. Créez un compte sur [github.com](https://github.com) si vous n'en avez pas.
 2. Créez un nouveau dépôt (bouton vert "New").
-3. Uploadez-y tous les fichiers de ce dossier (`server.js`, `db.js`, `conversation.js`, `conversationService.js`, `catalog.js`, `services.js`, `shared.js`, le dossier `public/` avec `admin.html` dedans, `package.json`, `.gitignore`, `.env.example`, `README.md`) — utilisez le bouton "Add file > Upload files" sur la page du dépôt, glissez les fichiers (et le dossier `public/`), puis "Commit changes".
+3. Uploadez-y tous les fichiers de ce dossier (`server.js`, `db.js`, `conversation.js`, `conversationService.js`, `catalog.js`, `services.js`, `shared.js`, `storage.js`, le dossier `public/` avec `admin.html` dedans, `package.json`, `.gitignore`, `.env.example`, `README.md`) — utilisez le bouton "Add file > Upload files" sur la page du dépôt, glissez les fichiers (et le dossier `public/`), puis "Commit changes".
    - Ne mettez jamais le fichier `.env` (avec vos vrais secrets) sur GitHub — le `.gitignore` fourni l'exclut automatiquement si vous utilisez git en ligne de commande.
 
 ### 2. Créer la base de données PostgreSQL (gratuite)
@@ -197,7 +197,8 @@ Selon le type du marchand consulté, l'interface permet :
   et seuil d'alerte (surligné quand le stock est sous le seuil), ajouter/supprimer des articles ou des
   variantes. Une colonne **Stock virtuel** (lecture seule) montre en plus le stock réel moins ce qui est
   déjà engagé dans des commandes Confirmée/Expédiée — c'est cette valeur, pas le stock réel brut, que le
-  bot vérifie avant de proposer un article à un client.
+  bot vérifie avant de proposer un article à un client. Chaque article a aussi son propre bloc **Photos**
+  (ajout/suppression), envoyées automatiquement au client sur WhatsApp — voir section suivante.
 - **Commandes** (marchands catalogue) : voir toutes les commandes reçues (avec le nombre total d'articles
   commandés dans une colonne dédiée) et changer leur statut (Nouvelle/Confirmée/Expédiée/Livrée/Annulée),
   avec raison d'annulation.
@@ -210,6 +211,65 @@ Selon le type du marchand consulté, l'interface permet :
   en plus la durée des créneaux et les horaires d'ouverture par jour de la semaine.
 - **Mon compte** : gestion des identifiants de connexion et du numéro de notification personnel (voir
   ci-dessus et section suivante).
+
+## Photos des articles
+
+Un marchand catalogue peut ajouter une ou plusieurs photos à chaque article depuis `/admin` (onglet
+Catalogue & stock, bloc **Photos** sous chaque article — visible uniquement pour un article déjà
+enregistré : sauvegardez d'abord le catalogue si vous venez d'ajouter un nouvel article). Dès qu'un
+client montre de l'intérêt pour cet article (il en cite le nom pour la première fois dans la
+conversation), le bot lui envoie automatiquement sa première photo enregistrée, en plus de sa réponse
+texte habituelle — sans rien à faire de plus une fois la photo ajoutée. Il ne la renvoie pas à chaque
+message suivant tant que le client reste sur le même article (seulement quand il change d'article, ou
+en discute à nouveau plus tard dans une nouvelle conversation).
+
+**Non couvert dans cette version** : les marchands service (aucune notion d'"article" chez eux), et une
+photo différente par couleur/taille (aujourd'hui, une seule série de photos par article, partagée entre
+toutes ses variantes) — deux évolutions possibles plus tard si le besoin se confirme.
+
+### Hébergement : Cloudflare R2
+
+WhatsApp a seulement besoin d'un lien HTTPS public vers chaque photo — les fichiers eux-mêmes doivent
+être hébergés quelque part. IzyVendeur utilise **Cloudflare R2**, retenu pour deux raisons concrètes
+avec ce type d'usage : un niveau gratuit généreux (10 Go de stockage), et surtout **aucun frais de
+sortie/bande passante** — contrairement à AWS S3, qui facture chaque téléchargement, alors qu'ici chaque
+photo est potentiellement vue par des dizaines de clients via WhatsApp. R2 étant compatible avec l'API
+S3, IzyVendeur utilise le SDK officiel d'AWS, pointé vers l'adresse de Cloudflare — pas de dépendance à
+un service propriétaire supplémentaire.
+
+**Sans configuration, rien ne casse** : tant que les variables ci-dessous ne sont pas renseignées sur
+Render, tout le reste continue de fonctionner normalement — l'onglet Catalogue affiche juste un message
+indiquant que l'ajout de photos n'est pas encore disponible.
+
+**Mise en place (à faire une seule fois, gratuitement) :**
+
+1. Créez un compte sur [cloudflare.com](https://cloudflare.com) si vous n'en avez pas, puis allez dans
+   **R2 Object Storage** (menu de gauche du tableau de bord Cloudflare).
+2. Cliquez **"Create bucket"** : donnez-lui un nom (ex : `izyvendeur-photos`), région "Automatic".
+   Notez ce nom, c'est la variable `R2_BUCKET`.
+3. Dans les réglages du bucket créé, onglet **"Settings"** > **"Public access"** > **"R2.dev subdomain"**
+   : activez-le ("Allow Access"). Cloudflare affiche alors une URL du type
+   `https://pub-xxxxxxxxxxxx.r2.dev` — c'est la variable `R2_PUBLIC_BASE_URL` (sans slash à la fin).
+   (Un nom de domaine personnalisé est possible plus tard si vous en avez un, à la place de ce sous-domaine.)
+4. Toujours dans le tableau de bord R2 (page d'accueil R2, pas le bucket), cliquez **"Manage R2 API
+   Tokens"** > **"Create API Token"** : donnez les permissions **"Object Read & Write"**, limitez-le si
+   possible au bucket créé à l'étape 2, puis créez le jeton.
+5. Cloudflare affiche alors, une seule fois, un **"Access Key ID"** et une **"Secret Access Key"** — et
+   plus haut sur la même page, votre **"Account ID"** (aussi visible dans l'URL du tableau de bord R2, ou
+   dans la barre latérale). Copiez les trois.
+6. Sur Render, ajoutez ces 5 variables d'environnement (Environment > Add Environment Variable) :
+   - `R2_ACCOUNT_ID` → l'Account ID de l'étape 5.
+   - `R2_ACCESS_KEY_ID` → l'Access Key ID de l'étape 5.
+   - `R2_SECRET_ACCESS_KEY` → la Secret Access Key de l'étape 5.
+   - `R2_BUCKET` → le nom du bucket de l'étape 2.
+   - `R2_PUBLIC_BASE_URL` → l'URL publique de l'étape 3.
+7. Render redéploie automatiquement dès qu'une variable d'environnement change. Une fois redéployé,
+   l'onglet Catalogue de `/admin` permet d'ajouter des photos immédiatement, sans rien relancer d'autre.
+
+**Limites à connaître** : JPEG, PNG ou WEBP uniquement, 5 Mo maximum par photo (aligné sur la limite
+WhatsApp elle-même). Aucun coût récurrent tant que le volume reste dans le niveau gratuit R2 (10 Go de
+stockage, très large pour des photos d'articles d'une PME) ; au-delà, la facturation Cloudflare R2 reste
+nettement plus légère que la plupart des alternatives, justement grâce à l'absence de frais de sortie.
 
 ## Mise en relation avec un humain
 
