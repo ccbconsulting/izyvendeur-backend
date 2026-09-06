@@ -11,7 +11,8 @@
 
 const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, SEED_CATALOG } = require("./catalog");
 const db = require("./db");
-const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = require("./shared");
+const sh = require("./shared");
+const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
 const RESERVING_STATUSES = ["Confirmée", "Expédiée"];
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "2", "3"];
@@ -38,9 +39,16 @@ function seedState() {
   };
 }
 
-function createCatalogEngine(merchantKey) {
+// `options.envoyer(destinataire, texte)` envoie un message WhatsApp a N'IMPORTE QUEL numero (utilise pour
+// les reponses manuelles du marchand a un client mis en pause) ; `options.notifierMarchand(texte)` envoie
+// un message au numero de notification personnel du marchand (no-op si non configure). Les deux sont
+// fournies par server.js, qui seul connait le token WhatsApp et le phone_number_id de ce marchand.
+function createCatalogEngine(merchantKey, options) {
   let state = null;
   const sessions = {};
+  const conversationsHumain = {}; // memoire seulement (comme `sessions`) - voir shared.js
+  const envoyer = (options && options.envoyer) || (async () => {});
+  const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
 
   // A appeler une seule fois, au demarrage du serveur, AVANT de traiter le moindre message pour ce marchand.
   async function init() {
@@ -479,16 +487,58 @@ function createCatalogEngine(merchantKey) {
 
   function handleMessage(fromPhone, text) {
     if (!state) return "Le service redemarre, un instant s'il vous plait...";
+
+    // Conversation deja mise en pause pour un humain : on reste silencieux tant que le delai n'est pas
+    // ecoule (voir shared.js). Une fois le delai depasse, pauseHumainActive() remet enAttente a false et
+    // le traitement normal reprend plus bas sur CE message.
+    if (sh.pauseHumainActive(conversationsHumain, fromPhone)) {
+      sh.ajouterMessageHistorique(conversationsHumain, fromPhone, "client", text);
+      return null;
+    }
+
+    if (sh.demandeUnHumain(text)) {
+      sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
+      notifierMarchand(
+        "Un client (" + fromPhone + ") souhaite parler à quelqu'un :\n« " + text + " »\n\n" +
+        "Répondez-lui depuis /admin, onglet Conversations."
+      ).catch((erreur) => console.error("[" + merchantKey + "] Echec de la notification marchand :", erreur));
+      return sh.MESSAGE_MISE_EN_RELATION;
+    }
+
     const session = getSession(fromPhone);
     return processMessage(session, text);
+  }
+
+  // Liste des conversations actuellement en attente d'un humain (pour l'onglet Conversations de /admin).
+  function getConversationsEnAttente() {
+    return sh.listerConversationsEnAttente(conversationsHumain);
+  }
+
+  // Reponse manuelle du marchand a un client mis en pause : envoie le message et remet le chrono de 10
+  // minutes a zero. Retourne false si aucune conversation en attente n'existe pour ce numero.
+  async function repondreConversationHumain(telephone, message) {
+    const ok = sh.repondreHumain(conversationsHumain, telephone, message);
+    if (!ok) return false;
+    await envoyer(telephone, message);
+    return true;
   }
 
   function getOrders() {
     return state ? state.orders : [];
   }
 
+  // Renvoie le catalogue avec, pour chaque variante, un "stockVirtuel" calcule a la volee (stock reel
+  // moins les quantites deja engagees dans des commandes Confirmee/Expediee) — c'est cette valeur que le
+  // bot verifie avant de proposer un article, mais jusqu'ici elle n'etait visible nulle part cote
+  // marchand. Champ en lecture seule : ne pas le renvoyer tel quel a updateCatalog (il est recalcule a
+  // chaque lecture, donc meme s'il est renvoye par erreur il est simplement ignore/ecrase au prochain
+  // chargement).
   function getCatalog() {
-    return state ? state.catalog : [];
+    if (!state) return [];
+    return state.catalog.map((p) => ({
+      ...p,
+      variantes: p.variantes.map((v) => ({ ...v, stockVirtuel: virtualStock(p.id, v) }))
+    }));
   }
 
   function getSettings() {
@@ -528,7 +578,9 @@ function createCatalogEngine(merchantKey) {
     getSettings,
     updateSettings,
     updateCatalog,
-    updateOrderStatus
+    updateOrderStatus,
+    getConversationsEnAttente,
+    repondreConversationHumain
   };
 }
 

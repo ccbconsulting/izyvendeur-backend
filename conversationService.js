@@ -14,7 +14,8 @@
 
 const { SEED_SERVICES, SERVICE_KEYWORDS, DEFAULT_HORAIRES, DEFAULT_DUREE_CRENEAU_MINUTES, DEFAULT_AUTO_CONFIRM_MESSAGE } = require("./services");
 const db = require("./db");
-const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = require("./shared");
+const sh = require("./shared");
+const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "pour", "avec"];
 const DAY_KEYS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
@@ -44,9 +45,13 @@ function seedState() {
   };
 }
 
-function createServiceEngine(merchantKey) {
+// Voir conversation.js pour le detail de `options.envoyer`/`options.notifierMarchand`.
+function createServiceEngine(merchantKey, options) {
   let state = null;
   const sessions = {};
+  const conversationsHumain = {}; // memoire seulement (comme `sessions`) - voir shared.js
+  const envoyer = (options && options.envoyer) || (async () => {});
+  const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
 
   async function init() {
     state = await db.initMerchantState(merchantKey, seedState);
@@ -456,8 +461,34 @@ function createServiceEngine(merchantKey) {
 
   function handleMessage(fromPhone, text) {
     if (!state) return "Le service redemarre, un instant s'il vous plait...";
+
+    if (sh.pauseHumainActive(conversationsHumain, fromPhone)) {
+      sh.ajouterMessageHistorique(conversationsHumain, fromPhone, "client", text);
+      return null;
+    }
+
+    if (sh.demandeUnHumain(text)) {
+      sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
+      notifierMarchand(
+        "Un client (" + fromPhone + ") souhaite parler à quelqu'un :\n« " + text + " »\n\n" +
+        "Répondez-lui depuis /admin, onglet Conversations."
+      ).catch((erreur) => console.error("[" + merchantKey + "] Echec de la notification marchand :", erreur));
+      return sh.MESSAGE_MISE_EN_RELATION;
+    }
+
     const session = getSession(fromPhone);
     return processMessage(session, text);
+  }
+
+  function getConversationsEnAttente() {
+    return sh.listerConversationsEnAttente(conversationsHumain);
+  }
+
+  async function repondreConversationHumain(telephone, message) {
+    const ok = sh.repondreHumain(conversationsHumain, telephone, message);
+    if (!ok) return false;
+    await envoyer(telephone, message);
+    return true;
   }
 
   function getAppointments() { return state ? state.appointments : []; }
@@ -495,7 +526,9 @@ function createServiceEngine(merchantKey) {
     getSettings,
     updateSettings,
     updateServices,
-    updateAppointmentStatus
+    updateAppointmentStatus,
+    getConversationsEnAttente,
+    repondreConversationHumain
   };
 }
 

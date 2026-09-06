@@ -175,15 +175,42 @@ Selon le type du marchand consulté, l'interface permet :
 
 - **Catalogue & stock** (marchands catalogue) : voir et modifier articles, variantes, prix, stock réel
   et seuil d'alerte (surligné quand le stock est sous le seuil), ajouter/supprimer des articles ou des
-  variantes.
-- **Commandes** (marchands catalogue) : voir toutes les commandes reçues et changer leur statut
-  (Nouvelle/Confirmée/Expédiée/Livrée/Annulée), avec raison d'annulation.
+  variantes. Une colonne **Stock virtuel** (lecture seule) montre en plus le stock réel moins ce qui est
+  déjà engagé dans des commandes Confirmée/Expédiée — c'est cette valeur, pas le stock réel brut, que le
+  bot vérifie avant de proposer un article à un client.
+- **Commandes** (marchands catalogue) : voir toutes les commandes reçues (avec le nombre total d'articles
+  commandés dans une colonne dédiée) et changer leur statut (Nouvelle/Confirmée/Expédiée/Livrée/Annulée),
+  avec raison d'annulation.
 - **Services** (marchands service) : voir et modifier la liste des services (nom, durée, prix).
 - **Rendez-vous** (marchands service) : voir tous les rendez-vous et changer leur statut
   (Nouvelle/Confirmé/Honoré/Absent/Annulé), avec raison d'annulation.
+- **Conversations** (les deux types) : les clients qui ont demandé à parler à un humain, avec l'historique
+  récent et une zone pour répondre manuellement (voir section suivante).
 - **Paramètres** : message de confirmation automatique (les deux types), et pour un marchand service,
   en plus la durée des créneaux et les horaires d'ouverture par jour de la semaine.
-- **Mon compte** : gestion des identifiants de connexion (voir ci-dessus).
+- **Mon compte** : gestion des identifiants de connexion et du numéro de notification personnel (voir
+  ci-dessus et section suivante).
+
+## Mise en relation avec un humain
+
+Un client peut à tout moment demander à parler à quelqu'un ("je veux parler à un vendeur", "un conseiller",
+"un humain"...) — reconnu quel que soit le point où il en est dans sa commande ou sa prise de rendez-vous.
+
+Dès que c'est détecté : le bot envoie une fois un message d'attente ("Je vous mets en relation avec un
+membre de notre équipe...") puis reste silencieux sur les messages suivants de ce client — ils sont quand
+même enregistrés et visibles dans l'onglet **Conversations** de `/admin`. Si un numéro de notification
+personnel est configuré pour ce marchand (onglet **Mon compte**), le bot lui envoie directement un message
+WhatsApp signalant la demande.
+
+Le marchand répond alors depuis l'onglet Conversations (zone de texte + bouton Envoyer) — le message part
+via le même compte WhatsApp API que le bot, puisque le numéro business ne peut plus être utilisé avec
+l'appli WhatsApp classique une fois branché à l'API Cloud (limitation imposée par Meta, pas par
+IzyVendeur). Chaque réponse manuelle remet à zéro un délai de 10 minutes ; si personne ne répond dans ce
+délai, le bot reprend automatiquement la main dès le message suivant du client — sans action requise.
+
+Cet état (qui est en pause, depuis quand, l'historique) est gardé en mémoire comme les conversations en
+cours elles-mêmes : un redémarrage du serveur remet les compteurs à zéro, un compromis accepté pour
+l'instant (voir la section précédente sur la persistance des données).
 
 ## Protections contre les abus
 

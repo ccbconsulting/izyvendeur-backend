@@ -30,10 +30,31 @@ const GRAPH_API_VERSION = "v21.0";
 const engines = {};
 const phoneNumberIndex = {}; // phone_number_id WhatsApp -> merchantId
 
+// Fournit a un moteur de conversation les deux seules fonctions dont il a besoin pour parler a WhatsApp
+// lui-meme (au lieu de renvoyer simplement une reponse au webhook) : envoyer un message a N'IMPORTE QUEL
+// numero (reponses manuelles du marchand a un client mis en pause), et notifier le numero de notification
+// personnel du marchand (no-op si non configure). Toujours resolues au moment de l'appel via `engines[
+// merchantKey]` pour rester a jour meme si le marchand change de numero/notification apres coup.
+function creerOptionsEngine(merchantKey) {
+  return {
+    envoyer: async (destinataire, texte) => {
+      const entry = engines[merchantKey];
+      if (!entry) return;
+      await envoyerMessageWhatsApp(destinataire, texte, entry.merchant.phoneNumberId);
+    },
+    notifierMarchand: async (texte) => {
+      const entry = engines[merchantKey];
+      if (!entry || !entry.merchant.phoneNotification) return;
+      await envoyerMessageWhatsApp(entry.merchant.phoneNotification, texte, entry.merchant.phoneNumberId);
+    }
+  };
+}
+
 async function chargerMarchands() {
   const marchands = await db.initRegistry();
   for (const m of marchands) {
-    const engine = m.type === "service" ? createServiceEngine(m.id) : createCatalogEngine(m.id);
+    const options = creerOptionsEngine(m.id);
+    const engine = m.type === "service" ? createServiceEngine(m.id, options) : createCatalogEngine(m.id, options);
     await engine.init();
     engines[m.id] = { merchant: m, engine };
     if (m.phoneNumberId) phoneNumberIndex[m.phoneNumberId] = m.id;
@@ -205,7 +226,8 @@ app.get("/admin", protegerAcces, (req, res) => {
 // n'affiche donc jamais a un marchand la liste des autres marchands, meme leur nom).
 app.get("/api/marchands", protegerAcces, (req, res) => {
   const tous = Object.values(engines).map((e) => ({
-    id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null
+    id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
+    phoneNotification: e.merchant.phoneNotification || null
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -218,7 +240,7 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
 // ensuite depuis l'onglet "Mon compte").
 app.post("/api/marchands", protegerAcces, async (req, res) => {
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
-  const { id, nom, type, phoneNumberId, adminUser, adminPassword } = req.body || {};
+  const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification } = req.body || {};
   if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
   if (type !== "catalogue" && type !== "service") return res.status(400).json({ erreur: "type doit être 'catalogue' ou 'service'." });
   if (engines[id]) return res.status(409).json({ erreur: "Un marchand avec cet id existe déjà." });
@@ -227,10 +249,12 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
     id, nom, type,
     phoneNumberId: phoneNumberId || null,
     adminUser,
-    adminPassword: bcrypt.hashSync(String(adminPassword), 10)
+    adminPassword: bcrypt.hashSync(String(adminPassword), 10),
+    phoneNotification: phoneNotification || null
   };
   await db.addMerchant(merchant);
-  const engine = type === "service" ? createServiceEngine(id) : createCatalogEngine(id);
+  const options = creerOptionsEngine(id);
+  const engine = type === "service" ? createServiceEngine(id, options) : createCatalogEngine(id, options);
   await engine.init();
   engines[id] = { merchant, engine };
   if (merchant.phoneNumberId) phoneNumberIndex[merchant.phoneNumberId] = id;
@@ -279,7 +303,7 @@ app.put("/api/:id/identifiants", protegerAcces, async (req, res) => {
 
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
 
-  const maj = await db.updateMerchantCreds(id, patch);
+  const maj = await db.updateMerchantFields(id, patch);
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
 
   entry.merchant.adminUser = maj.adminUser;
@@ -363,6 +387,36 @@ app.put("/api/:id/parametres", protegerAcces, (req, res) => {
   res.json(entry.engine.updateSettings(req.body || {}));
 });
 
+// -- Numero de notification personnel (recoit un message WhatsApp quand un client demande a parler a un
+// humain) : le super-administrateur peut le regler pour n'importe quel marchand, un marchand pour
+// lui-meme uniquement (verifierPortee s'en charge via getMarchandAutorise). --
+
+app.put("/api/:id/notification", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const { phoneNotification } = req.body || {};
+  const maj = await db.updateMerchantFields(req.params.id, { phoneNotification: phoneNotification || null });
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.phoneNotification = maj.phoneNotification;
+  res.json({ id: req.params.id, phoneNotification: maj.phoneNotification });
+});
+
+// -- Mise en relation avec un humain : conversations actuellement en pause, et reponse manuelle du
+// marchand (envoyee au client via le meme compte WhatsApp que le bot). --
+
+app.get("/api/:id/conversations", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  res.json(entry.engine.getConversationsEnAttente());
+});
+
+app.post("/api/:id/conversations/:telephone/repondre", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const { message } = req.body || {};
+  if (!message || !String(message).trim()) return res.status(400).json({ erreur: "message requis." });
+  const ok = await entry.engine.repondreConversationHumain(req.params.telephone, String(message));
+  if (!ok) return res.status(404).json({ erreur: "Conversation introuvable (peut-être déjà reprise par le bot après 10 minutes)." });
+  res.json({ ok: true });
+});
+
 // ---------------- Webhook WhatsApp ----------------
 
 // --- ETAPE 1 : Verification du webhook par Meta ---
@@ -422,7 +476,13 @@ app.post("/webhook", async (req, res) => {
 
     const reponse = marchand.engine.handleMessage(from, texteRecu);
 
-    await envoyerMessageWhatsApp(from, reponse, phoneNumberId);
+    // Une reponse "vide" (null) signifie que la conversation est en pause pour un humain (voir shared.js)
+    // - on reste volontairement silencieux, le marchand repondra depuis /admin.
+    if (reponse) {
+      await envoyerMessageWhatsApp(from, reponse, phoneNumberId);
+    } else {
+      console.log(`[${merchantId}] Conversation en pause pour un humain — aucune reponse automatique envoyee a ${from}.`);
+    }
   } catch (erreur) {
     console.error("Erreur lors du traitement du webhook :", erreur);
   }

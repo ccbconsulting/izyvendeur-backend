@@ -50,6 +50,9 @@ async function ensureMerchantsTable() {
       "created_at TIMESTAMPTZ NOT NULL DEFAULT now()" +
     ")"
   );
+  // Migration : ajoute la colonne si la table existait deja avant son introduction (installations en
+  // production). Sans effet si elle existe deja.
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS phone_notification TEXT");
 }
 
 function defaultMerchantFromEnv() {
@@ -61,7 +64,8 @@ function defaultMerchantFromEnv() {
     type: "catalogue",
     phoneNumberId: process.env.PHONE_NUMBER_ID || null,
     adminUser: process.env.ADMIN_USER || "admin",
-    adminPassword: process.env.ADMIN_PASSWORD || null
+    adminPassword: process.env.ADMIN_PASSWORD || null,
+    phoneNotification: null
   };
 }
 
@@ -70,7 +74,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return res.rows.map(rowToMerchant);
     }
@@ -100,7 +104,8 @@ function rowToMerchant(row) {
     type: row.type,
     phoneNumberId: row.phone_number_id,
     adminUser: row.admin_user,
-    adminPassword: row.admin_password
+    adminPassword: row.admin_password,
+    phoneNotification: row.phone_notification || null
   };
 }
 
@@ -108,9 +113,9 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password) VALUES ($1,$2,$3,$4,$5,$6) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6",
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword]
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification) VALUES ($1,$2,$3,$4,$5,$6,$7) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7",
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null]
     );
     return;
   }
@@ -126,22 +131,24 @@ async function addMerchant(m) {
   return m;
 }
 
-// Met a jour les identifiants (nom d'utilisateur et/ou mot de passe deja hashe) d'UN marchand existant,
-// sans toucher a ses autres champs (nom, type, phone_number_id). Utilise pour : la creation d'un mot de
-// passe initial par le super-administrateur, la reinitialisation d'un mot de passe oublie, et le
-// changement de mot de passe par le marchand lui-meme. Retourne le marchand mis a jour, ou null s'il
-// n'existe pas.
-async function updateMerchantCreds(id, patch) {
+// Met a jour un ou plusieurs champs (identifiants de connexion et/ou numero de notification personnel)
+// d'UN marchand existant, sans toucher a ses autres champs (nom, type, phone_number_id). Utilise pour :
+// la creation d'un mot de passe initial par le super-administrateur, la reinitialisation d'un mot de
+// passe oublie, le changement de mot de passe par le marchand lui-meme, et la configuration du numero de
+// notification (celui qui recoit un message WhatsApp quand un client demande a parler a un humain).
+// Retourne le marchand mis a jour, ou null s'il n'existe pas.
+async function updateMerchantFields(id, patch) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
     const m = rowToMerchant(res.rows[0]);
     if (patch.adminUser !== undefined) m.adminUser = patch.adminUser;
     if (patch.adminPassword !== undefined) m.adminPassword = patch.adminPassword;
+    if (patch.phoneNotification !== undefined) m.phoneNotification = patch.phoneNotification;
     await insertMerchant(m);
     return m;
   }
@@ -151,6 +158,7 @@ async function updateMerchantCreds(id, patch) {
   if (idx === -1) return null;
   if (patch.adminUser !== undefined) liste[idx].adminUser = patch.adminUser;
   if (patch.adminPassword !== undefined) liste[idx].adminPassword = patch.adminPassword;
+  if (patch.phoneNotification !== undefined) liste[idx].phoneNotification = patch.phoneNotification;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
 }
@@ -220,7 +228,7 @@ async function persistMerchantState(merchantKey, state) {
 module.exports = {
   initRegistry,
   addMerchant,
-  updateMerchantCreds,
+  updateMerchantFields,
   initMerchantState,
   persistMerchantState,
   usingDatabase: !!pool
