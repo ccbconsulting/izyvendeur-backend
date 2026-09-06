@@ -41,6 +41,7 @@
 <header>
   <h1>IzyVendeur — Administration</h1>
   <select id="selecteurMarchand"></select>
+  <span id="nomMarchandSeul" style="font-weight:600; display:none;"></span>
   <button id="btnNouveauMarchand" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;">+ Nouveau marchand</button>
 </header>
 <main>
@@ -68,17 +69,31 @@ async function api(chemin, opts) {
 
 let marchands = [];
 let marchandActif = null;
+let moi = null; // { role: "superadmin" | "marchand", merchantId, adminUser }
 
 async function demarrer() {
   try {
+    moi = await api("/api/moi");
     marchands = await api("/api/marchands");
   } catch (e) {
     document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>Impossible de charger la liste des marchands : " + esc(e.message) + "</div>";
     return;
   }
   const sel = document.getElementById("selecteurMarchand");
-  sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ")</option>").join("");
-  sel.onchange = () => choisirMarchand(sel.value);
+  const nomSeul = document.getElementById("nomMarchandSeul");
+  const btnNouveau = document.getElementById("btnNouveauMarchand");
+  if (moi.role === "superadmin") {
+    sel.style.display = "";
+    nomSeul.style.display = "none";
+    btnNouveau.style.display = "";
+    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ")</option>").join("");
+    sel.onchange = () => choisirMarchand(sel.value);
+  } else {
+    sel.style.display = "none";
+    btnNouveau.style.display = "none";
+    nomSeul.style.display = "";
+    nomSeul.textContent = marchands.length ? marchands[0].nom : "";
+  }
   if (marchands.length) choisirMarchand(marchands[0].id);
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>Aucun marchand configuré.</div>";
 }
@@ -89,8 +104,12 @@ document.getElementById("btnNouveauMarchand").onclick = async () => {
   const nom = prompt("Nom affiché du marchand :", id) || id;
   const type = (prompt("Type : 'catalogue' (vente de produits) ou 'service' (prise de rendez-vous) ?", "catalogue") || "").trim();
   const phoneNumberId = prompt("phone_number_id WhatsApp de ce marchand (visible dans le tableau de bord Meta > WhatsApp > Numéros de téléphone). Laissez vide si pas encore connu :") || null;
+  const adminUser = prompt("Nom d'utilisateur de connexion pour ce marchand (il servira à se connecter à /admin) :", id) || id;
+  const adminPassword = prompt("Mot de passe initial pour ce marchand (il pourra le changer lui-même ensuite depuis \"Mon compte\") :");
+  if (!adminPassword) { alert("Un mot de passe initial est requis."); return; }
   try {
-    await api("/api/marchands", { method: "POST", body: JSON.stringify({ id, nom, type, phoneNumberId }) });
+    await api("/api/marchands", { method: "POST", body: JSON.stringify({ id, nom, type, phoneNumberId, adminUser, adminPassword }) });
+    alert("Marchand créé. Identifiants de connexion à lui communiquer :\n\nUtilisateur : " + adminUser + "\nMot de passe : " + adminPassword);
     await demarrer();
   } catch (e) { alert("Erreur : " + e.message); }
 };
@@ -104,8 +123,8 @@ function choisirMarchand(id) {
 function construireOnglets() {
   const barre = document.getElementById("barreOnglets");
   const onglets = marchandActif.type === "service"
-    ? [["services", "Services", renderServices], ["rendezvous", "Rendez-vous", renderRendezvous], ["parametres", "Paramètres", renderParametresService]]
-    : [["catalogue", "Catalogue & stock", renderCatalogue], ["commandes", "Commandes", renderCommandes], ["parametres", "Paramètres", renderParametresCatalogue]];
+    ? [["services", "Services", renderServices], ["rendezvous", "Rendez-vous", renderRendezvous], ["parametres", "Paramètres", renderParametresService], ["compte", "Mon compte", renderCompte]]
+    : [["catalogue", "Catalogue & stock", renderCatalogue], ["commandes", "Commandes", renderCommandes], ["parametres", "Paramètres", renderParametresCatalogue], ["compte", "Mon compte", renderCompte]];
   barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "' class='" + (i === 0 ? "actif" : "") + "'>" + o[1] + "</button>").join("");
   const fonctions = {};
   onglets.forEach((o) => { fonctions[o[0]] = o[2]; });
@@ -376,6 +395,76 @@ async function renderParametresService() {
         })
       });
       alert("Paramètres enregistrés.");
+    } catch (e) { alert("Erreur : " + e.message); }
+  };
+}
+
+// ---------------- Mon compte (identifiants de connexion) ----------------
+
+async function renderCompte() {
+  const zone = document.getElementById("contenuOnglet");
+
+  if (moi.role === "superadmin") {
+    zone.innerHTML =
+      "<h2>Compte — " + esc(marchandActif.nom) + "</h2>" +
+      "<p class='raison'>En tant que super-administrateur, vous pouvez gérer les identifiants de connexion de ce marchand : changer son nom d'utilisateur, lui définir un nouveau mot de passe, ou lui en générer un aléatoirement (par exemple s'il vous contacte parce qu'il a oublié le sien).</p>" +
+      "<label>Nom d'utilisateur</label>" +
+      "<input id='champUtilisateur' value=\"" + esc(marchandActif.adminUser || "") + "\" />" +
+      "<div style='margin-top:10px;'><button id='btnSauverUtilisateur'>Enregistrer le nom d'utilisateur</button></div>" +
+      "<h3>Mot de passe</h3>" +
+      "<label>Définir ce mot de passe (au moins 6 caractères)</label>" +
+      "<input id='champNouveauMdp' type='text' placeholder='Nouveau mot de passe' />" +
+      "<div style='margin-top:10px;'>" +
+        "<button id='btnDefinirMdp' class='principal'>Définir ce mot de passe</button> " +
+        "<button id='btnGenererMdp'>Générer un mot de passe aléatoire</button>" +
+      "</div>";
+
+    document.getElementById("btnSauverUtilisateur").onclick = async () => {
+      const nouvUtilisateur = document.getElementById("champUtilisateur").value.trim();
+      if (!nouvUtilisateur) { alert("Le nom d'utilisateur ne peut pas être vide."); return; }
+      try {
+        await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ adminUser: nouvUtilisateur }) });
+        alert("Nom d'utilisateur mis à jour.");
+        await demarrer();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
+    document.getElementById("btnDefinirMdp").onclick = async () => {
+      const mdp = document.getElementById("champNouveauMdp").value;
+      if (!mdp) { alert("Entrez un mot de passe."); return; }
+      try {
+        await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ newPassword: mdp }) });
+        alert("Mot de passe mis à jour. Communiquez-le au marchand :\n\n" + mdp);
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
+    document.getElementById("btnGenererMdp").onclick = async () => {
+      try {
+        const rep = await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ genererMotDePasse: true }) });
+        alert("Nouveau mot de passe généré. Communiquez-le au marchand :\n\n" + rep.nouveauMotDePasse);
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
+    return;
+  }
+
+  // Vue "marchand" : uniquement son propre changement de mot de passe.
+  zone.innerHTML =
+    "<h2>Mon compte</h2>" +
+    "<p>Nom d'utilisateur : <strong>" + esc(marchandActif.adminUser || "") + "</strong></p>" +
+    "<label>Nouveau mot de passe (au moins 6 caractères)</label>" +
+    "<input id='champNouveauMdp1' type='password' />" +
+    "<label>Confirmer le nouveau mot de passe</label>" +
+    "<input id='champNouveauMdp2' type='password' />" +
+    "<div style='margin-top:14px;'><button id='btnChangerMdp' class='principal'>Changer mon mot de passe</button></div>" +
+    "<p class='raison'>Une fois le changement effectué, la page se recharge : reconnectez-vous avec votre nouveau mot de passe.</p>";
+
+  document.getElementById("btnChangerMdp").onclick = async () => {
+    const m1 = document.getElementById("champNouveauMdp1").value;
+    const m2 = document.getElementById("champNouveauMdp2").value;
+    if (!m1 || m1 !== m2) { alert("Les deux mots de passe doivent être identiques et non vides."); return; }
+    if (m1.length < 6) { alert("Le mot de passe doit contenir au moins 6 caractères."); return; }
+    try {
+      await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ newPassword: m1 }) });
+      alert("Mot de passe changé avec succès. La page va se recharger : reconnectez-vous avec votre nouveau mot de passe.");
+      location.reload();
     } catch (e) { alert("Erreur : " + e.message); }
   };
 }
