@@ -71,6 +71,14 @@ function demandeUnHumain(texte) {
 const MESSAGE_MISE_EN_RELATION =
   "Je vous mets en relation avec un membre de notre équipe, merci de patienter quelques instants 🙏";
 
+// Glissee UNE SEULE fois par client (a la toute premiere reponse du bot), pour qu'il sache des le depart
+// qu'un humain reste accessible sur simple demande - constat remonte par un marchand : un client qui
+// n'a jamais utilise ce genre d'assistant ne devine pas spontanement cette option. Ajoutee en suffixe du
+// tout premier message (voir conversation.js / conversationService.js, handleMessage), jamais repetee
+// ensuite pour ne pas alourdir la conversation.
+const MENTION_HUMAIN_DISPONIBLE =
+  "\n\n(À tout moment, vous pouvez me demander de vous mettre en relation avec un conseiller si vous préférez échanger avec une personne.)";
+
 // true si ce message doit rester SANS reponse automatique (pause en cours et delai pas encore ecoule).
 // Si le delai de 10 minutes sans reponse du marchand est ecoule, remet automatiquement enAttente a
 // false (le bot reprend la main sur CE message) et renvoie false.
@@ -128,6 +136,7 @@ module.exports = {
   echapperHtml,
   demandeUnHumain,
   MESSAGE_MISE_EN_RELATION,
+  MENTION_HUMAIN_DISPONIBLE,
   pauseHumainActive,
   ajouterMessageHistorique,
   demarrerPauseHumain,

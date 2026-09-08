@@ -117,6 +117,16 @@ function creerOptionsEngine(merchantKey) {
         );
         await envoyerMessageWhatsApp(destinataire, config.texteLibreRepli(params), phoneNumberId);
       }
+    },
+    // Enregistre durablement un message dans le journal complet des conversations (voir db.js) - alimente
+    // l'onglet "Historique" de /admin. Ne leve jamais : une erreur ici ne doit jamais interrompre l'envoi
+    // ou la reception d'un message WhatsApp, seulement priver cette conversation de son entree d'historique.
+    journaliser: async (telephone, de, texte) => {
+      try {
+        await db.logConversationMessage(merchantKey, telephone, de, texte);
+      } catch (erreur) {
+        console.error(`[${merchantKey}] Echec de journalisation de la conversation :`, erreur);
+      }
     }
   };
 }
@@ -533,6 +543,29 @@ app.post("/api/:id/conversations/:telephone/repondre", protegerAcces, async (req
   const ok = await entry.engine.repondreConversationHumain(req.params.telephone, String(message));
   if (!ok) return res.status(404).json({ erreur: "Conversation introuvable (peut-être déjà reprise par le bot après 10 minutes)." });
   res.json({ ok: true });
+});
+
+// -- Historique complet des conversations (TOUS les echanges, pas seulement les mises en pause) : une
+// liste des clients ayant deja ecrit, puis le detail d'un client donne. --
+
+app.get("/api/:id/conversations/historique", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  try {
+    res.json(await db.getConversationSummaries(req.params.id));
+  } catch (erreur) {
+    console.error(`[${req.params.id}] Echec de lecture de l'historique des conversations :`, erreur);
+    res.status(500).json({ erreur: "Impossible de charger l'historique des conversations." });
+  }
+});
+
+app.get("/api/:id/conversations/historique/:telephone", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  try {
+    res.json(await db.getConversationHistory(req.params.id, req.params.telephone));
+  } catch (erreur) {
+    console.error(`[${req.params.id}] Echec de lecture de l'historique d'une conversation :`, erreur);
+    res.status(500).json({ erreur: "Impossible de charger cette conversation." });
+  }
 });
 
 // -- Tableau de bord : statistiques resumees (commun aux deux types) --

@@ -65,6 +65,20 @@ function createCatalogEngine(merchantKey, options) {
   // storage.js pour l'hebergement, server.js pour l'appel a l'API Graph). No-op si non fourni (compatible
   // avec d'anciens appels/tests qui ne passent pas cette option).
   const envoyerImage = (options && options.envoyerImage) || (async () => {});
+  // `options.journaliser(telephone, de, texte)` enregistre durablement un message dans le journal complet
+  // des conversations (voir db.js) - pour l'onglet "Historique" de /admin. Toujours appele en
+  // fire-and-forget (jamais attendu, jamais laisse faire planter la conversation en cas d'echec).
+  const journaliserOption = (options && options.journaliser) || (async () => {});
+  function journaliser(telephone, de, texte) {
+    if (!telephone || telephone === PHONE_SIMULATEUR) return; // jamais le Simulateur dans le vrai journal
+    journaliserOption(telephone, de, texte).catch((erreur) =>
+      console.error("[" + merchantKey + "] Echec de journalisation de la conversation :", erreur)
+    );
+  }
+  // Glisse la mention "un conseiller reste disponible" UNE SEULE fois par client, a sa toute premiere
+  // reponse - memoire seulement (comme `sessions`/`conversationsHumain`) : un redemarrage remet a zero,
+  // ce qui n'est pas grave (au pire un client tres occasionnel la revoit un jour).
+  const humanHintDonne = {};
 
   // A appeler une seule fois, au demarrage du serveur, AVANT de traiter le moindre message pour ce marchand.
   async function init() {
@@ -546,6 +560,8 @@ function createCatalogEngine(merchantKey, options) {
   function handleMessage(fromPhone, text) {
     if (!state) return "Le service redemarre, un instant s'il vous plait...";
 
+    journaliser(fromPhone, "client", text);
+
     // Conversation deja mise en pause pour un humain : on reste silencieux tant que le delai n'est pas
     // ecoule (voir shared.js). Une fois le delai depasse, pauseHumainActive() remet enAttente a false et
     // le traitement normal reprend plus bas sur CE message.
@@ -559,11 +575,21 @@ function createCatalogEngine(merchantKey, options) {
       notifierMarchand("humain", [fromPhone, text]).catch((erreur) =>
         console.error("[" + merchantKey + "] Echec de la notification marchand (humain) :", erreur)
       );
+      journaliser(fromPhone, "bot", sh.MESSAGE_MISE_EN_RELATION);
       return sh.MESSAGE_MISE_EN_RELATION;
     }
 
+    // Premier contact JAMAIS vu de ce numero (avant que getSession() ne cree sa session) : on glissera la
+    // mention du conseiller humain disponible a la reponse qui suit, une seule fois.
+    const estPremierContact = !sessions[fromPhone] && !humanHintDonne[fromPhone];
     const session = getSession(fromPhone);
-    return processMessage(session, text);
+    let reponse = processMessage(session, text);
+    if (estPremierContact && reponse) {
+      humanHintDonne[fromPhone] = true;
+      reponse += sh.MENTION_HUMAIN_DISPONIBLE;
+    }
+    journaliser(fromPhone, "bot", reponse);
+    return reponse;
   }
 
   // Liste des conversations actuellement en attente d'un humain (pour l'onglet Conversations de /admin).
@@ -577,6 +603,7 @@ function createCatalogEngine(merchantKey, options) {
     const ok = sh.repondreHumain(conversationsHumain, telephone, message);
     if (!ok) return false;
     await envoyer(telephone, message);
+    journaliser(telephone, "marchand", message);
     return true;
   }
 
@@ -605,6 +632,7 @@ function createCatalogEngine(merchantKey, options) {
   function resetSimulateur() {
     delete sessions[PHONE_SIMULATEUR];
     delete conversationsHumain[PHONE_SIMULATEUR];
+    delete humanHintDonne[PHONE_SIMULATEUR];
     if (state) {
       const avant = state.orders.length;
       state.orders = state.orders.filter((o) => o.fromWhatsapp !== PHONE_SIMULATEUR);

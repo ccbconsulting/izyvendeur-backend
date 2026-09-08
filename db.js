@@ -23,7 +23,13 @@ const path = require("path");
 
 const DATA_FILE = path.join(__dirname, "data.json");
 const MERCHANTS_FILE = path.join(__dirname, "merchants.json");
+const CONVERSATION_LOG_FILE = path.join(__dirname, "conversation-log.json");
 const DATABASE_URL = process.env.DATABASE_URL;
+
+// Nombre max de messages conserves PAR client (au-dela, les plus anciens sont abandonnes) - evite une
+// croissance illimitee pour un client tres bavard sur le tres long terme, tout en couvrant tres largement
+// l'historique utile pour un marchand qui consulte une conversation.
+const MAX_MESSAGES_PAR_CLIENT = 500;
 
 let pool = null;
 if (DATABASE_URL) {
@@ -225,11 +231,133 @@ async function persistMerchantState(merchantKey, state) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(toutEtats, null, 2));
 }
 
+// ---------------- Journal complet des conversations (client <-> bot/marchand) ----------------
+//
+// Contrairement a `conversationsHumain` (memoire seulement, dans shared.js - juste pour la mise en
+// relation avec un humain), ce journal garde TOUS les echanges, durablement, pour que le marchand puisse
+// consulter depuis /admin ce que le bot a dit a un client donne, meme des mois plus tard. Une ligne par
+// message ; `de` vaut "client", "bot" (reponse automatique) ou "marchand" (reponse manuelle envoyee depuis
+// /admin, onglet Conversations).
+
+async function ensureConversationLogTable() {
+  await pool.query(
+    "CREATE TABLE IF NOT EXISTS conversation_log (" +
+      "id SERIAL PRIMARY KEY, " +
+      "merchant_key TEXT NOT NULL, " +
+      "telephone TEXT NOT NULL, " +
+      "de TEXT NOT NULL, " + // 'client' | 'bot' | 'marchand'
+      "texte TEXT NOT NULL, " +
+      "horodatage TIMESTAMPTZ NOT NULL DEFAULT now()" +
+    ")"
+  );
+  await pool.query("CREATE INDEX IF NOT EXISTS idx_conversation_log_marchand_tel ON conversation_log (merchant_key, telephone, horodatage)");
+}
+
+function lireJournalLocal() {
+  try {
+    if (fs.existsSync(CONVERSATION_LOG_FILE)) {
+      return JSON.parse(fs.readFileSync(CONVERSATION_LOG_FILE, "utf8")) || {};
+    }
+  } catch (erreur) {
+    console.error("Erreur de lecture de conversation-log.json, on repart d'un journal vide :", erreur);
+  }
+  return {};
+}
+
+// Enregistre un message. Jamais bloquant pour l'appelant en cas d'echec : la conversation elle-meme (le
+// message envoye au client) ne doit jamais dependre de la reussite de cette ecriture - voir les
+// appels cote conversation.js/conversationService.js (fire-and-forget, avec `.catch(console.error)`).
+async function logConversationMessage(merchantKey, telephone, de, texte) {
+  if (!telephone || !texte) return;
+  if (pool) {
+    await ensureConversationLogTable();
+    await pool.query(
+      "INSERT INTO conversation_log (merchant_key, telephone, de, texte) VALUES ($1, $2, $3, $4)",
+      [merchantKey, telephone, de, String(texte).slice(0, 4000)]
+    );
+    return;
+  }
+  const journal = lireJournalLocal();
+  if (!journal[merchantKey]) journal[merchantKey] = {};
+  if (!journal[merchantKey][telephone]) journal[merchantKey][telephone] = [];
+  journal[merchantKey][telephone].push({ de, texte: String(texte).slice(0, 4000), horodatageISO: new Date().toISOString() });
+  if (journal[merchantKey][telephone].length > MAX_MESSAGES_PAR_CLIENT) {
+    journal[merchantKey][telephone] = journal[merchantKey][telephone].slice(-MAX_MESSAGES_PAR_CLIENT);
+  }
+  fs.writeFileSync(CONVERSATION_LOG_FILE, JSON.stringify(journal, null, 2));
+}
+
+// Un resume par client (telephone, dernier message, date du dernier echange, nombre total de messages),
+// trie du plus recent au plus ancien - utilise pour la liste "Historique des conversations" de /admin.
+async function getConversationSummaries(merchantKey) {
+  if (pool) {
+    await ensureConversationLogTable();
+    const compteurs = await pool.query(
+      "SELECT telephone, COUNT(*) AS nombre, MAX(horodatage) AS dernier_horodatage " +
+      "FROM conversation_log WHERE merchant_key = $1 GROUP BY telephone",
+      [merchantKey]
+    );
+    const derniers = await pool.query(
+      "SELECT DISTINCT ON (telephone) telephone, de, texte, horodatage " +
+      "FROM conversation_log WHERE merchant_key = $1 ORDER BY telephone, horodatage DESC",
+      [merchantKey]
+    );
+    const parTelephone = {};
+    derniers.rows.forEach((r) => { parTelephone[r.telephone] = r; });
+    return compteurs.rows
+      .map((c) => {
+        const dernier = parTelephone[c.telephone] || {};
+        return {
+          telephone: c.telephone,
+          nombreMessages: Number(c.nombre),
+          dernierHorodatageISO: new Date(c.dernier_horodatage).toISOString(),
+          dernierDe: dernier.de || null,
+          dernierMessage: dernier.texte || null
+        };
+      })
+      .sort((a, b) => new Date(b.dernierHorodatageISO) - new Date(a.dernierHorodatageISO));
+  }
+
+  const journal = lireJournalLocal()[merchantKey] || {};
+  return Object.keys(journal)
+    .map((telephone) => {
+      const messages = journal[telephone];
+      const dernier = messages[messages.length - 1];
+      return {
+        telephone,
+        nombreMessages: messages.length,
+        dernierHorodatageISO: dernier ? dernier.horodatageISO : null,
+        dernierDe: dernier ? dernier.de : null,
+        dernierMessage: dernier ? dernier.texte : null
+      };
+    })
+    .sort((a, b) => new Date(b.dernierHorodatageISO) - new Date(a.dernierHorodatageISO));
+}
+
+// Historique complet (borne a MAX_MESSAGES_PAR_CLIENT) d'UN client, du plus ancien au plus recent - pret a
+// afficher tel quel dans une fenetre de discussion.
+async function getConversationHistory(merchantKey, telephone) {
+  if (pool) {
+    await ensureConversationLogTable();
+    const res = await pool.query(
+      "SELECT de, texte, horodatage FROM conversation_log WHERE merchant_key = $1 AND telephone = $2 " +
+      "ORDER BY horodatage DESC LIMIT $3",
+      [merchantKey, telephone, MAX_MESSAGES_PAR_CLIENT]
+    );
+    return res.rows.reverse().map((r) => ({ de: r.de, texte: r.texte, horodatageISO: new Date(r.horodatage).toISOString() }));
+  }
+  const journal = lireJournalLocal();
+  return ((journal[merchantKey] || {})[telephone] || []).slice();
+}
+
 module.exports = {
   initRegistry,
   addMerchant,
   updateMerchantFields,
   initMerchantState,
   persistMerchantState,
+  logConversationMessage,
+  getConversationSummaries,
+  getConversationHistory,
   usingDatabase: !!pool
 };

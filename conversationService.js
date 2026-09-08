@@ -56,6 +56,20 @@ function createServiceEngine(merchantKey, options) {
   const conversationsHumain = {}; // memoire seulement (comme `sessions`) - voir shared.js
   const envoyer = (options && options.envoyer) || (async () => {});
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
+  // `options.journaliser(telephone, de, texte)` enregistre durablement un message dans le journal complet
+  // des conversations (voir db.js) - pour l'onglet "Historique" de /admin. Toujours appele en
+  // fire-and-forget (jamais attendu, jamais laisse faire planter la conversation en cas d'echec).
+  const journaliserOption = (options && options.journaliser) || (async () => {});
+  function journaliser(telephone, de, texte) {
+    if (!telephone || telephone === PHONE_SIMULATEUR) return; // jamais le Simulateur dans le vrai journal
+    journaliserOption(telephone, de, texte).catch((erreur) =>
+      console.error("[" + merchantKey + "] Echec de journalisation de la conversation :", erreur)
+    );
+  }
+  // Glisse la mention "un conseiller reste disponible" UNE SEULE fois par client, a sa toute premiere
+  // reponse - memoire seulement (comme `sessions`/`conversationsHumain`) : un redemarrage remet a zero,
+  // ce qui n'est pas grave (au pire un client tres occasionnel la revoit un jour).
+  const humanHintDonne = {};
 
   async function init() {
     state = await db.initMerchantState(merchantKey, seedState);
@@ -184,6 +198,24 @@ function createServiceEngine(merchantKey, options) {
     return (state.settings.horaires || {})[DAY_KEYS[dateOnly.getDay()]];
   }
 
+  // Pause dejeuner (ou autre coupure) optionnelle au milieu de la journee - ex: 8h-13h puis 14h-18h pour un
+  // marchand de type cabinet/conseil. Absente (pauseDebut/pauseFin non renseignes) pour un marchand qui
+  // ouvre en continu (ex: institut de beaute) - retro-compatible avec les horaires deja enregistres avant
+  // l'introduction de ce champ.
+  function pauseDuJour(dateOnly, horaire) {
+    if (!horaire || !horaire.pauseDebut || !horaire.pauseFin) return null;
+    return { debut: combineDateHeureStr(dateOnly, horaire.pauseDebut), fin: combineDateHeureStr(dateOnly, horaire.pauseFin) };
+  }
+
+  // true si le creneau [slotStart, slotStart+dureeMinutes) chevauche la pause du jour (meme logique de
+  // chevauchement que isSlotFree, plus bas).
+  function chevauchePause(dateOnly, horaire, slotStart, dureeMinutes) {
+    const pause = pauseDuJour(dateOnly, horaire);
+    if (!pause) return false;
+    const slotEnd = slotStart.getTime() + dureeMinutes * 60000;
+    return slotStart.getTime() < pause.fin.getTime() && pause.debut.getTime() < slotEnd;
+  }
+
   function candidateStarts(dateOnly) {
     const horaire = horaireDuJour(dateOnly);
     if (!horaire || !horaire.ouvert) return [];
@@ -216,6 +248,7 @@ function createServiceEngine(merchantKey, options) {
     const fin = combineDateHeureStr(dateOnly, horaire.fin);
     return candidateStarts(dateOnly)
       .filter((s) => s.getTime() + dureeService * 60000 <= fin.getTime())
+      .filter((s) => !chevauchePause(dateOnly, horaire, s, dureeService))
       .filter((s) => s.getTime() > now.getTime())
       .filter((s) => isSlotFree(s, dureeService));
   }
@@ -322,7 +355,9 @@ function createServiceEngine(merchantKey, options) {
       const exact = combineDateHeure(dateOnly, heureDemandee);
       const dejaPasse = exact.getTime() <= now.getTime();
       const dansHoraires = candidateStarts(dateOnly).some((s) => s.getTime() === exact.getTime());
-      if (!dejaPasse && dansHoraires && exact.getTime() + service.dureeMinutes * 60000 <= combineDateHeureStr(dateOnly, (horaireDuJour(dateOnly) || {}).fin || "18:00").getTime() && isSlotFree(exact, service.dureeMinutes)) {
+      const horaireJour = horaireDuJour(dateOnly);
+      const pauseOk = !chevauchePause(dateOnly, horaireJour, exact, service.dureeMinutes);
+      if (!dejaPasse && dansHoraires && pauseOk && exact.getTime() + service.dureeMinutes * 60000 <= combineDateHeureStr(dateOnly, (horaireJour || {}).fin || "18:00").getTime() && isSlotFree(exact, service.dureeMinutes)) {
         return bookSlot(session, exact, service);
       }
     }
@@ -467,6 +502,8 @@ function createServiceEngine(merchantKey, options) {
   function handleMessage(fromPhone, text) {
     if (!state) return "Le service redemarre, un instant s'il vous plait...";
 
+    journaliser(fromPhone, "client", text);
+
     if (sh.pauseHumainActive(conversationsHumain, fromPhone)) {
       sh.ajouterMessageHistorique(conversationsHumain, fromPhone, "client", text);
       return null;
@@ -477,11 +514,21 @@ function createServiceEngine(merchantKey, options) {
       notifierMarchand("humain", [fromPhone, text]).catch((erreur) =>
         console.error("[" + merchantKey + "] Echec de la notification marchand (humain) :", erreur)
       );
+      journaliser(fromPhone, "bot", sh.MESSAGE_MISE_EN_RELATION);
       return sh.MESSAGE_MISE_EN_RELATION;
     }
 
+    // Premier contact JAMAIS vu de ce numero (avant que getSession() ne cree sa session) : on glissera la
+    // mention du conseiller humain disponible a la reponse qui suit, une seule fois.
+    const estPremierContact = !sessions[fromPhone] && !humanHintDonne[fromPhone];
     const session = getSession(fromPhone);
-    return processMessage(session, text);
+    let reponse = processMessage(session, text);
+    if (estPremierContact && reponse) {
+      humanHintDonne[fromPhone] = true;
+      reponse += sh.MENTION_HUMAIN_DISPONIBLE;
+    }
+    journaliser(fromPhone, "bot", reponse);
+    return reponse;
   }
 
   function getConversationsEnAttente() {
@@ -492,6 +539,7 @@ function createServiceEngine(merchantKey, options) {
     const ok = sh.repondreHumain(conversationsHumain, telephone, message);
     if (!ok) return false;
     await envoyer(telephone, message);
+    journaliser(telephone, "marchand", message);
     return true;
   }
 
@@ -516,6 +564,7 @@ function createServiceEngine(merchantKey, options) {
   function resetSimulateur() {
     delete sessions[PHONE_SIMULATEUR];
     delete conversationsHumain[PHONE_SIMULATEUR];
+    delete humanHintDonne[PHONE_SIMULATEUR];
     if (state) {
       const avant = state.appointments.length;
       state.appointments = state.appointments.filter((a) => a.fromWhatsapp !== PHONE_SIMULATEUR);
