@@ -677,6 +677,31 @@ app.post("/webhook", async (req, res) => {
 
     const message = messages[0];
     const from = message.from; // numero du client, format international sans "+"
+
+    // Clic sur "Voir plus d'articles/services ▸" (pagination d'un catalogue/service trop fourni pour
+    // tenir sur une seule liste WhatsApp - 10 lignes max au total) : pure navigation d'affichage, ne
+    // correspond a AUCUN texte que le client aurait pu taper et ne doit donc jamais passer par
+    // engine.handleMessage() (qui changerait l'etat de la conversation). On envoie juste la page suivante.
+    const idInteractifClique = message.type === "interactive"
+      ? (message.interactive?.list_reply?.id || message.interactive?.button_reply?.id || "")
+      : "";
+    if (idInteractifClique.indexOf(PREFIXE_VOIR_PLUS) === 0) {
+      const offset = Number(idInteractifClique.slice(PREFIXE_VOIR_PLUS.length)) || 0;
+      const estCatalogue = marchand.engine.type === "catalogue";
+      const items = construireItemsListe(marchand);
+      const rows = construireLignesListe(items, offset);
+      const texteCorps = estCatalogue ? "Voici la suite de nos articles :" : "Voici la suite de nos services :";
+      db.logConversationMessage(merchantId, from, "client", "Voir plus " + (estCatalogue ? "d'articles" : "de services")).catch(() => {});
+      const envoye = await envoyerListeWhatsApp(
+        from, phoneNumberId, texteCorps,
+        estCatalogue ? "Voir les articles" : "Voir les services",
+        [{ title: estCatalogue ? "Nos articles" : "Nos services", rows }]
+      ).catch(() => false);
+      if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
+      else await envoyerMessageWhatsApp(from, texteCorps + "\n" + items.slice(offset).map((it) => "• " + it.nom).join("\n"), phoneNumberId);
+      return;
+    }
+
     // Un clic sur une liste/un bouton (voir essayerEnvoyerMenuInteractif plus bas) arrive comme
     // message.type === "interactive" plutot que du texte libre - on le traduit en texte equivalent AVANT
     // de l'envoyer au moteur de conversation, qui n'a besoin de rien savoir de plus (meme logique de
@@ -728,15 +753,54 @@ const ID_HUMAIN = "IZY_HUMAIN";
 const ID_OUI = "IZY_OUI";
 const ID_NON = "IZY_NON";
 const PREFIXE_CRENEAU = "IZY_SLOT_";
+const PREFIXE_VOIR_PLUS = "IZY_PLUS_";
 
 function tronquerTexte(texte, max) {
   const t = String(texte == null ? "" : texte);
   return t.length > max ? t.slice(0, Math.max(0, max - 1)) + "…" : t;
 }
 
+// Construit la liste plate des articles (catalogue) ou services d'un marchand, sous une forme commune
+// {id, nom, description} - utilisee a la fois pour l'envoi de la 1ere page (essayerEnvoyerMenuInteractif)
+// et pour les pages suivantes ("Voir plus", voir le handler du webhook plus haut).
+function construireItemsListe(marchand) {
+  const estCatalogue = marchand.engine.type === "catalogue";
+  return estCatalogue
+    ? marchand.engine.getCatalog().map((p) => {
+        const prixMin = (p.variantes || []).length ? Math.min(...p.variantes.map((v) => v.prix)) : null;
+        return { id: p.id, nom: p.nom, description: prixMin != null ? "À partir de " + sh.formatFcfa(prixMin) : "" };
+      })
+    : marchand.engine.getServices().map((s) => ({ id: s.id, nom: s.nom, description: s.dureeMinutes + " min — " + sh.formatFcfa(s.prix) }));
+}
+
+// Construit les lignes d'UNE page de liste WhatsApp a partir de `offset` (index de depart dans `items`) -
+// max 10 lignes au total. "Parler a un conseiller" figure sur CHAQUE page (choix explicite du marchand),
+// ce qui laisse 9 places pour les articles/services ; si plus de 9 restent apres cette page, la derniere
+// place est prise par "Voir plus ▸" a la place d'un 9eme article, pour ne jamais depasser la limite tout
+// en gardant tout le catalogue/service atteignable par clics (pas seulement les 9 premiers).
+function construireLignesListe(items, offset) {
+  const restant = items.length - offset;
+  const inclureVoirPlus = restant > 9;
+  const nbAffiches = inclureVoirPlus ? 8 : Math.max(0, Math.min(restant, 9));
+  const page = items.slice(offset, offset + nbAffiches);
+  const rows = page.map((it) => ({
+    id: it.id,
+    title: tronquerTexte(it.nom, 24),
+    description: tronquerTexte(it.description, 72)
+  }));
+  if (inclureVoirPlus) {
+    rows.push({ id: PREFIXE_VOIR_PLUS + (offset + nbAffiches), title: "Voir plus ▸" });
+  }
+  rows.push({ id: ID_HUMAIN, title: "Parler à un conseiller", description: "Être mis en relation avec l'équipe" });
+  return rows;
+}
+
 // Traduit l'id d'une ligne de liste ou d'un bouton cliques par le client en texte equivalent - le moteur
 // de conversation n'en sait rien, il recoit exactement ce qu'il recevrait si le client avait tape ce
-// texte lui-meme (voir matchProduct/matchService/demandeUnHumain/parseAffirmative/parseNegative).
+// texte lui-meme (voir matchProduct/matchService/matchCouleur/matchTaille/demandeUnHumain/
+// parseAffirmative/parseNegative). Les lignes de couleur/taille/variante (voir plus bas) utilisent
+// directement le libelle affiche comme id : matchCouleur()/matchTaille() le reconnaissent nativement,
+// donc aucune correspondance dediee n'est necessaire pour elles ici.
 function resoudreTexteInteractif(marchand, interactive) {
   if (!interactive) return null;
   let id = null;
@@ -749,14 +813,16 @@ function resoudreTexteInteractif(marchand, interactive) {
   if (id === ID_NON) return "non";
   if (id.indexOf(PREFIXE_CRENEAU) === 0) return String(Number(id.slice(PREFIXE_CRENEAU.length)) + 1); // "1"/"2"/"3"
 
-  // Sinon : id d'un article ou d'un service - on renvoie son nom exact, que matchProduct()/matchService()
-  // reconnaissent deja nativement (il figure toujours dans leurs mots-cles).
+  // Id d'un article ou d'un service connu : on renvoie son nom exact, que matchProduct()/matchService()
+  // reconnaissent deja nativement (il figure toujours dans leurs mots-cles). Sinon (couleur/taille/
+  // variante, ou tres rare course : l'article a ete retire du catalogue entre l'envoi de la liste et le
+  // clic du client) on renvoie l'id tel quel - il EST deja le texte a interpreter dans tous les autres cas.
   if (marchand.engine.type === "catalogue") {
     const p = marchand.engine.getCatalog().filter((x) => x.id === id)[0];
-    return p ? p.nom : null;
+    return p ? p.nom : id;
   }
   const s = marchand.engine.getServices().filter((x) => x.id === id)[0];
-  return s ? s.nom : null;
+  return s ? s.nom : id;
 }
 
 // Tente d'accompagner `texte` (la reponse deja calculee par le moteur) d'un menu cliquable adapte a l'etat
@@ -771,24 +837,9 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
   if (etat.stage === "idle" && etat.pretPourChoix) {
     const estCatalogue = marchand.engine.type === "catalogue";
-    const items = estCatalogue
-      ? marchand.engine.getCatalog().map((p) => {
-          const prixMin = (p.variantes || []).length ? Math.min(...p.variantes.map((v) => v.prix)) : null;
-          return { id: p.id, nom: p.nom, description: prixMin != null ? "À partir de " + sh.formatFcfa(prixMin) : "" };
-        })
-      : marchand.engine.getServices().map((s) => ({ id: s.id, nom: s.nom, description: s.dureeMinutes + " min — " + sh.formatFcfa(s.prix) }));
+    const items = construireItemsListe(marchand);
     if (!items.length) return false;
-
-    // Max 10 lignes AU TOTAL sur une liste WhatsApp - on garde 9 places pour les articles/services et 1
-    // pour "Parler a un conseiller" (toujours presente, voir la reponse du 25/08 sur ce constat). Un
-    // catalogue plus grand reste utilisable en texte libre : le corps du message (`texte`) enumere deja
-    // tous les noms, seuls les 9 premiers sont en plus cliquables.
-    const rows = items.slice(0, 9).map((it) => ({
-      id: it.id,
-      title: tronquerTexte(it.nom, 24),
-      description: tronquerTexte(it.description, 72)
-    }));
-    rows.push({ id: ID_HUMAIN, title: "Parler à un conseiller", description: "Être mis en relation avec l'équipe" });
+    const rows = construireLignesListe(items, 0);
 
     return envoyerListeWhatsApp(
       destinataire,
@@ -797,6 +848,36 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
       estCatalogue ? "Voir les articles" : "Voir les services",
       [{ title: estCatalogue ? "Nos articles" : "Nos services", rows }]
     );
+  }
+
+  // Choix livraison vs retrait en boutique (voir conversation.js / retraitConfigure()) : seulement 2
+  // options possibles -> boutons (avec le conseiller, ça tient exactement dans la limite de 3). Etape
+  // dediee "awaiting_mode_livraison" (PAS "idle", contrairement a couleur/taille/variante ci-dessous).
+  if (etat.stage === "awaiting_mode_livraison" && etat.pendingChoice && etat.pendingChoice.type === "mode_livraison") {
+    const boutons = etat.pendingChoice.options.slice(0, 2).map((opt) => ({ id: String(opt), title: tronquerTexte(String(opt), 20) }));
+    boutons.push({ id: ID_HUMAIN, title: "Parler à un conseiller" });
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, boutons);
+  }
+
+  // Choix d'une couleur, d'une taille, ou d'une variante de remplacement (rupture de stock) : memes
+  // regles de liste que ci-dessus (9 options + "Parler a un conseiller"), voir conversation.js /
+  // session.pendingChoice. N'existe que pour le moteur catalogue (le moteur service n'a pas de variantes).
+  if (etat.stage === "idle" && etat.pendingChoice && etat.pendingChoice.options && etat.pendingChoice.options.length) {
+    const pc = etat.pendingChoice;
+    const labels = {
+      couleur: { bouton: "Voir les couleurs", section: "Couleurs disponibles" },
+      taille: { bouton: "Voir les tailles", section: "Tailles disponibles" },
+      variante: { bouton: "Voir les options", section: "Options disponibles" }
+    }[pc.type];
+    if (!labels) return false;
+
+    const items = pc.options.slice(0, 9).map((opt) => {
+      const libelle = pc.type === "variante" ? opt.couleur + " " + opt.taille : String(opt);
+      return { id: libelle, nom: libelle, description: "" };
+    });
+    const rows = construireLignesListe(items, 0);
+
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, labels.bouton, [{ title: labels.section, rows }]);
   }
 
   if (etat.stage === "awaiting_more_items" || etat.stage === "awaiting_order_confirmation" || etat.stage === "awaiting_confirmation") {

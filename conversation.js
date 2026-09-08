@@ -105,11 +105,20 @@ function createCatalogEngine(merchantKey, options) {
       telephone: null,
       adresse: null,
       pendingOrderId: null,
+      // "livraison" ou "retrait" une fois que le client a choisi (uniquement si le marchand a configure
+      // une adresse de retrait en boutique, voir retraitConfigure() plus bas - sinon la question n'est
+      // jamais posee et modeLivraison reste "livraison" par defaut sur la commande, comme avant).
+      modeLivraison: null,
       // true UNIQUEMENT quand la reponse de CE tour est un "quel article vous interesse ?" (les autres
       // moments ou stage vaut aussi "idle" - ex: en plein choix de couleur/taille, ou juste apres un
       // "merci pour votre commande" - ne doivent PAS re-proposer la liste des articles). Voir
       // getEtatSession(), utilise par server.js pour decider d'envoyer une liste WhatsApp cliquable.
-      pretPourChoix: false
+      pretPourChoix: false,
+      // Non-null UNIQUEMENT quand la reponse de CE tour demande de choisir une couleur, une taille, ou
+      // une variante alternative (rupture de stock) - meme principe que pretPourChoix ci-dessus, pour que
+      // server.js puisse proposer une liste cliquable de couleurs/tailles en plus du texte libre existant.
+      // Forme : { type: "couleur"|"taille"|"variante", options: [...] } (voir processMessage plus bas).
+      pendingChoice: null
     };
   }
 
@@ -146,6 +155,41 @@ function createCatalogEngine(merchantKey, options) {
 
   function messageRecapPanier(cart) {
     return piocheParmi(OUVERTURES_RECAP) + " Voici votre panier :\n" + describeItems(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.";
+  }
+
+  // true si le marchand a renseigne une adresse de retrait en boutique (Paramètres > Retrait en boutique -
+  // state.settings.retrait) - optionnel : tant que ce n'est pas rempli, le client n'a jamais la question
+  // et tout se passe exactement comme avant (adresse de livraison demandee directement).
+  function retraitConfigure() {
+    return !!(state.settings.retrait && state.settings.retrait.adresse && String(state.settings.retrait.adresse).trim());
+  }
+
+  function infosRetrait() {
+    const r = state.settings.retrait || {};
+    const adresse = String(r.adresse || "").trim();
+    const horaires = String(r.horaires || "").trim();
+    return adresse + (horaires ? " (" + horaires + ")" : "");
+  }
+
+  // Meme recapitulatif que messageRecapPanier(), mais enchaine sur la question livraison/retrait au lieu
+  // de demander directement l'adresse - utilise uniquement quand retraitConfigure() est vrai (voir les 2
+  // points d'appel dans processMessage, sur l'abandon du panier).
+  function messageChoixModeLivraison(cart) {
+    return piocheParmi(OUVERTURES_RECAP) + " Voici votre panier :\n" + describeItems(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) + "\n\nSouhaitez-vous une livraison à domicile, ou un retrait en boutique ?";
+  }
+
+  // Point commun aux 3 endroits ou le panier vient d'etre finalise (panier confirme, selection abandonnee
+  // avec un panier non vide) : bascule vers la question livraison/retrait si le marchand l'a configuree,
+  // sinon directement vers la demande d'adresse de livraison comme avant. Modifie `session` et renvoie le
+  // texte a repondre.
+  function finaliserPanier(session) {
+    if (retraitConfigure()) {
+      session.stage = "awaiting_mode_livraison";
+      session.pendingChoice = { type: "mode_livraison", options: ["Livraison", "Retrait en boutique"] };
+      return messageChoixModeLivraison(session.cart);
+    }
+    session.stage = "awaiting_delivery";
+    return messageRecapPanier(session.cart);
   }
 
   function distinctValues(getter) {
@@ -255,6 +299,7 @@ function createCatalogEngine(merchantKey, options) {
       prix: total,
       telephone: sess.telephone,
       adresse: sess.adresse,
+      modeLivraison: sess.modeLivraison || "livraison",
       statut: "Nouvelle",
       raisonAnnulation: null,
       source: sess.fromPhone === PHONE_SIMULATEUR ? "simulateur" : "whatsapp",
@@ -289,6 +334,9 @@ function createCatalogEngine(merchantKey, options) {
     // Reinitialise a chaque tour - seuls les 4 points de retour "quel article vous interesse ?" plus bas
     // le repassent a true juste avant de renvoyer leur texte (voir freshSession() ci-dessus).
     session.pretPourChoix = false;
+    // Idem pour pendingChoice - reinitialise a chaque tour, repositionne uniquement aux 3 points de retour
+    // "quelle couleur / quelle taille / rupture, laquelle de ces variantes" plus bas.
+    session.pendingChoice = null;
 
     if (session.stage === "awaiting_quantity") {
       const otherProduct = matchProduct(text);
@@ -346,10 +394,37 @@ function createCatalogEngine(merchantKey, options) {
         logTrace(session, trace);
         return processMessage(session, text);
       }
-      session.stage = "awaiting_delivery";
-      trace.action = "Panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
+      trace.action = "Panier finalisé (" + session.cart.length + " article(s)) — " + (retraitConfigure() ? "choix livraison/retrait demandé" : "infos de livraison demandées");
+      const reponseFinalisation = finaliserPanier(session);
       logTrace(session, trace);
-      return messageRecapPanier(session.cart);
+      return reponseFinalisation;
+    }
+
+    if (session.stage === "awaiting_mode_livraison") {
+      trace.entites = { "Réponse client": text };
+      const t = text.toLowerCase();
+      const veutRetrait = /retrait|boutique|magasin|chercher|passer\s+prendre|sur\s*place/.test(t);
+      const veutLivraison = /livraison|domicile|livrer|envoie[rz]?[- ]moi|livre[sz]?[- ]moi/.test(t);
+
+      if (veutRetrait && !veutLivraison) {
+        session.modeLivraison = "retrait";
+        session.adresse = "Retrait en boutique — " + infosRetrait();
+        session.stage = "awaiting_delivery"; // reutilise la meme etape/logique de collecte (adresse deja pre-remplie, seul le telephone manque)
+        trace.action = "Client choisit le retrait en boutique — adresse pré-remplie, téléphone encore demandé";
+        logTrace(session, trace);
+        return "Parfait, vous pourrez récupérer votre commande à " + infosRetrait() + ". Merci de m'indiquer votre numéro de téléphone pour vous joindre.";
+      }
+      if (veutLivraison && !veutRetrait) {
+        session.modeLivraison = "livraison";
+        session.stage = "awaiting_delivery";
+        trace.action = "Client choisit la livraison à domicile — infos de livraison demandées";
+        logTrace(session, trace);
+        return "Très bien, merci de m'indiquer votre numéro de téléphone et votre adresse de livraison.";
+      }
+      trace.action = "Choix livraison/retrait ambigu — nouvelle demande de précision";
+      logTrace(session, trace);
+      session.pendingChoice = { type: "mode_livraison", options: ["Livraison", "Retrait en boutique"] };
+      return "Je n'ai pas bien compris : souhaitez-vous une livraison à domicile, ou un retrait en boutique ?";
     }
 
     if (session.stage === "awaiting_delivery") {
@@ -367,7 +442,12 @@ function createCatalogEngine(merchantKey, options) {
       }
       let remaining = text;
       if (phoneMatch) { session.telephone = phoneMatch[0].trim(); remaining = text.replace(phoneMatch[0], "").trim(); }
-      if (remaining && remaining.replace(/[,\-\s]/g, "").length > 3) session.adresse = remaining.replace(/^[,\-\s]+/, "").slice(0, 200);
+      // En retrait, l'adresse est deja pre-remplie avec celle de la boutique (voir awaiting_mode_livraison
+      // ci-dessus) - on ne la laisse JAMAIS ecraser par du texte que le client tape en donnant son numero
+      // (ex: "677123456 merci" -> le reste ne doit pas remplacer l'adresse de retrait).
+      if (session.modeLivraison !== "retrait" && remaining && remaining.replace(/[,\-\s]/g, "").length > 3) {
+        session.adresse = remaining.replace(/^[,\-\s]+/, "").slice(0, 200);
+      }
       trace.entites = { "Téléphone": session.telephone || "—", "Adresse": session.adresse || "—" };
       if (session.telephone && session.adresse) {
         const now = Date.now();
@@ -386,7 +466,8 @@ function createCatalogEngine(merchantKey, options) {
         session.stage = "awaiting_order_confirmation";
         trace.action = "Commande " + orderRef(order) + " créée (statut Nouvelle) — récapitulatif envoyé, confirmation demandée";
         logTrace(session, trace);
-        return "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\nLivraison : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)";
+        const libelleAdresse = session.modeLivraison === "retrait" ? "Retrait" : "Livraison";
+        return "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\n" + libelleAdresse + " : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)";
       }
       const missing = [];
       if (!session.telephone) missing.push("numéro de téléphone");
@@ -446,10 +527,10 @@ function createCatalogEngine(merchantKey, options) {
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
       trace.entites = { "Réponse client": text };
       if (session.cart.length > 0) {
-        session.stage = "awaiting_delivery";
-        trace.action = "Client abandonne cette sélection en cours — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
+        trace.action = "Client abandonne cette sélection en cours — panier finalisé (" + session.cart.length + " article(s))";
+        const reponseFinalisation = finaliserPanier(session);
         logTrace(session, trace);
-        return messageRecapPanier(session.cart);
+        return reponseFinalisation;
       }
       trace.action = "Client abandonne cette sélection en cours — sélection effacée";
       logTrace(session, trace);
@@ -470,10 +551,10 @@ function createCatalogEngine(merchantKey, options) {
     };
 
     if (!produitId && session.cart.length > 0 && parseNegative(text)) {
-      session.stage = "awaiting_delivery";
-      trace.action = "Client ne veut rien ajouter de plus — panier finalisé (" + session.cart.length + " article(s)) — infos de livraison demandées";
+      trace.action = "Client ne veut rien ajouter de plus — panier finalisé (" + session.cart.length + " article(s))";
+      const reponseFinalisation = finaliserPanier(session);
       logTrace(session, trace);
-      return messageRecapPanier(session.cart);
+      return reponseFinalisation;
     }
 
     if (!produitId) {
@@ -497,6 +578,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!couleur) {
       trace.action = "Précision demandée : quelle couleur ?";
       logTrace(session, trace);
+      session.pendingChoice = { type: "couleur", options: availableColors };
       const ouverture = produitReconnu ? piocheParmi(OUVERTURES_PRODUIT) + " " : "";
       return ouverture + product.nom + " — quelle couleur souhaitez-vous ? Disponible en : " + availableColors.join(", ") + ".";
     }
@@ -511,6 +593,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!taille) {
       trace.action = "Précision demandée : quelle taille ?";
       logTrace(session, trace);
+      session.pendingChoice = { type: "taille", options: uniqueSizes };
       const ouverture = couleurReconnue ? piocheParmi(OUVERTURES_COULEUR) + " " : "";
       return ouverture + "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".";
     }
@@ -532,6 +615,7 @@ function createCatalogEngine(merchantKey, options) {
       session.couleur = null; session.taille = null;
       logTrace(session, trace);
       if (alternatives.length) {
+        session.pendingChoice = { type: "variante", options: alternatives.map((v) => ({ couleur: v.couleur, taille: v.taille })) };
         return "Désolée, " + product.nom + " " + variant.couleur + " " + variant.taille + " est en rupture 😕. Il me reste : " + alternatives.map((v) => v.couleur + " " + v.taille + " (" + virtualStock(product.id, v) + ")").join(", ") + ". Lequel voulez-vous ?";
       }
       return "Désolée, " + product.nom + " est actuellement en rupture sur tous les modèles. Je vous notifie dès le réassort ?";
@@ -624,7 +708,7 @@ function createCatalogEngine(merchantKey, options) {
   // d'articles ou boutons Oui/Non), sans rien changer a handleMessage() ni a son contrat de retour.
   function getEtatSession(fromPhone) {
     const s = sessions[fromPhone];
-    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix } : null;
+    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null } : null;
   }
 
   // Ne renvoie JAMAIS les commandes creees par le Simulateur (source:"simulateur") — invisibles dans la
