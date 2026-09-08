@@ -16,6 +16,7 @@ const bcrypt = require("bcryptjs");
 const multer = require("multer");
 const db = require("./db");
 const storage = require("./storage");
+const sh = require("./shared");
 const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
 
@@ -676,7 +677,14 @@ app.post("/webhook", async (req, res) => {
 
     const message = messages[0];
     const from = message.from; // numero du client, format international sans "+"
-    const texteRecu = message.text?.body || "";
+    // Un clic sur une liste/un bouton (voir essayerEnvoyerMenuInteractif plus bas) arrive comme
+    // message.type === "interactive" plutot que du texte libre - on le traduit en texte equivalent AVANT
+    // de l'envoyer au moteur de conversation, qui n'a besoin de rien savoir de plus (meme logique de
+    // reconnaissance que si le client avait tape la reponse lui-meme).
+    let texteRecu = message.text?.body || "";
+    if (!texteRecu && message.type === "interactive") {
+      texteRecu = resoudreTexteInteractif(marchand, message.interactive) || "";
+    }
 
     if (!texteRecu) {
       console.log(`[${merchantId}] Message non-texte recu de ${from} (type: ${message.type}) — reponse d'orientation envoyee.`);
@@ -695,7 +703,15 @@ app.post("/webhook", async (req, res) => {
     // Une reponse "vide" (null) signifie que la conversation est en pause pour un humain (voir shared.js)
     // - on reste volontairement silencieux, le marchand repondra depuis /admin.
     if (reponse) {
-      await envoyerMessageWhatsApp(from, reponse, phoneNumberId);
+      let envoiInteractifReussi = false;
+      try {
+        envoiInteractifReussi = await essayerEnvoyerMenuInteractif(marchand, from, phoneNumberId, reponse);
+      } catch (erreur) {
+        // Ne doit JAMAIS empecher le client de recevoir une reponse : en cas de pepin ici, on se rabat
+        // simplement sur le texte simple juste en dessous.
+        console.error(`[${merchantId}] Erreur lors de la construction du menu interactif (repli en texte) :`, erreur);
+      }
+      if (!envoiInteractifReussi) await envoyerMessageWhatsApp(from, reponse, phoneNumberId);
     } else {
       console.log(`[${merchantId}] Conversation en pause pour un humain — aucune reponse automatique envoyee a ${from}.`);
     }
@@ -703,6 +719,175 @@ app.post("/webhook", async (req, res) => {
     console.error("Erreur lors du traitement du webhook :", erreur);
   }
 });
+
+// --- Menus WhatsApp cliquables (listes/boutons) : entierement en plus du texte libre existant, jamais a
+// sa place. Un client peut toujours ignorer le menu et taper sa reponse comme avant - rien dans
+// conversation.js/conversationService.js n'a change pour ca (voir engine.getEtatSession). ---
+
+const ID_HUMAIN = "IZY_HUMAIN";
+const ID_OUI = "IZY_OUI";
+const ID_NON = "IZY_NON";
+const PREFIXE_CRENEAU = "IZY_SLOT_";
+
+function tronquerTexte(texte, max) {
+  const t = String(texte == null ? "" : texte);
+  return t.length > max ? t.slice(0, Math.max(0, max - 1)) + "…" : t;
+}
+
+// Traduit l'id d'une ligne de liste ou d'un bouton cliques par le client en texte equivalent - le moteur
+// de conversation n'en sait rien, il recoit exactement ce qu'il recevrait si le client avait tape ce
+// texte lui-meme (voir matchProduct/matchService/demandeUnHumain/parseAffirmative/parseNegative).
+function resoudreTexteInteractif(marchand, interactive) {
+  if (!interactive) return null;
+  let id = null;
+  if (interactive.type === "list_reply") id = interactive.list_reply?.id;
+  else if (interactive.type === "button_reply") id = interactive.button_reply?.id;
+  if (!id) return null;
+
+  if (id === ID_HUMAIN) return "un conseiller";
+  if (id === ID_OUI) return "oui";
+  if (id === ID_NON) return "non";
+  if (id.indexOf(PREFIXE_CRENEAU) === 0) return String(Number(id.slice(PREFIXE_CRENEAU.length)) + 1); // "1"/"2"/"3"
+
+  // Sinon : id d'un article ou d'un service - on renvoie son nom exact, que matchProduct()/matchService()
+  // reconnaissent deja nativement (il figure toujours dans leurs mots-cles).
+  if (marchand.engine.type === "catalogue") {
+    const p = marchand.engine.getCatalog().filter((x) => x.id === id)[0];
+    return p ? p.nom : null;
+  }
+  const s = marchand.engine.getServices().filter((x) => x.id === id)[0];
+  return s ? s.nom : null;
+}
+
+// Tente d'accompagner `texte` (la reponse deja calculee par le moteur) d'un menu cliquable adapte a l'etat
+// de la conversation. Renvoie true si un message interactif a bien ete envoye (rien d'autre a faire),
+// false s'il n'y a pas de menu pertinent ICI ou si l'envoi a echoue (l'appelant se rabat alors sur
+// envoyerMessageWhatsApp comme avant).
+async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberId, texte) {
+  if (texte === sh.MESSAGE_MISE_EN_RELATION) return false; // jamais de menu juste apres une mise en relation
+  if (typeof marchand.engine.getEtatSession !== "function") return false;
+  const etat = marchand.engine.getEtatSession(destinataire);
+  if (!etat) return false;
+
+  if (etat.stage === "idle" && etat.pretPourChoix) {
+    const estCatalogue = marchand.engine.type === "catalogue";
+    const items = estCatalogue
+      ? marchand.engine.getCatalog().map((p) => {
+          const prixMin = (p.variantes || []).length ? Math.min(...p.variantes.map((v) => v.prix)) : null;
+          return { id: p.id, nom: p.nom, description: prixMin != null ? "À partir de " + sh.formatFcfa(prixMin) : "" };
+        })
+      : marchand.engine.getServices().map((s) => ({ id: s.id, nom: s.nom, description: s.dureeMinutes + " min — " + sh.formatFcfa(s.prix) }));
+    if (!items.length) return false;
+
+    // Max 10 lignes AU TOTAL sur une liste WhatsApp - on garde 9 places pour les articles/services et 1
+    // pour "Parler a un conseiller" (toujours presente, voir la reponse du 25/08 sur ce constat). Un
+    // catalogue plus grand reste utilisable en texte libre : le corps du message (`texte`) enumere deja
+    // tous les noms, seuls les 9 premiers sont en plus cliquables.
+    const rows = items.slice(0, 9).map((it) => ({
+      id: it.id,
+      title: tronquerTexte(it.nom, 24),
+      description: tronquerTexte(it.description, 72)
+    }));
+    rows.push({ id: ID_HUMAIN, title: "Parler à un conseiller", description: "Être mis en relation avec l'équipe" });
+
+    return envoyerListeWhatsApp(
+      destinataire,
+      phoneNumberId,
+      texte,
+      estCatalogue ? "Voir les articles" : "Voir les services",
+      [{ title: estCatalogue ? "Nos articles" : "Nos services", rows }]
+    );
+  }
+
+  if (etat.stage === "awaiting_more_items" || etat.stage === "awaiting_order_confirmation" || etat.stage === "awaiting_confirmation") {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: ID_OUI, title: "Oui" },
+      { id: ID_NON, title: "Non" }
+    ]);
+  }
+
+  if (etat.stage === "awaiting_slot_choice" && etat.proposedSlots && etat.proposedSlots.length) {
+    const boutons = etat.proposedSlots.slice(0, 3).map((slot, i) => ({
+      id: PREFIXE_CRENEAU + i,
+      title: tronquerTexte(
+        new Date(slot).toLocaleString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
+        20
+      )
+    }));
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, boutons);
+  }
+
+  return false;
+}
+
+// --- Fonction utilitaire : envoyer une liste WhatsApp cliquable (jusqu'a 10 lignes au total) ---
+async function envoyerListeWhatsApp(destinataire, phoneNumberId, texteCorps, boutonListe, sections) {
+  if (!WHATSAPP_TOKEN || !phoneNumberId) {
+    console.error("WHATSAPP_TOKEN ou phone_number_id manquant — impossible d'envoyer la liste.");
+    return false;
+  }
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+  try {
+    const reponse = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: destinataire,
+        type: "interactive",
+        interactive: {
+          type: "list",
+          body: { text: String(texteCorps).slice(0, 1020) },
+          action: { button: boutonListe, sections },
+        },
+      }),
+    });
+    if (!reponse.ok) {
+      const detail = await reponse.text();
+      console.error(`Echec de l'envoi de la liste WhatsApp (${reponse.status}) :`, detail);
+      return false;
+    }
+    return true;
+  } catch (erreur) {
+    console.error("Erreur reseau lors de l'envoi de la liste WhatsApp :", erreur);
+    return false;
+  }
+}
+
+// --- Fonction utilitaire : envoyer des boutons de reponse rapide WhatsApp (max 3) ---
+async function envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texteCorps, boutons) {
+  if (!WHATSAPP_TOKEN || !phoneNumberId) {
+    console.error("WHATSAPP_TOKEN ou phone_number_id manquant — impossible d'envoyer les boutons.");
+    return false;
+  }
+  if (!boutons || !boutons.length) return false;
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+  try {
+    const reponse = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: destinataire,
+        type: "interactive",
+        interactive: {
+          type: "button",
+          body: { text: String(texteCorps).slice(0, 1020) },
+          action: { buttons: boutons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: tronquerTexte(b.title, 20) } })) },
+        },
+      }),
+    });
+    if (!reponse.ok) {
+      const detail = await reponse.text();
+      console.error(`Echec de l'envoi des boutons WhatsApp (${reponse.status}) :`, detail);
+      return false;
+    }
+    return true;
+  } catch (erreur) {
+    console.error("Erreur reseau lors de l'envoi des boutons WhatsApp :", erreur);
+    return false;
+  }
+}
 
 // --- Fonction utilitaire : envoyer un message texte via l'API WhatsApp Cloud ---
 async function envoyerMessageWhatsApp(destinataire, texte, phoneNumberId) {

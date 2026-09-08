@@ -93,7 +93,11 @@ function createServiceEngine(merchantKey, options) {
       serviceId: null,
       proposedSlots: null,
       clientNom: null,
-      pendingAppointmentId: null
+      pendingAppointmentId: null,
+      // true UNIQUEMENT quand la reponse de CE tour est un "quel service vous interesse ?" - voir
+      // getEtatSession() plus bas, utilise par server.js pour decider d'envoyer une liste WhatsApp
+      // cliquable plutot qu'un texte simple.
+      pretPourChoix: false
     };
   }
 
@@ -396,6 +400,10 @@ function createServiceEngine(merchantKey, options) {
   }
 
   function processMessage(session, text) {
+    // Reinitialise a chaque tour - seuls les 3 points de retour "quel service vous interesse ?" plus bas
+    // le repassent a true juste avant de renvoyer leur texte (voir freshSession() ci-dessus).
+    session.pretPourChoix = false;
+
     if (session.stage === "awaiting_datetime") {
       const autreService = matchService(text);
       if (autreService && autreService !== session.serviceId) {
@@ -404,6 +412,7 @@ function createServiceEngine(merchantKey, options) {
       }
       if (parseNegative(text) || parseWantsSomethingElse(text)) {
         Object.assign(session, freshSession());
+        session.pretPourChoix = true;
         return "Pas de souci ! Quel service vous intéresse ? Nous proposons : " + state.services.map((s) => s.nom).join(", ") + ".";
       }
       const service = state.services.filter((s) => s.id === session.serviceId)[0];
@@ -418,6 +427,7 @@ function createServiceEngine(merchantKey, options) {
       }
       if (parseNegative(text) || parseWantsSomethingElse(text)) {
         Object.assign(session, freshSession());
+        session.pretPourChoix = true;
         return "Pas de souci ! Quel service vous intéresse ? Nous proposons : " + state.services.map((s) => s.nom).join(", ") + ".";
       }
       const autreService = matchService(text);
@@ -489,6 +499,7 @@ function createServiceEngine(merchantKey, options) {
     // Etat "idle" : on essaie de reconnaitre le service demande.
     const serviceId = matchService(text);
     if (!serviceId) {
+      session.pretPourChoix = true;
       return "Bonjour ! Quel service vous intéresse ? Nous proposons : " + state.services.map((s) => s.nom).join(", ") + ".";
     }
     session.serviceId = serviceId;
@@ -541,6 +552,14 @@ function createServiceEngine(merchantKey, options) {
     await envoyer(telephone, message);
     journaliser(telephone, "marchand", message);
     return true;
+  }
+
+  // Etat courant de la session d'UN client (apres traitement de son dernier message) - utilise par
+  // server.js pour decider s'il faut accompagner la reponse texte d'un menu WhatsApp cliquable (liste de
+  // services, boutons Oui/Non, ou boutons des creneaux proposes), sans rien changer a handleMessage().
+  function getEtatSession(fromPhone) {
+    const s = sessions[fromPhone];
+    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix, proposedSlots: s.proposedSlots || null } : null;
   }
 
   // Ne renvoie jamais les rendez-vous crees par le Simulateur (source:"simulateur") — invisibles dans la
@@ -652,6 +671,7 @@ function createServiceEngine(merchantKey, options) {
     updateAppointmentStatus,
     getConversationsEnAttente,
     repondreConversationHumain,
+    getEtatSession,
     handleMessageSimulateur,
     resetSimulateur,
     getTableauDeBord

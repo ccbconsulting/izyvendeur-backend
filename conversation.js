@@ -104,7 +104,12 @@ function createCatalogEngine(merchantKey, options) {
       quantite: null,
       telephone: null,
       adresse: null,
-      pendingOrderId: null
+      pendingOrderId: null,
+      // true UNIQUEMENT quand la reponse de CE tour est un "quel article vous interesse ?" (les autres
+      // moments ou stage vaut aussi "idle" - ex: en plein choix de couleur/taille, ou juste apres un
+      // "merci pour votre commande" - ne doivent PAS re-proposer la liste des articles). Voir
+      // getEtatSession(), utilise par server.js pour decider d'envoyer une liste WhatsApp cliquable.
+      pretPourChoix: false
     };
   }
 
@@ -281,6 +286,9 @@ function createCatalogEngine(merchantKey, options) {
 
   function processMessage(session, text) {
     const trace = { message: text, entites: {}, verification: null, action: null, photo: null };
+    // Reinitialise a chaque tour - seuls les 4 points de retour "quel article vous interesse ?" plus bas
+    // le repassent a true juste avant de renvoyer leur texte (voir freshSession() ci-dessus).
+    session.pretPourChoix = false;
 
     if (session.stage === "awaiting_quantity") {
       const otherProduct = matchProduct(text);
@@ -302,6 +310,7 @@ function createCatalogEngine(merchantKey, options) {
           session.stage = "idle";
           trace.action = "Client abandonne cet article pendant la demande de quantité — sélection effacée";
           logTrace(session, trace);
+          session.pretPourChoix = true;
           return "Pas de souci, on laisse cet article de côté. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
         }
         trace.action = "Quantité non comprise — nouvelle demande";
@@ -327,6 +336,7 @@ function createCatalogEngine(merchantKey, options) {
         session.stage = "idle";
         trace.action = "Client souhaite ajouter un autre article au panier";
         logTrace(session, trace);
+        session.pretPourChoix = true;
         return "Très bien, quel autre article souhaitez-vous ?";
       }
       const directProduct = !parseNegative(text) ? matchProduct(text) : null;
@@ -443,6 +453,7 @@ function createCatalogEngine(merchantKey, options) {
       }
       trace.action = "Client abandonne cette sélection en cours — sélection effacée";
       logTrace(session, trace);
+      session.pretPourChoix = true;
       return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
     }
 
@@ -468,6 +479,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!produitId) {
       trace.action = "Précision demandée : quel article ?";
       logTrace(session, trace);
+      session.pretPourChoix = true;
       return "Bonjour ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
     }
 
@@ -605,6 +617,14 @@ function createCatalogEngine(merchantKey, options) {
     await envoyer(telephone, message);
     journaliser(telephone, "marchand", message);
     return true;
+  }
+
+  // Etat courant de la session d'UN client (apres traitement de son dernier message) - utilise par
+  // server.js pour decider s'il faut accompagner la reponse texte d'un menu WhatsApp cliquable (liste
+  // d'articles ou boutons Oui/Non), sans rien changer a handleMessage() ni a son contrat de retour.
+  function getEtatSession(fromPhone) {
+    const s = sessions[fromPhone];
+    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix } : null;
   }
 
   // Ne renvoie JAMAIS les commandes creees par le Simulateur (source:"simulateur") — invisibles dans la
@@ -868,6 +888,7 @@ function createCatalogEngine(merchantKey, options) {
     updateOrderStatus,
     getConversationsEnAttente,
     repondreConversationHumain,
+    getEtatSession,
     handleMessageSimulateur,
     resetSimulateur,
     getTableauDeBord,
