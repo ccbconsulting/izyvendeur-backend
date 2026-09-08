@@ -33,6 +33,12 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GRAPH_API_VERSION = "v21.0";
 
+// Message envoye a la place du bot quand un marchand est suspendu (ex: facture impayee) — volontairement
+// neutre et poli : la cause reelle (interne, cote marchand) ne regarde pas le client, qui n'y est pour
+// rien. Voir merchant.actif (registre des marchands) et la verification en tout debut du webhook.
+const MESSAGE_SERVICE_SUSPENDU =
+  "Ce service est temporairement indisponible. Merci de réessayer un peu plus tard — nous nous excusons pour la gêne occasionnée 🙏";
+
 // Templates WhatsApp utilises pour notifier le marchand (demande d'humain, commande confirmee, ...). Un
 // template (contrairement a un message texte libre) peut etre envoye a tout moment, meme si le numero de
 // notification du marchand n'a pas ecrit au bot dans les 24 dernieres heures — c'est pour ca qu'on
@@ -319,7 +325,7 @@ app.get("/admin", protegerAcces, (req, res) => {
 app.get("/api/marchands", protegerAcces, (req, res) => {
   const tous = Object.values(engines).map((e) => ({
     id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
-    phoneNotification: e.merchant.phoneNotification || null
+    phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -403,6 +409,23 @@ app.put("/api/:id/identifiants", protegerAcces, async (req, res) => {
 
   console.log("Identifiants mis a jour pour le marchand '" + id + "' par " + req.auth.role + " (" + req.auth.adminUser + ").");
   res.json({ id, adminUser: maj.adminUser, nouveauMotDePasse: motDePasseEnClair || undefined });
+});
+
+// Suspension / reactivation d'un marchand (ex: facture impayee) — reserve au super-administrateur, un
+// marchand ne doit evidemment jamais pouvoir se reactiver lui-meme. Un marchand suspendu voit son bot
+// repondre uniquement le message poli d'indisponibilite (voir MESSAGE_SERVICE_SUSPENDU) a la place de tout
+// traitement normal, jusqu'a reactivation ; rien d'autre n'est touche (catalogue, commandes, historique).
+app.put("/api/:id/actif", protegerAcces, async (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = engines[req.params.id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
+  const { actif } = req.body || {};
+  if (typeof actif !== "boolean") return res.status(400).json({ erreur: "actif (booléen) est requis." });
+  const maj = await db.updateMerchantFields(req.params.id, { actif });
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.actif = maj.actif;
+  console.log(`[${req.params.id}] Marchand ${actif ? "réactivé" : "suspendu"} par ${req.auth.adminUser}.`);
+  res.json({ id: req.params.id, actif: maj.actif });
 });
 
 // -- Marchand catalogue --
@@ -677,6 +700,18 @@ app.post("/webhook", async (req, res) => {
 
     const message = messages[0];
     const from = message.from; // numero du client, format international sans "+"
+
+    // Marchand suspendu (ex: facture impayee — voir /api/:id/actif) : on n'entre dans AUCUN traitement
+    // normal (ni pagination, ni moteur de conversation), on repond une seule fois poliment et on
+    // journalise quand meme l'echange pour garder une trace dans /admin.
+    if (marchand.merchant.actif === false) {
+      const texteBrut = message.text?.body || "[message non-texte]";
+      db.logConversationMessage(merchantId, from, "client", texteBrut).catch(() => {});
+      db.logConversationMessage(merchantId, from, "bot", MESSAGE_SERVICE_SUSPENDU).catch(() => {});
+      console.log(`[${merchantId}] Marchand suspendu — reponse d'indisponibilite envoyee a ${from}.`);
+      await envoyerMessageWhatsApp(from, MESSAGE_SERVICE_SUSPENDU, phoneNumberId);
+      return;
+    }
 
     // Clic sur "Voir plus d'articles/services ▸" (pagination d'un catalogue/service trop fourni pour
     // tenir sur une seule liste WhatsApp - 10 lignes max au total) : pure navigation d'affichage, ne

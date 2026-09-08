@@ -59,6 +59,9 @@ async function ensureMerchantsTable() {
   // Migration : ajoute la colonne si la table existait deja avant son introduction (installations en
   // production). Sans effet si elle existe deja.
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS phone_notification TEXT");
+  // Suspension d'un marchand (ex: facture impayee) : coupe ses reponses automatiques sans toucher a ses
+  // donnees. Actif par defaut pour ne suspendre personne au moment de la migration.
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS actif BOOLEAN NOT NULL DEFAULT true");
 }
 
 function defaultMerchantFromEnv() {
@@ -71,7 +74,8 @@ function defaultMerchantFromEnv() {
     phoneNumberId: process.env.PHONE_NUMBER_ID || null,
     adminUser: process.env.ADMIN_USER || "admin",
     adminPassword: process.env.ADMIN_PASSWORD || null,
-    phoneNotification: null
+    phoneNotification: null,
+    actif: true
   };
 }
 
@@ -80,7 +84,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return res.rows.map(rowToMerchant);
     }
@@ -111,7 +115,8 @@ function rowToMerchant(row) {
     phoneNumberId: row.phone_number_id,
     adminUser: row.admin_user,
     adminPassword: row.admin_password,
-    phoneNotification: row.phone_notification || null
+    phoneNotification: row.phone_notification || null,
+    actif: row.actif !== false
   };
 }
 
@@ -119,9 +124,9 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification) VALUES ($1,$2,$3,$4,$5,$6,$7) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7",
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null]
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8",
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false]
     );
     return;
   }
@@ -147,7 +152,7 @@ async function updateMerchantFields(id, patch) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -155,6 +160,7 @@ async function updateMerchantFields(id, patch) {
     if (patch.adminUser !== undefined) m.adminUser = patch.adminUser;
     if (patch.adminPassword !== undefined) m.adminPassword = patch.adminPassword;
     if (patch.phoneNotification !== undefined) m.phoneNotification = patch.phoneNotification;
+    if (patch.actif !== undefined) m.actif = !!patch.actif;
     await insertMerchant(m);
     return m;
   }
@@ -165,6 +171,7 @@ async function updateMerchantFields(id, patch) {
   if (patch.adminUser !== undefined) liste[idx].adminUser = patch.adminUser;
   if (patch.adminPassword !== undefined) liste[idx].adminPassword = patch.adminPassword;
   if (patch.phoneNotification !== undefined) liste[idx].phoneNotification = patch.phoneNotification;
+  if (patch.actif !== undefined) liste[idx].actif = !!patch.actif;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
 }
