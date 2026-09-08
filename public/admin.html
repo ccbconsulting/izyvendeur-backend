@@ -67,6 +67,7 @@
   <h1>IzyVendeur — Administration</h1>
   <select id="selecteurMarchand"></select>
   <span id="nomMarchandSeul" style="font-weight:600; display:none;"></span>
+  <button id="btnSuspendreMarchand" style="display:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;"></button>
   <button id="btnNouveauMarchand" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;">+ Nouveau marchand</button>
 </header>
 <main>
@@ -107,12 +108,22 @@ async function demarrer() {
   const sel = document.getElementById("selecteurMarchand");
   const nomSeul = document.getElementById("nomMarchandSeul");
   const btnNouveau = document.getElementById("btnNouveauMarchand");
+  const btnSuspendre = document.getElementById("btnSuspendreMarchand");
   if (moi.role === "superadmin") {
     sel.style.display = "";
     nomSeul.style.display = "none";
     btnNouveau.style.display = "";
-    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ")</option>").join("");
+    btnSuspendre.style.display = "";
+    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ")" + (m.actif === false ? " — SUSPENDU" : "") + "</option>").join("");
     sel.onchange = () => choisirMarchand(sel.value);
+    btnSuspendre.onclick = async () => {
+      const nouveauEtat = !(marchandActif.actif !== false);
+      if (!confirm((nouveauEtat ? "Réactiver" : "Suspendre") + " le marchand \"" + marchandActif.nom + "\" ?" + (nouveauEtat ? "" : "\n\nSes clients recevront un message poli d'indisponibilité à la place des réponses automatiques du bot, jusqu'à réactivation."))) return;
+      try {
+        await api("/api/" + marchandActif.id + "/actif", { method: "PUT", body: JSON.stringify({ actif: nouveauEtat }) });
+        await demarrer();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
   } else {
     sel.style.display = "none";
     btnNouveau.style.display = "none";
@@ -142,6 +153,13 @@ document.getElementById("btnNouveauMarchand").onclick = async () => {
 function choisirMarchand(id) {
   marchandActif = marchands.filter((m) => m.id === id)[0];
   document.getElementById("selecteurMarchand").value = id;
+  if (moi.role === "superadmin") {
+    const btnSuspendre = document.getElementById("btnSuspendreMarchand");
+    const estActif = marchandActif.actif !== false;
+    btnSuspendre.textContent = estActif ? "Suspendre ce marchand" : "Réactiver ce marchand";
+    btnSuspendre.style.borderColor = estActif ? "rgba(255,255,255,0.4)" : "#ffb703";
+    btnSuspendre.style.color = estActif ? "#fff" : "#ffb703";
+  }
   construireOnglets();
 }
 
