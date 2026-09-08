@@ -436,13 +436,16 @@ async function renderParametresService() {
     "<label>Durée d'un créneau (minutes)</label>" +
     "<input type='number' id='dureeCreneau' value='" + (parametres.dureeCreneauMinutes || 30) + "' />" +
     "<h3>Horaires d'ouverture</h3>" +
-    "<table class='table-donnees'><tr><th>Jour</th><th>Ouvert</th><th>Début</th><th>Fin</th></tr>" +
+    "<p class='raison'>Laissez les deux champs « Pause » vides s'il n'y a pas de coupure dans la journée (ex : ouverture continue).</p>" +
+    "<table class='table-donnees'><tr><th>Jour</th><th>Ouvert</th><th>Début</th><th>Fin</th><th>Pause (début)</th><th>Pause (fin)</th></tr>" +
     jours.map((j) => {
       const h = horaires[j] || { ouvert: false, debut: "08:00", fin: "18:00" };
       return "<tr><td>" + j.charAt(0).toUpperCase() + j.slice(1) + "</td>" +
         "<td><input type='checkbox' data-jour='" + j + "' data-champ='ouvert'" + (h.ouvert ? " checked" : "") + " /></td>" +
         "<td><input type='time' data-jour='" + j + "' data-champ='debut' value='" + h.debut + "' /></td>" +
-        "<td><input type='time' data-jour='" + j + "' data-champ='fin' value='" + h.fin + "' /></td></tr>";
+        "<td><input type='time' data-jour='" + j + "' data-champ='fin' value='" + h.fin + "' /></td>" +
+        "<td><input type='time' data-jour='" + j + "' data-champ='pauseDebut' value='" + (h.pauseDebut || "") + "' /></td>" +
+        "<td><input type='time' data-jour='" + j + "' data-champ='pauseFin' value='" + (h.pauseFin || "") + "' /></td></tr>";
     }).join("") +
     "</table>" +
     "<label>Message de confirmation automatique (envoyé au client quand il confirme son rendez-vous)</label>" +
@@ -455,7 +458,9 @@ async function renderParametresService() {
       nouvHoraires[j] = {
         ouvert: zone.querySelector("[data-jour='" + j + "'][data-champ='ouvert']").checked,
         debut: zone.querySelector("[data-jour='" + j + "'][data-champ='debut']").value,
-        fin: zone.querySelector("[data-jour='" + j + "'][data-champ='fin']").value
+        fin: zone.querySelector("[data-jour='" + j + "'][data-champ='fin']").value,
+        pauseDebut: zone.querySelector("[data-jour='" + j + "'][data-champ='pauseDebut']").value || null,
+        pauseFin: zone.querySelector("[data-jour='" + j + "'][data-champ='pauseFin']").value || null
       };
     });
     try {
@@ -481,36 +486,47 @@ function formaterDureeDepuis(depuisISO) {
   return "depuis " + minutes + " minutes";
 }
 
+let vueHistoriqueTelephone = null; // numero actuellement ouvert en detail dans "Historique", ou null (liste)
+
+function formaterDateHeure(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("fr-FR") + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
 async function renderConversations() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>Chargement…</div>";
   const conversations = await api("/api/" + marchandActif.id + "/conversations");
 
+  let html = "<h2>Conversations</h2>";
+
   if (!conversations.length) {
-    zone.innerHTML =
-      "<h2>Conversations</h2>" +
-      "<p>Aucun client n'attend actuellement un humain. Dès qu'un client le demande sur WhatsApp, il apparaît ici (et vous êtes averti par WhatsApp si un numéro de notification est configuré dans \"Mon compte\").</p>";
-    return;
+    html += "<p>Aucun client n'attend actuellement un humain. Dès qu'un client le demande sur WhatsApp, il apparaît ici (et vous êtes averti par WhatsApp si un numéro de notification est configuré dans \"Mon compte\").</p>";
+  } else {
+    html +=
+      "<h3 style='margin-top:0;'>En attente d'un humain (" + conversations.length + ")</h3>" +
+      "<p class='raison'>Le bot reste silencieux avec ces clients tant qu'ils sont listés ici. Si personne ne répond dans les 10 minutes suivant leur demande (ou votre dernière réponse), le bot reprend automatiquement la main.</p>" +
+      conversations.map((c, i) =>
+        "<div class='carte-produit'>" +
+          "<div style='display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;'>" +
+            "<strong>" + esc(c.telephone) + "</strong>" +
+            "<span class='raison'>En attente " + formaterDureeDepuis(c.depuisISO) + "</span>" +
+          "</div>" +
+          "<div style='max-height:160px; overflow-y:auto; margin:10px 0; padding:8px; background:#f6f7f9; border-radius:6px; font-size:0.9em;'>" +
+            (c.historique || []).map((m) =>
+              "<div style='margin-bottom:6px;'><strong>" + (m.de === "marchand" ? "Vous" : "Client") + " :</strong> " + esc(m.texte) + "</div>"
+            ).join("") +
+          "</div>" +
+          "<textarea data-reponse='" + i + "' rows='2' placeholder='Votre réponse au client…'></textarea>" +
+          "<div style='margin-top:8px;'><button data-envoyer='" + i + "' class='principal'>Envoyer</button></div>" +
+        "</div>"
+      ).join("");
   }
 
-  zone.innerHTML =
-    "<h2>Conversations en attente (" + conversations.length + ")</h2>" +
-    "<p class='raison'>Le bot reste silencieux avec ces clients tant qu'ils sont listés ici. Si personne ne répond dans les 10 minutes suivant leur demande (ou votre dernière réponse), le bot reprend automatiquement la main.</p>" +
-    conversations.map((c, i) =>
-      "<div class='carte-produit'>" +
-        "<div style='display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;'>" +
-          "<strong>" + esc(c.telephone) + "</strong>" +
-          "<span class='raison'>En attente " + formaterDureeDepuis(c.depuisISO) + "</span>" +
-        "</div>" +
-        "<div style='max-height:160px; overflow-y:auto; margin:10px 0; padding:8px; background:#f6f7f9; border-radius:6px; font-size:0.9em;'>" +
-          (c.historique || []).map((m) =>
-            "<div style='margin-bottom:6px;'><strong>" + (m.de === "marchand" ? "Vous" : "Client") + " :</strong> " + esc(m.texte) + "</div>"
-          ).join("") +
-        "</div>" +
-        "<textarea data-reponse='" + i + "' rows='2' placeholder='Votre réponse au client…'></textarea>" +
-        "<div style='margin-top:8px;'><button data-envoyer='" + i + "' class='principal'>Envoyer</button></div>" +
-      "</div>"
-    ).join("");
+  html += "<h3>Historique complet</h3><div id='zoneHistorique'><div class='chargement'>Chargement…</div></div>";
+
+  zone.innerHTML = html;
 
   Array.prototype.forEach.call(zone.querySelectorAll("[data-envoyer]"), (btn) => {
     btn.onclick = async () => {
@@ -526,6 +542,70 @@ async function renderConversations() {
       } catch (e) { alert("Erreur : " + e.message); }
     };
   });
+
+  if (vueHistoriqueTelephone) renderHistoriqueDetail(vueHistoriqueTelephone);
+  else renderHistoriqueListe();
+}
+
+// Liste de TOUS les clients ayant deja ecrit au bot (pas seulement ceux en attente d'un humain), avec un
+// apercu du dernier message - clic sur une ligne pour ouvrir le detail complet de la conversation.
+async function renderHistoriqueListe() {
+  const conteneur = document.getElementById("zoneHistorique");
+  if (!conteneur) return;
+  let historique;
+  try {
+    historique = await api("/api/" + marchandActif.id + "/conversations/historique");
+  } catch (e) {
+    conteneur.innerHTML = "<p class='erreur'>Impossible de charger l'historique : " + esc(e.message) + "</p>";
+    return;
+  }
+  if (!historique.length) {
+    conteneur.innerHTML = "<p class='raison'>Aucun échange enregistré pour l'instant. Chaque message reçu ou envoyé sur WhatsApp apparaîtra ici, classé par client.</p>";
+    return;
+  }
+  conteneur.innerHTML =
+    "<p class='raison'>Tous les échanges (client, bot et vos réponses manuelles) sont conservés ici, classés par numéro de client.</p>" +
+    "<table class='table-donnees'><thead><tr><th>Client</th><th>Dernier message</th><th>Messages</th><th>Dernier échange</th></tr></thead><tbody>" +
+    historique.map((c) =>
+      "<tr data-ouvrir='" + esc(c.telephone) + "' style='cursor:pointer;'>" +
+        "<td>" + esc(c.telephone) + "</td>" +
+        "<td>" + (c.dernierDe === "client" ? "" : "<em>" + (c.dernierDe === "marchand" ? "Vous" : "Bot") + " :</em> ") +
+          esc((c.dernierMessage || "").slice(0, 90)) + ((c.dernierMessage || "").length > 90 ? "…" : "") + "</td>" +
+        "<td>" + c.nombreMessages + "</td>" +
+        "<td>" + formaterDateHeure(c.dernierHorodatageISO) + "</td>" +
+      "</tr>"
+    ).join("") +
+    "</tbody></table>";
+  Array.prototype.forEach.call(conteneur.querySelectorAll("[data-ouvrir]"), (tr) => {
+    tr.onclick = () => { vueHistoriqueTelephone = tr.dataset.ouvrir; renderHistoriqueDetail(vueHistoriqueTelephone); };
+  });
+}
+
+// Transcript complet d'un client donne, dans l'ordre chronologique (memes bulles que le Simulateur).
+async function renderHistoriqueDetail(telephone) {
+  const conteneur = document.getElementById("zoneHistorique");
+  if (!conteneur) return;
+  conteneur.innerHTML = "<div class='chargement'>Chargement…</div>";
+  let messages;
+  try {
+    messages = await api("/api/" + marchandActif.id + "/conversations/historique/" + encodeURIComponent(telephone));
+  } catch (e) {
+    conteneur.innerHTML = "<p class='erreur'>Impossible de charger cette conversation : " + esc(e.message) + "</p>";
+    return;
+  }
+  conteneur.innerHTML =
+    "<button id='btnRetourHistorique' style='background:transparent;border:none;color:#14213d;text-decoration:underline;padding:0;margin-bottom:10px;'>← Retour à la liste</button>" +
+    "<h4 style='margin:0 0 8px;'>" + esc(telephone) + "</h4>" +
+    "<div class='chat-fenetre'>" +
+      messages.map((m) =>
+        "<div class='bulle " + (m.de === "client" ? "client" : "bot") + "'>" +
+          (m.de !== "client" ? "<div style='font-size:0.75em; opacity:0.65; margin-bottom:2px;'>" + (m.de === "marchand" ? "Vous" : "Bot") + "</div>" : "") +
+          esc(m.texte) +
+        "</div>"
+      ).join("") +
+    "</div>" +
+    "<div class='raison'>" + messages.length + " message(s) — " + esc(telephone) + "</div>";
+  document.getElementById("btnRetourHistorique").onclick = () => { vueHistoriqueTelephone = null; renderHistoriqueListe(); };
 }
 
 // ---------------- Tableau de bord ----------------
