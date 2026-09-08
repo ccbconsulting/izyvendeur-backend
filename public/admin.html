@@ -296,7 +296,7 @@ async function renderCommandes() {
   const tri = commandes.slice().reverse();
   zone.innerHTML =
     "<h2>Commandes (" + commandes.length + ")</h2>" +
-    "<table class='table-donnees'><tr><th>N°</th><th>Date</th><th>Articles</th><th>Nb articles</th><th>Total</th><th>Téléphone</th><th>Adresse</th><th>Statut</th></tr>" +
+    "<table class='table-donnees'><tr><th>N°</th><th>Date</th><th>Articles</th><th>Nb articles</th><th>Total</th><th>Mode</th><th>Téléphone</th><th>Adresse</th><th>Statut</th></tr>" +
     (tri.length ? tri.map((o) =>
       "<tr>" +
         "<td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
@@ -304,13 +304,16 @@ async function renderCommandes() {
         "<td>" + (o.items || []).map((it) => esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ") ×" + it.quantite).join("<br/>") + "</td>" +
         "<td>" + (o.items || []).reduce((somme, it) => somme + (Number(it.quantite) || 0), 0) + "</td>" +
         "<td>" + (o.prix || 0).toLocaleString("fr-FR") + " FCFA</td>" +
+        "<td>" + (o.modeLivraison === "retrait"
+          ? "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>🏪 Retrait boutique</span>"
+          : "<span style='background:#e2f0ff; color:#0a4a8f; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>🚚 Livraison</span>") + "</td>" +
         "<td>" + esc(o.telephone) + "</td>" +
         "<td>" + esc(o.adresse) + "</td>" +
         "<td><select data-commande='" + o.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === o.statut ? " selected" : "") + ">" + s + "</option>").join("") + "</select>" +
           (o.raisonAnnulation ? "<div class='raison'>Raison : " + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
       "</tr>"
-    ).join("") : "<tr><td colspan='8'>Aucune commande pour l'instant.</td></tr>") +
+    ).join("") : "<tr><td colspan='9'>Aucune commande pour l'instant.</td></tr>") +
     "</table>";
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-commande]"), (sel) => {
     sel.addEventListener("change", async () => {
@@ -328,14 +331,30 @@ async function renderParametresCatalogue() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>Chargement…</div>";
   const parametres = await api("/api/" + marchandActif.id + "/parametres");
+  const retrait = parametres.retrait || {};
   zone.innerHTML =
     "<h2>Paramètres</h2>" +
     "<label>Message de confirmation automatique (envoyé au client quand il confirme sa commande)</label>" +
     "<textarea id='msgConfirm' rows='6'>" + esc(parametres.autoConfirmMessage || "") + "</textarea>" +
+    "<h3>Retrait en boutique</h3>" +
+    "<p style='color:#666; font-size:0.9em;'>Optionnel : si vous renseignez une adresse, le bot proposera au client de choisir entre livraison et retrait en boutique après chaque commande. Si vous laissez ce champ vide, rien ne change — la livraison reste demandée directement comme avant.</p>" +
+    "<label>Adresse de la boutique</label>" +
+    "<input id='retraitAdresse' value=\"" + esc(retrait.adresse || "") + "\" placeholder='Ex : Akwa, Boulevard de la Liberté, en face de la pharmacie...' />" +
+    "<label>Horaires de retrait (facultatif, texte libre)</label>" +
+    "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder='Ex : Lundi-Samedi 8h-18h, Dimanche fermé' />" +
     "<div><button id='btnSauverParams' class='principal'>Enregistrer</button></div>";
   document.getElementById("btnSauverParams").onclick = async () => {
     try {
-      await api("/api/" + marchandActif.id + "/parametres", { method: "PUT", body: JSON.stringify({ autoConfirmMessage: document.getElementById("msgConfirm").value }) });
+      await api("/api/" + marchandActif.id + "/parametres", {
+        method: "PUT",
+        body: JSON.stringify({
+          autoConfirmMessage: document.getElementById("msgConfirm").value,
+          retrait: {
+            adresse: document.getElementById("retraitAdresse").value.trim(),
+            horaires: document.getElementById("retraitHoraires").value.trim()
+          }
+        })
+      });
       alert("Paramètres enregistrés.");
     } catch (e) { alert("Erreur : " + e.message); }
   };
