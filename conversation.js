@@ -149,6 +149,34 @@ function createCatalogEngine(merchantKey, options) {
       .join("\n");
   }
 
+  function describeItemsNumbered(items) {
+    return items
+      .map((it, i) => (i + 1) + ". " + it.produit + " — " + it.couleur + " · " + it.taille + " × " + it.quantite + " — " + formatFcfa(it.prixUnitaire * it.quantite))
+      .join("\n");
+  }
+
+  // Texte du panier avec position numerotee de chaque article, pour que le client puisse en retirer un en
+  // indiquant simplement son numero (voir le stage "viewing_cart" plus bas) - utilise a la fois pour
+  // l'affichage initial et pour le rappel apres une action (retrait, numero invalide, texte incompris...).
+  function afficherPanierTexte(cart) {
+    return "Voici votre panier :\n" + describeItemsNumbered(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) +
+      "\n\nPour retirer un article, indiquez simplement son numéro. Tapez *continuer* pour poursuivre vos achats, ou *terminé* pour valider votre commande.";
+  }
+
+  // Point d'entree de la vue panier (mot-cle "panier" tape librement, ou bouton "Mon panier" - voir
+  // sh.demandeVoirPanier ci-dessous et essayerEnvoyerMenuInteractif dans server.js, qui construit la liste
+  // WhatsApp cliquable a partir de session.cart via getEtatSession). Ne touche jamais a la selection en
+  // cours (couleur/taille en attente) - c'est a l'appelant de la nettoyer si besoin, voir plus bas.
+  function afficherPanier(session) {
+    if (!session.cart.length) {
+      session.stage = "idle";
+      session.pretPourChoix = true;
+      return "Votre panier est vide pour l'instant. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+    }
+    session.stage = "viewing_cart";
+    return afficherPanierTexte(session.cart);
+  }
+
   function orderRef(o) {
     return "CMD-" + String(o.id).padStart(4, "0");
   }
@@ -338,6 +366,22 @@ function createCatalogEngine(merchantKey, options) {
     // "quelle couleur / quelle taille / rupture, laquelle de ces variantes" plus bas.
     session.pendingChoice = null;
 
+    // "panier" (tape librement ou bouton "Mon panier", voir sh.demandeVoirPanier) est reconnu a n'importe
+    // quel moment du parcours d'achat - passe devant toute la logique specifique a l'etape en cours, sur
+    // le meme principe que la demande d'un humain plus bas dans handleMessage().
+    if (["idle", "awaiting_quantity", "awaiting_more_items", "viewing_cart"].indexOf(session.stage) !== -1 && sh.demandeVoirPanier(text)) {
+      if (session.stage === "awaiting_quantity") {
+        // La selection en cours (article/couleur/taille) n'a pas encore ete ajoutee au panier - rien a y
+        // perdre, on l'abandonne simplement comme si le client avait dit "autre chose".
+        session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+      }
+      trace.entites = { "Réponse client": text };
+      trace.action = "Client consulte son panier";
+      const reponsePanier = afficherPanier(session);
+      logTrace(session, trace);
+      return reponsePanier;
+    }
+
     if (session.stage === "awaiting_quantity") {
       const otherProduct = matchProduct(text);
       if (otherProduct && otherProduct !== session.productId) {
@@ -398,6 +442,60 @@ function createCatalogEngine(merchantKey, options) {
       const reponseFinalisation = finaliserPanier(session);
       logTrace(session, trace);
       return reponseFinalisation;
+    }
+
+    // Vue panier (voir afficherPanier ci-dessus) : retrait d'un article par sa position, reprise des
+    // achats, ou validation - en plus de la liste WhatsApp cliquable construite par server.js
+    // (essayerEnvoyerMenuInteractif) a partir de session.cart via getEtatSession.
+    if (session.stage === "viewing_cart") {
+      trace.entites = { "Réponse client": text };
+      const t = text.toLowerCase().trim();
+
+      const posMatch = t.match(/^([1-9][0-9]?)$/);
+      if (posMatch) {
+        const idx = parseInt(posMatch[1], 10) - 1;
+        if (idx >= 0 && idx < session.cart.length) {
+          const retire = session.cart.splice(idx, 1)[0];
+          trace.action = "Article retiré du panier : " + retire.produit + " " + retire.couleur + " " + retire.taille;
+          logTrace(session, trace);
+          if (!session.cart.length) {
+            session.stage = "idle";
+            session.pretPourChoix = true;
+            return "Article retiré ✅ Votre panier est maintenant vide. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+          }
+          return "Article retiré ✅\n\n" + afficherPanierTexte(session.cart);
+        }
+        trace.action = "Numéro d'article invalide pour le retrait du panier";
+        logTrace(session, trace);
+        return "Je n'ai pas trouvé cet article dans votre panier. " + afficherPanierTexte(session.cart);
+      }
+
+      if (/continu|catalogue|achats?|autre\s+article|encore/.test(t)) {
+        session.stage = "idle";
+        trace.action = "Client reprend ses achats depuis la vue panier";
+        logTrace(session, trace);
+        session.pretPourChoix = true;
+        return "Très bien, quel autre article souhaitez-vous ?";
+      }
+
+      if (/termin|valid|c['’]est\s*tout|fini/.test(t)) {
+        trace.action = "Panier validé depuis la vue panier (" + session.cart.length + " article(s))";
+        const reponseFinalisation = finaliserPanier(session);
+        logTrace(session, trace);
+        return reponseFinalisation;
+      }
+
+      const directProduct = matchProduct(text);
+      if (directProduct) {
+        session.stage = "idle";
+        trace.action = "Client nomme directement un article depuis la vue panier — traitement immédiat";
+        logTrace(session, trace);
+        return processMessage(session, text);
+      }
+
+      trace.action = "Réponse non comprise dans la vue panier — rappel des options";
+      logTrace(session, trace);
+      return "Je n'ai pas compris. " + afficherPanierTexte(session.cart);
     }
 
     if (session.stage === "awaiting_mode_livraison") {
@@ -526,13 +624,11 @@ function createCatalogEngine(merchantKey, options) {
     if (!produitReconnu && !couleurReconnue && !tailleReconnue && session.productId && (parseNegative(text) || parseWantsSomethingElse(text))) {
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
       trace.entites = { "Réponse client": text };
-      if (session.cart.length > 0) {
-        trace.action = "Client abandonne cette sélection en cours — panier finalisé (" + session.cart.length + " article(s))";
-        const reponseFinalisation = finaliserPanier(session);
-        logTrace(session, trace);
-        return reponseFinalisation;
-      }
-      trace.action = "Client abandonne cette sélection en cours — sélection effacée";
+      // Abandonner une sélection en cours (ex: bouton "◀ Autres articles" sur le choix de couleur/taille)
+      // ramène toujours au catalogue complet, panier ou non - le panier reste intact mais n'est JAMAIS
+      // finalisé automatiquement ici : seul un "terminé" explicite (awaiting_more_items / viewing_cart) ou
+      // un "non" en réponse directe à "un autre article ?" (voir plus bas) déclenche la finalisation.
+      trace.action = "Client abandonne cette sélection en cours — retour au catalogue" + (session.cart.length ? " (panier conservé, " + session.cart.length + " article(s))" : "");
       logTrace(session, trace);
       session.pretPourChoix = true;
       return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
@@ -708,7 +804,7 @@ function createCatalogEngine(merchantKey, options) {
   // d'articles ou boutons Oui/Non), sans rien changer a handleMessage() ni a son contrat de retour.
   function getEtatSession(fromPhone) {
     const s = sessions[fromPhone];
-    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null } : null;
+    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null, cart: s.cart || [] } : null;
   }
 
   // Ne renvoie JAMAIS les commandes creees par le Simulateur (source:"simulateur") — invisibles dans la

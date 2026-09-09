@@ -789,6 +789,13 @@ const ID_OUI = "IZY_OUI";
 const ID_NON = "IZY_NON";
 const PREFIXE_CRENEAU = "IZY_SLOT_";
 const PREFIXE_VOIR_PLUS = "IZY_PLUS_";
+// Panier multi-articles (moteur catalogue uniquement) : voir conversation.js (sh.demandeVoirPanier, stage
+// "viewing_cart") et essayerEnvoyerMenuInteractif plus bas.
+const ID_PANIER = "IZY_PANIER";
+const ID_AUTRE_ARTICLE = "IZY_AUTRE";
+const ID_PANIER_CONTINUER = "IZY_PANIER_CONTINUER";
+const ID_PANIER_TERMINER = "IZY_PANIER_TERMINER";
+const PREFIXE_RETIRER_PANIER = "IZY_DELCART_";
 
 function tronquerTexte(texte, max) {
   const t = String(texte == null ? "" : texte);
@@ -813,7 +820,10 @@ function construireItemsListe(marchand) {
 // ce qui laisse 9 places pour les articles/services ; si plus de 9 restent apres cette page, la derniere
 // place est prise par "Voir plus ▸" a la place d'un 9eme article, pour ne jamais depasser la limite tout
 // en gardant tout le catalogue/service atteignable par clics (pas seulement les 9 premiers).
-function construireLignesListe(items, offset) {
+// `lignesSupplementaires` (optionnel) : lignes de navigation ajoutees avant "Parler à un conseiller" - ex.
+// "◀ Autres articles" sur les listes de couleur/taille/variante (voir essayerEnvoyerMenuInteractif), pour
+// permettre au client d'explorer le catalogue avant de se decider sans jamais y etre oblige.
+function construireLignesListe(items, offset, lignesSupplementaires) {
   const restant = items.length - offset;
   const inclureVoirPlus = restant > 9;
   const nbAffiches = inclureVoirPlus ? 8 : Math.max(0, Math.min(restant, 9));
@@ -826,6 +836,7 @@ function construireLignesListe(items, offset) {
   if (inclureVoirPlus) {
     rows.push({ id: PREFIXE_VOIR_PLUS + (offset + nbAffiches), title: "Voir plus ▸" });
   }
+  (lignesSupplementaires || []).forEach((ligne) => rows.push(ligne));
   rows.push({ id: ID_HUMAIN, title: "Parler à un conseiller", description: "Être mis en relation avec l'équipe" });
   return rows;
 }
@@ -846,6 +857,11 @@ function resoudreTexteInteractif(marchand, interactive) {
   if (id === ID_HUMAIN) return "un conseiller";
   if (id === ID_OUI) return "oui";
   if (id === ID_NON) return "non";
+  if (id === ID_PANIER) return "voir mon panier";
+  if (id === ID_AUTRE_ARTICLE) return "autre chose";
+  if (id === ID_PANIER_CONTINUER) return "continuer mes achats";
+  if (id === ID_PANIER_TERMINER) return "terminé";
+  if (id.indexOf(PREFIXE_RETIRER_PANIER) === 0) return String(Number(id.slice(PREFIXE_RETIRER_PANIER.length)) + 1); // position 1-based dans le panier
   if (id.indexOf(PREFIXE_CRENEAU) === 0) return String(Number(id.slice(PREFIXE_CRENEAU.length)) + 1); // "1"/"2"/"3"
 
   // Id d'un article ou d'un service connu : on renvoie son nom exact, que matchProduct()/matchService()
@@ -906,16 +922,56 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     }[pc.type];
     if (!labels) return false;
 
-    const items = pc.options.slice(0, 9).map((opt) => {
+    const items = pc.options.slice(0, 8).map((opt) => {
       const libelle = pc.type === "variante" ? opt.couleur + " " + opt.taille : String(opt);
       return { id: libelle, nom: libelle, description: "" };
     });
-    const rows = construireLignesListe(items, 0);
+    // Le client peut regarder cette liste sans s'y engager : une ligne le ramène directement au catalogue
+    // complet (voir conversation.js — abandon de la sélection en cours si le panier n'est pas vide, elle
+    // reste intacte).
+    const rows = construireLignesListe(items, 0, [
+      { id: ID_AUTRE_ARTICLE, title: "◀ Autres articles", description: "Revenir au catalogue complet" }
+    ]);
 
     return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, labels.bouton, [{ title: labels.section, rows }]);
   }
 
-  if (etat.stage === "awaiting_more_items" || etat.stage === "awaiting_order_confirmation" || etat.stage === "awaiting_confirmation") {
+  // Panier multi-articles (moteur catalogue uniquement) : 3 options tactiles au lieu du simple Oui/Non,
+  // pour reprendre les achats, consulter/modifier le panier, ou valider - voir conversation.js
+  // (session.stage "awaiting_more_items"/"viewing_cart") et sh.demandeVoirPanier().
+  if (etat.stage === "awaiting_more_items") {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: ID_OUI, title: "Voir le catalogue" },
+      { id: ID_PANIER, title: "Mon panier" },
+      { id: ID_NON, title: "Terminer" }
+    ]);
+  }
+
+  // Vue panier : une ligne "retirer" par article (voir etat.cart, fourni par conversation.js), plus la
+  // reprise des achats ou la validation de la commande.
+  if (etat.stage === "viewing_cart" && etat.cart && etat.cart.length) {
+    const rows = etat.cart.slice(0, 6).map((it, i) => ({
+      id: PREFIXE_RETIRER_PANIER + i,
+      title: tronquerTexte(it.produit, 24),
+      description: tronquerTexte("🗑️ Retirer — " + it.couleur + " " + it.taille + " × " + it.quantite + " — " + sh.formatFcfa(it.prixUnitaire * it.quantite), 72)
+    }));
+    rows.push({ id: ID_PANIER_CONTINUER, title: tronquerTexte("🛍️ Continuer mes achats", 24) });
+    rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte("✅ Terminer ma commande", 24) });
+    rows.push({ id: ID_HUMAIN, title: "Parler à un conseiller", description: "Être mis en relation avec l'équipe" });
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, "Gérer mon panier", [{ title: "Votre panier", rows }]);
+  }
+
+  // Choix rapide de quantité (moteur catalogue) : 1, 2, ou retour au catalogue - le client garde aussi la
+  // possibilité de taper n'importe quel autre nombre en texte libre comme avant (voir parseQuantity).
+  if (etat.stage === "awaiting_quantity") {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: "1", title: "1" },
+      { id: "2", title: "2" },
+      { id: ID_AUTRE_ARTICLE, title: "◀ Autres articles" }
+    ]);
+  }
+
+  if (etat.stage === "awaiting_order_confirmation" || etat.stage === "awaiting_confirmation") {
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
       { id: ID_OUI, title: "Oui" },
       { id: ID_NON, title: "Non" }

@@ -67,6 +67,16 @@ function demandeUnHumain(texte) {
   return MOTS_CLES_HUMAIN.some((mot) => t.includes(normaliserPourRecherche(mot)));
 }
 
+const MOTS_CLES_PANIER = ["panier", "mon panier", "voir mon panier", "voir le panier"];
+
+// Reconnait qu'un client veut consulter son panier (mot-cle "panier" tape librement, ou bouton "Mon
+// panier" - voir server.js), quel que soit le moment du parcours d'achat en cours (voir conversation.js,
+// createCatalogEngine.processMessage).
+function demandeVoirPanier(texte) {
+  const t = normaliserPourRecherche(texte);
+  return MOTS_CLES_PANIER.some((mot) => t.includes(normaliserPourRecherche(mot)));
+}
+
 // Le message envoye au client UNE SEULE fois, au moment ou la pause commence.
 const MESSAGE_MISE_EN_RELATION =
   "Je vous mets en relation avec un membre de notre équipe, merci de patienter quelques instants 🙏";
@@ -135,6 +145,7 @@ module.exports = {
   parseWantsSomethingElse,
   echapperHtml,
   demandeUnHumain,
+  demandeVoirPanier,
   MESSAGE_MISE_EN_RELATION,
   MENTION_HUMAIN_DISPONIBLE,
   pauseHumainActive,
