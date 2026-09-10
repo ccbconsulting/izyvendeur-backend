@@ -419,7 +419,7 @@ function createCatalogEngine(merchantKey, options) {
       session.stage = "awaiting_more_items";
       trace.action = "Article ajouté au panier — proposition d'ajouter un autre article";
       logTrace(session, trace);
-      return piocheParmi(OUVERTURES_AJOUT) + " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article à votre commande ? (oui / non)";
+      return piocheParmi(OUVERTURES_AJOUT) + " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article, voir votre panier, ou terminer votre commande ?";
     }
 
     if (session.stage === "awaiting_more_items") {
