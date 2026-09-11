@@ -435,12 +435,13 @@ async function renderRendezvous() {
   const tri = rdvs.slice().reverse();
   zone.innerHTML =
     "<h2>Rendez-vous (" + rdvs.length + ")</h2>" +
-    "<table class='table-donnees'><tr><th>Réf.</th><th>Date &amp; heure</th><th>Service</th><th>Client</th><th>Téléphone</th><th>Prix</th><th>Statut</th></tr>" +
+    "<table class='table-donnees'><tr><th>Réf.</th><th>Date &amp; heure</th><th>Service</th><th>Praticien</th><th>Client</th><th>Téléphone</th><th>Prix</th><th>Statut</th></tr>" +
     (tri.length ? tri.map((a) =>
       "<tr>" +
         "<td>RDV-" + String(a.id).padStart(4, "0") + "</td>" +
         "<td>" + esc(new Date(a.dateISO).toLocaleString("fr-FR")) + "</td>" +
         "<td>" + esc(a.service) + "</td>" +
+        "<td>" + esc(a.praticienNom || "—") + "</td>" +
         "<td>" + esc(a.clientNom) + "</td>" +
         "<td>" + esc(a.telephone) + "</td>" +
         "<td>" + (a.prix || 0).toLocaleString("fr-FR") + " FCFA</td>" +
@@ -448,7 +449,7 @@ async function renderRendezvous() {
           (a.raisonAnnulation ? "<div class='raison'>Raison : " + esc(a.raisonAnnulation) + "</div>" : "") +
         "</td>" +
       "</tr>"
-    ).join("") : "<tr><td colspan='7'>Aucun rendez-vous pour l'instant.</td></tr>") +
+    ).join("") : "<tr><td colspan='8'>Aucun rendez-vous pour l'instant.</td></tr>") +
     "</table>";
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-rdv]"), (sel) => {
     sel.addEventListener("change", async () => {
@@ -468,6 +469,12 @@ async function renderParametresService() {
   const parametres = await api("/api/" + marchandActif.id + "/parametres");
   const jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
   const horaires = parametres.horaires || {};
+  // Praticiens (staff pouvant recevoir des rendez-vous en parallele) : vide par defaut, ce qui garde
+  // l'ancien comportement (une seule ressource a la fois) tant que le marchand n'en ajoute pas ici. Etat
+  // local independant, redessine seulement cette liste (voir redrawPraticiens) pour ne jamais perdre une
+  // saisie en cours dans les horaires/duree/message au-dessus au moment d'ajouter/retirer un praticien.
+  let localPraticiens = JSON.parse(JSON.stringify(parametres.praticiens || []));
+
   zone.innerHTML =
     "<h2>Paramètres</h2>" +
     "<label>Durée d'un créneau (minutes)</label>" +
@@ -485,9 +492,42 @@ async function renderParametresService() {
         "<td><input type='time' data-jour='" + j + "' data-champ='pauseFin' value='" + (h.pauseFin || "") + "' /></td></tr>";
     }).join("") +
     "</table>" +
+    "<h3>Praticiens</h3>" +
+    "<p class='raison'>Laissez cette liste vide si une seule personne (vous, ou un seul poste/fauteuil) reçoit les rendez-vous à la fois. Ajoutez un praticien par membre du personnel pouvant recevoir des rendez-vous EN PARALLÈLE : le client pourra en demander un en particulier (ex : « avec Sandra »), ou en laisser un lui être assigné automatiquement.</p>" +
+    "<div id='listePraticiens'></div>" +
+    "<button id='btnAjouterPraticien'>+ Ajouter un praticien</button>" +
     "<label>Message de confirmation automatique (envoyé au client quand il confirme son rendez-vous)</label>" +
     "<textarea id='msgConfirm' rows='6'>" + esc(parametres.autoConfirmMessage || "") + "</textarea>" +
     "<div><button id='btnSauverParams' class='principal'>Enregistrer</button></div>";
+
+  function redrawPraticiens() {
+    const conteneur = document.getElementById("listePraticiens");
+    conteneur.innerHTML = localPraticiens.length
+      ? "<table class='table-donnees'><tr><th>Nom</th><th></th></tr>" +
+        localPraticiens.map((p, i) =>
+          "<tr>" +
+            "<td><input data-praticien-i='" + i + "' value=\"" + esc(p.nom || "") + "\" placeholder='Nom du praticien' /></td>" +
+            "<td><button data-praticien-suppr='" + i + "' class='danger'>×</button></td>" +
+          "</tr>"
+        ).join("") +
+        "</table>"
+      : "<p class='raison'>Aucun praticien configuré — une seule ressource reçoit les rendez-vous à la fois.</p>";
+
+    Array.prototype.forEach.call(conteneur.querySelectorAll("input[data-praticien-i]"), (inp) => {
+      inp.addEventListener("input", () => {
+        localPraticiens[Number(inp.dataset.praticienI)].nom = inp.value;
+      });
+    });
+    Array.prototype.forEach.call(conteneur.querySelectorAll("[data-praticien-suppr]"), (btn) => {
+      btn.onclick = () => { localPraticiens.splice(Number(btn.dataset.praticienSuppr), 1); redrawPraticiens(); };
+    });
+  }
+  redrawPraticiens();
+
+  document.getElementById("btnAjouterPraticien").onclick = () => {
+    localPraticiens.push({ id: "pr" + Date.now() + Math.floor(Math.random() * 1000), nom: "" });
+    redrawPraticiens();
+  };
 
   document.getElementById("btnSauverParams").onclick = async () => {
     const nouvHoraires = {};
@@ -500,16 +540,21 @@ async function renderParametresService() {
         pauseFin: zone.querySelector("[data-jour='" + j + "'][data-champ='pauseFin']").value || null
       };
     });
+    const nouvPraticiens = localPraticiens
+      .map((p) => ({ id: p.id, nom: (p.nom || "").trim() }))
+      .filter((p) => p.nom); // une ligne laissee vide (nom jamais rempli) est simplement ignoree
     try {
       await api("/api/" + marchandActif.id + "/parametres", {
         method: "PUT",
         body: JSON.stringify({
           dureeCreneauMinutes: Number(document.getElementById("dureeCreneau").value),
           horaires: nouvHoraires,
+          praticiens: nouvPraticiens,
           autoConfirmMessage: document.getElementById("msgConfirm").value
         })
       });
       alert("Paramètres enregistrés.");
+      renderParametresService();
     } catch (e) { alert("Erreur : " + e.message); }
   };
 }
