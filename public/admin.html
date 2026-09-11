@@ -67,7 +67,9 @@
   <h1>IzyVendeur — Administration</h1>
   <select id="selecteurMarchand"></select>
   <span id="nomMarchandSeul" style="font-weight:600; display:none;"></span>
+  <button id="btnModifierMarchand" style="display:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;">Modifier</button>
   <button id="btnSuspendreMarchand" style="display:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;"></button>
+  <button id="btnSupprimerMarchand" style="display:none;background:transparent;color:#ffb3b3;border:1px solid rgba(255,179,179,0.5);border-radius:6px;padding:6px 12px;">Supprimer</button>
   <button id="btnNouveauMarchand" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;">+ Nouveau marchand</button>
 </header>
 <main>
@@ -108,12 +110,16 @@ async function demarrer() {
   const sel = document.getElementById("selecteurMarchand");
   const nomSeul = document.getElementById("nomMarchandSeul");
   const btnNouveau = document.getElementById("btnNouveauMarchand");
+  const btnModifier = document.getElementById("btnModifierMarchand");
   const btnSuspendre = document.getElementById("btnSuspendreMarchand");
+  const btnSupprimer = document.getElementById("btnSupprimerMarchand");
   if (moi.role === "superadmin") {
     sel.style.display = "";
     nomSeul.style.display = "none";
     btnNouveau.style.display = "";
+    btnModifier.style.display = "";
     btnSuspendre.style.display = "";
+    btnSupprimer.style.display = "";
     sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ")" + (m.actif === false ? " — SUSPENDU" : "") + "</option>").join("");
     sel.onchange = () => choisirMarchand(sel.value);
     btnSuspendre.onclick = async () => {
@@ -124,9 +130,53 @@ async function demarrer() {
         await demarrer();
       } catch (e) { alert("Erreur : " + e.message); }
     };
+    // Corrige le nom et/ou le phone_number_id d'un marchand deja cree (ex: faute de frappe a la creation).
+    // L'identifiant technique ("id") et le type ne sont volontairement pas modifiables ici — voir le
+    // message d'aide affiché quand on tente de les changer via /api : il faut alors supprimer et recreer
+    // ce marchand (bouton "Supprimer" ci-dessous).
+    btnModifier.onclick = async () => {
+      const nom = prompt("Nom affiché du marchand :", marchandActif.nom);
+      if (nom === null) return;
+      const phoneNumberId = prompt(
+        "phone_number_id WhatsApp de ce marchand (laissez vide si aucun) :\n\n" +
+        "Note : l'identifiant technique (\"" + marchandActif.id + "\") ne peut pas être changé ici — " +
+        "s'il est erroné, supprimez ce marchand et recréez-en un avec le bon identifiant.",
+        marchandActif.phoneNumberId || ""
+      );
+      if (phoneNumberId === null) return;
+      try {
+        await api("/api/marchands/" + marchandActif.id + "/infos", {
+          method: "PUT",
+          body: JSON.stringify({ nom: nom.trim(), phoneNumberId: phoneNumberId.trim() || null })
+        });
+        await demarrer();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
+    // Suppression definitive du REGISTRE (voir db.deleteMerchant) — reservee aux vraies erreurs de
+    // creation (mauvais id/type) ou a un marchand qui part vraiment. Pour un marchand qui ne paie
+    // simplement plus mais dont on veut garder l'historique, "Suspendre" ci-dessus est le bon outil.
+    // Double confirmation (dont un texte a retaper) vu l'irreversibilite de la suppression de la ligne.
+    btnSupprimer.onclick = async () => {
+      const saisie = prompt(
+        "Suppression DÉFINITIVE du marchand \"" + marchandActif.nom + "\" (" + marchandActif.id + ").\n\n" +
+        "Son catalogue/ses commandes (ou services/rendez-vous) et son historique de conversations restent " +
+        "en base mais deviendront inaccessibles depuis /admin.\n\n" +
+        "Pour confirmer, retapez l'identifiant du marchand : " + marchandActif.id
+      );
+      if (saisie !== marchandActif.id) {
+        if (saisie !== null) alert("Identifiant non concordant — suppression annulée.");
+        return;
+      }
+      try {
+        await api("/api/marchands/" + marchandActif.id, { method: "DELETE" });
+        await demarrer();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
   } else {
     sel.style.display = "none";
     btnNouveau.style.display = "none";
+    btnModifier.style.display = "none";
+    btnSupprimer.style.display = "none";
     nomSeul.style.display = "";
     nomSeul.textContent = marchands.length ? marchands[0].nom : "";
   }
