@@ -77,6 +77,22 @@ function demandeVoirPanier(texte) {
   return MOTS_CLES_PANIER.some((mot) => t.includes(normaliserPourRecherche(mot)));
 }
 
+// ---------------- Annulation / report d'un rendez-vous (volet service) ----------------
+// Reconnait qu'un client, a tout moment de la conversation, veut annuler ou reporter SON rendez-vous
+// deja pris (et non pas simplement abandonner une selection en cours - voir parseWantsSomethingElse,
+// qui reste utilisee localement dans les etapes de choix). On exige que le client mentionne
+// explicitement son rendez-vous ("rendez-vous" / "rdv" / "reservation") pour eviter tout declenchement
+// intempestif sur un "annule" ou "je change d'avis" dit dans un tout autre contexte.
+function detecterIntentionRdv(texte) {
+  const t = normaliserPourRecherche(texte);
+  if (!t.trim()) return null;
+  const mentionneRdv = /\b(rendez[\s-]?vous|rdv|reservation)\b/.test(t);
+  if (!mentionneRdv) return null;
+  if (/\b(annuler|annulation|supprime[rz]?|decommande[rz]?)\b/.test(t)) return "annuler";
+  if (/\b(reporter|report|reprogramme[rz]?|deplace[rz]?|changer|modifie[rz]?|decale[rz]?)\b/.test(t)) return "reporter";
+  return null;
+}
+
 // Le message envoye au client UNE SEULE fois, au moment ou la pause commence.
 const MESSAGE_MISE_EN_RELATION =
   "Je vous mets en relation avec un membre de notre équipe, merci de patienter quelques instants 🙏";
@@ -146,6 +162,7 @@ module.exports = {
   echapperHtml,
   demandeUnHumain,
   demandeVoirPanier,
+  detecterIntentionRdv,
   MESSAGE_MISE_EN_RELATION,
   MENTION_HUMAIN_DISPONIBLE,
   pauseHumainActive,

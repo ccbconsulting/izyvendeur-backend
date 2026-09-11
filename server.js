@@ -64,6 +64,20 @@ const TEMPLATES_ALERTE_MARCHAND = {
       "Nouvelle commande confirmée " + params[0] + " :\n" + params[1] + "\nTotal : " + params[2] +
       "\nTéléphone client : " + params[3] + "\nLivraison : " + params[4] +
       "\n\nConsultez /admin, onglet Commandes, pour la traiter."
+  },
+  // NOUVEAU (volet service) : alerte le marchand des qu'un client confirme un rendez-vous, symetrique a
+  // "commande_confirmee" cote catalogue. Necessite la creation ET l'approbation, cote Meta WhatsApp
+  // Manager, d'un template nomme EXACTEMENT "izyvendeur_alerte_rdv" (langue fr) avec 6 variables dans cet
+  // ordre - voir conversationService.js, notifierMarchand("rdv_confirme", [...]). Tant que ce template
+  // n'est pas approuve, le repli en texte libre ci-dessous fonctionne uniquement dans la fenetre de 24h.
+  rdv_confirme: {
+    nom: "izyvendeur_alerte_rdv",
+    langue: "fr",
+    // params: [reference, serviceEtPraticien, creneauFormatte, prixFormatte, clientNom, telephoneClient]
+    texteLibreRepli: (params) =>
+      "Nouveau rendez-vous confirmé " + params[0] + " :\n" + params[1] + "\nCréneau : " + params[2] +
+      "\nPrix : " + params[3] + "\nClient : " + params[4] + "\nTéléphone : " + params[5] +
+      "\n\nConsultez /admin, onglet Rendez-vous, pour le suivre."
   }
 };
 
@@ -1179,6 +1193,26 @@ async function envoyerTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate,
 
 const PORT = process.env.PORT || 3000;
 
+// ---------------- Rappel automatique la veille des rendez-vous (volet service) ----------------
+// Toutes les 30 minutes (fenetre de declenchement de 4h cote conversationService.js - voir
+// RAPPEL_DELAI_MIN_MS/MAX_MS - donc largement assez frequent pour ne rater aucun rendez-vous), on demande
+// a chaque moteur "service" actif d'envoyer les rappels dus. Best-effort et independant par marchand :
+// l'echec d'un marchand (ex: token WhatsApp expire) n'empeche jamais les autres d'etre traites.
+const INTERVALLE_RAPPELS_MS = 30 * 60 * 1000;
+
+async function envoyerRappelsPourTousLesMarchands() {
+  for (const merchantId of Object.keys(engines)) {
+    const entry = engines[merchantId];
+    if (!entry || entry.engine.type !== "service") continue;
+    if (entry.merchant.actif === false) continue; // marchand suspendu : pas de rappel envoye
+    try {
+      await entry.engine.envoyerRappelsDuJour();
+    } catch (erreur) {
+      console.error(`[${merchantId}] Echec de l'envoi des rappels de rendez-vous :`, erreur);
+    }
+  }
+}
+
 // On attend que le registre des marchands + l'etat de chacun soient charges avant d'accepter la moindre
 // requete. Voir chargerMarchands() / db.js.
 async function demarrer() {
@@ -1186,6 +1220,16 @@ async function demarrer() {
   app.listen(PORT, () => {
     console.log(`Serveur IzyVendeur demarre sur le port ${PORT} (${Object.keys(engines).length} marchand(s) charge(s))`);
   });
+  // Premier passage juste apres le chargement (ne bloque pas le demarrage du serveur), puis toutes les
+  // INTERVALLE_RAPPELS_MS en continu.
+  envoyerRappelsPourTousLesMarchands().catch((erreur) =>
+    console.error("Echec du premier passage des rappels de rendez-vous :", erreur)
+  );
+  setInterval(() => {
+    envoyerRappelsPourTousLesMarchands().catch((erreur) =>
+      console.error("Echec du passage periodique des rappels de rendez-vous :", erreur)
+    );
+  }, INTERVALLE_RAPPELS_MS);
 }
 
 demarrer().catch((erreur) => {

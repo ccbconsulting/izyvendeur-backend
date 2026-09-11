@@ -2,12 +2,14 @@
 //
 // Meme esprit que le moteur "catalogue" (conversation.js) mais pour un marchand qui vend du temps plutot
 // que des articles : coiffeur, institut de beaute, clinique, garage... Le client nomme un service, indique
-// un jour/une heure, le moteur verifie la disponibilite (une seule ressource par marchand - ex: un seul
-// fauteuil/praticien a la fois - avec des creneaux de duree fixe configurable par le marchand ; chaque
-// service occupe un nombre entier de creneaux selon sa propre duree), propose des alternatives si besoin,
-// collecte le nom du client, recapitule et demande confirmation - exactement le meme schema de dialogue
-// (chaleur, alternatives en cas d'indisponibilite, garde-fous anti-boucle et anti-inondation) que le moteur
-// catalogue, pour que les deux volets d'IzyVendeur se sentent coherents du point de vue du client.
+// un jour/une heure, le moteur verifie la disponibilite (par defaut une seule ressource par marchand - ex:
+// un seul fauteuil/praticien a la fois - mais plusieurs praticiens peuvent etre configures en parallele,
+// voir "Praticiens" plus bas), avec des creneaux de duree fixe configurable par le marchand ; chaque
+// service occupe un nombre entier de creneaux selon sa propre duree, et plusieurs services peuvent etre
+// combines dans une meme reservation. Propose des alternatives si besoin, collecte le nom du client,
+// recapitule et demande confirmation - exactement le meme schema de dialogue (chaleur, alternatives en cas
+// d'indisponibilite, garde-fous anti-boucle et anti-inondation) que le moteur catalogue, pour que les deux
+// volets d'IzyVendeur se sentent coherents du point de vue du client.
 //
 // Exporte une factory (createServiceEngine(merchantKey)), comme conversation.js : chaque marchand "service"
 // a sa propre instance, son propre etat (services + rendez-vous + parametres) et ses propres sessions.
@@ -28,6 +30,12 @@ const RESERVING_STATUSES_RDV = ["Nouvelle", "Confirmé"];
 const MAX_PENDING_APPOINTMENTS_PER_PHONE = 3;
 const PENDING_APPOINTMENTS_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 heures
 
+// Fenetre de declenchement du rappel automatique (voir envoyerRappelsDuJour plus bas) : entre 20h et 24h
+// avant le rendez-vous. Verifiee toutes les INTERVALLE_RAPPELS_MS (voir server.js) - une fenetre de 4h,
+// verifiee bien plus souvent que ca, garantit qu'aucun rendez-vous ne passe au travers.
+const RAPPEL_DELAI_MIN_MS = 20 * 3600 * 1000;
+const RAPPEL_DELAI_MAX_MS = 24 * 3600 * 1000;
+
 const OUVERTURES_SERVICE = ["Excellent choix !", "Très bon choix !", "Parfait !", "Belle sélection !"];
 const OUVERTURES_CRENEAU = ["Parfait,", "Très bien,", "Super,", "Excellente nouvelle,"];
 const OUVERTURES_RECAP = ["Très bien !", "Parfait, on y est presque !", "Super !"];
@@ -40,7 +48,11 @@ function seedState() {
     settings: {
       horaires: JSON.parse(JSON.stringify(DEFAULT_HORAIRES)),
       dureeCreneauMinutes: DEFAULT_DUREE_CRENEAU_MINUTES,
-      autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE
+      autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE,
+      // Praticiens (staff) pouvant recevoir des rendez-vous en parallele - voir getPraticiens() plus bas.
+      // Vide par defaut : le marchand reste sur l'ancien comportement (une seule ressource a la fois) tant
+      // qu'il n'a rien configure depuis /admin > Paramètres > Praticiens.
+      praticiens: []
     }
   };
 }
@@ -77,6 +89,7 @@ function createServiceEngine(merchantKey, options) {
     if (!state.settings.horaires) state.settings.horaires = JSON.parse(JSON.stringify(DEFAULT_HORAIRES));
     if (!state.settings.dureeCreneauMinutes) state.settings.dureeCreneauMinutes = DEFAULT_DUREE_CRENEAU_MINUTES;
     if (!state.settings.autoConfirmMessage) state.settings.autoConfirmMessage = DEFAULT_AUTO_CONFIRM_MESSAGE;
+    if (!Array.isArray(state.settings.praticiens)) state.settings.praticiens = [];
     if (!state.appointments) state.appointments = [];
   }
 
@@ -91,6 +104,16 @@ function createServiceEngine(merchantKey, options) {
     return {
       stage: "idle",
       serviceId: null,
+      // Liste des services combines dans cette reservation (ex: ["s1","s4"] pour "coupe + manucure") -
+      // voir matchServicesMultiple()/combinerServices() plus bas. serviceId reste l'id joint ("s1+s4") pour
+      // compatibilite avec le reste du code qui identifie une reservation par un seul id.
+      serviceIds: null,
+      // Praticien demande par le client (id dans settings.praticiens), ou null s'il n'a pas de preference -
+      // voir matchPraticien() plus bas. Reste null pour un marchand qui n'a configure aucun praticien.
+      praticienId: null,
+      // Praticien reellement assigne au creneau en attente de confirmation (resolu au moment de la
+      // reservation, meme si le client n'avait pas de preference - voir choisirPraticienLibre()).
+      pendingPraticienId: null,
       proposedSlots: null,
       clientNom: null,
       pendingAppointmentId: null,
@@ -107,7 +130,36 @@ function createServiceEngine(merchantKey, options) {
     return sessions[fromPhone];
   }
 
-  // ---------------- Reconnaissance du service demande ----------------
+  // ---------------- Praticiens (staff pouvant recevoir des rendez-vous en parallele) ----------------
+  // Un marchand qui n'a rien configure (cas par defaut, et cas de tous les marchands crees avant cette
+  // fonctionnalite) reste sur une ressource unique implicite ("_unique", sans nom) - EXACTEMENT le meme
+  // comportement qu'avant : aucune mention de praticien nulle part, capacite de 1 rendez-vous a la fois.
+
+  function getPraticiens() {
+    const liste = (state.settings && state.settings.praticiens) || [];
+    return liste.length ? liste : [{ id: "_unique", nom: null }];
+  }
+
+  function praticienNomParId(id) {
+    if (!id) return null;
+    const p = getPraticiens().filter((x) => x.id === id)[0];
+    return p ? p.nom : null;
+  }
+
+  // Reconnait un praticien nomme explicitement dans le texte du client (ex: "avec Sandra") - seulement
+  // pertinent si le marchand a configure plusieurs praticiens avec un nom ; renvoie null sinon (aucune
+  // preference exprimee, un praticien disponible sera choisi automatiquement).
+  function matchPraticien(text) {
+    const praticiens = getPraticiens().filter((p) => p.nom);
+    if (!praticiens.length) return null;
+    const t = text.toLowerCase();
+    for (const p of praticiens) {
+      if (p.nom && t.indexOf(p.nom.toLowerCase()) !== -1) return p.id;
+    }
+    return null;
+  }
+
+  // ---------------- Reconnaissance du/des service(s) demande(s) ----------------
 
   function buildServiceIndex() {
     return state.services.map((s) => {
@@ -132,6 +184,52 @@ function createServiceEngine(merchantKey, options) {
     if (!candidates.length) return null;
     candidates.sort((a, b) => b.len - a.len);
     return candidates[0].id;
+  }
+
+  // Reconnait PLUSIEURS services combines dans un meme message ("coupe et manucure", "brushing + soin du
+  // visage") en coupant le texte sur les connecteurs usuels et en reconnaissant un service par segment -
+  // permet une reservation combinee sans rien changer au reste du moteur (voir combinerServices()
+  // ci-dessous, qui fabrique un service "synthetique" traite ensuite exactement comme un service normal
+  // partout ailleurs : duree et prix cumules). Renvoie un tableau d'ids distincts, dans l'ordre rencontre
+  // (vide si rien reconnu).
+  function matchServicesMultiple(text) {
+    const segments = text.split(/\bet\b|\+|,|\bavec\b/i).map((s) => s.trim()).filter(Boolean);
+    const ids = [];
+    segments.forEach((seg) => {
+      const id = matchService(seg);
+      if (id && ids.indexOf(id) === -1) ids.push(id);
+    });
+    if (ids.length) return ids;
+    // Repli : le decoupage par segments n'a rien donne (texte trop imbrique pour etre coupe proprement) -
+    // tente un match global classique sur le texte entier.
+    const single = matchService(text);
+    return single ? [single] : [];
+  }
+
+  // Fabrique un objet "service" a partir d'une liste d'ids - un seul id renvoie le service tel quel ;
+  // plusieurs ids fabriquent un service synthetique (nom/duree/prix combines) traite EXACTEMENT comme un
+  // service normal par le reste du moteur (handleDateTimeAttempt, bookSlot, createAppointment...), qui ne
+  // font que lire service.id/nom/dureeMinutes/prix sans jamais supposer qu'il vient du catalogue brut.
+  function combinerServices(ids) {
+    const services = (ids || []).map((id) => state.services.filter((s) => s.id === id)[0]).filter(Boolean);
+    if (!services.length) return null;
+    if (services.length === 1) return services[0];
+    return {
+      id: services.map((s) => s.id).join("+"),
+      nom: services.map((s) => s.nom).join(" + "),
+      dureeMinutes: services.reduce((sum, s) => sum + s.dureeMinutes, 0),
+      prix: services.reduce((sum, s) => sum + s.prix, 0),
+      combo: services.map((s) => s.id)
+    };
+  }
+
+  // Reconstruit le service (simple ou combine) actuellement en cours de reservation dans cette session -
+  // point d'entree unique utilise par tous les stages qui ont besoin de re-deriver `service` a partir de
+  // session.serviceIds (au lieu d'un filtre direct sur state.services, qui ne connaitrait pas un id combine
+  // comme "s1+s4").
+  function serviceActuel(session) {
+    const ids = session.serviceIds && session.serviceIds.length ? session.serviceIds : (session.serviceId ? [session.serviceId] : []);
+    return combinerServices(ids);
   }
 
   // ---------------- Reconnaissance de la date / heure demandee dans le texte du client ----------------
@@ -212,7 +310,7 @@ function createServiceEngine(merchantKey, options) {
   }
 
   // true si le creneau [slotStart, slotStart+dureeMinutes) chevauche la pause du jour (meme logique de
-  // chevauchement que isSlotFree, plus bas).
+  // chevauchement que isSlotFreePour, plus bas).
   function chevauchePause(dateOnly, horaire, slotStart, dureeMinutes) {
     const pause = pauseDuJour(dateOnly, horaire);
     if (!pause) return false;
@@ -235,18 +333,32 @@ function createServiceEngine(merchantKey, options) {
     return starts;
   }
 
-  function isSlotFree(slotStart, dureeMinutes) {
+  // true si le creneau [slotStart, slotStart+dureeMinutes) est libre pour le praticien demande, ou - si
+  // praticienId est null (client sans preference) - s'il existe AU MOINS UN praticien libre a ce moment.
+  // La "capacite" du marchand est donc le nombre de praticiens configures (1 par defaut quand aucun n'est
+  // renseigne, ce qui reproduit exactement l'ancien comportement mono-ressource).
+  function isSlotFreePour(slotStart, dureeMinutes, praticienId) {
     const slotEnd = slotStart.getTime() + dureeMinutes * 60000;
-    return !state.appointments.some((a) => {
+    const occupePar = (id) => state.appointments.some((a) => {
       if (a.source === "simulateur") return false; // jamais d'impact du Simulateur sur les vrais creneaux
       if (RESERVING_STATUSES_RDV.indexOf(a.statut) === -1) return false;
+      if ((a.praticienId || "_unique") !== id) return false;
       const aStart = new Date(a.dateISO).getTime();
       const aEnd = aStart + (a.dureeMinutes || dureeMinutes) * 60000;
       return slotStart.getTime() < aEnd && aStart < slotEnd;
     });
+    if (praticienId) return !occupePar(praticienId);
+    return getPraticiens().some((p) => !occupePar(p.id));
   }
 
-  function freeSlotsForDay(dateOnly, dureeService, now) {
+  // Choisit un praticien reellement libre pour ce creneau (utilise a la reservation quand le client n'a
+  // exprime aucune preference) - le premier libre dans l'ordre configure par le marchand.
+  function choisirPraticienLibre(slotStart, dureeMinutes) {
+    const libre = getPraticiens().filter((p) => isSlotFreePour(slotStart, dureeMinutes, p.id))[0];
+    return libre ? libre.id : null;
+  }
+
+  function freeSlotsForDay(dateOnly, dureeService, now, praticienId) {
     const horaire = horaireDuJour(dateOnly);
     if (!horaire || !horaire.ouvert) return [];
     const fin = combineDateHeureStr(dateOnly, horaire.fin);
@@ -254,16 +366,16 @@ function createServiceEngine(merchantKey, options) {
       .filter((s) => s.getTime() + dureeService * 60000 <= fin.getTime())
       .filter((s) => !chevauchePause(dateOnly, horaire, s, dureeService))
       .filter((s) => s.getTime() > now.getTime())
-      .filter((s) => isSlotFree(s, dureeService));
+      .filter((s) => isSlotFreePour(s, dureeService, praticienId));
   }
 
   // Cherche les prochains creneaux libres a partir d'un jour donne (inclus), en avancant jour par jour
   // (jusqu'a 14 jours) - utilise quand le jour demande par le client n'a plus aucune place libre.
-  function nextAvailableFrom(dateOnly, dureeService, now, need) {
+  function nextAvailableFrom(dateOnly, dureeService, now, need, praticienId) {
     const out = [];
     let cursor = new Date(dateOnly);
     for (let i = 0; i < 14 && out.length < need; i++) {
-      const slots = freeSlotsForDay(cursor, dureeService, now);
+      const slots = freeSlotsForDay(cursor, dureeService, now, praticienId);
       for (let j = 0; j < slots.length && out.length < need; j++) out.push(slots[j]);
       cursor = new Date(cursor); cursor.setDate(cursor.getDate() + 1);
     }
@@ -305,6 +417,7 @@ function createServiceEngine(merchantKey, options) {
   }
 
   function createAppointment(session, slotStart, service) {
+    const praticienId = session.pendingPraticienId || null;
     const appt = {
       id: state.nextId++,
       dateISO: slotStart.toISOString(),
@@ -313,10 +426,16 @@ function createServiceEngine(merchantKey, options) {
       service: service.nom,
       dureeMinutes: service.dureeMinutes,
       prix: service.prix,
+      // Praticien assigne (voir choisirPraticienLibre) - null pour un marchand sans praticiens configures,
+      // exactement comme avant l'introduction de cette fonctionnalite.
+      praticienId: praticienId && praticienId !== "_unique" ? praticienId : null,
+      praticienNom: praticienNomParId(praticienId),
       clientNom: session.clientNom,
       telephone: session.fromPhone,
       statut: "Nouvelle",
       raisonAnnulation: null,
+      // Rappel automatique la veille (voir envoyerRappelsDuJour) - jamais envoye pour l'instant.
+      rappelEnvoye: false,
       source: session.fromPhone === PHONE_SIMULATEUR ? "simulateur" : "whatsapp",
       fromWhatsapp: session.fromPhone || null
     };
@@ -342,6 +461,7 @@ function createServiceEngine(merchantKey, options) {
     const now = new Date();
     const dateDemandee = parseRequestedDate(text, now);
     const heureDemandee = parseRequestedTime(text);
+    const praticienId = session.praticienId || null;
 
     if (!dateDemandee && !heureDemandee) {
       session.stage = "awaiting_datetime";
@@ -361,13 +481,13 @@ function createServiceEngine(merchantKey, options) {
       const dansHoraires = candidateStarts(dateOnly).some((s) => s.getTime() === exact.getTime());
       const horaireJour = horaireDuJour(dateOnly);
       const pauseOk = !chevauchePause(dateOnly, horaireJour, exact, service.dureeMinutes);
-      if (!dejaPasse && dansHoraires && pauseOk && exact.getTime() + service.dureeMinutes * 60000 <= combineDateHeureStr(dateOnly, (horaireJour || {}).fin || "18:00").getTime() && isSlotFree(exact, service.dureeMinutes)) {
-        return bookSlot(session, exact, service);
+      if (!dejaPasse && dansHoraires && pauseOk && exact.getTime() + service.dureeMinutes * 60000 <= combineDateHeureStr(dateOnly, (horaireJour || {}).fin || "18:00").getTime() && isSlotFreePour(exact, service.dureeMinutes, praticienId)) {
+        return bookSlot(session, exact, service, praticienId || choisirPraticienLibre(exact, service.dureeMinutes));
       }
     }
 
     // Creneau exact indisponible (ou seul le jour a ete donne) : on propose jusqu'a 3 alternatives.
-    let alternatives = freeSlotsForDay(dateOnly, service.dureeMinutes, now);
+    let alternatives = freeSlotsForDay(dateOnly, service.dureeMinutes, now, praticienId);
     if (heureDemandee && alternatives.length) {
       const cible = combineDateHeure(dateOnly, heureDemandee).getTime();
       alternatives = alternatives.slice().sort((a, b) => Math.abs(a.getTime() - cible) - Math.abs(b.getTime() - cible));
@@ -376,7 +496,7 @@ function createServiceEngine(merchantKey, options) {
     let messagePrefixe = "";
     if (!alternatives.length) {
       const suite = new Date(dateOnly); suite.setDate(suite.getDate() + 1);
-      alternatives = nextAvailableFrom(suite, service.dureeMinutes, now, 3);
+      alternatives = nextAvailableFrom(suite, service.dureeMinutes, now, 3, praticienId);
       messagePrefixe = "Désolée, plus aucune place ce jour-là 😕 ";
     } else if (heureDemandee) {
       messagePrefixe = "Ce créneau n'est pas disponible. ";
@@ -393,10 +513,14 @@ function createServiceEngine(merchantKey, options) {
     return messagePrefixe + piocheParmi(OUVERTURES_CRENEAU) + " voici les prochaines disponibilités pour " + service.nom + " :\n" + liste + "\n\nLequel vous convient ? (répondez par l'heure ou le numéro)";
   }
 
-  function bookSlot(session, slotStart, service) {
+  function bookSlot(session, slotStart, service, praticienId) {
     session.pendingSlotISO = slotStart.toISOString();
+    session.pendingPraticienId = praticienId || null;
     session.stage = "awaiting_client_name";
-    return piocheParmi(OUVERTURES_CRENEAU) + " le " + formatSlot(slotStart) + " est disponible pour " + service.nom + " (" + formatFcfa(service.prix) + "). À quel nom dois-je noter ce rendez-vous ?";
+    // Le nom du praticien n'apparait que si le marchand en a configure plusieurs - pour un seul (ou aucun
+    // configure), la mention serait un bruit inutile puisque le client n'a de toute facon aucun choix.
+    const mentionPraticien = getPraticiens().length > 1 ? (praticienNomParId(praticienId) ? " avec " + praticienNomParId(praticienId) : "") : "";
+    return piocheParmi(OUVERTURES_CRENEAU) + " le " + formatSlot(slotStart) + " est disponible pour " + service.nom + mentionPraticien + " (" + formatFcfa(service.prix) + "). À quel nom dois-je noter ce rendez-vous ?";
   }
 
   function processMessage(session, text) {
@@ -405,33 +529,37 @@ function createServiceEngine(merchantKey, options) {
     session.pretPourChoix = false;
 
     if (session.stage === "awaiting_datetime") {
-      const autreService = matchService(text);
-      if (autreService && autreService !== session.serviceId) {
+      const autresServices = matchServicesMultiple(text);
+      const memeService = autresServices.length && autresServices.slice().sort().join("+") === (session.serviceIds || []).slice().sort().join("+");
+      if (autresServices.length && !memeService) {
         Object.assign(session, freshSession());
         return processMessage(session, text);
       }
+      const praticienDemande = matchPraticien(text);
+      if (praticienDemande) session.praticienId = praticienDemande;
       if (parseNegative(text) || parseWantsSomethingElse(text)) {
         Object.assign(session, freshSession());
         session.pretPourChoix = true;
         return "Pas de souci ! Quel service vous intéresse ? Nous proposons : " + state.services.map((s) => s.nom).join(", ") + ".";
       }
-      const service = state.services.filter((s) => s.id === session.serviceId)[0];
+      const service = serviceActuel(session);
       return handleDateTimeAttempt(session, text, service);
     }
 
     if (session.stage === "awaiting_slot_choice") {
       const choisi = matchSlotChoice(text, session.proposedSlots);
-      const service = state.services.filter((s) => s.id === session.serviceId)[0];
+      const service = serviceActuel(session);
       if (choisi) {
-        return bookSlot(session, choisi, service);
+        return bookSlot(session, choisi, service, session.praticienId || choisirPraticienLibre(choisi, service.dureeMinutes));
       }
       if (parseNegative(text) || parseWantsSomethingElse(text)) {
         Object.assign(session, freshSession());
         session.pretPourChoix = true;
         return "Pas de souci ! Quel service vous intéresse ? Nous proposons : " + state.services.map((s) => s.nom).join(", ") + ".";
       }
-      const autreService = matchService(text);
-      if (autreService && autreService !== session.serviceId) {
+      const autresServices = matchServicesMultiple(text);
+      const memeService = autresServices.length && autresServices.slice().sort().join("+") === (session.serviceIds || []).slice().sort().join("+");
+      if (autresServices.length && !memeService) {
         Object.assign(session, freshSession());
         return processMessage(session, text);
       }
@@ -460,9 +588,9 @@ function createServiceEngine(merchantKey, options) {
         return "Vous avez déjà " + recentCount + " rendez-vous en attente de confirmation. Merci de confirmer ou d'annuler l'un d'entre eux avant d'en prendre un nouveau — notre équipe reste disponible si besoin.";
       }
 
-      const service = state.services.filter((s) => s.id === session.serviceId)[0];
+      const service = serviceActuel(session);
       const slotStart = new Date(session.pendingSlotISO);
-      if (!isSlotFree(slotStart, service.dureeMinutes)) {
+      if (!isSlotFreePour(slotStart, service.dureeMinutes, session.pendingPraticienId)) {
         // Un autre client a pris ce creneau entre-temps (course tres rare mais possible) : on repropose.
         session.pendingSlotISO = null;
         return handleDateTimeAttempt(session, "", service) || "Ce créneau vient d'être pris par quelqu'un d'autre, quel autre jour/heure vous conviendrait ?";
@@ -471,7 +599,7 @@ function createServiceEngine(merchantKey, options) {
       session.pendingAppointmentId = appt.id;
       session.stage = "awaiting_confirmation";
       return piocheParmi(OUVERTURES_RECAP) + " Voici le récapitulatif de votre rendez-vous (" + orderRef(appt) + ") :\n" +
-        "• " + service.nom + " — " + formatSlot(slotStart) + " — " + formatFcfa(service.prix) + "\n" +
+        "• " + service.nom + " — " + formatSlot(slotStart) + " — " + formatFcfa(service.prix) + (appt.praticienNom ? " — avec " + appt.praticienNom : "") + "\n" +
         "Au nom de : " + session.clientNom + "\n\nConfirmez-vous ce rendez-vous ? (oui / non)";
     }
 
@@ -479,6 +607,16 @@ function createServiceEngine(merchantKey, options) {
       const appt = state.appointments.filter((a) => a.id === session.pendingAppointmentId)[0];
       if (appt && parseAffirmative(text)) {
         applyStatusChange(appt, "Confirmé");
+        notifierMarchand("rdv_confirme", [
+          orderRef(appt),
+          appt.service + (appt.praticienNom ? " (avec " + appt.praticienNom + ")" : ""),
+          formatSlot(new Date(appt.dateISO)),
+          formatFcfa(appt.prix),
+          appt.clientNom || "—",
+          appt.telephone || session.fromPhone || "—"
+        ]).catch((erreur) =>
+          console.error("[" + merchantKey + "] Echec de la notification marchand (rendez-vous confirmé) :", erreur)
+        );
         const reply = (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
         Object.assign(session, freshSession());
         return reply;
@@ -496,18 +634,58 @@ function createServiceEngine(merchantKey, options) {
       return reply;
     }
 
-    // Etat "idle" : on essaie de reconnaitre le service demande.
-    const serviceId = matchService(text);
-    if (!serviceId) {
+    // Etat "idle" : on essaie de reconnaitre le(s) service(s) demande(s), et au passage un praticien
+    // demande explicitement (ex: "coupe avec Sandra jeudi") - voir matchServicesMultiple()/matchPraticien().
+    const serviceIds = matchServicesMultiple(text);
+    if (!serviceIds.length) {
       session.pretPourChoix = true;
       return "Bonjour ! Quel service vous intéresse ? Nous proposons : " + state.services.map((s) => s.nom).join(", ") + ".";
     }
-    session.serviceId = serviceId;
-    const service = state.services.filter((s) => s.id === serviceId)[0];
+    session.serviceIds = serviceIds;
+    session.serviceId = serviceIds.join("+");
+    const praticienDemande = matchPraticien(text);
+    if (praticienDemande) session.praticienId = praticienDemande;
+    const service = combinerServices(serviceIds);
     // Le petit mot gentil sort a chaque fois que le service vient d'etre reconnu dans CE message (ici
     // toujours vrai, puisqu'on entre dans ce bloc seulement depuis l'etat "idle"), pas a chaque relance
     // ensuite - meme regle que dans le moteur catalogue.
     return piocheParmi(OUVERTURES_SERVICE) + " " + handleDateTimeAttempt(session, text, service);
+  }
+
+  // ---------------- Annulation / report en libre-service (voir sh.detecterIntentionRdv) ----------------
+  // Reconnu a n'importe quel moment de la conversation (comme la demande d'un humain), pas seulement dans
+  // un stage dedie - un client qui ecrit "je veux annuler mon rendez-vous" du jour au lendemain, sans etre
+  // en train de reserver, doit pouvoir le faire directement.
+
+  function gererAnnulationOuReport(session, intention) {
+    const maintenant = new Date();
+    const prochains = state.appointments
+      .filter((a) => a.fromWhatsapp === session.fromPhone && RESERVING_STATUSES_RDV.indexOf(a.statut) !== -1 && new Date(a.dateISO) > maintenant)
+      .sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
+    const appt = prochains[0];
+    if (!appt) {
+      return "Je ne trouve pas de rendez-vous à venir associé à ce numéro. Souhaitez-vous en prendre un nouveau ? Quel service vous intéresse ?";
+    }
+
+    if (intention === "annuler") {
+      applyStatusChange(appt, "Annulé", "Annulé par le client via WhatsApp");
+      Object.assign(session, freshSession());
+      return "Votre rendez-vous " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO)) + ") est annulé. N'hésitez pas à revenir si vous souhaitez reprendre un rendez-vous.";
+    }
+
+    // "reporter" : on libere l'ancien creneau et on relance immediatement la prise de rendez-vous pour le
+    // meme service (et le meme praticien si un etait assigne), sans faire retaper le service au client.
+    applyStatusChange(appt, "Annulé", "Reporté par le client via WhatsApp");
+    const service = combinerServices(String(appt.serviceId || "").split("+")) || state.services.filter((s) => s.id === appt.serviceId)[0];
+    Object.assign(session, freshSession());
+    if (!service) {
+      session.pretPourChoix = true;
+      return "Votre ancien rendez-vous est annulé. Quel service souhaitez-vous pour le nouveau rendez-vous ? Nous proposons : " + state.services.map((s) => s.nom).join(", ") + ".";
+    }
+    session.serviceIds = service.combo || [service.id];
+    session.serviceId = session.serviceIds.join("+");
+    if (appt.praticienId) session.praticienId = appt.praticienId;
+    return "Votre ancien rendez-vous est annulé. " + handleDateTimeAttempt(session, "", service);
   }
 
   function handleMessage(fromPhone, text) {
@@ -533,7 +711,10 @@ function createServiceEngine(merchantKey, options) {
     // mention du conseiller humain disponible a la reponse qui suit, une seule fois.
     const estPremierContact = !sessions[fromPhone] && !humanHintDonne[fromPhone];
     const session = getSession(fromPhone);
-    let reponse = processMessage(session, text);
+
+    const intentionRdv = sh.detecterIntentionRdv(text);
+    let reponse = intentionRdv ? gererAnnulationOuReport(session, intentionRdv) : processMessage(session, text);
+
     if (estPremierContact && reponse) {
       humanHintDonne[fromPhone] = true;
       reponse += sh.MENTION_HUMAIN_DISPONIBLE;
@@ -570,6 +751,36 @@ function createServiceEngine(merchantKey, options) {
   }
   function getServices() { return state ? state.services : []; }
   function getSettings() { return state ? state.settings : {}; }
+
+  // ---------------- Rappel automatique la veille (voir server.js, appele periodiquement) ----------------
+  // Best-effort, dans le meme esprit que journaliser()/notifierMarchand() : un echec d'envoi ne doit
+  // jamais faire planter le cycle, et n'est jamais reessaye (rappelEnvoye est marque avant l'envoi, comme
+  // le reste du code de ce fichier qui privilegie ne-jamais-bloquer a la garantie de livraison).
+  async function envoyerRappelsDuJour() {
+    if (!state) return;
+    const maintenant = Date.now();
+    const dus = state.appointments.filter((a) => {
+      if (a.source === "simulateur") return false;
+      if (a.statut !== "Confirmé") return false;
+      if (a.rappelEnvoye) return false;
+      const delta = new Date(a.dateISO).getTime() - maintenant;
+      return delta >= RAPPEL_DELAI_MIN_MS && delta < RAPPEL_DELAI_MAX_MS;
+    });
+    if (!dus.length) return;
+    for (const a of dus) {
+      a.rappelEnvoye = true;
+      const texte = "Petit rappel 🙏 Vous avez rendez-vous " + formatSlot(new Date(a.dateISO)) + " pour " + a.service +
+        (a.praticienNom ? " avec " + a.praticienNom : "") + ". À bientôt !\n\n" +
+        "(Besoin de reporter ou d'annuler ? Écrivez-le-moi directement ici.)";
+      try {
+        await envoyer(a.fromWhatsapp || a.telephone, texte);
+        journaliser(a.fromWhatsapp || a.telephone, "bot", texte);
+      } catch (erreur) {
+        console.error("[" + merchantKey + "] Echec de l'envoi du rappel pour " + orderRef(a) + " :", erreur);
+      }
+    }
+    saveState();
+  }
 
   // ---------------- Simulateur WhatsApp (onglet /admin, teste le VRAI moteur sans toucher aux vraies
   // donnees). Contrairement au moteur catalogue, ce moteur n'a pas (encore) de panneau de trace/analyse
@@ -609,7 +820,7 @@ function createServiceEngine(merchantKey, options) {
       .filter((a) => (a.statut === "Nouvelle" || a.statut === "Confirmé") && new Date(a.dateISO) >= now && new Date(a.dateISO) <= dans7Jours)
       .sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO))
       .slice(0, 10)
-      .map((a) => ({ reference: "RDV-" + String(a.id).padStart(4, "0"), service: a.service, clientNom: a.clientNom, dateISO: a.dateISO, statut: a.statut }));
+      .map((a) => ({ reference: "RDV-" + String(a.id).padStart(4, "0"), service: a.service, clientNom: a.clientNom, dateISO: a.dateISO, statut: a.statut, praticienNom: a.praticienNom || null }));
 
     const sparkline7j = [];
     for (let d = 6; d >= 0; d--) {
@@ -674,7 +885,8 @@ function createServiceEngine(merchantKey, options) {
     getEtatSession,
     handleMessageSimulateur,
     resetSimulateur,
-    getTableauDeBord
+    getTableauDeBord,
+    envoyerRappelsDuJour
   };
 }
 
