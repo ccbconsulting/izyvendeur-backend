@@ -442,6 +442,63 @@ app.put("/api/:id/actif", protegerAcces, async (req, res) => {
   res.json({ id: req.params.id, actif: maj.actif });
 });
 
+// Corrige le nom affiche et/ou le phone_number_id WhatsApp d'un marchand DEJA CREE (ex: faute de frappe a
+// la creation). Reserve au super-administrateur. Volontairement PAS "id" ni "type" ici — voir le
+// commentaire de db.updateMerchantFields pour pourquoi ces deux champs-la ne sont jamais modifiables une
+// fois le marchand cree (il faut alors supprimer et recreer, voir DELETE /api/marchands/:id ci-dessous).
+app.put("/api/marchands/:id/infos", protegerAcces, async (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = engines[req.params.id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
+  const { nom, phoneNumberId } = req.body || {};
+  const patch = {};
+  if (nom !== undefined) {
+    if (!String(nom).trim()) return res.status(400).json({ erreur: "Le nom ne peut pas être vide." });
+    patch.nom = String(nom).trim();
+  }
+  if (phoneNumberId !== undefined) patch.phoneNumberId = phoneNumberId ? String(phoneNumberId).trim() : null;
+  if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
+
+  const maj = await db.updateMerchantFields(req.params.id, patch);
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+
+  // L'ancien phone_number_id (s'il y en avait un) doit être retiré de l'index de routage du webhook avant
+  // que le nouveau y soit ajouté, sinon un message adressé a l'ancien numero resterait aussi route ici.
+  if (entry.merchant.phoneNumberId && phoneNumberIndex[entry.merchant.phoneNumberId] === req.params.id) {
+    delete phoneNumberIndex[entry.merchant.phoneNumberId];
+  }
+  entry.merchant.nom = maj.nom;
+  entry.merchant.phoneNumberId = maj.phoneNumberId;
+  if (maj.phoneNumberId) phoneNumberIndex[maj.phoneNumberId] = req.params.id;
+
+  console.log(`[${req.params.id}] Informations du marchand mises à jour par ${req.auth.adminUser}.`);
+  res.json({ id: req.params.id, nom: maj.nom, phoneNumberId: maj.phoneNumberId });
+});
+
+// Supprime DEFINITIVEMENT un marchand du registre (ex: cree par erreur avec un mauvais "id" ou un mauvais
+// type — les deux seuls champs qu'on ne peut pas corriger via PUT /api/marchands/:id/infos ci-dessus, voir
+// son commentaire). Reserve au super-administrateur. Ne supprime PAS son etat deja enregistre
+// (catalogue/commandes ou services/rendez-vous) ni son journal de conversations — voir le commentaire de
+// db.deleteMerchant : pour un marchand qui ne paie plus mais dont on veut garder l'historique, preferer la
+// suspension (PUT /api/:id/actif) a cette suppression, irreversible pour la ligne du registre elle-meme.
+app.delete("/api/marchands/:id", protegerAcces, async (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const id = req.params.id;
+  const entry = engines[id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + id });
+
+  const supprime = await db.deleteMerchant(id);
+  if (!supprime) return res.status(404).json({ erreur: "Marchand introuvable." });
+
+  if (entry.merchant.phoneNumberId && phoneNumberIndex[entry.merchant.phoneNumberId] === id) {
+    delete phoneNumberIndex[entry.merchant.phoneNumberId];
+  }
+  delete engines[id];
+
+  console.log(`[${id}] Marchand supprimé du registre par ${req.auth.adminUser}.`);
+  res.json({ id, supprime: true });
+});
+
 // -- Marchand catalogue --
 
 app.get("/api/:id/catalogue", protegerAcces, (req, res) => {

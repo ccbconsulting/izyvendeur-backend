@@ -161,6 +161,15 @@ async function updateMerchantFields(id, patch) {
     if (patch.adminPassword !== undefined) m.adminPassword = patch.adminPassword;
     if (patch.phoneNotification !== undefined) m.phoneNotification = patch.phoneNotification;
     if (patch.actif !== undefined) m.actif = !!patch.actif;
+    // NOUVEAU : nom affiche et phone_number_id WhatsApp corrigeables apres coup (ex: faute de frappe a la
+    // creation). Volontairement PAS "id" ni "type" ici : "id" sert de cle a tout l'etat deja persiste
+    // (app_state, journal des conversations) et de cle aux sessions/moteurs EN MEMOIRE — le changer
+    // orphelinerait tout l'historique existant sans un vrai outil de migration. "type" determine quel
+    // moteur de conversation (catalogue/service) tourne, avec une forme d'etat totalement differente : le
+    // changer casserait la lecture de l'etat deja enregistre. Si l'un ou l'autre est errone, il est plus
+    // sur de supprimer ce marchand (voir deleteMerchant) et d'en recreer un avec les bonnes valeurs.
+    if (patch.nom !== undefined) m.nom = patch.nom;
+    if (patch.phoneNumberId !== undefined) m.phoneNumberId = patch.phoneNumberId || null;
     await insertMerchant(m);
     return m;
   }
@@ -172,8 +181,33 @@ async function updateMerchantFields(id, patch) {
   if (patch.adminPassword !== undefined) liste[idx].adminPassword = patch.adminPassword;
   if (patch.phoneNotification !== undefined) liste[idx].phoneNotification = patch.phoneNotification;
   if (patch.actif !== undefined) liste[idx].actif = !!patch.actif;
+  if (patch.nom !== undefined) liste[idx].nom = patch.nom;
+  if (patch.phoneNumberId !== undefined) liste[idx].phoneNumberId = patch.phoneNumberId || null;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
+}
+
+// Supprime DEFINITIVEMENT un marchand du registre (utilise quand il a ete cree par erreur - ex: mauvais
+// "id" ou mauvais type, deux champs volontairement non modifiables ci-dessus - ou quand le marchand quitte
+// IzyVendeur). Ne touche PAS a son etat deja enregistre (app_state) ni a son journal de conversations : ces
+// donnees restent en base, simplement orphelines (rattachees a un merchant_key qui n'a plus de ligne dans
+// "merchants"), ce qui les rend inaccessibles depuis /admin sans jamais les effacer completement - un
+// compromis volontairement prudent plutot qu'une suppression en cascade irreversible. Pour un marchand qui
+// ne paie plus mais dont on veut garder l'historique, preferer la suspension (updateMerchantFields avec
+// {actif:false}) a cette suppression. Retourne true si une ligne a bien ete supprimee, false si ce
+// marchand n'existait deja pas.
+async function deleteMerchant(id) {
+  if (pool) {
+    await ensureMerchantsTable();
+    const res = await pool.query("DELETE FROM merchants WHERE id = $1", [id]);
+    return res.rowCount > 0;
+  }
+  const liste = fs.existsSync(MERCHANTS_FILE) ? JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8")) : [];
+  const idx = liste.findIndex((x) => x.id === id);
+  if (idx === -1) return false;
+  liste.splice(idx, 1);
+  fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
+  return true;
 }
 
 // ---------------- Etat d'un marchand (catalogue+commandes, ou services+rendez-vous) ----------------
@@ -361,6 +395,7 @@ module.exports = {
   initRegistry,
   addMerchant,
   updateMerchantFields,
+  deleteMerchant,
   initMerchantState,
   persistMerchantState,
   logConversationMessage,
