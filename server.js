@@ -741,14 +741,17 @@ app.delete("/api/:id/catalogue/:productId/photos", protegerAcces, async (req, re
   res.json({ ok: true, produit });
 });
 
+// Permission "conversations", volontairement PAS "catalogue" : voir/traiter les commandes est rattache a
+// qui parle aux clients (service client), pas a qui gere le stock/prix - un(e) gestionnaire de stock n'a
+// pas besoin de voir les commandes, et quiconque a acces aux Conversations doit pouvoir les suivre.
 app.get("/api/:id/commandes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getOrders());
 });
 
 app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { statut, raisonAnnulation } = req.body || {};
   const order = entry.engine.updateOrderStatus(req.params.orderId, statut, raisonAnnulation);
