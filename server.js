@@ -1070,6 +1070,8 @@ const ID_PANIER = "IZY_PANIER";
 const ID_AUTRE_ARTICLE = "IZY_AUTRE";
 const ID_PANIER_CONTINUER = "IZY_PANIER_CONTINUER";
 const ID_PANIER_TERMINER = "IZY_PANIER_TERMINER";
+const ID_LANG_FR = "IZY_LANG_FR";
+const ID_LANG_EN = "IZY_LANG_EN";
 const PREFIXE_RETIRER_PANIER = "IZY_DELCART_";
 
 function tronquerTexte(texte, max) {
@@ -1129,6 +1131,8 @@ function resoudreTexteInteractif(marchand, interactive) {
   else if (interactive.type === "button_reply") id = interactive.button_reply?.id;
   if (!id) return null;
 
+  if (id === ID_LANG_FR) return "fr"; // reponse a la porte bilingue (voir sh.detecterChoixLangueInitial)
+  if (id === ID_LANG_EN) return "en";
   if (id === ID_HUMAIN) return "un conseiller";
   if (id === ID_OUI) return "oui";
   if (id === ID_NON) return "non";
@@ -1157,6 +1161,20 @@ function resoudreTexteInteractif(marchand, interactive) {
 // envoyerMessageWhatsApp comme avant).
 async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberId, texte) {
   if (sh.estMessageMiseEnRelation(texte)) return false; // jamais de menu juste apres une mise en relation (FR ou EN)
+
+  // Porte bilingue (tout premier message, voir sh.messageChoixLangue) : menu deroulant Français/English
+  // plutot que de demander au client de taper "FR"/"EN" au clavier - meme logique "moins d'ecrit possible
+  // pour le client" que le reste des menus tactiles ci-dessous. Fonctionne avant meme d'avoir une session
+  // exploitable (etat de session pas encore pertinent a ce stade), d'ou le retour immediat ici.
+  if (sh.estMessageChoixLangue(texte)) {
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, "Choisir / Choose", [
+      { title: "Langue / Language", rows: [
+        { id: ID_LANG_FR, title: "Français", description: "Continuer en français" },
+        { id: ID_LANG_EN, title: "English", description: "Continue in English" }
+      ] }
+    ]);
+  }
+
   if (typeof marchand.engine.getEtatSession !== "function") return false;
   const etat = marchand.engine.getEtatSession(destinataire);
   if (!etat) return false;

@@ -167,6 +167,15 @@ function estMessageMiseEnRelation(texte) {
   return texte === MESSAGE_MISE_EN_RELATION_FR || texte === MESSAGE_MISE_EN_RELATION_EN;
 }
 
+// Sert au cote appelant (server.js) qui a besoin de reconnaitre CE message precis (la toute premiere
+// porte bilingue, voir messageChoixLangue ci-dessus) pour lui substituer un menu tactile (liste WhatsApp
+// Français/English) plutot que de laisser le client taper "FR"/"EN" au clavier - voir
+// essayerEnvoyerMenuInteractif. Comparaison stricte : messageChoixLangue() n'a qu'une seule forme (pas de
+// variante par session, la langue n'est justement pas encore connue a ce stade).
+function estMessageChoixLangue(texte) {
+  return texte === messageChoixLangue();
+}
+
 // Glissee UNE SEULE fois par client (a la toute premiere reponse REELLE du bot), pour qu'il sache des le
 // depart qu'un humain reste accessible sur simple demande - constat remonte par un marchand : un client
 // qui n'a jamais utilise ce genre d'assistant ne devine pas spontanement cette option. Ajoutee en suffixe
@@ -244,6 +253,7 @@ module.exports = {
   detecterIntentionRdv,
   messageMiseEnRelation,
   estMessageMiseEnRelation,
+  estMessageChoixLangue,
   mentionHumainDisponible,
   pauseHumainActive,
   ajouterMessageHistorique,

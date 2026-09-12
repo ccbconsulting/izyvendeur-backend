@@ -6,10 +6,12 @@ Le bot WhatsApp (moteur "catalogue" — boutique en ligne, PAS le moteur rendez-
 français OU anglais, au choix du client.
 
 Comment ça marche pour le client :
-1. Premier message reçu d'un nouveau numéro → le bot répond d'abord avec un message bilingue :
-   "Bienvenue 👋 / Welcome! Répondez FR pour continuer en français. Reply EN to continue in English."
-2. Le client répond FR ou EN (ou même juste "english", "french", etc.) → toute la conversation
-   qui suit est dans cette langue.
+1. Premier message reçu d'un nouveau numéro → le bot répond avec un message bilingue :
+   "Bienvenue 👋 / Welcome! Répondez FR pour continuer en français. Reply EN to continue in English." —
+   accompagné d'un **menu déroulant tactile** ("Choisir / Choose" → Français / English) pour que le
+   client puisse choisir sans rien taper, en plus de pouvoir répondre FR/EN au clavier s'il préfère.
+2. Le client choisit dans le menu (ou tape FR/EN, ou même juste "english", "french", etc.) → toute la
+   conversation qui suit est dans cette langue.
 3. À tout moment, le client peut changer d'avis en tapant des phrases comme "in english please",
    "en français", "switch to english" → le bot bascule immédiatement et confirme
    ("Sure, I'll continue in English. 🇬🇧" / "Très bien, je continue en français. 🇫🇷").
@@ -67,7 +69,9 @@ langues, sans erreur.
 - `conversation.js` — moteur catalogue, logique de choix de langue + traduction de toutes les réponses
 - `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)
 - `catalog.js` — message de confirmation par défaut en anglais
-- `server.js` — petit ajustement pour reconnaître le message de mise en relation dans les 2 langues
+- `server.js` — reconnaissance du message de mise en relation dans les 2 langues + **menu déroulant
+  tactile Français/English** pour la porte de langue (au lieu de devoir taper FR/EN), sur le même
+  principe que les autres menus cliquables déjà présents dans le bot (choix d'article, couleur, taille...)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN)
 
 ## Comment déployer
