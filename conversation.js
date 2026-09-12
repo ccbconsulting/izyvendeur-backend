@@ -1012,11 +1012,24 @@ function createCatalogEngine(merchantKey, options) {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   }
 
-  function getTableauDeBord() {
+  // `periode`/`dateReference` (jour/semaine/mois/trimestre/annee, voir debutPeriode/finPeriode plus bas)
+  // pilotent le sélecteur de période du Tableau de bord côté /admin - defaut "jour" pour ne rien changer
+  // pour un appel sans parametre. Le sparkline 7 jours et les alertes stock/RDV a venir restent
+  // volontairement independants de la periode choisie (ce sont des indicateurs "pouls immediat"/"a venir",
+  // pas des cumuls historiques).
+  function getTableauDeBord(opts) {
     if (!state) return null;
+    const periode = (opts && opts.periode) || "jour";
+    const dateReference = (opts && opts.dateReference) || new Date();
+    const debut = debutPeriode(periode, dateReference);
+    const fin = finPeriode(periode, debut);
+
     const toutes = getOrders();
     const actives = toutes.filter((o) => o.statut !== "Annulée");
-    const aujourdhui = actives.filter((o) => sameDay(new Date(o.dateISO), new Date()));
+    const dansPeriode = actives.filter((o) => {
+      const d = new Date(o.dateISO);
+      return d >= debut && d < fin;
+    });
 
     const lowStock = [];
     state.catalog.forEach((p) => {
@@ -1038,7 +1051,7 @@ function createCatalogEngine(merchantKey, options) {
     }
 
     const quantites = {};
-    actives.forEach((o) => (o.items || []).forEach((it) => {
+    dansPeriode.forEach((o) => (o.items || []).forEach((it) => {
       quantites[it.produit] = (quantites[it.produit] || 0) + (Number(it.quantite) || 0);
     }));
     const topProduits = Object.keys(quantites)
@@ -1047,8 +1060,11 @@ function createCatalogEngine(merchantKey, options) {
       .slice(0, 4);
 
     return {
-      commandesAujourdhui: aujourdhui.length,
-      caJour: aujourdhui.reduce((s, o) => s + (o.prix || 0), 0),
+      periode,
+      debutISO: debut.toISOString(),
+      finISO: fin.toISOString(),
+      commandesPeriode: dansPeriode.length,
+      caPeriode: dansPeriode.reduce((s, o) => s + (o.prix || 0), 0),
       alertesStock: lowStock.length,
       ruptures: lowStock.filter((v) => v.stockVirtuel <= 0).length,
       conversationsEnAttente: sh.listerConversationsEnAttente(conversationsHumain).length,
@@ -1067,6 +1083,12 @@ function createCatalogEngine(merchantKey, options) {
       d.setDate(d.getDate() - jourSemaine);
     } else if (periode === "mois") {
       d.setDate(1);
+    } else if (periode === "trimestre") {
+      d.setDate(1);
+      d.setMonth(Math.floor(d.getMonth() / 3) * 3);
+    } else if (periode === "annee") {
+      d.setDate(1);
+      d.setMonth(0);
     }
     d.setHours(0, 0, 0, 0);
     return d;
@@ -1076,7 +1098,9 @@ function createCatalogEngine(merchantKey, options) {
     const f = new Date(debut);
     if (periode === "jour") f.setDate(f.getDate() + 1);
     else if (periode === "semaine") f.setDate(f.getDate() + 7);
-    else f.setMonth(f.getMonth() + 1);
+    else if (periode === "trimestre") f.setMonth(f.getMonth() + 3);
+    else if (periode === "annee") f.setFullYear(f.getFullYear() + 1);
+    else f.setMonth(f.getMonth() + 1); // "mois" (et repli par defaut)
     return f;
   }
 

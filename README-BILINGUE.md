@@ -68,6 +68,31 @@ et employé, les deux langues, création réelle d'un compte employé, sauvegard
 navigateur automatisé avant de vous l'envoyer — tout s'affiche et fonctionne correctement dans les deux
 langues, sans erreur.
 
+## Étape 3 — Tableau de bord : sélecteur de période (nouveau, hors sujet bilingue)
+
+Ajout indépendant du bilingue, livré dans le même zip pour ne pas multiplier les livraisons pendant
+que rien n'est encore déployé chez vous.
+
+- L'onglet **Tableau de bord** (marchand catalogue ET marchand service) a maintenant un sélecteur de
+  période juste sous le titre : **Jour / Semaine / Mois / Trimestre / Année**. Les chiffres "Commandes"
+  et "Chiffre d'affaires" (ou "Rendez-vous pris" côté service) se recalculent instantanément selon la
+  période choisie, avec la plage de dates affichée juste à côté (ex: "01/09/2026 – 30/09/2026"). Par
+  défaut, la période est "Jour" (comme avant), donc rien ne change pour qui n'y touche pas.
+- La tendance "Activité des 7 derniers jours" (le petit graphique en barres) et les indicateurs "à
+  surveiller maintenant" (stock bas/ruptures, prochains rendez-vous) restent volontairement **toujours
+  sur leur propre fenêtre habituelle**, indépendamment de la période choisie dans le sélecteur — ce sont
+  des indicateurs de "pouls immédiat"/"à venir", pas des cumuls historiques, donc ça n'aurait pas de sens
+  de les faire varier avec un sélecteur "Trimestre" par exemple.
+- Le classement "Articles les plus vendus" / "Services les plus demandés" suit maintenant, lui, la
+  période choisie (avant, il montrait toujours le cumul depuis le tout début — c'est plus précis
+  maintenant, mais notez ce changement de comportement).
+- L'onglet **Rapports** (marchand catalogue) avait déjà un sélecteur mais limité à Jour/Semaine/Mois —
+  **Trimestre et Année** sont maintenant disponibles là aussi, pour rester cohérent avec le Tableau de
+  bord.
+
+J'ai testé les deux onglets avec un navigateur automatisé (les deux langues, plusieurs périodes, avec
+une vraie commande passée pour vérifier que les chiffres bougent correctement) avant de vous l'envoyer.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -80,19 +105,24 @@ langues, sans erreur.
 
 ## Fichiers modifiés dans ce zip
 
-- `conversation.js` — moteur catalogue, logique de choix de langue + traduction de toutes les réponses
+- `conversation.js` — moteur catalogue : logique de choix de langue + traduction de toutes les réponses,
+  et calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année)
+- `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
+  logique de calcul du Tableau de bord par période que le moteur catalogue
 - `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)
 - `catalog.js` — message de confirmation par défaut en anglais
 - `server.js` — reconnaissance du message de mise en relation dans les 2 langues + **menu déroulant
   tactile Français/English** pour la porte de langue (au lieu de devoir taper FR/EN), sur le même
   principe que les autres menus cliquables déjà présents dans le bot (choix d'article, couleur, taille...)
   + traduction de TOUS les menus tactiles eux-mêmes (titres de listes/boutons) selon la langue du client
-- `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN)
+  + la route du Tableau de bord accepte maintenant un paramètre de période
+- `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
+  le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports
 
 ## Comment déployer
 
-1. Remplacez les 5 fichiers ci-dessus dans votre dépôt par ceux de ce zip (mêmes emplacements).
-2. `git add -A && git commit -m "Choix de langue FR/EN pour le bot catalogue et l'interface /admin"`
+1. Remplacez les 6 fichiers ci-dessus dans votre dépôt par ceux de ce zip (mêmes emplacements).
+2. `git add -A && git commit -m "Choix de langue FR/EN + sélecteur de période sur le Tableau de bord"`
 3. `git push`
 4. Render redéploie automatiquement (ou lancez un "Manual Deploy" depuis le tableau de bord Render
    si l'auto-deploy n'est pas activé).

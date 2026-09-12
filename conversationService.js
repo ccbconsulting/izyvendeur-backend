@@ -808,11 +808,51 @@ function createServiceEngine(merchantKey, options) {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   }
 
-  function getTableauDeBord() {
+  // Memes regles que conversation.js (moteur catalogue) pour le selecteur de periode du Tableau de bord -
+  // dupliquees ici car les deux moteurs restent independants (voir commentaire en tete de fichier).
+  function debutPeriode(periode, dateReference) {
+    const d = new Date(dateReference);
+    if (periode === "semaine") {
+      const jourSemaine = (d.getDay() + 6) % 7; // 0 = lundi
+      d.setDate(d.getDate() - jourSemaine);
+    } else if (periode === "mois") {
+      d.setDate(1);
+    } else if (periode === "trimestre") {
+      d.setDate(1);
+      d.setMonth(Math.floor(d.getMonth() / 3) * 3);
+    } else if (periode === "annee") {
+      d.setDate(1);
+      d.setMonth(0);
+    }
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+
+  function finPeriode(periode, debut) {
+    const f = new Date(debut);
+    if (periode === "jour") f.setDate(f.getDate() + 1);
+    else if (periode === "semaine") f.setDate(f.getDate() + 7);
+    else if (periode === "trimestre") f.setMonth(f.getMonth() + 3);
+    else if (periode === "annee") f.setFullYear(f.getFullYear() + 1);
+    else f.setMonth(f.getMonth() + 1); // "mois" (et repli par defaut)
+    return f;
+  }
+
+  // `periode`/`dateReference` : voir le commentaire equivalent dans conversation.js. Les prochains RDV
+  // (a venir) et le sparkline 7 jours restent independants de la periode choisie.
+  function getTableauDeBord(opts) {
     if (!state) return null;
+    const periode = (opts && opts.periode) || "jour";
+    const dateReference = (opts && opts.dateReference) || new Date();
+    const debut = debutPeriode(periode, dateReference);
+    const fin = finPeriode(periode, debut);
+
     const toutes = getAppointments();
     const actives = toutes.filter((a) => a.statut !== "Annulé");
-    const creesAujourdhui = actives.filter((a) => sameDay(new Date(a.createdAtISO || a.dateISO), new Date()));
+    const dansPeriode = actives.filter((a) => {
+      const d = new Date(a.createdAtISO || a.dateISO);
+      return d >= debut && d < fin;
+    });
 
     const now = new Date();
     const dans7Jours = new Date(now.getTime() + 7 * 24 * 3600 * 1000);
@@ -830,15 +870,18 @@ function createServiceEngine(merchantKey, options) {
     }
 
     const compteurs = {};
-    actives.forEach((a) => { compteurs[a.service] = (compteurs[a.service] || 0) + 1; });
+    dansPeriode.forEach((a) => { compteurs[a.service] = (compteurs[a.service] || 0) + 1; });
     const topServices = Object.keys(compteurs)
       .map((nom) => ({ nom, quantite: compteurs[nom] }))
       .sort((a, b) => b.quantite - a.quantite)
       .slice(0, 4);
 
     return {
-      commandesAujourdhui: creesAujourdhui.length,
-      caJour: creesAujourdhui.reduce((s, a) => s + (a.prix || 0), 0),
+      periode,
+      debutISO: debut.toISOString(),
+      finISO: fin.toISOString(),
+      commandesPeriode: dansPeriode.length,
+      caPeriode: dansPeriode.reduce((s, a) => s + (a.prix || 0), 0),
       alertesStock: 0,
       ruptures: 0,
       conversationsEnAttente: sh.listerConversationsEnAttente(conversationsHumain).length,

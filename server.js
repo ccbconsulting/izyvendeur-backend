@@ -866,7 +866,11 @@ app.get("/api/:id/conversations/historique/:telephone", protegerAcces, async (re
 
 app.get("/api/:id/tableau-de-bord", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
-  res.json(entry.engine.getTableauDeBord());
+  const { periode, date } = req.query || {};
+  res.json(entry.engine.getTableauDeBord({
+    periode: periode ? String(periode) : "jour",
+    dateReference: date ? new Date(String(date)) : new Date(),
+  }));
 });
 
 // -- Simulateur WhatsApp : permet au marchand de tester le bot depuis l'interface admin,
