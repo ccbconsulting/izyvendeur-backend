@@ -120,7 +120,7 @@ async function demarrer() {
     btnModifier.style.display = "";
     btnSuspendre.style.display = "";
     btnSupprimer.style.display = "";
-    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ")" + (m.actif === false ? " — SUSPENDU" : "") + "</option>").join("");
+    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ") — id: " + esc(m.id) + (m.actif === false ? " — SUSPENDU" : "") + "</option>").join("");
     sel.onchange = () => choisirMarchand(sel.value);
     btnSuspendre.onclick = async () => {
       const nouveauEtat = !(marchandActif.actif !== false);
@@ -178,7 +178,7 @@ async function demarrer() {
     btnModifier.style.display = "none";
     btnSupprimer.style.display = "none";
     nomSeul.style.display = "";
-    nomSeul.textContent = marchands.length ? marchands[0].nom : "";
+    nomSeul.textContent = marchands.length ? marchands[0].nom + " (id: " + marchands[0].id + ")" : "";
   }
   if (marchands.length) choisirMarchand(marchands[0].id);
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>Aucun marchand configuré.</div>";
@@ -213,11 +213,55 @@ function choisirMarchand(id) {
   construireOnglets();
 }
 
+// Roles assignables a un employe pour CE marchand (depend de son type — voir server.js,
+// ROLES_EMPLOYE_VALIDES). Utilise a la fois pour filtrer les onglets visibles (ci-dessous) et pour
+// construire les cases a cocher de l'onglet "Employés" (voir renderEmployes plus bas).
+function rolesDisponibles() {
+  const base = [["conversations", "Conversations (service client)"], ["parametres", "Paramètres & tableau de bord"]];
+  if (marchandActif.type === "service") base.unshift(["rendezvous", "Services & rendez-vous"]);
+  else base.unshift(["catalogue", "Catalogue, stock & commandes"]);
+  return base;
+}
+
 function construireOnglets() {
   const barre = document.getElementById("barreOnglets");
-  const onglets = marchandActif.type === "service"
-    ? [["dashboard", "Tableau de bord", renderTableauDeBord], ["services", "Services", renderServices], ["rendezvous", "Rendez-vous", renderRendezvous], ["simulateur", "Simulateur WhatsApp", renderSimulateur], ["conversations", "Conversations", renderConversations], ["parametres", "Paramètres", renderParametresService], ["compte", "Mon compte", renderCompte]]
-    : [["dashboard", "Tableau de bord", renderTableauDeBord], ["catalogue", "Catalogue & stock", renderCatalogue], ["commandes", "Commandes", renderCommandes], ["simulateur", "Simulateur WhatsApp", renderSimulateur], ["rapports", "Rapports", renderRapports], ["conversations", "Conversations", renderConversations], ["parametres", "Paramètres", renderParametresCatalogue], ["compte", "Mon compte", renderCompte]];
+  // 4e element de chaque entree = permission requise pour VOIR cet onglet :
+  //   - null : toujours visible (Mon compte).
+  //   - "gestion" : reserve au propriétaire du marchand et au super-administrateur, JAMAIS un employe.
+  //   - un role (ou tableau de roles, acces accorde des qu'un seul est present) : visible pour le
+  //     propriétaire/super-administrateur (toujours), et pour un employe seulement s'il a ce role.
+  let onglets = marchandActif.type === "service"
+    ? [
+        ["dashboard", "Tableau de bord", renderTableauDeBord, "parametres"],
+        ["services", "Services", renderServices, "rendezvous"],
+        ["rendezvous", "Rendez-vous", renderRendezvous, "rendezvous"],
+        ["simulateur", "Simulateur WhatsApp", renderSimulateur, ["rendezvous", "conversations"]],
+        ["conversations", "Conversations", renderConversations, "conversations"],
+        ["parametres", "Paramètres", renderParametresService, "parametres"],
+        ["employes", "Employés", renderEmployes, "gestion"],
+        ["compte", "Mon compte", renderCompte, null]
+      ]
+    : [
+        ["dashboard", "Tableau de bord", renderTableauDeBord, "parametres"],
+        ["catalogue", "Catalogue & stock", renderCatalogue, "catalogue"],
+        ["commandes", "Commandes", renderCommandes, "catalogue"],
+        ["simulateur", "Simulateur WhatsApp", renderSimulateur, ["catalogue", "conversations"]],
+        ["rapports", "Rapports", renderRapports, "parametres"],
+        ["conversations", "Conversations", renderConversations, "conversations"],
+        ["parametres", "Paramètres", renderParametresCatalogue, "parametres"],
+        ["employes", "Employés", renderEmployes, "gestion"],
+        ["compte", "Mon compte", renderCompte, null]
+      ];
+
+  onglets = onglets.filter((o) => {
+    const permission = o[3];
+    if (permission === null) return true;
+    if (permission === "gestion") return moi.role === "marchand" || moi.role === "superadmin";
+    if (moi.role !== "employe") return true; // proprietaire/super-administrateur : toujours tout voir
+    const requis = Array.isArray(permission) ? permission : [permission];
+    return requis.some((p) => (moi.roles || []).indexOf(p) !== -1);
+  });
+
   barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "' class='" + (i === 0 ? "actif" : "") + "'>" + o[1] + "</button>").join("");
   const fonctions = {};
   onglets.forEach((o) => { fonctions[o[0]] = o[2]; });
@@ -228,7 +272,8 @@ function construireOnglets() {
       fonctions[btn.dataset.onglet]();
     };
   });
-  onglets[0][2]();
+  if (onglets.length) onglets[0][2]();
+  else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>Aucun accès configuré pour ce compte — contactez le propriétaire du marchand.</div>";
 }
 
 // ---------------- Marchand catalogue ----------------
@@ -1025,6 +1070,36 @@ async function renderCompte() {
     return;
   }
 
+  // Vue "employe" : identifiant en lecture seule, ses acces, et changement de son propre mot de passe
+  // uniquement (jamais son nom ni ses rôles — seul le propriétaire du marchand peut les changer, voir
+  // l'onglet "Employés").
+  if (moi.role === "employe") {
+    const libellesRoles = rolesDisponibles();
+    const mesAcces = (moi.roles || []).map((r) => { const trouve = libellesRoles.filter((x) => x[0] === r)[0]; return trouve ? trouve[1] : r; });
+    zone.innerHTML =
+      "<h2>Mon compte</h2>" +
+      "<p>Nom d'utilisateur : <strong>" + esc(moi.adminUser || "") + "</strong></p>" +
+      "<p>Accès : <strong>" + (mesAcces.length ? esc(mesAcces.join(", ")) : "aucun") + "</strong></p>" +
+      "<label>Nouveau mot de passe (au moins 6 caractères)</label>" +
+      "<input id='champNouveauMdp1' type='password' />" +
+      "<label>Confirmer le nouveau mot de passe</label>" +
+      "<input id='champNouveauMdp2' type='password' />" +
+      "<div style='margin-top:14px;'><button id='btnChangerMdp' class='principal'>Changer mon mot de passe</button></div>" +
+      "<p class='raison'>Une fois le changement effectué, la page se recharge : reconnectez-vous avec votre nouveau mot de passe.</p>";
+    document.getElementById("btnChangerMdp").onclick = async () => {
+      const m1 = document.getElementById("champNouveauMdp1").value;
+      const m2 = document.getElementById("champNouveauMdp2").value;
+      if (!m1 || m1 !== m2) { alert("Les deux mots de passe doivent être identiques et non vides."); return; }
+      if (m1.length < 6) { alert("Le mot de passe doit contenir au moins 6 caractères."); return; }
+      try {
+        await api("/api/" + marchandActif.id + "/employes/" + moi.employeId, { method: "PUT", body: JSON.stringify({ newPassword: m1 }) });
+        alert("Mot de passe changé avec succès. La page va se recharger : reconnectez-vous avec votre nouveau mot de passe.");
+        location.reload();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
+    return;
+  }
+
   // Vue "marchand" : uniquement son propre changement de mot de passe.
   zone.innerHTML =
     "<h2>Mon compte</h2>" +
@@ -1058,6 +1133,104 @@ async function renderCompte() {
       alert("Numéro de notification enregistré.");
     } catch (e) { alert("Erreur : " + e.message); }
   };
+}
+
+// ---------------- Employés (comptes à accès restreint) ----------------
+// Reservé au propriétaire du marchand et au super-administrateur (voir construireOnglets, permission
+// "gestion") — un employé ne voit jamais cet onglet, quels que soient ses accès.
+
+async function renderEmployes() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  const employes = await api("/api/" + marchandActif.id + "/employes");
+  const roles = rolesDisponibles();
+
+  function casesRoles(prefixe, rolesActuels) {
+    return roles.map(([cle, libelle]) =>
+      "<label style='display:block;font-weight:400;margin:2px 0;'>" +
+        "<input type='checkbox' data-role-prefixe='" + prefixe + "' data-role-cle='" + cle + "'" + ((rolesActuels || []).indexOf(cle) !== -1 ? " checked" : "") + " /> " + esc(libelle) +
+      "</label>"
+    ).join("");
+  }
+
+  function rolesCoches(prefixe) {
+    return roles.map(([cle]) => cle).filter((cle) =>
+      zone.querySelector("[data-role-prefixe='" + prefixe + "'][data-role-cle='" + cle + "']").checked
+    );
+  }
+
+  function redraw() {
+    zone.innerHTML =
+      "<h2>Employés (" + employes.length + ")</h2>" +
+      "<p class='raison'>Chaque employé se connecte à /admin avec son propre identifiant et mot de passe, et ne voit que les onglets correspondant aux accès cochés ci-dessous — jamais cet onglet \"Employés\", ni la gestion du marchand.</p>" +
+      (employes.length ? employes.map((e) =>
+        "<div class='carte-produit'>" +
+          "<div class='ligne-produit'>" +
+            "<input data-emp='" + e.id + "' data-champ='nom' value=\"" + esc(e.nom) + "\" placeholder='Nom' />" +
+            "<span class='raison' style='align-self:center;'>Identifiant : <strong>" + esc(e.identifiant) + "</strong> (non modifiable)</span>" +
+          "</div>" +
+          "<div>" + casesRoles(e.id, e.roles) + "</div>" +
+          "<div style='margin-top:8px;'>" +
+            "<button data-emp-sauver='" + e.id + "'>Enregistrer</button> " +
+            "<button data-emp-mdp='" + e.id + "'>Générer un nouveau mot de passe</button> " +
+            "<button data-emp-suppr='" + e.id + "' class='danger'>Supprimer</button>" +
+          "</div>" +
+        "</div>"
+      ).join("") : "<p>Aucun employé pour l'instant.</p>") +
+      "<h3>Ajouter un employé</h3>" +
+      "<label>Nom</label><input id='nouvEmpNom' placeholder=\"Nom de l'employé\" />" +
+      "<label>Identifiant de connexion</label><input id='nouvEmpIdentifiant' placeholder='Identifiant unique' />" +
+      "<label>Mot de passe initial (au moins 6 caractères)</label><input id='nouvEmpMdp' type='text' placeholder='Mot de passe' />" +
+      "<label>Accès</label><div>" + casesRoles("nouv", []) + "</div>" +
+      "<div style='margin-top:10px;'><button id='btnAjouterEmploye' class='principal'>Créer ce compte employé</button></div>";
+
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-emp-sauver]"), (btn) => {
+      btn.onclick = async () => {
+        const empId = btn.dataset.empSauver;
+        const nom = zone.querySelector("[data-emp='" + empId + "'][data-champ='nom']").value.trim();
+        const rolesChoisis = rolesCoches(empId);
+        if (!nom) { alert("Le nom ne peut pas être vide."); return; }
+        if (!rolesChoisis.length) { alert("Au moins un accès est requis."); return; }
+        try {
+          await api("/api/" + marchandActif.id + "/employes/" + empId, { method: "PUT", body: JSON.stringify({ nom, roles: rolesChoisis }) });
+          renderEmployes();
+        } catch (e) { alert("Erreur : " + e.message); }
+      };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-emp-mdp]"), (btn) => {
+      btn.onclick = async () => {
+        if (!confirm("Générer un nouveau mot de passe aléatoire pour cet employé ? L'ancien cessera immédiatement de fonctionner.")) return;
+        try {
+          const rep = await api("/api/" + marchandActif.id + "/employes/" + btn.dataset.empMdp, { method: "PUT", body: JSON.stringify({ genererMotDePasse: true }) });
+          alert("Nouveau mot de passe généré. Communiquez-le à l'employé :\n\n" + rep.nouveauMotDePasse);
+        } catch (e) { alert("Erreur : " + e.message); }
+      };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-emp-suppr]"), (btn) => {
+      btn.onclick = async () => {
+        if (!confirm("Supprimer définitivement ce compte employé ?")) return;
+        try {
+          await api("/api/" + marchandActif.id + "/employes/" + btn.dataset.empSuppr, { method: "DELETE" });
+          renderEmployes();
+        } catch (e) { alert("Erreur : " + e.message); }
+      };
+    });
+    document.getElementById("btnAjouterEmploye").onclick = async () => {
+      const nom = document.getElementById("nouvEmpNom").value.trim();
+      const identifiant = document.getElementById("nouvEmpIdentifiant").value.trim();
+      const motDePasse = document.getElementById("nouvEmpMdp").value;
+      const rolesChoisis = rolesCoches("nouv");
+      if (!nom || !identifiant || !motDePasse) { alert("Nom, identifiant et mot de passe sont requis."); return; }
+      if (motDePasse.length < 6) { alert("Le mot de passe doit contenir au moins 6 caractères."); return; }
+      if (!rolesChoisis.length) { alert("Au moins un accès est requis."); return; }
+      try {
+        await api("/api/" + marchandActif.id + "/employes", { method: "POST", body: JSON.stringify({ nom, identifiant, motDePasse, roles: rolesChoisis }) });
+        alert("Compte employé créé. Identifiants à lui communiquer :\n\nIdentifiant : " + identifiant + "\nMot de passe : " + motDePasse);
+        renderEmployes();
+      } catch (e) { alert("Erreur : " + e.message); }
+    };
+  }
+  redraw();
 }
 
 demarrer();
