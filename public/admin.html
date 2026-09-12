@@ -60,24 +60,673 @@
   .miniature img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
   .miniature button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; line-height: 18px; border-radius: 50%; font-size: 0.85em; }
   .bulle.bot img { max-width: 220px; border-radius: 8px; display: block; margin-bottom: 6px; }
+  .selecteur-langue { margin-left: auto; display: flex; gap: 4px; }
+  .selecteur-langue button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 6px 10px; font-size: 0.85em; opacity: 0.75; }
+  .selecteur-langue button.actif { background: rgba(255,255,255,0.18); opacity: 1; font-weight: 600; }
 </style>
 </head>
 <body>
 <header>
-  <h1>IzyVendeur — Administration</h1>
+  <h1 id="titreHeader">IzyVendeur — Administration</h1>
   <select id="selecteurMarchand"></select>
   <span id="nomMarchandSeul" style="font-weight:600; display:none;"></span>
-  <button id="btnModifierMarchand" style="display:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;">Modifier</button>
+  <button id="btnModifierMarchand" style="display:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;"></button>
   <button id="btnSuspendreMarchand" style="display:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;"></button>
-  <button id="btnSupprimerMarchand" style="display:none;background:transparent;color:#ffb3b3;border:1px solid rgba(255,179,179,0.5);border-radius:6px;padding:6px 12px;">Supprimer</button>
-  <button id="btnNouveauMarchand" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;">+ Nouveau marchand</button>
+  <button id="btnSupprimerMarchand" style="display:none;background:transparent;color:#ffb3b3;border:1px solid rgba(255,179,179,0.5);border-radius:6px;padding:6px 12px;"></button>
+  <button id="btnNouveauMarchand" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;"></button>
+  <span class="selecteur-langue">
+    <button id="btnLangueFr">FR</button>
+    <button id="btnLangueEn">EN</button>
+  </span>
 </header>
 <main>
   <div id="barreOnglets"></div>
-  <div id="contenuOnglet"><div class="chargement">Chargement…</div></div>
+  <div id="contenuOnglet"><div class="chargement"></div></div>
 </main>
 
 <script>
+// ==================================================================================
+// Internationalisation (FR/EN) de l'interface /admin. Choix de langue memorise dans
+// le navigateur (localStorage) - un bouton FR/EN dans l'entete permet de basculer a
+// tout moment (voir brancherSelecteurLangue()). Ne concerne QUE l'affichage de cette
+// interface d'administration - la conversation WhatsApp des clients (conversation.js /
+// conversationService.js) a son propre systeme bilingue independant (voir shared.js).
+//
+// Important : les VALEURS de donnees (statuts de commande/rendez-vous "Nouvelle",
+// "Confirmée"..., jours de la semaine "lundi"..., mode de livraison "retrait"/"livraison")
+// restent en francais cote code/API/base - seul leur LIBELLE AFFICHE est traduit, via les
+// fonctions libelleStatutCommande/libelleStatutRdv/libelleJour/libelleModeLivraison
+// ci-dessous. Ca evite de toucher au serveur ou au schema de donnees pour ce chantier.
+// ==================================================================================
+
+const I18N = {
+  fr: {
+    admin: "Administration",
+    chargement: "Chargement…",
+    erreurPrefixe: "Erreur : ",
+    enregistrer: "Enregistrer",
+    supprimer: "Supprimer",
+    voir: "Voir",
+    aucun: "aucun",
+
+    btnModifier: "Modifier",
+    btnNouveauMarchand: "+ Nouveau marchand",
+    suspendreCeMarchand: "Suspendre ce marchand",
+    reactiverCeMarchand: "Réactiver ce marchand",
+    suspendu: " — SUSPENDU",
+    typeCatalogue: "catalogue",
+    typeService: "service",
+
+    erreurChargerMarchands: "Impossible de charger la liste des marchands : ",
+    aucunMarchandConfigure: "Aucun marchand configuré.",
+    confirmSuspendreSuite: "\n\nSes clients recevront un message poli d'indisponibilité à la place des réponses automatiques du bot, jusqu'à réactivation.",
+    promptNomAfficheMarchand: "Nom affiché du marchand :",
+    promptPhoneNumberIdModifier: "phone_number_id WhatsApp de ce marchand (laissez vide si aucun) :\n\nNote : l'identifiant technique (\"{id}\") ne peut pas être changé ici — s'il est erroné, supprimez ce marchand et recréez-en un avec le bon identifiant.",
+    promptSuppressionMarchand: "Suppression DÉFINITIVE du marchand \"{nom}\" ({id}).\n\nSon catalogue/ses commandes (ou services/rendez-vous) et son historique de conversations restent en base mais deviendront inaccessibles depuis /admin.\n\nPour confirmer, retapez l'identifiant du marchand : {id}",
+    alertIdentifiantNonConcordant: "Identifiant non concordant — suppression annulée.",
+
+    promptIdMarchand: "Identifiant technique du marchand (sans espaces, ex: don-william) :",
+    promptNomMarchand: "Nom affiché du marchand :",
+    promptTypeMarchand: "Type : 'catalogue' (vente de produits) ou 'service' (prise de rendez-vous) ?",
+    promptPhoneNumberIdCreation: "phone_number_id WhatsApp de ce marchand (visible dans le tableau de bord Meta > WhatsApp > Numéros de téléphone). Laissez vide si pas encore connu :",
+    promptAdminUser: "Nom d'utilisateur de connexion pour ce marchand (il servira à se connecter à /admin) :",
+    promptAdminPassword: "Mot de passe initial pour ce marchand (il pourra le changer lui-même ensuite depuis \"Mon compte\") :",
+    alertMdpInitialRequis: "Un mot de passe initial est requis.",
+    alertMarchandCree: "Marchand créé. Identifiants de connexion à lui communiquer :\n\nUtilisateur : {u}\nMot de passe : {p}",
+
+    roleRendezvous: "Services & rendez-vous",
+    roleConversationsService: "Conversations (service client)",
+    roleParametres: "Paramètres & tableau de bord",
+    roleCatalogue: "Catalogue & stock",
+    roleConversationsCommandes: "Conversations & commandes (service client)",
+
+    ongletTableauDeBord: "Tableau de bord",
+    ongletServices: "Services",
+    ongletRendezvous: "Rendez-vous",
+    ongletSimulateur: "Simulateur WhatsApp",
+    ongletConversations: "Conversations",
+    ongletParametresService: "Paramètres",
+    ongletEmployes: "Employés",
+    ongletCompte: "Mon compte",
+    ongletCatalogue: "Catalogue & stock",
+    ongletCommandes: "Commandes",
+    ongletRapports: "Rapports",
+    ongletParametres: "Paramètres",
+    accesNonConfigure: "Aucun accès configuré pour ce compte — contactez le propriétaire du marchand.",
+
+    catalogueEtStock: "Catalogue & stock",
+    placeholderNomArticle: "Nom de l'article",
+    placeholderCategorie: "Catégorie",
+    btnSupprimerArticle: "Supprimer l'article",
+    msgEnregistrerCatalogueDabord: "Enregistrez d'abord le catalogue pour pouvoir ajouter des photos à ce nouvel article.",
+    msgAucunePhoto: "Aucune photo pour cet article — le bot n'en enverra pas tant qu'aucune n'est ajoutée.",
+    btnAjouterPhoto: "+ Ajouter une photo",
+    theadCouleur: "Couleur",
+    theadTaille: "Taille",
+    theadPrixFcfa: "Prix (FCFA)",
+    theadStockReel: "Stock réel",
+    theadStockVirtuel: "Stock virtuel",
+    theadSeuilAlerte: "Seuil alerte",
+    titleStockVirtuel: "Stock réel moins ce qui est déjà engagé dans des commandes Confirmée/Expédiée — c'est ce nombre que le bot vérifie avant de proposer l'article à un client.",
+    btnAjouterVariante: "+ Variante",
+    aucunArticle: "Aucun article. Ajoutez-en un.",
+    btnAjouterArticle: "+ Ajouter un article",
+    btnEnregistrerCatalogue: "Enregistrer le catalogue",
+    alertCatalogueEnregistre: "Catalogue enregistré.",
+    alertChoisirImage: "Choisissez d'abord une image.",
+    confirmSupprimerPhoto: "Supprimer cette photo ?",
+    nouvelArticle: "Nouvel article",
+
+    commandesTitre: "Commandes ({n}{suffixe})",
+    commandesSurTotal: " sur {total}",
+    labelStatut: "Statut : ",
+    labelMode: "Mode : ",
+    labelDate: "Date : ",
+    optionTous: "Tous",
+    optionPlusRecentes: "Plus récentes d'abord",
+    optionPlusAnciennes: "Plus anciennes d'abord",
+    theadNumero: "N°",
+    theadDateCourt: "Date",
+    theadArticles: "Articles",
+    theadNbArticles: "Nb articles",
+    theadTotal: "Total",
+    theadModeCourt: "Mode",
+    theadTelephone: "Téléphone",
+    theadAdresse: "Adresse",
+    theadStatut: "Statut",
+    badgeRetrait: "🏪 Retrait boutique",
+    badgeLivraison: "🚚 Livraison",
+    optionLivraison: "Livraison",
+    optionRetrait: "Retrait",
+    raisonPrefixe: "Raison : ",
+    aucuneCorrespondanceFiltre: "Aucune commande ne correspond à ce filtre.",
+    aucuneCommande: "Aucune commande pour l'instant.",
+    promptRaisonAnnulation: "Raison de l'annulation (optionnel) :",
+    statutNouvelle: "Nouvelle",
+    statutConfirmee: "Confirmée",
+    statutExpediee: "Expédiée",
+    statutLivree: "Livrée",
+    statutAnnulee: "Annulée",
+
+    paramTitre: "Paramètres",
+    labelMsgConfirmFr: "Message de confirmation automatique — français (envoyé au client quand il confirme sa commande)",
+    labelMsgConfirmEn: "Message de confirmation automatique — English (facultatif : utilisé uniquement si le client a choisi English dans la conversation ; laissez vide pour utiliser une version par défaut)",
+    h3RetraitBoutique: "Retrait en boutique",
+    descRetrait: "Optionnel : si vous renseignez une adresse, le bot proposera au client de choisir entre livraison et retrait en boutique après chaque commande. Si vous laissez ce champ vide, rien ne change — la livraison reste demandée directement comme avant.",
+    labelAdresseBoutique: "Adresse de la boutique",
+    placeholderAdresseBoutique: "Ex : Akwa, Boulevard de la Liberté, en face de la pharmacie...",
+    labelHorairesRetrait: "Horaires de retrait (facultatif, texte libre)",
+    placeholderHorairesRetrait: "Ex : Lundi-Samedi 8h-18h, Dimanche fermé",
+    alertParametresEnregistres: "Paramètres enregistrés.",
+
+    servicesTitre: "Services",
+    theadNom: "Nom",
+    theadDureeMinutes: "Durée (minutes)",
+    btnAjouterService: "+ Ajouter un service",
+    alertServicesEnregistres: "Services enregistrés.",
+    nouveauService: "Nouveau service",
+
+    rendezvousTitre: "Rendez-vous ({n})",
+    theadRef: "Réf.",
+    theadDateHeure: "Date & heure",
+    theadService: "Service",
+    theadPraticien: "Praticien",
+    theadClient: "Client",
+    theadPrix: "Prix",
+    aucunRendezvous: "Aucun rendez-vous pour l'instant.",
+    rdvNouvelle: "Nouvelle",
+    rdvConfirme: "Confirmé",
+    rdvHonore: "Honoré",
+    rdvAbsent: "Absent",
+    rdvAnnule: "Annulé",
+
+    labelDureeCreneau: "Durée d'un créneau (minutes)",
+    h3HorairesOuverture: "Horaires d'ouverture",
+    notePause: "Laissez les deux champs « Pause » vides s'il n'y a pas de coupure dans la journée (ex : ouverture continue).",
+    theadJour: "Jour",
+    theadOuvert: "Ouvert",
+    theadDebut: "Début",
+    theadFin: "Fin",
+    theadPauseDebut: "Pause (début)",
+    theadPauseFin: "Pause (fin)",
+    jourLundi: "Lundi", jourMardi: "Mardi", jourMercredi: "Mercredi", jourJeudi: "Jeudi",
+    jourVendredi: "Vendredi", jourSamedi: "Samedi", jourDimanche: "Dimanche",
+    h3Praticiens: "Praticiens",
+    notePraticiens: "Laissez cette liste vide si une seule personne (vous, ou un seul poste/fauteuil) reçoit les rendez-vous à la fois. Ajoutez un praticien par membre du personnel pouvant recevoir des rendez-vous EN PARALLÈLE : le client pourra en demander un en particulier (ex : « avec Sandra »), ou en laisser un lui être assigné automatiquement.",
+    btnAjouterPraticien: "+ Ajouter un praticien",
+    placeholderNomPraticien: "Nom du praticien",
+    msgAucunPraticien: "Aucun praticien configuré — une seule ressource reçoit les rendez-vous à la fois.",
+    labelMsgConfirmRdv: "Message de confirmation automatique (envoyé au client quand il confirme son rendez-vous)",
+
+    conversationsTitre: "Conversations",
+    msgAucunClientAttend: "Aucun client n'attend actuellement un humain. Dès qu'un client le demande sur WhatsApp, il apparaît ici (et vous êtes averti par WhatsApp si un numéro de notification est configuré dans \"Mon compte\").",
+    h3EnAttenteHumain: "En attente d'un humain ({n})",
+    noteAttenteHumain: "Le bot reste silencieux avec ces clients tant qu'ils sont listés ici. Si personne ne répond dans les 10 minutes suivant leur demande (ou votre dernière réponse), le bot reprend automatiquement la main.",
+    enAttenteInstant: "à l'instant",
+    enAttenteUneMinute: "depuis 1 minute",
+    enAttenteMinutes: "depuis {n} minutes",
+    labelVous: "Vous",
+    labelClient: "Client",
+    labelBot: "Bot",
+    placeholderReponseClient: "Votre réponse au client…",
+    btnEnvoyer: "Envoyer",
+    alertEcrireMessage: "Écrivez un message avant d'envoyer.",
+    h3HistoriqueComplet: "Historique complet",
+    msgAucunEchange: "Aucun échange enregistré pour l'instant. Chaque message reçu ou envoyé sur WhatsApp apparaîtra ici, classé par client.",
+    noteTousEchanges: "Tous les échanges (client, bot et vos réponses manuelles) sont conservés ici, classés par numéro de client.",
+    theadClientCourt: "Client",
+    theadDernierMessage: "Dernier message",
+    theadMessages: "Messages",
+    theadDernierEchange: "Dernier échange",
+    btnRetourHistorique: "← Retour à la liste",
+    messageCount: " message(s) — ",
+    erreurChargerHistorique: "Impossible de charger l'historique : ",
+    erreurChargerConversation: "Impossible de charger cette conversation : ",
+
+    tableauDeBordTitre: "Tableau de bord",
+    libelleCommandesAujourdhui: "Commandes aujourd'hui",
+    libelleRdvAujourdhui: "Rendez-vous pris aujourd'hui",
+    libelleCaJour: "Chiffre d'affaires du jour",
+    libelleConvEnAttente: "Conversations en attente d'un humain",
+    libelleArticlesSurveiller: "Articles à surveiller",
+    libelleRuptures: "Ruptures de stock",
+    h3Activite7j: "Activité des 7 derniers jours",
+    joursAbrev: ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
+    h3ArticlesTop: "Articles les plus vendus",
+    h3ServicesTop: "Services les plus demandés",
+    theadArticleCourt: "Article",
+    theadServiceCourt: "Service",
+    theadQuantite: "Quantité",
+    msgPasAssezDonnees: "Pas encore assez de données.",
+    h3StockASurveiller: "Stock à surveiller",
+    msgAucunArticleSousLeSeuil: "Aucun article sous le seuil d'alerte.",
+    h3ProchainsRdv: "Prochains rendez-vous (7 prochains jours)",
+    msgAucunRdvProchain: "Aucun rendez-vous prévu dans les 7 prochains jours.",
+
+    simulateurTitre: "Simulateur WhatsApp",
+    noteSimulateur: "Testez le bot ici comme si vous étiez un client. Ce numéro de test est totalement séparé de vos vraies commandes/rendez-vous et de votre vrai stock : rien de ce qui se passe ici n'affecte vos clients réels.",
+    msgEnvoyezPremierMessage: "Envoyez un premier message pour démarrer la simulation…",
+    placeholderMessageSimu: "Écrivez comme le ferait un client…",
+    btnReinitialiser: "Réinitialiser",
+    h3AnalyseMessage: "Analyse du dernier message",
+    msgAucuneAnalyse: "Aucune analyse disponible pour l'instant.",
+    labelVerification: "Vérification : ",
+    labelAction: "Action : ",
+    labelPhotoEnvoyee: "Photo envoyée : oui (voir la bulle ci-dessus)",
+
+    rapportsTitre: "Rapports",
+    labelPeriode: "Période",
+    optionJour: "Jour",
+    optionSemaine: "Semaine",
+    optionMois: "Mois",
+    labelDateReference: "Date de référence",
+    labelArticleFiltre: "Article",
+    optionTousArticles: "Tous les articles",
+    btnGenerer: "Générer",
+    h3InstantanesInventaire: "Instantanés d'inventaire",
+    noteInstantanes: "Enregistrez une photo de votre stock à un instant T (par exemple avant/après une livraison) pour pouvoir vous y référer plus tard.",
+    btnNouvelInstantane: "+ Enregistrer un instantané maintenant",
+    msgAucunInstantane: "Aucun instantané enregistré pour l'instant.",
+    theadLignes: "Lignes",
+    suffixeVariantes: " variante(s)",
+    confirmSupprimerInstantane: "Supprimer cet instantané ?",
+    libelleCommandesPeriode: "Commandes sur la période",
+    libelleCaHorsAnnulees: "Chiffre d'affaires (hors annulées)",
+    h3RepartitionStatut: "Répartition par statut",
+    h3QuantitesVendues: "Quantités vendues par article",
+    msgAucuneVentePeriode: "Aucune vente sur cette période.",
+    promptNomInstantane: "Nom de cet instantané (ex: Avant livraison du 10/09) :",
+    prefixeInstantaneDu: "Instantané du ",
+
+    compteTitreAvecNom: "Compte — {nom}",
+    noteSuperadminCompte: "En tant que super-administrateur, vous pouvez gérer les identifiants de connexion de ce marchand : changer son nom d'utilisateur, lui définir un nouveau mot de passe, ou lui en générer un aléatoirement (par exemple s'il vous contacte parce qu'il a oublié le sien).",
+    labelNomUtilisateur: "Nom d'utilisateur",
+    btnEnregistrerNomUtilisateur: "Enregistrer le nom d'utilisateur",
+    h3MotDePasse: "Mot de passe",
+    labelDefinirMdp: "Définir ce mot de passe (au moins 6 caractères)",
+    placeholderNouveauMdp: "Nouveau mot de passe",
+    btnDefinirMdp: "Définir ce mot de passe",
+    btnGenererMdp: "Générer un mot de passe aléatoire",
+    h3NumeroNotification: "Numéro de notification",
+    noteNumeroNotifSuperadmin: "Le numéro WhatsApp personnel (pas le numéro business du bot) qui reçoit un message quand un client de ce marchand demande à parler à un humain.",
+    labelNumeroNotif: "Numéro de notification (format international sans le +, ex: 237699999999)",
+    alertNomUtilisateurVide: "Le nom d'utilisateur ne peut pas être vide.",
+    alertNomUtilisateurMaj: "Nom d'utilisateur mis à jour.",
+    alertEntrerMdp: "Entrez un mot de passe.",
+    alertMdpMajCommuniquer: "Mot de passe mis à jour. Communiquez-le au marchand :\n\n{mdp}",
+    alertNouveauMdpGenereCommuniquer: "Nouveau mot de passe généré. Communiquez-le au marchand :\n\n{mdp}",
+    alertNumeroNotifEnregistre: "Numéro de notification enregistré.",
+    monCompteTitre: "Mon compte",
+    labelNomUtilisateurAffiche: "Nom d'utilisateur : ",
+    labelAcces: "Accès : ",
+    labelNouveauMdp: "Nouveau mot de passe (au moins 6 caractères)",
+    labelConfirmerMdp: "Confirmer le nouveau mot de passe",
+    btnChangerMdp: "Changer mon mot de passe",
+    noteRechargementMdp: "Une fois le changement effectué, la page se recharge : reconnectez-vous avec votre nouveau mot de passe.",
+    alertMdpIdentiques: "Les deux mots de passe doivent être identiques et non vides.",
+    alertMdp6Caracteres: "Le mot de passe doit contenir au moins 6 caractères.",
+    alertMdpChangeSucces: "Mot de passe changé avec succès. La page va se recharger : reconnectez-vous avec votre nouveau mot de passe.",
+    noteNumeroNotifMarchand: "Votre numéro WhatsApp personnel (pas votre numéro business), pour être averti par message quand un client demande à parler à un humain.",
+
+    employesTitre: "Employés ({n})",
+    noteEmployes: "Chaque employé se connecte à /admin avec son propre identifiant et mot de passe, et ne voit que les onglets correspondant aux accès cochés ci-dessous — jamais cet onglet \"Employés\", ni la gestion du marchand.",
+    labelIdentifiantNonModifiable: "Identifiant : {id} (non modifiable)",
+    aucunEmploye: "Aucun employé pour l'instant.",
+    h3AjouterEmploye: "Ajouter un employé",
+    labelNom: "Nom",
+    placeholderNomEmploye: "Nom de l'employé",
+    labelIdentifiantConnexion: "Identifiant de connexion",
+    placeholderIdentifiantUnique: "Identifiant unique",
+    labelMdpInitial: "Mot de passe initial (au moins 6 caractères)",
+    placeholderMdp: "Mot de passe",
+    btnCreerCompteEmploye: "Créer ce compte employé",
+    btnGenererNouveauMdp: "Générer un nouveau mot de passe",
+    alertNomVide: "Le nom ne peut pas être vide.",
+    alertAuMoinsUnAcces: "Au moins un accès est requis.",
+    confirmGenererMdpEmploye: "Générer un nouveau mot de passe aléatoire pour cet employé ? L'ancien cessera immédiatement de fonctionner.",
+    alertNouveauMdpGenereEmploye: "Nouveau mot de passe généré. Communiquez-le à l'employé :\n\n{mdp}",
+    confirmSupprimerEmploye: "Supprimer définitivement ce compte employé ?",
+    alertChampsRequisEmploye: "Nom, identifiant et mot de passe sont requis.",
+    alertCompteEmployeCree: "Compte employé créé. Identifiants à lui communiquer :\n\nIdentifiant : {id}\nMot de passe : {mdp}"
+  },
+  en: {
+    admin: "Admin",
+    chargement: "Loading…",
+    erreurPrefixe: "Error: ",
+    enregistrer: "Save",
+    supprimer: "Delete",
+    voir: "View",
+    aucun: "none",
+
+    btnModifier: "Edit",
+    btnNouveauMarchand: "+ New merchant",
+    suspendreCeMarchand: "Suspend this merchant",
+    reactiverCeMarchand: "Reactivate this merchant",
+    suspendu: " — SUSPENDED",
+    typeCatalogue: "Catalog",
+    typeService: "Service",
+
+    erreurChargerMarchands: "Couldn't load the merchant list: ",
+    aucunMarchandConfigure: "No merchant configured.",
+    confirmSuspendreSuite: "\n\nTheir customers will get a polite unavailability message instead of the bot's automatic replies, until it's reactivated.",
+    promptNomAfficheMarchand: "Merchant's display name:",
+    promptPhoneNumberIdModifier: "This merchant's WhatsApp phone_number_id (leave blank if none):\n\nNote: the technical identifier (\"{id}\") can't be changed here — if it's wrong, delete this merchant and recreate it with the right identifier.",
+    promptSuppressionMarchand: "PERMANENT deletion of merchant \"{nom}\" ({id}).\n\nTheir catalog/orders (or services/appointments) and conversation history stay in the database but become inaccessible from /admin.\n\nTo confirm, retype the merchant's identifier: {id}",
+    alertIdentifiantNonConcordant: "Identifier didn't match — deletion cancelled.",
+
+    promptIdMarchand: "Merchant's technical identifier (no spaces, e.g. don-william):",
+    promptNomMarchand: "Merchant's display name:",
+    promptTypeMarchand: "Type: 'catalogue' (selling products) or 'service' (appointment booking)?",
+    promptPhoneNumberIdCreation: "This merchant's WhatsApp phone_number_id (found in the Meta dashboard > WhatsApp > Phone numbers). Leave blank if not known yet:",
+    promptAdminUser: "Login username for this merchant (used to log in to /admin):",
+    promptAdminPassword: "Initial password for this merchant (they can change it later from \"My account\"):",
+    alertMdpInitialRequis: "An initial password is required.",
+    alertMarchandCree: "Merchant created. Login details to share with them:\n\nUsername: {u}\nPassword: {p}",
+
+    roleRendezvous: "Services & appointments",
+    roleConversationsService: "Conversations (customer service)",
+    roleParametres: "Settings & dashboard",
+    roleCatalogue: "Catalog & stock",
+    roleConversationsCommandes: "Conversations & orders (customer service)",
+
+    ongletTableauDeBord: "Dashboard",
+    ongletServices: "Services",
+    ongletRendezvous: "Appointments",
+    ongletSimulateur: "WhatsApp Simulator",
+    ongletConversations: "Conversations",
+    ongletParametresService: "Settings",
+    ongletEmployes: "Employees",
+    ongletCompte: "My account",
+    ongletCatalogue: "Catalog & stock",
+    ongletCommandes: "Orders",
+    ongletRapports: "Reports",
+    ongletParametres: "Settings",
+    accesNonConfigure: "No access configured for this account — contact the merchant owner.",
+
+    catalogueEtStock: "Catalog & stock",
+    placeholderNomArticle: "Item name",
+    placeholderCategorie: "Category",
+    btnSupprimerArticle: "Delete item",
+    msgEnregistrerCatalogueDabord: "Save the catalog first, then you can add photos to this new item.",
+    msgAucunePhoto: "No photo for this item yet — the bot won't send one until you add one.",
+    btnAjouterPhoto: "+ Add a photo",
+    theadCouleur: "Color",
+    theadTaille: "Size",
+    theadPrixFcfa: "Price (FCFA)",
+    theadStockReel: "Real stock",
+    theadStockVirtuel: "Virtual stock",
+    theadSeuilAlerte: "Alert threshold",
+    titleStockVirtuel: "Real stock minus what's already committed to Confirmed/Shipped orders — this is the number the bot checks before offering the item to a customer.",
+    btnAjouterVariante: "+ Variant",
+    aucunArticle: "No items yet. Add one.",
+    btnAjouterArticle: "+ Add an item",
+    btnEnregistrerCatalogue: "Save the catalog",
+    alertCatalogueEnregistre: "Catalog saved.",
+    alertChoisirImage: "Choose an image first.",
+    confirmSupprimerPhoto: "Delete this photo?",
+    nouvelArticle: "New item",
+
+    commandesTitre: "Orders ({n}{suffixe})",
+    commandesSurTotal: " out of {total}",
+    labelStatut: "Status: ",
+    labelMode: "Mode: ",
+    labelDate: "Date: ",
+    optionTous: "All",
+    optionPlusRecentes: "Newest first",
+    optionPlusAnciennes: "Oldest first",
+    theadNumero: "No.",
+    theadDateCourt: "Date",
+    theadArticles: "Items",
+    theadNbArticles: "Item count",
+    theadTotal: "Total",
+    theadModeCourt: "Mode",
+    theadTelephone: "Phone",
+    theadAdresse: "Address",
+    theadStatut: "Status",
+    badgeRetrait: "🏪 In-store pickup",
+    badgeLivraison: "🚚 Delivery",
+    optionLivraison: "Delivery",
+    optionRetrait: "Pickup",
+    raisonPrefixe: "Reason: ",
+    aucuneCorrespondanceFiltre: "No orders match this filter.",
+    aucuneCommande: "No orders yet.",
+    promptRaisonAnnulation: "Cancellation reason (optional):",
+    statutNouvelle: "New",
+    statutConfirmee: "Confirmed",
+    statutExpediee: "Shipped",
+    statutLivree: "Delivered",
+    statutAnnulee: "Cancelled",
+
+    paramTitre: "Settings",
+    labelMsgConfirmFr: "Automatic confirmation message — French (sent to the customer when they confirm their order)",
+    labelMsgConfirmEn: "Automatic confirmation message — English (optional: used only if the customer chose English in the conversation; leave blank to use a default version)",
+    h3RetraitBoutique: "In-store pickup",
+    descRetrait: "Optional: if you fill in an address, the bot will offer the customer a choice between delivery and in-store pickup after each order. If you leave this blank, nothing changes — delivery is requested directly as before.",
+    labelAdresseBoutique: "Store address",
+    placeholderAdresseBoutique: "E.g.: Akwa, Boulevard de la Liberté, across from the pharmacy...",
+    labelHorairesRetrait: "Pickup hours (optional, free text)",
+    placeholderHorairesRetrait: "E.g.: Monday-Saturday 8am-6pm, closed Sunday",
+    alertParametresEnregistres: "Settings saved.",
+
+    servicesTitre: "Services",
+    theadNom: "Name",
+    theadDureeMinutes: "Duration (minutes)",
+    btnAjouterService: "+ Add a service",
+    alertServicesEnregistres: "Services saved.",
+    nouveauService: "New service",
+
+    rendezvousTitre: "Appointments ({n})",
+    theadRef: "Ref.",
+    theadDateHeure: "Date & time",
+    theadService: "Service",
+    theadPraticien: "Practitioner",
+    theadClient: "Client",
+    theadPrix: "Price",
+    aucunRendezvous: "No appointments yet.",
+    rdvNouvelle: "New",
+    rdvConfirme: "Confirmed",
+    rdvHonore: "Completed",
+    rdvAbsent: "No-show",
+    rdvAnnule: "Cancelled",
+
+    labelDureeCreneau: "Slot duration (minutes)",
+    h3HorairesOuverture: "Opening hours",
+    notePause: "Leave both \"Break\" fields blank if there's no break during the day (e.g. continuous opening hours).",
+    theadJour: "Day",
+    theadOuvert: "Open",
+    theadDebut: "Start",
+    theadFin: "End",
+    theadPauseDebut: "Break (start)",
+    theadPauseFin: "Break (end)",
+    jourLundi: "Monday", jourMardi: "Tuesday", jourMercredi: "Wednesday", jourJeudi: "Thursday",
+    jourVendredi: "Friday", jourSamedi: "Saturday", jourDimanche: "Sunday",
+    h3Praticiens: "Practitioners",
+    notePraticiens: "Leave this list empty if a single person (you, or a single seat/chair) handles appointments at a time. Add one practitioner per staff member who can take appointments AT THE SAME TIME: a customer will be able to request a specific one (e.g. \"with Sandra\"), or let one be assigned automatically.",
+    btnAjouterPraticien: "+ Add a practitioner",
+    placeholderNomPraticien: "Practitioner's name",
+    msgAucunPraticien: "No practitioners configured — a single resource handles appointments at a time.",
+    labelMsgConfirmRdv: "Automatic confirmation message (sent to the customer when they confirm their appointment)",
+
+    conversationsTitre: "Conversations",
+    msgAucunClientAttend: "No customer is currently waiting for a human. As soon as a customer requests one on WhatsApp, they'll appear here (and you'll be notified on WhatsApp if a notification number is set up in \"My account\").",
+    h3EnAttenteHumain: "Waiting for a human ({n})",
+    noteAttenteHumain: "The bot stays silent with these customers as long as they're listed here. If nobody replies within 10 minutes of their request (or of your last reply), the bot automatically takes back over.",
+    enAttenteInstant: "just now",
+    enAttenteUneMinute: "1 minute ago",
+    enAttenteMinutes: "{n} minutes ago",
+    labelVous: "You",
+    labelClient: "Client",
+    labelBot: "Bot",
+    placeholderReponseClient: "Your reply to the customer…",
+    btnEnvoyer: "Send",
+    alertEcrireMessage: "Write a message before sending.",
+    h3HistoriqueComplet: "Full history",
+    msgAucunEchange: "No exchange recorded yet. Every message received or sent on WhatsApp will appear here, sorted by customer.",
+    noteTousEchanges: "Every exchange (customer, bot, and your manual replies) is kept here, sorted by customer number.",
+    theadClientCourt: "Client",
+    theadDernierMessage: "Last message",
+    theadMessages: "Messages",
+    theadDernierEchange: "Last exchange",
+    btnRetourHistorique: "← Back to list",
+    messageCount: " message(s) — ",
+    erreurChargerHistorique: "Couldn't load the history: ",
+    erreurChargerConversation: "Couldn't load this conversation: ",
+
+    tableauDeBordTitre: "Dashboard",
+    libelleCommandesAujourdhui: "Orders today",
+    libelleRdvAujourdhui: "Appointments booked today",
+    libelleCaJour: "Today's revenue",
+    libelleConvEnAttente: "Conversations waiting for a human",
+    libelleArticlesSurveiller: "Items to watch",
+    libelleRuptures: "Out-of-stock items",
+    h3Activite7j: "Activity over the last 7 days",
+    joursAbrev: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    h3ArticlesTop: "Best-selling items",
+    h3ServicesTop: "Most requested services",
+    theadArticleCourt: "Item",
+    theadServiceCourt: "Service",
+    theadQuantite: "Quantity",
+    msgPasAssezDonnees: "Not enough data yet.",
+    h3StockASurveiller: "Stock to watch",
+    msgAucunArticleSousLeSeuil: "No item below the alert threshold.",
+    h3ProchainsRdv: "Upcoming appointments (next 7 days)",
+    msgAucunRdvProchain: "No appointments scheduled in the next 7 days.",
+
+    simulateurTitre: "WhatsApp Simulator",
+    noteSimulateur: "Test the bot here as if you were a customer. This test number is completely separate from your real orders/appointments and your real stock: nothing that happens here affects your real customers.",
+    msgEnvoyezPremierMessage: "Send a first message to start the simulation…",
+    placeholderMessageSimu: "Type as a customer would…",
+    btnReinitialiser: "Reset",
+    h3AnalyseMessage: "Last message analysis",
+    msgAucuneAnalyse: "No analysis available yet.",
+    labelVerification: "Verification: ",
+    labelAction: "Action: ",
+    labelPhotoEnvoyee: "Photo sent: yes (see the bubble above)",
+
+    rapportsTitre: "Reports",
+    labelPeriode: "Period",
+    optionJour: "Day",
+    optionSemaine: "Week",
+    optionMois: "Month",
+    labelDateReference: "Reference date",
+    labelArticleFiltre: "Item",
+    optionTousArticles: "All items",
+    btnGenerer: "Generate",
+    h3InstantanesInventaire: "Inventory snapshots",
+    noteInstantanes: "Save a snapshot of your stock at a given moment (for example before/after a delivery) so you can refer back to it later.",
+    btnNouvelInstantane: "+ Save a snapshot now",
+    msgAucunInstantane: "No snapshot saved yet.",
+    theadLignes: "Rows",
+    suffixeVariantes: " variant(s)",
+    confirmSupprimerInstantane: "Delete this snapshot?",
+    libelleCommandesPeriode: "Orders in this period",
+    libelleCaHorsAnnulees: "Revenue (excluding cancelled)",
+    h3RepartitionStatut: "Breakdown by status",
+    h3QuantitesVendues: "Quantities sold per item",
+    msgAucuneVentePeriode: "No sales in this period.",
+    promptNomInstantane: "Name for this snapshot (e.g. Before the 09/10 delivery):",
+    prefixeInstantaneDu: "Snapshot from ",
+
+    compteTitreAvecNom: "Account — {nom}",
+    noteSuperadminCompte: "As super-administrator, you can manage this merchant's login details: change their username, set a new password for them, or generate one randomly (for example if they contact you because they forgot theirs).",
+    labelNomUtilisateur: "Username",
+    btnEnregistrerNomUtilisateur: "Save the username",
+    h3MotDePasse: "Password",
+    labelDefinirMdp: "Set this password (at least 6 characters)",
+    placeholderNouveauMdp: "New password",
+    btnDefinirMdp: "Set this password",
+    btnGenererMdp: "Generate a random password",
+    h3NumeroNotification: "Notification number",
+    noteNumeroNotifSuperadmin: "The personal WhatsApp number (not the bot's business number) that receives a message when one of this merchant's customers asks to talk to a human.",
+    labelNumeroNotif: "Notification number (international format without the +, e.g. 237699999999)",
+    alertNomUtilisateurVide: "The username can't be empty.",
+    alertNomUtilisateurMaj: "Username updated.",
+    alertEntrerMdp: "Enter a password.",
+    alertMdpMajCommuniquer: "Password updated. Share it with the merchant:\n\n{mdp}",
+    alertNouveauMdpGenereCommuniquer: "New password generated. Share it with the merchant:\n\n{mdp}",
+    alertNumeroNotifEnregistre: "Notification number saved.",
+    monCompteTitre: "My account",
+    labelNomUtilisateurAffiche: "Username: ",
+    labelAcces: "Access: ",
+    labelNouveauMdp: "New password (at least 6 characters)",
+    labelConfirmerMdp: "Confirm the new password",
+    btnChangerMdp: "Change my password",
+    noteRechargementMdp: "Once the change is made, the page reloads: log back in with your new password.",
+    alertMdpIdentiques: "Both passwords must match and can't be empty.",
+    alertMdp6Caracteres: "The password must be at least 6 characters long.",
+    alertMdpChangeSucces: "Password changed successfully. The page will reload: log back in with your new password.",
+    noteNumeroNotifMarchand: "Your personal WhatsApp number (not your business number), to be notified by message when a customer asks to talk to a human.",
+
+    employesTitre: "Employees ({n})",
+    noteEmployes: "Each employee logs in to /admin with their own username and password, and only sees the tabs matching the access checked below — never this \"Employees\" tab, nor the merchant management.",
+    labelIdentifiantNonModifiable: "Username: {id} (not editable)",
+    aucunEmploye: "No employees yet.",
+    h3AjouterEmploye: "Add an employee",
+    labelNom: "Name",
+    placeholderNomEmploye: "Employee's name",
+    labelIdentifiantConnexion: "Login username",
+    placeholderIdentifiantUnique: "Unique username",
+    labelMdpInitial: "Initial password (at least 6 characters)",
+    placeholderMdp: "Password",
+    btnCreerCompteEmploye: "Create this employee account",
+    btnGenererNouveauMdp: "Generate a new password",
+    alertNomVide: "The name can't be empty.",
+    alertAuMoinsUnAcces: "At least one access is required.",
+    confirmGenererMdpEmploye: "Generate a new random password for this employee? The old one will stop working immediately.",
+    alertNouveauMdpGenereEmploye: "New password generated. Share it with the employee:\n\n{mdp}",
+    confirmSupprimerEmploye: "Permanently delete this employee account?",
+    alertChampsRequisEmploye: "Name, username and password are required.",
+    alertCompteEmployeCree: "Employee account created. Login details to share with them:\n\nUsername: {id}\nPassword: {mdp}"
+  }
+};
+
+let langueAdmin = "fr";
+try { langueAdmin = localStorage.getItem("izy_admin_langue") || "fr"; } catch (e) {}
+
+function t(cle, params) {
+  const dict = I18N[langueAdmin] || I18N.fr;
+  let s = dict[cle] != null ? dict[cle] : (I18N.fr[cle] != null ? I18N.fr[cle] : cle);
+  if (params) {
+    Object.keys(params).forEach((k) => { s = s.split("{" + k + "}").join(params[k]); });
+  }
+  return s;
+}
+
+function localeCourante() { return langueAdmin === "en" ? "en-US" : "fr-FR"; }
+
+// Libelles AFFICHES pour des valeurs de donnees qui, elles, restent fixes (francaises) cote
+// API/base - voir le commentaire en tete de section.
+function libelleStatutCommande(s) {
+  const map = { "Nouvelle": "statutNouvelle", "Confirmée": "statutConfirmee", "Expédiée": "statutExpediee", "Livrée": "statutLivree", "Annulée": "statutAnnulee" };
+  return map[s] ? t(map[s]) : s;
+}
+function libelleStatutRdv(s) {
+  const map = { "Nouvelle": "rdvNouvelle", "Confirmé": "rdvConfirme", "Honoré": "rdvHonore", "Absent": "rdvAbsent", "Annulé": "rdvAnnule" };
+  return map[s] ? t(map[s]) : s;
+}
+function libelleJour(j) {
+  const map = { lundi: "jourLundi", mardi: "jourMardi", mercredi: "jourMercredi", jeudi: "jourJeudi", vendredi: "jourVendredi", samedi: "jourSamedi", dimanche: "jourDimanche" };
+  return map[j] ? t(map[j]) : j;
+}
+function libelleTypeMarchand(type) { return type === "service" ? t("typeService") : t("typeCatalogue"); }
+
+function brancherSelecteurLangue() {
+  const btnFr = document.getElementById("btnLangueFr");
+  const btnEn = document.getElementById("btnLangueEn");
+  btnFr.classList.toggle("actif", langueAdmin === "fr");
+  btnEn.classList.toggle("actif", langueAdmin === "en");
+  btnFr.onclick = () => changerLangueAdmin("fr");
+  btnEn.onclick = () => changerLangueAdmin("en");
+}
+function changerLangueAdmin(nouvelle) {
+  if (nouvelle === langueAdmin) return;
+  langueAdmin = nouvelle;
+  try { localStorage.setItem("izy_admin_langue", nouvelle); } catch (e) {}
+  location.reload();
+}
+document.documentElement.lang = langueAdmin;
+document.title = "IzyVendeur — " + t("admin");
+
 function esc(v) {
   return String(v == null ? "" : v)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -100,11 +749,17 @@ let marchandActif = null;
 let moi = null; // { role: "superadmin" | "marchand", merchantId, adminUser }
 
 async function demarrer() {
+  document.getElementById("titreHeader").textContent = "IzyVendeur — " + t("admin");
+  document.getElementById("btnModifierMarchand").textContent = t("btnModifier");
+  document.getElementById("btnSupprimerMarchand").textContent = t("supprimer");
+  document.getElementById("btnNouveauMarchand").textContent = t("btnNouveauMarchand");
+  brancherSelecteurLangue();
+  document.getElementById("contenuOnglet").innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   try {
     moi = await api("/api/moi");
     marchands = await api("/api/marchands");
   } catch (e) {
-    document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>Impossible de charger la liste des marchands : " + esc(e.message) + "</div>";
+    document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("erreurChargerMarchands") + esc(e.message) + "</div>";
     return;
   }
   const sel = document.getElementById("selecteurMarchand");
@@ -120,27 +775,25 @@ async function demarrer() {
     btnModifier.style.display = "";
     btnSuspendre.style.display = "";
     btnSupprimer.style.display = "";
-    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ") — id: " + esc(m.id) + (m.actif === false ? " — SUSPENDU" : "") + "</option>").join("");
+    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(libelleTypeMarchand(m.type)) + ") — id: " + esc(m.id) + (m.actif === false ? t("suspendu") : "") + "</option>").join("");
     sel.onchange = () => choisirMarchand(sel.value);
     btnSuspendre.onclick = async () => {
       const nouveauEtat = !(marchandActif.actif !== false);
-      if (!confirm((nouveauEtat ? "Réactiver" : "Suspendre") + " le marchand \"" + marchandActif.nom + "\" ?" + (nouveauEtat ? "" : "\n\nSes clients recevront un message poli d'indisponibilité à la place des réponses automatiques du bot, jusqu'à réactivation."))) return;
+      if (!confirm((nouveauEtat ? t("reactiverCeMarchand") : t("suspendreCeMarchand")) + " \"" + marchandActif.nom + "\" ?" + (nouveauEtat ? "" : t("confirmSuspendreSuite")))) return;
       try {
         await api("/api/" + marchandActif.id + "/actif", { method: "PUT", body: JSON.stringify({ actif: nouveauEtat }) });
         await demarrer();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
     // Corrige le nom et/ou le phone_number_id d'un marchand deja cree (ex: faute de frappe a la creation).
     // L'identifiant technique ("id") et le type ne sont volontairement pas modifiables ici — voir le
     // message d'aide affiché quand on tente de les changer via /api : il faut alors supprimer et recreer
     // ce marchand (bouton "Supprimer" ci-dessous).
     btnModifier.onclick = async () => {
-      const nom = prompt("Nom affiché du marchand :", marchandActif.nom);
+      const nom = prompt(t("promptNomAfficheMarchand"), marchandActif.nom);
       if (nom === null) return;
       const phoneNumberId = prompt(
-        "phone_number_id WhatsApp de ce marchand (laissez vide si aucun) :\n\n" +
-        "Note : l'identifiant technique (\"" + marchandActif.id + "\") ne peut pas être changé ici — " +
-        "s'il est erroné, supprimez ce marchand et recréez-en un avec le bon identifiant.",
+        t("promptPhoneNumberIdModifier", { id: marchandActif.id }),
         marchandActif.phoneNumberId || ""
       );
       if (phoneNumberId === null) return;
@@ -150,27 +803,22 @@ async function demarrer() {
           body: JSON.stringify({ nom: nom.trim(), phoneNumberId: phoneNumberId.trim() || null })
         });
         await demarrer();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
     // Suppression definitive du REGISTRE (voir db.deleteMerchant) — reservee aux vraies erreurs de
     // creation (mauvais id/type) ou a un marchand qui part vraiment. Pour un marchand qui ne paie
     // simplement plus mais dont on veut garder l'historique, "Suspendre" ci-dessus est le bon outil.
     // Double confirmation (dont un texte a retaper) vu l'irreversibilite de la suppression de la ligne.
     btnSupprimer.onclick = async () => {
-      const saisie = prompt(
-        "Suppression DÉFINITIVE du marchand \"" + marchandActif.nom + "\" (" + marchandActif.id + ").\n\n" +
-        "Son catalogue/ses commandes (ou services/rendez-vous) et son historique de conversations restent " +
-        "en base mais deviendront inaccessibles depuis /admin.\n\n" +
-        "Pour confirmer, retapez l'identifiant du marchand : " + marchandActif.id
-      );
+      const saisie = prompt(t("promptSuppressionMarchand", { nom: marchandActif.nom, id: marchandActif.id }));
       if (saisie !== marchandActif.id) {
-        if (saisie !== null) alert("Identifiant non concordant — suppression annulée.");
+        if (saisie !== null) alert(t("alertIdentifiantNonConcordant"));
         return;
       }
       try {
         await api("/api/marchands/" + marchandActif.id, { method: "DELETE" });
         await demarrer();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   } else {
     sel.style.display = "none";
@@ -181,23 +829,23 @@ async function demarrer() {
     nomSeul.textContent = marchands.length ? marchands[0].nom + " (id: " + marchands[0].id + ")" : "";
   }
   if (marchands.length) choisirMarchand(marchands[0].id);
-  else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>Aucun marchand configuré.</div>";
+  else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("aucunMarchandConfigure") + "</div>";
 }
 
 document.getElementById("btnNouveauMarchand").onclick = async () => {
-  const id = prompt("Identifiant technique du marchand (sans espaces, ex: don-william) :");
+  const id = prompt(t("promptIdMarchand"));
   if (!id) return;
-  const nom = prompt("Nom affiché du marchand :", id) || id;
-  const type = (prompt("Type : 'catalogue' (vente de produits) ou 'service' (prise de rendez-vous) ?", "catalogue") || "").trim();
-  const phoneNumberId = prompt("phone_number_id WhatsApp de ce marchand (visible dans le tableau de bord Meta > WhatsApp > Numéros de téléphone). Laissez vide si pas encore connu :") || null;
-  const adminUser = prompt("Nom d'utilisateur de connexion pour ce marchand (il servira à se connecter à /admin) :", id) || id;
-  const adminPassword = prompt("Mot de passe initial pour ce marchand (il pourra le changer lui-même ensuite depuis \"Mon compte\") :");
-  if (!adminPassword) { alert("Un mot de passe initial est requis."); return; }
+  const nom = prompt(t("promptNomMarchand"), id) || id;
+  const type = (prompt(t("promptTypeMarchand"), "catalogue") || "").trim();
+  const phoneNumberId = prompt(t("promptPhoneNumberIdCreation")) || null;
+  const adminUser = prompt(t("promptAdminUser"), id) || id;
+  const adminPassword = prompt(t("promptAdminPassword"));
+  if (!adminPassword) { alert(t("alertMdpInitialRequis")); return; }
   try {
     await api("/api/marchands", { method: "POST", body: JSON.stringify({ id, nom, type, phoneNumberId, adminUser, adminPassword }) });
-    alert("Marchand créé. Identifiants de connexion à lui communiquer :\n\nUtilisateur : " + adminUser + "\nMot de passe : " + adminPassword);
+    alert(t("alertMarchandCree", { u: adminUser, p: adminPassword }));
     await demarrer();
-  } catch (e) { alert("Erreur : " + e.message); }
+  } catch (e) { alert(t("erreurPrefixe") + e.message); }
 };
 
 function choisirMarchand(id) {
@@ -206,7 +854,7 @@ function choisirMarchand(id) {
   if (moi.role === "superadmin") {
     const btnSuspendre = document.getElementById("btnSuspendreMarchand");
     const estActif = marchandActif.actif !== false;
-    btnSuspendre.textContent = estActif ? "Suspendre ce marchand" : "Réactiver ce marchand";
+    btnSuspendre.textContent = estActif ? t("suspendreCeMarchand") : t("reactiverCeMarchand");
     btnSuspendre.style.borderColor = estActif ? "rgba(255,255,255,0.4)" : "#ffb703";
     btnSuspendre.style.color = estActif ? "#fff" : "#ffb703";
   }
@@ -219,9 +867,9 @@ function choisirMarchand(id) {
 function rolesDisponibles() {
   if (marchandActif.type === "service") {
     return [
-      ["rendezvous", "Services & rendez-vous"],
-      ["conversations", "Conversations (service client)"],
-      ["parametres", "Paramètres & tableau de bord"]
+      ["rendezvous", t("roleRendezvous")],
+      ["conversations", t("roleConversationsService")],
+      ["parametres", t("roleParametres")]
     ];
   }
   // Le stock (catalogue) et les commandes sont volontairement des permissions distinctes : gérer le
@@ -229,9 +877,9 @@ function rolesDisponibles() {
   // inversement quiconque parle aux clients (Conversations) doit pouvoir aussi suivre leurs commandes -
   // d'ou le regroupement commandes+conversations plutot que commandes+catalogue.
   return [
-    ["catalogue", "Catalogue & stock"],
-    ["conversations", "Conversations & commandes (service client)"],
-    ["parametres", "Paramètres & tableau de bord"]
+    ["catalogue", t("roleCatalogue")],
+    ["conversations", t("roleConversationsCommandes")],
+    ["parametres", t("roleParametres")]
   ];
 }
 
@@ -244,25 +892,25 @@ function construireOnglets() {
   //     propriétaire/super-administrateur (toujours), et pour un employe seulement s'il a ce role.
   let onglets = marchandActif.type === "service"
     ? [
-        ["dashboard", "Tableau de bord", renderTableauDeBord, "parametres"],
-        ["services", "Services", renderServices, "rendezvous"],
-        ["rendezvous", "Rendez-vous", renderRendezvous, "rendezvous"],
-        ["simulateur", "Simulateur WhatsApp", renderSimulateur, ["rendezvous", "conversations"]],
-        ["conversations", "Conversations", renderConversations, "conversations"],
-        ["parametres", "Paramètres", renderParametresService, "parametres"],
-        ["employes", "Employés", renderEmployes, "gestion"],
-        ["compte", "Mon compte", renderCompte, null]
+        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "parametres"],
+        ["services", t("ongletServices"), renderServices, "rendezvous"],
+        ["rendezvous", t("ongletRendezvous"), renderRendezvous, "rendezvous"],
+        ["simulateur", t("ongletSimulateur"), renderSimulateur, ["rendezvous", "conversations"]],
+        ["conversations", t("ongletConversations"), renderConversations, "conversations"],
+        ["parametres", t("ongletParametresService"), renderParametresService, "parametres"],
+        ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
+        ["compte", t("ongletCompte"), renderCompte, null]
       ]
     : [
-        ["dashboard", "Tableau de bord", renderTableauDeBord, "parametres"],
-        ["catalogue", "Catalogue & stock", renderCatalogue, "catalogue"],
-        ["commandes", "Commandes", renderCommandes, "conversations"],
-        ["simulateur", "Simulateur WhatsApp", renderSimulateur, ["catalogue", "conversations"]],
-        ["rapports", "Rapports", renderRapports, "parametres"],
-        ["conversations", "Conversations", renderConversations, "conversations"],
-        ["parametres", "Paramètres", renderParametresCatalogue, "parametres"],
-        ["employes", "Employés", renderEmployes, "gestion"],
-        ["compte", "Mon compte", renderCompte, null]
+        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "parametres"],
+        ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue"],
+        ["commandes", t("ongletCommandes"), renderCommandes, "conversations"],
+        ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
+        ["rapports", t("ongletRapports"), renderRapports, "parametres"],
+        ["conversations", t("ongletConversations"), renderConversations, "conversations"],
+        ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
+        ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
+        ["compte", t("ongletCompte"), renderCompte, null]
       ];
 
   onglets = onglets.filter((o) => {
@@ -274,7 +922,7 @@ function construireOnglets() {
     return requis.some((p) => (moi.roles || []).indexOf(p) !== -1);
   });
 
-  barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "' class='" + (i === 0 ? "actif" : "") + "'>" + o[1] + "</button>").join("");
+  barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "' class='" + (i === 0 ? "actif" : "") + "'>" + esc(o[1]) + "</button>").join("");
   const fonctions = {};
   onglets.forEach((o) => { fonctions[o[0]] = o[2]; });
   Array.prototype.forEach.call(barre.querySelectorAll("button"), (btn) => {
@@ -285,14 +933,14 @@ function construireOnglets() {
     };
   });
   if (onglets.length) onglets[0][2]();
-  else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>Aucun accès configuré pour ce compte — contactez le propriétaire du marchand.</div>";
+  else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("accesNonConfigure") + "</div>";
 }
 
 // ---------------- Marchand catalogue ----------------
 
 async function renderCatalogue() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const catalogue = await api("/api/" + marchandActif.id + "/catalogue");
   let local = JSON.parse(JSON.stringify(catalogue));
 
@@ -301,47 +949,47 @@ async function renderCatalogue() {
   // que l'article existe déjà côté serveur (dejaEnregistre) avant de pouvoir lui ajouter une photo.
   function rendreBlocPhotos(p, pi, dejaEnregistre) {
     if (!dejaEnregistre) {
-      return "<p class='raison'>Enregistrez d'abord le catalogue pour pouvoir ajouter des photos à ce nouvel article.</p>";
+      return "<p class='raison'>" + t("msgEnregistrerCatalogueDabord") + "</p>";
     }
     const photos = p.photos || [];
     return "<div class='bloc-photos'>" +
       (photos.length ? "<div class='miniatures-photos'>" + photos.map((url) =>
         "<div class='miniature'><img src=\"" + esc(url) + "\" alt='' /><button data-suppr-photo='" + pi + ":" + esc(url) + "' class='danger'>×</button></div>"
-      ).join("") + "</div>" : "<p class='raison'>Aucune photo pour cet article — le bot n'en enverra pas tant qu'aucune n'est ajoutée.</p>") +
+      ).join("") + "</div>" : "<p class='raison'>" + t("msgAucunePhoto") + "</p>") +
       "<input type='file' accept='image/png,image/jpeg,image/webp' data-fichier-photo='" + pi + "' /> " +
-      "<button data-ajouter-photo='" + pi + "'>+ Ajouter une photo</button>" +
+      "<button data-ajouter-photo='" + pi + "'>" + t("btnAjouterPhoto") + "</button>" +
       "</div>";
   }
 
   function redraw() {
     zone.innerHTML =
-      "<h2>Catalogue &amp; stock</h2>" +
+      "<h2>" + t("catalogueEtStock") + "</h2>" +
       "<div id='listeProduits'>" + local.map((p, pi) =>
         "<div class='carte-produit'>" +
           "<div class='ligne-produit'>" +
-            "<input data-p='" + pi + "' data-champ='nom' value=\"" + esc(p.nom) + "\" placeholder='Nom de l'article' />" +
-            "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder='Catégorie' />" +
-            "<button data-suppr-produit='" + pi + "' class='danger'>Supprimer l'article</button>" +
+            "<input data-p='" + pi + "' data-champ='nom' value=\"" + esc(p.nom) + "\" placeholder=\"" + esc(t("placeholderNomArticle")) + "\" />" +
+            "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder=\"" + esc(t("placeholderCategorie")) + "\" />" +
+            "<button data-suppr-produit='" + pi + "' class='danger'>" + t("btnSupprimerArticle") + "</button>" +
           "</div>" +
           rendreBlocPhotos(p, pi, catalogue.some((c) => c.id === p.id)) +
-          "<table class='table-variantes'><tr><th>Couleur</th><th>Taille</th><th>Prix (FCFA)</th><th>Stock réel</th><th>Stock virtuel</th><th>Seuil alerte</th><th></th></tr>" +
+          "<table class='table-variantes'><tr><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadPrixFcfa") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadStockVirtuel") + "</th><th>" + t("theadSeuilAlerte") + "</th><th></th></tr>" +
           p.variantes.map((v, vi) =>
             "<tr>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='couleur' value=\"" + esc(v.couleur) + "\" /></td>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='taille' value=\"" + esc(v.taille) + "\" /></td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='prix' value='" + v.prix + "' /></td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='stockReel' value='" + v.stockReel + "' class=\"" + (v.stockReel <= (v.seuilAlerte || 0) ? "alerte-stock" : "") + "\" /></td>" +
-              "<td title=\"Stock réel moins ce qui est déjà engagé dans des commandes Confirmée/Expédiée — c'est ce nombre que le bot vérifie avant de proposer l'article à un client.\">" + (v.stockVirtuel != null ? v.stockVirtuel : v.stockReel) + "</td>" +
+              "<td title=\"" + esc(t("titleStockVirtuel")) + "\">" + (v.stockVirtuel != null ? v.stockVirtuel : v.stockReel) + "</td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='seuilAlerte' value='" + (v.seuilAlerte || 0) + "' /></td>" +
               "<td><button data-suppr-variante='" + pi + ":" + vi + "' class='danger'>×</button></td>" +
             "</tr>"
           ).join("") +
           "</table>" +
-          "<button data-ajouter-variante='" + pi + "'>+ Variante</button>" +
+          "<button data-ajouter-variante='" + pi + "'>" + t("btnAjouterVariante") + "</button>" +
         "</div>"
-      ).join("") + (local.length ? "" : "<p>Aucun article. Ajoutez-en un.</p>") + "</div>" +
-      "<button id='btnAjouterProduit'>+ Ajouter un article</button> " +
-      "<button id='btnSauverCatalogue' class='principal'>Enregistrer le catalogue</button>";
+      ).join("") + (local.length ? "" : "<p>" + t("aucunArticle") + "</p>") + "</div>" +
+      "<button id='btnAjouterProduit'>" + t("btnAjouterArticle") + "</button> " +
+      "<button id='btnSauverCatalogue' class='principal'>" + t("btnEnregistrerCatalogue") + "</button>";
 
     Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
       inp.addEventListener("input", () => {
@@ -371,7 +1019,7 @@ async function renderCatalogue() {
       };
     });
     document.getElementById("btnAjouterProduit").onclick = () => {
-      local.push({ id: "p" + Date.now(), nom: "Nouvel article", cat: "", variantes: [{ couleur: "", taille: "", prix: 0, stockReel: 0, seuilAlerte: 0 }] });
+      local.push({ id: "p" + Date.now(), nom: t("nouvelArticle"), cat: "", variantes: [{ couleur: "", taille: "", prix: 0, stockReel: 0, seuilAlerte: 0 }] });
       redraw();
     };
     Array.prototype.forEach.call(zone.querySelectorAll("[data-ajouter-photo]"), (btn) => {
@@ -379,7 +1027,7 @@ async function renderCatalogue() {
         const pi = Number(btn.dataset.ajouterPhoto);
         const fichierInput = zone.querySelector("[data-fichier-photo='" + pi + "']");
         const fichier = fichierInput.files[0];
-        if (!fichier) { alert("Choisissez d'abord une image."); return; }
+        if (!fichier) { alert(t("alertChoisirImage")); return; }
         const donnees = new FormData();
         donnees.append("photo", fichier);
         btn.disabled = true;
@@ -387,7 +1035,7 @@ async function renderCatalogue() {
           await fetch("/api/" + marchandActif.id + "/catalogue/" + encodeURIComponent(local[pi].id) + "/photos", { method: "POST", body: donnees })
             .then(async (r) => { if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erreur || r.statusText); } });
           renderCatalogue();
-        } catch (e) { alert("Erreur : " + e.message); btn.disabled = false; }
+        } catch (e) { alert(t("erreurPrefixe") + e.message); btn.disabled = false; }
       };
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr-photo]"), (btn) => {
@@ -395,33 +1043,36 @@ async function renderCatalogue() {
         const idx = btn.dataset.supprPhoto.indexOf(":");
         const pi = Number(btn.dataset.supprPhoto.slice(0, idx));
         const url = btn.dataset.supprPhoto.slice(idx + 1);
-        if (!confirm("Supprimer cette photo ?")) return;
+        if (!confirm(t("confirmSupprimerPhoto"))) return;
         try {
           await api("/api/" + marchandActif.id + "/catalogue/" + encodeURIComponent(local[pi].id) + "/photos", { method: "DELETE", body: JSON.stringify({ url }) });
           renderCatalogue();
-        } catch (e) { alert("Erreur : " + e.message); }
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
     });
     document.getElementById("btnSauverCatalogue").onclick = async () => {
       try {
         await api("/api/" + marchandActif.id + "/catalogue", { method: "PUT", body: JSON.stringify(local) });
-        alert("Catalogue enregistré.");
+        alert(t("alertCatalogueEnregistre"));
         renderCatalogue();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   }
   redraw();
 }
 
 // Filtres/tri de l'onglet Commandes - variables hors fonction pour survivre a un redraw (ex: apres un
-// changement de statut) sans revenir aux valeurs par defaut a chaque fois.
+// changement de statut) sans revenir aux valeurs par defaut a chaque fois. Valeurs internes ("Tous",
+// "Livraison", "Retrait") volontairement laissees en francais - ce sont des cles de comparaison
+// cote client uniquement (voir plus bas), pas des donnees envoyees au serveur ; seul leur LIBELLE
+// affiche dans les <option> est traduit.
 let commandesFiltreStatut = "Tous";
 let commandesFiltreMode = "Tous";
 let commandesTriDate = "recent"; // "recent" (plus recentes d'abord) ou "ancien"
 
 async function renderCommandes() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const commandes = await api("/api/" + marchandActif.id + "/commandes");
   const statuts = ["Nouvelle", "Confirmée", "Expédiée", "Livrée", "Annulée"];
 
@@ -435,37 +1086,42 @@ async function renderCommandes() {
     return commandesTriDate === "recent" ? -diff : diff;
   });
 
-  const optionsFiltre = (valeurs, valeurActuelle) =>
-    valeurs.map((v) => "<option value='" + esc(v) + "'" + (v === valeurActuelle ? " selected" : "") + ">" + esc(v) + "</option>").join("");
+  const optionsFiltreStatut = (valeurs, valeurActuelle) =>
+    valeurs.map((v) => "<option value='" + esc(v) + "'" + (v === valeurActuelle ? " selected" : "") + ">" + esc(v === "Tous" ? t("optionTous") : libelleStatutCommande(v)) + "</option>").join("");
+  const optionsFiltreMode = (valeurs, valeurActuelle) =>
+    valeurs.map((v) => {
+      const libelle = v === "Tous" ? t("optionTous") : (v === "Livraison" ? t("optionLivraison") : t("optionRetrait"));
+      return "<option value='" + esc(v) + "'" + (v === valeurActuelle ? " selected" : "") + ">" + esc(libelle) + "</option>";
+    }).join("");
 
   zone.innerHTML =
-    "<h2>Commandes (" + visibles.length + (visibles.length !== commandes.length ? " sur " + commandes.length : "") + ")</h2>" +
+    "<h2>" + t("commandesTitre", { n: visibles.length, suffixe: visibles.length !== commandes.length ? t("commandesSurTotal", { total: commandes.length }) : "" }) + "</h2>" +
     "<div style='display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:14px;'>" +
-      "<label>Statut : <select id='commandesSelStatut'>" + optionsFiltre(["Tous"].concat(statuts), commandesFiltreStatut) + "</select></label>" +
-      "<label>Mode : <select id='commandesSelMode'>" + optionsFiltre(["Tous", "Livraison", "Retrait"], commandesFiltreMode) + "</select></label>" +
-      "<label>Date : <select id='commandesSelTri'>" +
-        "<option value='recent'" + (commandesTriDate === "recent" ? " selected" : "") + ">Plus récentes d'abord</option>" +
-        "<option value='ancien'" + (commandesTriDate === "ancien" ? " selected" : "") + ">Plus anciennes d'abord</option>" +
+      "<label>" + t("labelStatut") + "<select id='commandesSelStatut'>" + optionsFiltreStatut(["Tous"].concat(statuts), commandesFiltreStatut) + "</select></label>" +
+      "<label>" + t("labelMode") + "<select id='commandesSelMode'>" + optionsFiltreMode(["Tous", "Livraison", "Retrait"], commandesFiltreMode) + "</select></label>" +
+      "<label>" + t("labelDate") + "<select id='commandesSelTri'>" +
+        "<option value='recent'" + (commandesTriDate === "recent" ? " selected" : "") + ">" + t("optionPlusRecentes") + "</option>" +
+        "<option value='ancien'" + (commandesTriDate === "ancien" ? " selected" : "") + ">" + t("optionPlusAnciennes") + "</option>" +
       "</select></label>" +
     "</div>" +
-    "<table class='table-donnees'><tr><th>N°</th><th>Date</th><th>Articles</th><th>Nb articles</th><th>Total</th><th>Mode</th><th>Téléphone</th><th>Adresse</th><th>Statut</th></tr>" +
+    "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadArticles") + "</th><th>" + t("theadNbArticles") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadModeCourt") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadAdresse") + "</th><th>" + t("theadStatut") + "</th></tr>" +
     (visibles.length ? visibles.map((o) =>
       "<tr>" +
         "<td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
-        "<td>" + esc(new Date(o.dateISO).toLocaleString("fr-FR")) + "</td>" +
+        "<td>" + esc(new Date(o.dateISO).toLocaleString(localeCourante())) + "</td>" +
         "<td>" + (o.items || []).map((it) => esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ") ×" + it.quantite).join("<br/>") + "</td>" +
         "<td>" + (o.items || []).reduce((somme, it) => somme + (Number(it.quantite) || 0), 0) + "</td>" +
-        "<td>" + (o.prix || 0).toLocaleString("fr-FR") + " FCFA</td>" +
+        "<td>" + (o.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
         "<td>" + (o.modeLivraison === "retrait"
-          ? "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>🏪 Retrait boutique</span>"
-          : "<span style='background:#e2f0ff; color:#0a4a8f; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>🚚 Livraison</span>") + "</td>" +
+          ? "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeRetrait") + "</span>"
+          : "<span style='background:#e2f0ff; color:#0a4a8f; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeLivraison") + "</span>") + "</td>" +
         "<td>" + esc(o.telephone) + "</td>" +
         "<td>" + esc(o.adresse) + "</td>" +
-        "<td><select data-commande='" + o.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === o.statut ? " selected" : "") + ">" + s + "</option>").join("") + "</select>" +
-          (o.raisonAnnulation ? "<div class='raison'>Raison : " + esc(o.raisonAnnulation) + "</div>" : "") +
+        "<td><select data-commande='" + o.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === o.statut ? " selected" : "") + ">" + esc(libelleStatutCommande(s)) + "</option>").join("") + "</select>" +
+          (o.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
       "</tr>"
-    ).join("") : "<tr><td colspan='9'>" + (commandes.length ? "Aucune commande ne correspond à ce filtre." : "Aucune commande pour l'instant.") + "</td></tr>") +
+    ).join("") : "<tr><td colspan='9'>" + (commandes.length ? t("aucuneCorrespondanceFiltre") : t("aucuneCommande")) + "</td></tr>") +
     "</table>";
 
   document.getElementById("commandesSelStatut").onchange = (e) => { commandesFiltreStatut = e.target.value; renderCommandes(); };
@@ -475,33 +1131,33 @@ async function renderCommandes() {
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-commande]"), (sel) => {
     sel.addEventListener("change", async () => {
       let raison = null;
-      if (sel.value === "Annulée") raison = prompt("Raison de l'annulation (optionnel) :") || "";
+      if (sel.value === "Annulée") raison = prompt(t("promptRaisonAnnulation")) || "";
       try {
         await api("/api/" + marchandActif.id + "/commandes/" + sel.dataset.commande + "/statut", { method: "PUT", body: JSON.stringify({ statut: sel.value, raisonAnnulation: raison }) });
         renderCommandes();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     });
   });
 }
 
 async function renderParametresCatalogue() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const parametres = await api("/api/" + marchandActif.id + "/parametres");
   const retrait = parametres.retrait || {};
   zone.innerHTML =
-    "<h2>Paramètres</h2>" +
-    "<label>Message de confirmation automatique — français (envoyé au client quand il confirme sa commande)</label>" +
+    "<h2>" + t("paramTitre") + "</h2>" +
+    "<label>" + t("labelMsgConfirmFr") + "</label>" +
     "<textarea id='msgConfirm' rows='6'>" + esc(parametres.autoConfirmMessage || "") + "</textarea>" +
-    "<label>Message de confirmation automatique — English (facultatif : utilisé uniquement si le client a choisi English dans la conversation ; laissez vide pour utiliser une version par défaut)</label>" +
+    "<label>" + t("labelMsgConfirmEn") + "</label>" +
     "<textarea id='msgConfirmEn' rows='6'>" + esc(parametres.autoConfirmMessageEn || "") + "</textarea>" +
-    "<h3>Retrait en boutique</h3>" +
-    "<p style='color:#666; font-size:0.9em;'>Optionnel : si vous renseignez une adresse, le bot proposera au client de choisir entre livraison et retrait en boutique après chaque commande. Si vous laissez ce champ vide, rien ne change — la livraison reste demandée directement comme avant.</p>" +
-    "<label>Adresse de la boutique</label>" +
-    "<input id='retraitAdresse' value=\"" + esc(retrait.adresse || "") + "\" placeholder='Ex : Akwa, Boulevard de la Liberté, en face de la pharmacie...' />" +
-    "<label>Horaires de retrait (facultatif, texte libre)</label>" +
-    "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder='Ex : Lundi-Samedi 8h-18h, Dimanche fermé' />" +
-    "<div><button id='btnSauverParams' class='principal'>Enregistrer</button></div>";
+    "<h3>" + t("h3RetraitBoutique") + "</h3>" +
+    "<p style='color:#666; font-size:0.9em;'>" + t("descRetrait") + "</p>" +
+    "<label>" + t("labelAdresseBoutique") + "</label>" +
+    "<input id='retraitAdresse' value=\"" + esc(retrait.adresse || "") + "\" placeholder=\"" + esc(t("placeholderAdresseBoutique")) + "\" />" +
+    "<label>" + t("labelHorairesRetrait") + "</label>" +
+    "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder=\"" + esc(t("placeholderHorairesRetrait")) + "\" />" +
+    "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>";
   document.getElementById("btnSauverParams").onclick = async () => {
     try {
       await api("/api/" + marchandActif.id + "/parametres", {
@@ -515,8 +1171,8 @@ async function renderParametresCatalogue() {
           }
         })
       });
-      alert("Paramètres enregistrés.");
-    } catch (e) { alert("Erreur : " + e.message); }
+      alert(t("alertParametresEnregistres"));
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
 }
 
@@ -524,14 +1180,14 @@ async function renderParametresCatalogue() {
 
 async function renderServices() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const services = await api("/api/" + marchandActif.id + "/services");
   let local = JSON.parse(JSON.stringify(services));
 
   function redraw() {
     zone.innerHTML =
-      "<h2>Services</h2>" +
-      "<table class='table-donnees'><tr><th>Nom</th><th>Durée (minutes)</th><th>Prix (FCFA)</th><th></th></tr>" +
+      "<h2>" + t("servicesTitre") + "</h2>" +
+      "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadDureeMinutes") + "</th><th>" + t("theadPrixFcfa") + "</th><th></th></tr>" +
       local.map((s, i) =>
         "<tr>" +
           "<td><input data-i='" + i + "' data-champ='nom' value=\"" + esc(s.nom) + "\" /></td>" +
@@ -541,8 +1197,8 @@ async function renderServices() {
         "</tr>"
       ).join("") +
       "</table>" +
-      "<button id='btnAjouterService'>+ Ajouter un service</button> " +
-      "<button id='btnSauverServices' class='principal'>Enregistrer</button>";
+      "<button id='btnAjouterService'>" + t("btnAjouterService") + "</button> " +
+      "<button id='btnSauverServices' class='principal'>" + t("enregistrer") + "</button>";
 
     Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
       inp.addEventListener("input", () => {
@@ -555,15 +1211,15 @@ async function renderServices() {
       btn.onclick = () => { local.splice(Number(btn.dataset.suppr), 1); redraw(); };
     });
     document.getElementById("btnAjouterService").onclick = () => {
-      local.push({ id: "s" + Date.now(), nom: "Nouveau service", dureeMinutes: 30, prix: 0 });
+      local.push({ id: "s" + Date.now(), nom: t("nouveauService"), dureeMinutes: 30, prix: 0 });
       redraw();
     };
     document.getElementById("btnSauverServices").onclick = async () => {
       try {
         await api("/api/" + marchandActif.id + "/services", { method: "PUT", body: JSON.stringify(local) });
-        alert("Services enregistrés.");
+        alert(t("alertServicesEnregistres"));
         renderServices();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   }
   redraw();
@@ -571,43 +1227,43 @@ async function renderServices() {
 
 async function renderRendezvous() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const rdvs = await api("/api/" + marchandActif.id + "/rendezvous");
   const statuts = ["Nouvelle", "Confirmé", "Honoré", "Absent", "Annulé"];
   const tri = rdvs.slice().reverse();
   zone.innerHTML =
-    "<h2>Rendez-vous (" + rdvs.length + ")</h2>" +
-    "<table class='table-donnees'><tr><th>Réf.</th><th>Date &amp; heure</th><th>Service</th><th>Praticien</th><th>Client</th><th>Téléphone</th><th>Prix</th><th>Statut</th></tr>" +
+    "<h2>" + t("rendezvousTitre", { n: rdvs.length }) + "</h2>" +
+    "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadDateHeure") + "</th><th>" + t("theadService") + "</th><th>" + t("theadPraticien") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadPrix") + "</th><th>" + t("theadStatut") + "</th></tr>" +
     (tri.length ? tri.map((a) =>
       "<tr>" +
         "<td>RDV-" + String(a.id).padStart(4, "0") + "</td>" +
-        "<td>" + esc(new Date(a.dateISO).toLocaleString("fr-FR")) + "</td>" +
+        "<td>" + esc(new Date(a.dateISO).toLocaleString(localeCourante())) + "</td>" +
         "<td>" + esc(a.service) + "</td>" +
         "<td>" + esc(a.praticienNom || "—") + "</td>" +
         "<td>" + esc(a.clientNom) + "</td>" +
         "<td>" + esc(a.telephone) + "</td>" +
-        "<td>" + (a.prix || 0).toLocaleString("fr-FR") + " FCFA</td>" +
-        "<td><select data-rdv='" + a.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === a.statut ? " selected" : "") + ">" + s + "</option>").join("") + "</select>" +
-          (a.raisonAnnulation ? "<div class='raison'>Raison : " + esc(a.raisonAnnulation) + "</div>" : "") +
+        "<td>" + (a.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
+        "<td><select data-rdv='" + a.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === a.statut ? " selected" : "") + ">" + esc(libelleStatutRdv(s)) + "</option>").join("") + "</select>" +
+          (a.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(a.raisonAnnulation) + "</div>" : "") +
         "</td>" +
       "</tr>"
-    ).join("") : "<tr><td colspan='8'>Aucun rendez-vous pour l'instant.</td></tr>") +
+    ).join("") : "<tr><td colspan='8'>" + t("aucunRendezvous") + "</td></tr>") +
     "</table>";
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-rdv]"), (sel) => {
     sel.addEventListener("change", async () => {
       let raison = null;
-      if (sel.value === "Annulé") raison = prompt("Raison de l'annulation (optionnel) :") || "";
+      if (sel.value === "Annulé") raison = prompt(t("promptRaisonAnnulation")) || "";
       try {
         await api("/api/" + marchandActif.id + "/rendezvous/" + sel.dataset.rdv + "/statut", { method: "PUT", body: JSON.stringify({ statut: sel.value, raisonAnnulation: raison }) });
         renderRendezvous();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     });
   });
 }
 
 async function renderParametresService() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const parametres = await api("/api/" + marchandActif.id + "/parametres");
   const jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
   const horaires = parametres.horaires || {};
@@ -618,15 +1274,15 @@ async function renderParametresService() {
   let localPraticiens = JSON.parse(JSON.stringify(parametres.praticiens || []));
 
   zone.innerHTML =
-    "<h2>Paramètres</h2>" +
-    "<label>Durée d'un créneau (minutes)</label>" +
+    "<h2>" + t("paramTitre") + "</h2>" +
+    "<label>" + t("labelDureeCreneau") + "</label>" +
     "<input type='number' id='dureeCreneau' value='" + (parametres.dureeCreneauMinutes || 30) + "' />" +
-    "<h3>Horaires d'ouverture</h3>" +
-    "<p class='raison'>Laissez les deux champs « Pause » vides s'il n'y a pas de coupure dans la journée (ex : ouverture continue).</p>" +
-    "<table class='table-donnees'><tr><th>Jour</th><th>Ouvert</th><th>Début</th><th>Fin</th><th>Pause (début)</th><th>Pause (fin)</th></tr>" +
+    "<h3>" + t("h3HorairesOuverture") + "</h3>" +
+    "<p class='raison'>" + t("notePause") + "</p>" +
+    "<table class='table-donnees'><tr><th>" + t("theadJour") + "</th><th>" + t("theadOuvert") + "</th><th>" + t("theadDebut") + "</th><th>" + t("theadFin") + "</th><th>" + t("theadPauseDebut") + "</th><th>" + t("theadPauseFin") + "</th></tr>" +
     jours.map((j) => {
       const h = horaires[j] || { ouvert: false, debut: "08:00", fin: "18:00" };
-      return "<tr><td>" + j.charAt(0).toUpperCase() + j.slice(1) + "</td>" +
+      return "<tr><td>" + esc(libelleJour(j)) + "</td>" +
         "<td><input type='checkbox' data-jour='" + j + "' data-champ='ouvert'" + (h.ouvert ? " checked" : "") + " /></td>" +
         "<td><input type='time' data-jour='" + j + "' data-champ='debut' value='" + h.debut + "' /></td>" +
         "<td><input type='time' data-jour='" + j + "' data-champ='fin' value='" + h.fin + "' /></td>" +
@@ -634,26 +1290,26 @@ async function renderParametresService() {
         "<td><input type='time' data-jour='" + j + "' data-champ='pauseFin' value='" + (h.pauseFin || "") + "' /></td></tr>";
     }).join("") +
     "</table>" +
-    "<h3>Praticiens</h3>" +
-    "<p class='raison'>Laissez cette liste vide si une seule personne (vous, ou un seul poste/fauteuil) reçoit les rendez-vous à la fois. Ajoutez un praticien par membre du personnel pouvant recevoir des rendez-vous EN PARALLÈLE : le client pourra en demander un en particulier (ex : « avec Sandra »), ou en laisser un lui être assigné automatiquement.</p>" +
+    "<h3>" + t("h3Praticiens") + "</h3>" +
+    "<p class='raison'>" + t("notePraticiens") + "</p>" +
     "<div id='listePraticiens'></div>" +
-    "<button id='btnAjouterPraticien'>+ Ajouter un praticien</button>" +
-    "<label>Message de confirmation automatique (envoyé au client quand il confirme son rendez-vous)</label>" +
+    "<button id='btnAjouterPraticien'>" + t("btnAjouterPraticien") + "</button>" +
+    "<label>" + t("labelMsgConfirmRdv") + "</label>" +
     "<textarea id='msgConfirm' rows='6'>" + esc(parametres.autoConfirmMessage || "") + "</textarea>" +
-    "<div><button id='btnSauverParams' class='principal'>Enregistrer</button></div>";
+    "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>";
 
   function redrawPraticiens() {
     const conteneur = document.getElementById("listePraticiens");
     conteneur.innerHTML = localPraticiens.length
-      ? "<table class='table-donnees'><tr><th>Nom</th><th></th></tr>" +
+      ? "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th></th></tr>" +
         localPraticiens.map((p, i) =>
           "<tr>" +
-            "<td><input data-praticien-i='" + i + "' value=\"" + esc(p.nom || "") + "\" placeholder='Nom du praticien' /></td>" +
+            "<td><input data-praticien-i='" + i + "' value=\"" + esc(p.nom || "") + "\" placeholder=\"" + esc(t("placeholderNomPraticien")) + "\" /></td>" +
             "<td><button data-praticien-suppr='" + i + "' class='danger'>×</button></td>" +
           "</tr>"
         ).join("") +
         "</table>"
-      : "<p class='raison'>Aucun praticien configuré — une seule ressource reçoit les rendez-vous à la fois.</p>";
+      : "<p class='raison'>" + t("msgAucunPraticien") + "</p>";
 
     Array.prototype.forEach.call(conteneur.querySelectorAll("input[data-praticien-i]"), (inp) => {
       inp.addEventListener("input", () => {
@@ -695,9 +1351,9 @@ async function renderParametresService() {
           autoConfirmMessage: document.getElementById("msgConfirm").value
         })
       });
-      alert("Paramètres enregistrés.");
+      alert(t("alertParametresEnregistres"));
       renderParametresService();
-    } catch (e) { alert("Erreur : " + e.message); }
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
 }
 
@@ -705,9 +1361,9 @@ async function renderParametresService() {
 
 function formaterDureeDepuis(depuisISO) {
   const minutes = Math.max(0, Math.round((Date.now() - new Date(depuisISO).getTime()) / 60000));
-  if (minutes < 1) return "à l'instant";
-  if (minutes === 1) return "depuis 1 minute";
-  return "depuis " + minutes + " minutes";
+  if (minutes < 1) return t("enAttenteInstant");
+  if (minutes === 1) return t("enAttenteUneMinute");
+  return t("enAttenteMinutes", { n: minutes });
 }
 
 let vueHistoriqueTelephone = null; // numero actuellement ouvert en detail dans "Historique", ou null (liste)
@@ -715,40 +1371,40 @@ let vueHistoriqueTelephone = null; // numero actuellement ouvert en detail dans 
 function formaterDateHeure(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleDateString("fr-FR") + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(localeCourante()) + " " + (langueAdmin === "en" ? "at" : "à") + " " + d.toLocaleTimeString(localeCourante(), { hour: "2-digit", minute: "2-digit" });
 }
 
 async function renderConversations() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const conversations = await api("/api/" + marchandActif.id + "/conversations");
 
-  let html = "<h2>Conversations</h2>";
+  let html = "<h2>" + t("conversationsTitre") + "</h2>";
 
   if (!conversations.length) {
-    html += "<p>Aucun client n'attend actuellement un humain. Dès qu'un client le demande sur WhatsApp, il apparaît ici (et vous êtes averti par WhatsApp si un numéro de notification est configuré dans \"Mon compte\").</p>";
+    html += "<p>" + t("msgAucunClientAttend") + "</p>";
   } else {
     html +=
-      "<h3 style='margin-top:0;'>En attente d'un humain (" + conversations.length + ")</h3>" +
-      "<p class='raison'>Le bot reste silencieux avec ces clients tant qu'ils sont listés ici. Si personne ne répond dans les 10 minutes suivant leur demande (ou votre dernière réponse), le bot reprend automatiquement la main.</p>" +
+      "<h3 style='margin-top:0;'>" + t("h3EnAttenteHumain", { n: conversations.length }) + "</h3>" +
+      "<p class='raison'>" + t("noteAttenteHumain") + "</p>" +
       conversations.map((c, i) =>
         "<div class='carte-produit'>" +
           "<div style='display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;'>" +
             "<strong>" + esc(c.telephone) + "</strong>" +
-            "<span class='raison'>En attente " + formaterDureeDepuis(c.depuisISO) + "</span>" +
+            "<span class='raison'>" + formaterDureeDepuis(c.depuisISO) + "</span>" +
           "</div>" +
           "<div style='max-height:160px; overflow-y:auto; margin:10px 0; padding:8px; background:#f6f7f9; border-radius:6px; font-size:0.9em;'>" +
             (c.historique || []).map((m) =>
-              "<div style='margin-bottom:6px;'><strong>" + (m.de === "marchand" ? "Vous" : "Client") + " :</strong> " + esc(m.texte) + "</div>"
+              "<div style='margin-bottom:6px;'><strong>" + (m.de === "marchand" ? t("labelVous") : t("labelClient")) + " :</strong> " + esc(m.texte) + "</div>"
             ).join("") +
           "</div>" +
-          "<textarea data-reponse='" + i + "' rows='2' placeholder='Votre réponse au client…'></textarea>" +
-          "<div style='margin-top:8px;'><button data-envoyer='" + i + "' class='principal'>Envoyer</button></div>" +
+          "<textarea data-reponse='" + i + "' rows='2' placeholder=\"" + esc(t("placeholderReponseClient")) + "\"></textarea>" +
+          "<div style='margin-top:8px;'><button data-envoyer='" + i + "' class='principal'>" + t("btnEnvoyer") + "</button></div>" +
         "</div>"
       ).join("");
   }
 
-  html += "<h3>Historique complet</h3><div id='zoneHistorique'><div class='chargement'>Chargement…</div></div>";
+  html += "<h3>" + t("h3HistoriqueComplet") + "</h3><div id='zoneHistorique'><div class='chargement'>" + t("chargement") + "</div></div>";
 
   zone.innerHTML = html;
 
@@ -756,14 +1412,14 @@ async function renderConversations() {
     btn.onclick = async () => {
       const i = Number(btn.dataset.envoyer);
       const texte = zone.querySelector("[data-reponse='" + i + "']").value.trim();
-      if (!texte) { alert("Écrivez un message avant d'envoyer."); return; }
+      if (!texte) { alert(t("alertEcrireMessage")); return; }
       try {
         await api("/api/" + marchandActif.id + "/conversations/" + encodeURIComponent(conversations[i].telephone) + "/repondre", {
           method: "POST",
           body: JSON.stringify({ message: texte })
         });
         renderConversations();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   });
 
@@ -780,20 +1436,20 @@ async function renderHistoriqueListe() {
   try {
     historique = await api("/api/" + marchandActif.id + "/conversations/historique");
   } catch (e) {
-    conteneur.innerHTML = "<p class='erreur'>Impossible de charger l'historique : " + esc(e.message) + "</p>";
+    conteneur.innerHTML = "<p class='erreur'>" + t("erreurChargerHistorique") + esc(e.message) + "</p>";
     return;
   }
   if (!historique.length) {
-    conteneur.innerHTML = "<p class='raison'>Aucun échange enregistré pour l'instant. Chaque message reçu ou envoyé sur WhatsApp apparaîtra ici, classé par client.</p>";
+    conteneur.innerHTML = "<p class='raison'>" + t("msgAucunEchange") + "</p>";
     return;
   }
   conteneur.innerHTML =
-    "<p class='raison'>Tous les échanges (client, bot et vos réponses manuelles) sont conservés ici, classés par numéro de client.</p>" +
-    "<table class='table-donnees'><thead><tr><th>Client</th><th>Dernier message</th><th>Messages</th><th>Dernier échange</th></tr></thead><tbody>" +
+    "<p class='raison'>" + t("noteTousEchanges") + "</p>" +
+    "<table class='table-donnees'><thead><tr><th>" + t("theadClientCourt") + "</th><th>" + t("theadDernierMessage") + "</th><th>" + t("theadMessages") + "</th><th>" + t("theadDernierEchange") + "</th></tr></thead><tbody>" +
     historique.map((c) =>
       "<tr data-ouvrir='" + esc(c.telephone) + "' style='cursor:pointer;'>" +
         "<td>" + esc(c.telephone) + "</td>" +
-        "<td>" + (c.dernierDe === "client" ? "" : "<em>" + (c.dernierDe === "marchand" ? "Vous" : "Bot") + " :</em> ") +
+        "<td>" + (c.dernierDe === "client" ? "" : "<em>" + (c.dernierDe === "marchand" ? t("labelVous") : t("labelBot")) + " :</em> ") +
           esc((c.dernierMessage || "").slice(0, 90)) + ((c.dernierMessage || "").length > 90 ? "…" : "") + "</td>" +
         "<td>" + c.nombreMessages + "</td>" +
         "<td>" + formaterDateHeure(c.dernierHorodatageISO) + "</td>" +
@@ -809,26 +1465,26 @@ async function renderHistoriqueListe() {
 async function renderHistoriqueDetail(telephone) {
   const conteneur = document.getElementById("zoneHistorique");
   if (!conteneur) return;
-  conteneur.innerHTML = "<div class='chargement'>Chargement…</div>";
+  conteneur.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   let messages;
   try {
     messages = await api("/api/" + marchandActif.id + "/conversations/historique/" + encodeURIComponent(telephone));
   } catch (e) {
-    conteneur.innerHTML = "<p class='erreur'>Impossible de charger cette conversation : " + esc(e.message) + "</p>";
+    conteneur.innerHTML = "<p class='erreur'>" + t("erreurChargerConversation") + esc(e.message) + "</p>";
     return;
   }
   conteneur.innerHTML =
-    "<button id='btnRetourHistorique' style='background:transparent;border:none;color:#14213d;text-decoration:underline;padding:0;margin-bottom:10px;'>← Retour à la liste</button>" +
+    "<button id='btnRetourHistorique' style='background:transparent;border:none;color:#14213d;text-decoration:underline;padding:0;margin-bottom:10px;'>" + t("btnRetourHistorique") + "</button>" +
     "<h4 style='margin:0 0 8px;'>" + esc(telephone) + "</h4>" +
     "<div class='chat-fenetre'>" +
       messages.map((m) =>
         "<div class='bulle " + (m.de === "client" ? "client" : "bot") + "'>" +
-          (m.de !== "client" ? "<div style='font-size:0.75em; opacity:0.65; margin-bottom:2px;'>" + (m.de === "marchand" ? "Vous" : "Bot") + "</div>" : "") +
+          (m.de !== "client" ? "<div style='font-size:0.75em; opacity:0.65; margin-bottom:2px;'>" + (m.de === "marchand" ? t("labelVous") : t("labelBot")) + "</div>" : "") +
           esc(m.texte) +
         "</div>"
       ).join("") +
     "</div>" +
-    "<div class='raison'>" + messages.length + " message(s) — " + esc(telephone) + "</div>";
+    "<div class='raison'>" + messages.length + t("messageCount") + esc(telephone) + "</div>";
   document.getElementById("btnRetourHistorique").onclick = () => { vueHistoriqueTelephone = null; renderHistoriqueListe(); };
 }
 
@@ -836,27 +1492,27 @@ async function renderHistoriqueDetail(telephone) {
 
 async function renderTableauDeBord() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const d = await api("/api/" + marchandActif.id + "/tableau-de-bord");
   const estCatalogue = marchandActif.type !== "service";
-  const jours = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const jours = t("joursAbrev");
   const maxSpark = Math.max(1, ...d.sparkline7j);
   const aujourdhuiIndex = (new Date().getDay() + 6) % 7; // 0 = lundi
 
   let tuiles =
     "<div class='tuiles'>" +
-      "<div class='tuile'><div class='valeur'>" + d.commandesAujourdhui + "</div><div class='libelle'>" + (estCatalogue ? "Commandes aujourd'hui" : "Rendez-vous pris aujourd'hui") + "</div></div>" +
-      "<div class='tuile'><div class='valeur'>" + (d.caJour || 0).toLocaleString("fr-FR") + " FCFA</div><div class='libelle'>Chiffre d'affaires du jour</div></div>" +
-      "<div class='tuile" + (d.conversationsEnAttente ? " avertissement" : "") + "'><div class='valeur'>" + d.conversationsEnAttente + "</div><div class='libelle'>Conversations en attente d'un humain</div></div>";
+      "<div class='tuile'><div class='valeur'>" + d.commandesAujourdhui + "</div><div class='libelle'>" + (estCatalogue ? t("libelleCommandesAujourdhui") : t("libelleRdvAujourdhui")) + "</div></div>" +
+      "<div class='tuile'><div class='valeur'>" + (d.caJour || 0).toLocaleString(localeCourante()) + " FCFA</div><div class='libelle'>" + t("libelleCaJour") + "</div></div>" +
+      "<div class='tuile" + (d.conversationsEnAttente ? " avertissement" : "") + "'><div class='valeur'>" + d.conversationsEnAttente + "</div><div class='libelle'>" + t("libelleConvEnAttente") + "</div></div>";
   if (estCatalogue) {
     tuiles +=
-      "<div class='tuile" + (d.alertesStock ? " avertissement" : "") + "'><div class='valeur'>" + d.alertesStock + "</div><div class='libelle'>Articles à surveiller</div></div>" +
-      "<div class='tuile" + (d.ruptures ? " avertissement" : "") + "'><div class='valeur'>" + d.ruptures + "</div><div class='libelle'>Ruptures de stock</div></div>";
+      "<div class='tuile" + (d.alertesStock ? " avertissement" : "") + "'><div class='valeur'>" + d.alertesStock + "</div><div class='libelle'>" + t("libelleArticlesSurveiller") + "</div></div>" +
+      "<div class='tuile" + (d.ruptures ? " avertissement" : "") + "'><div class='valeur'>" + d.ruptures + "</div><div class='libelle'>" + t("libelleRuptures") + "</div></div>";
   }
   tuiles += "</div>";
 
   const sparkline =
-    "<h3>Activité des 7 derniers jours</h3>" +
+    "<h3>" + t("h3Activite7j") + "</h3>" +
     "<div class='sparkline'>" +
       d.sparkline7j.map((v, i) => {
         const jourReel = new Date(); jourReel.setDate(jourReel.getDate() - (6 - i));
@@ -866,34 +1522,34 @@ async function renderTableauDeBord() {
     "</div>";
 
   const top =
-    "<h3>" + (estCatalogue ? "Articles les plus vendus" : "Services les plus demandés") + "</h3>" +
+    "<h3>" + (estCatalogue ? t("h3ArticlesTop") : t("h3ServicesTop")) + "</h3>" +
     (d.topProduits.length
-      ? "<table class='table-donnees'><tr><th>" + (estCatalogue ? "Article" : "Service") + "</th><th>Quantité</th></tr>" +
+      ? "<table class='table-donnees'><tr><th>" + (estCatalogue ? t("theadArticleCourt") : t("theadServiceCourt")) + "</th><th>" + t("theadQuantite") + "</th></tr>" +
         d.topProduits.map((p) => "<tr><td>" + esc(p.nom) + "</td><td>" + p.quantite + "</td></tr>").join("") + "</table>"
-      : "<p class='raison'>Pas encore assez de données.</p>");
+      : "<p class='raison'>" + t("msgPasAssezDonnees") + "</p>");
 
   let bas;
   if (estCatalogue) {
     bas =
-      "<h3>Stock à surveiller</h3>" +
+      "<h3>" + t("h3StockASurveiller") + "</h3>" +
       (d.stockASurveiller.length
-        ? "<table class='table-donnees'><tr><th>Article</th><th>Couleur</th><th>Taille</th><th>Stock réel</th><th>Stock virtuel</th><th>Seuil</th></tr>" +
+        ? "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadStockVirtuel") + "</th><th>" + t("theadSeuilAlerte") + "</th></tr>" +
           d.stockASurveiller.map((v) =>
             "<tr class=\"" + (v.stockVirtuel <= 0 ? "alerte-stock" : "") + "\"><td>" + esc(v.produit) + "</td><td>" + esc(v.couleur) + "</td><td>" + esc(v.taille) + "</td><td>" + v.stockReel + "</td><td>" + v.stockVirtuel + "</td><td>" + v.seuil + "</td></tr>"
           ).join("") + "</table>"
-        : "<p class='raison'>Aucun article sous le seuil d'alerte.</p>");
+        : "<p class='raison'>" + t("msgAucunArticleSousLeSeuil") + "</p>");
   } else {
     bas =
-      "<h3>Prochains rendez-vous (7 prochains jours)</h3>" +
+      "<h3>" + t("h3ProchainsRdv") + "</h3>" +
       (d.prochainsRendezVous.length
-        ? "<table class='table-donnees'><tr><th>Réf.</th><th>Date &amp; heure</th><th>Service</th><th>Client</th><th>Statut</th></tr>" +
+        ? "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadDateHeure") + "</th><th>" + t("theadService") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadStatut") + "</th></tr>" +
           d.prochainsRendezVous.map((a) =>
-            "<tr><td>" + esc(a.reference) + "</td><td>" + esc(new Date(a.dateISO).toLocaleString("fr-FR")) + "</td><td>" + esc(a.service) + "</td><td>" + esc(a.clientNom) + "</td><td>" + esc(a.statut) + "</td></tr>"
+            "<tr><td>" + esc(a.reference) + "</td><td>" + esc(new Date(a.dateISO).toLocaleString(localeCourante())) + "</td><td>" + esc(a.service) + "</td><td>" + esc(a.clientNom) + "</td><td>" + esc(libelleStatutRdv(a.statut)) + "</td></tr>"
           ).join("") + "</table>"
-        : "<p class='raison'>Aucun rendez-vous prévu dans les 7 prochains jours.</p>");
+        : "<p class='raison'>" + t("msgAucunRdvProchain") + "</p>");
   }
 
-  zone.innerHTML = "<h2>Tableau de bord</h2>" + tuiles + sparkline + top + bas;
+  zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + tuiles + sparkline + top + bas;
 }
 
 // ---------------- Simulateur WhatsApp ----------------
@@ -911,22 +1567,22 @@ async function renderSimulateur() {
 
   function dessiner() {
     zone.innerHTML =
-      "<h2>Simulateur WhatsApp</h2>" +
-      "<p class='raison'>Testez le bot ici comme si vous étiez un client. Ce numéro de test est totalement séparé de vos vraies commandes/rendez-vous et de votre vrai stock : rien de ce qui se passe ici n'affecte vos clients réels.</p>" +
+      "<h2>" + t("simulateurTitre") + "</h2>" +
+      "<p class='raison'>" + t("noteSimulateur") + "</p>" +
       "<div id='chatFenetre' class='chat-fenetre'>" +
         (historique.length ? historique.map((m) =>
           "<div class='bulle " + (m.de === "client" ? "client" : "bot") + "'>" +
-            (m.traceAssociee && m.traceAssociee.photo ? "<img src=\"" + esc(m.traceAssociee.photo) + "\" alt='Photo article' />" : "") +
+            (m.traceAssociee && m.traceAssociee.photo ? "<img src=\"" + esc(m.traceAssociee.photo) + "\" alt='' />" : "") +
             esc(m.texte) +
           "</div>"
-        ).join("") : "<p class='raison'>Envoyez un premier message pour démarrer la simulation…</p>") +
+        ).join("") : "<p class='raison'>" + t("msgEnvoyezPremierMessage") + "</p>") +
       "</div>" +
       "<div class='zone-saisie-chat'>" +
-        "<input id='champMessageSimu' placeholder='Écrivez comme le ferait un client…' />" +
-        "<button id='btnEnvoyerSimu' class='principal'>Envoyer</button>" +
-        "<button id='btnResetSimu'>Réinitialiser</button>" +
+        "<input id='champMessageSimu' placeholder=\"" + esc(t("placeholderMessageSimu")) + "\" />" +
+        "<button id='btnEnvoyerSimu' class='principal'>" + t("btnEnvoyer") + "</button>" +
+        "<button id='btnResetSimu'>" + t("btnReinitialiser") + "</button>" +
       "</div>" +
-      (aUneTrace ? "<h3>Analyse du dernier message</h3><div id='panneauAnalyse' class='panneau-analyse'>" + rendreTrace(historique.length ? historique[historique.length - 1].traceAssociee : null) + "</div>" : "");
+      (aUneTrace ? "<h3>" + t("h3AnalyseMessage") + "</h3><div id='panneauAnalyse' class='panneau-analyse'>" + rendreTrace(historique.length ? historique[historique.length - 1].traceAssociee : null) + "</div>" : "");
 
     const fenetre = document.getElementById("chatFenetre");
     fenetre.scrollTop = fenetre.scrollHeight;
@@ -939,7 +1595,7 @@ async function renderSimulateur() {
         await api("/api/" + id + "/simulateur/reset", { method: "POST" });
         simulateurHistoriques[id] = [];
         renderSimulateur();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
 
     async function envoyer() {
@@ -953,17 +1609,17 @@ async function renderSimulateur() {
         historique.push({ de: "bot", texte: rep.reponse, traceAssociee: rep.trace });
         dessiner();
         document.getElementById("champMessageSimu").focus();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     }
   }
 
   function rendreTrace(trace) {
-    if (!trace) return "<p class='raison'>Aucune analyse disponible pour l'instant.</p>";
+    if (!trace) return "<p class='raison'>" + t("msgAucuneAnalyse") + "</p>";
     const entites = Object.keys(trace.entites || {}).map((k) => "<div><strong>" + esc(k) + " :</strong> " + esc(trace.entites[k]) + "</div>").join("");
     return entites +
-      (trace.verification ? "<div><strong>Vérification :</strong> " + esc(trace.verification) + "</div>" : "") +
-      "<div><strong>Action :</strong> " + esc(trace.action) + "</div>" +
-      (trace.photo ? "<div><strong>Photo envoyée :</strong> oui (voir la bulle ci-dessus)</div>" : "");
+      (trace.verification ? "<div><strong>" + t("labelVerification") + "</strong> " + esc(trace.verification) + "</div>" : "") +
+      "<div><strong>" + t("labelAction") + "</strong> " + esc(trace.action) + "</div>" +
+      (trace.photo ? "<div><strong>" + t("labelPhotoEnvoyee") + "</strong></div>" : "");
   }
 
   dessiner();
@@ -973,33 +1629,33 @@ async function renderSimulateur() {
 
 async function renderRapports() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const catalogue = await api("/api/" + marchandActif.id + "/catalogue");
   const instantanes = await api("/api/" + marchandActif.id + "/inventaire/instantanes");
   const aujourdhui = new Date().toISOString().slice(0, 10);
 
   zone.innerHTML =
-    "<h2>Rapports</h2>" +
+    "<h2>" + t("rapportsTitre") + "</h2>" +
     "<div class='controles-rapport'>" +
-      "<div><label>Période</label><select id='rapportPeriode'><option value='jour'>Jour</option><option value='semaine'>Semaine</option><option value='mois'>Mois</option></select></div>" +
-      "<div><label>Date de référence</label><input type='date' id='rapportDate' value='" + aujourdhui + "' /></div>" +
-      "<div><label>Article</label><select id='rapportArticle'><option value='tous'>Tous les articles</option>" +
+      "<div><label>" + t("labelPeriode") + "</label><select id='rapportPeriode'><option value='jour'>" + t("optionJour") + "</option><option value='semaine'>" + t("optionSemaine") + "</option><option value='mois'>" + t("optionMois") + "</option></select></div>" +
+      "<div><label>" + t("labelDateReference") + "</label><input type='date' id='rapportDate' value='" + aujourdhui + "' /></div>" +
+      "<div><label>" + t("labelArticleFiltre") + "</label><select id='rapportArticle'><option value='tous'>" + t("optionTousArticles") + "</option>" +
         catalogue.map((p) => "<option value=\"" + esc(p.id) + "\">" + esc(p.nom) + "</option>").join("") +
       "</select></div>" +
-      "<div><button id='btnGenererRapport' class='principal'>Générer</button></div>" +
+      "<div><button id='btnGenererRapport' class='principal'>" + t("btnGenerer") + "</button></div>" +
     "</div>" +
     "<div id='resultatRapport'></div>" +
-    "<h3>Instantanés d'inventaire</h3>" +
-    "<p class='raison'>Enregistrez une photo de votre stock à un instant T (par exemple avant/après une livraison) pour pouvoir vous y référer plus tard.</p>" +
-    "<button id='btnNouvelInstantane'>+ Enregistrer un instantané maintenant</button>" +
+    "<h3>" + t("h3InstantanesInventaire") + "</h3>" +
+    "<p class='raison'>" + t("noteInstantanes") + "</p>" +
+    "<button id='btnNouvelInstantane'>" + t("btnNouvelInstantane") + "</button>" +
     "<div id='listeInstantanes' style='margin-top:14px;'>" + rendreListeInstantanes(instantanes) + "</div>";
 
   function rendreListeInstantanes(liste) {
-    if (!liste.length) return "<p class='raison'>Aucun instantané enregistré pour l'instant.</p>";
-    return "<table class='table-donnees'><tr><th>Nom</th><th>Date</th><th>Lignes</th><th></th></tr>" +
+    if (!liste.length) return "<p class='raison'>" + t("msgAucunInstantane") + "</p>";
+    return "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadLignes") + "</th><th></th></tr>" +
       liste.slice().reverse().map((s) =>
-        "<tr><td>" + esc(s.nom) + "</td><td>" + esc(new Date(s.dateISO).toLocaleString("fr-FR")) + "</td><td>" + s.lignes.length + " variante(s)</td>" +
-          "<td><button data-voir-instantane='" + esc(s.id) + "'>Voir</button> <button data-suppr-instantane='" + esc(s.id) + "' class='danger'>Supprimer</button></td></tr>"
+        "<tr><td>" + esc(s.nom) + "</td><td>" + esc(new Date(s.dateISO).toLocaleString(localeCourante())) + "</td><td>" + s.lignes.length + t("suffixeVariantes") + "</td>" +
+          "<td><button data-voir-instantane='" + esc(s.id) + "'>" + t("voir") + "</button> <button data-suppr-instantane='" + esc(s.id) + "' class='danger'>" + t("supprimer") + "</button></td></tr>"
       ).join("") + "</table><div id='detailInstantane'></div>";
   }
 
@@ -1009,19 +1665,19 @@ async function renderRapports() {
         const s = liste.filter((x) => x.id === btn.dataset.voirInstantane)[0];
         if (!s) return;
         document.getElementById("detailInstantane").innerHTML =
-          "<h3>" + esc(s.nom) + " — " + esc(new Date(s.dateISO).toLocaleString("fr-FR")) + "</h3>" +
-          "<table class='table-donnees'><tr><th>Article</th><th>Couleur</th><th>Taille</th><th>Stock réel</th><th>Prix</th></tr>" +
-          s.lignes.map((l) => "<tr><td>" + esc(l.produit) + "</td><td>" + esc(l.couleur) + "</td><td>" + esc(l.taille) + "</td><td>" + l.stockReel + "</td><td>" + (l.prix || 0).toLocaleString("fr-FR") + " FCFA</td></tr>").join("") +
+          "<h3>" + esc(s.nom) + " — " + esc(new Date(s.dateISO).toLocaleString(localeCourante())) + "</h3>" +
+          "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadPrix") + "</th></tr>" +
+          s.lignes.map((l) => "<tr><td>" + esc(l.produit) + "</td><td>" + esc(l.couleur) + "</td><td>" + esc(l.taille) + "</td><td>" + l.stockReel + "</td><td>" + (l.prix || 0).toLocaleString(localeCourante()) + " FCFA</td></tr>").join("") +
           "</table>";
       };
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr-instantane]"), (btn) => {
       btn.onclick = async () => {
-        if (!confirm("Supprimer cet instantané ?")) return;
+        if (!confirm(t("confirmSupprimerInstantane"))) return;
         try {
           await api("/api/" + marchandActif.id + "/inventaire/instantanes/" + encodeURIComponent(btn.dataset.supprInstantane), { method: "DELETE" });
           renderRapports();
-        } catch (e) { alert("Erreur : " + e.message); }
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
     });
   }
@@ -1032,30 +1688,30 @@ async function renderRapports() {
     const date = document.getElementById("rapportDate").value;
     const articleId = document.getElementById("rapportArticle").value;
     const zoneResultat = document.getElementById("resultatRapport");
-    zoneResultat.innerHTML = "<div class='chargement'>Chargement…</div>";
+    zoneResultat.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
     try {
       const r = await api("/api/" + marchandActif.id + "/rapports/commandes?periode=" + encodeURIComponent(periode) + "&date=" + encodeURIComponent(date) + "&articleId=" + encodeURIComponent(articleId));
       zoneResultat.innerHTML =
         "<div class='tuiles'>" +
-          "<div class='tuile'><div class='valeur'>" + r.nbCommandes + "</div><div class='libelle'>Commandes sur la période</div></div>" +
-          "<div class='tuile'><div class='valeur'>" + (r.chiffreAffaires || 0).toLocaleString("fr-FR") + " FCFA</div><div class='libelle'>Chiffre d'affaires (hors annulées)</div></div>" +
+          "<div class='tuile'><div class='valeur'>" + r.nbCommandes + "</div><div class='libelle'>" + t("libelleCommandesPeriode") + "</div></div>" +
+          "<div class='tuile'><div class='valeur'>" + (r.chiffreAffaires || 0).toLocaleString(localeCourante()) + " FCFA</div><div class='libelle'>" + t("libelleCaHorsAnnulees") + "</div></div>" +
         "</div>" +
-        "<h3>Répartition par statut</h3>" +
-        "<table class='table-donnees'><tr>" + Object.keys(r.parStatut).map((s) => "<th>" + esc(s) + "</th>").join("") + "</tr><tr>" + Object.keys(r.parStatut).map((s) => "<td>" + r.parStatut[s] + "</td>").join("") + "</tr></table>" +
-        "<h3>Quantités vendues par article</h3>" +
+        "<h3>" + t("h3RepartitionStatut") + "</h3>" +
+        "<table class='table-donnees'><tr>" + Object.keys(r.parStatut).map((s) => "<th>" + esc(libelleStatutCommande(s)) + "</th>").join("") + "</tr><tr>" + Object.keys(r.parStatut).map((s) => "<td>" + r.parStatut[s] + "</td>").join("") + "</tr></table>" +
+        "<h3>" + t("h3QuantitesVendues") + "</h3>" +
         (r.parArticle.length
-          ? "<table class='table-donnees'><tr><th>Article</th><th>Quantité</th></tr>" + r.parArticle.map((a) => "<tr><td>" + esc(a.nom) + "</td><td>" + a.quantite + "</td></tr>").join("") + "</table>"
-          : "<p class='raison'>Aucune vente sur cette période.</p>");
-    } catch (e) { zoneResultat.innerHTML = "<div class='erreur'>Erreur : " + esc(e.message) + "</div>"; }
+          ? "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadQuantite") + "</th></tr>" + r.parArticle.map((a) => "<tr><td>" + esc(a.nom) + "</td><td>" + a.quantite + "</td></tr>").join("") + "</table>"
+          : "<p class='raison'>" + t("msgAucuneVentePeriode") + "</p>");
+    } catch (e) { zoneResultat.innerHTML = "<div class='erreur'>" + t("erreurPrefixe") + esc(e.message) + "</div>"; }
   };
 
   document.getElementById("btnNouvelInstantane").onclick = async () => {
-    const nom = prompt("Nom de cet instantané (ex: Avant livraison du 10/09) :", "Instantané du " + new Date().toLocaleDateString("fr-FR"));
+    const nom = prompt(t("promptNomInstantane"), t("prefixeInstantaneDu") + new Date().toLocaleDateString(localeCourante()));
     if (nom === null) return;
     try {
       await api("/api/" + marchandActif.id + "/inventaire/instantanes", { method: "POST", body: JSON.stringify({ nom }) });
       renderRapports();
-    } catch (e) { alert("Erreur : " + e.message); }
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
 }
 
@@ -1066,53 +1722,53 @@ async function renderCompte() {
 
   if (moi.role === "superadmin") {
     zone.innerHTML =
-      "<h2>Compte — " + esc(marchandActif.nom) + "</h2>" +
-      "<p class='raison'>En tant que super-administrateur, vous pouvez gérer les identifiants de connexion de ce marchand : changer son nom d'utilisateur, lui définir un nouveau mot de passe, ou lui en générer un aléatoirement (par exemple s'il vous contacte parce qu'il a oublié le sien).</p>" +
-      "<label>Nom d'utilisateur</label>" +
+      "<h2>" + t("compteTitreAvecNom", { nom: esc(marchandActif.nom) }) + "</h2>" +
+      "<p class='raison'>" + t("noteSuperadminCompte") + "</p>" +
+      "<label>" + t("labelNomUtilisateur") + "</label>" +
       "<input id='champUtilisateur' value=\"" + esc(marchandActif.adminUser || "") + "\" />" +
-      "<div style='margin-top:10px;'><button id='btnSauverUtilisateur'>Enregistrer le nom d'utilisateur</button></div>" +
-      "<h3>Mot de passe</h3>" +
-      "<label>Définir ce mot de passe (au moins 6 caractères)</label>" +
-      "<input id='champNouveauMdp' type='text' placeholder='Nouveau mot de passe' />" +
+      "<div style='margin-top:10px;'><button id='btnSauverUtilisateur'>" + t("btnEnregistrerNomUtilisateur") + "</button></div>" +
+      "<h3>" + t("h3MotDePasse") + "</h3>" +
+      "<label>" + t("labelDefinirMdp") + "</label>" +
+      "<input id='champNouveauMdp' type='text' placeholder=\"" + esc(t("placeholderNouveauMdp")) + "\" />" +
       "<div style='margin-top:10px;'>" +
-        "<button id='btnDefinirMdp' class='principal'>Définir ce mot de passe</button> " +
-        "<button id='btnGenererMdp'>Générer un mot de passe aléatoire</button>" +
+        "<button id='btnDefinirMdp' class='principal'>" + t("btnDefinirMdp") + "</button> " +
+        "<button id='btnGenererMdp'>" + t("btnGenererMdp") + "</button>" +
       "</div>" +
-      "<h3>Numéro de notification</h3>" +
-      "<p class='raison'>Le numéro WhatsApp personnel (pas le numéro business du bot) qui reçoit un message quand un client de ce marchand demande à parler à un humain.</p>" +
-      "<label>Numéro de notification (format international sans le +, ex: 237699999999)</label>" +
+      "<h3>" + t("h3NumeroNotification") + "</h3>" +
+      "<p class='raison'>" + t("noteNumeroNotifSuperadmin") + "</p>" +
+      "<label>" + t("labelNumeroNotif") + "</label>" +
       "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
-      "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>Enregistrer</button></div>";
+      "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>";
 
     document.getElementById("btnSauverUtilisateur").onclick = async () => {
       const nouvUtilisateur = document.getElementById("champUtilisateur").value.trim();
-      if (!nouvUtilisateur) { alert("Le nom d'utilisateur ne peut pas être vide."); return; }
+      if (!nouvUtilisateur) { alert(t("alertNomUtilisateurVide")); return; }
       try {
         await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ adminUser: nouvUtilisateur }) });
-        alert("Nom d'utilisateur mis à jour.");
+        alert(t("alertNomUtilisateurMaj"));
         await demarrer();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
     document.getElementById("btnDefinirMdp").onclick = async () => {
       const mdp = document.getElementById("champNouveauMdp").value;
-      if (!mdp) { alert("Entrez un mot de passe."); return; }
+      if (!mdp) { alert(t("alertEntrerMdp")); return; }
       try {
         await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ newPassword: mdp }) });
-        alert("Mot de passe mis à jour. Communiquez-le au marchand :\n\n" + mdp);
-      } catch (e) { alert("Erreur : " + e.message); }
+        alert(t("alertMdpMajCommuniquer", { mdp: mdp }));
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
     document.getElementById("btnGenererMdp").onclick = async () => {
       try {
         const rep = await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ genererMotDePasse: true }) });
-        alert("Nouveau mot de passe généré. Communiquez-le au marchand :\n\n" + rep.nouveauMotDePasse);
-      } catch (e) { alert("Erreur : " + e.message); }
+        alert(t("alertNouveauMdpGenereCommuniquer", { mdp: rep.nouveauMotDePasse }));
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
     document.getElementById("btnSauverNotification").onclick = async () => {
       try {
         await api("/api/" + marchandActif.id + "/notification", { method: "PUT", body: JSON.stringify({ phoneNotification: document.getElementById("champNotification").value.trim() || null }) });
-        alert("Numéro de notification enregistré.");
+        alert(t("alertNumeroNotifEnregistre"));
         await demarrer();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
     return;
   }
@@ -1124,61 +1780,61 @@ async function renderCompte() {
     const libellesRoles = rolesDisponibles();
     const mesAcces = (moi.roles || []).map((r) => { const trouve = libellesRoles.filter((x) => x[0] === r)[0]; return trouve ? trouve[1] : r; });
     zone.innerHTML =
-      "<h2>Mon compte</h2>" +
-      "<p>Nom d'utilisateur : <strong>" + esc(moi.adminUser || "") + "</strong></p>" +
-      "<p>Accès : <strong>" + (mesAcces.length ? esc(mesAcces.join(", ")) : "aucun") + "</strong></p>" +
-      "<label>Nouveau mot de passe (au moins 6 caractères)</label>" +
+      "<h2>" + t("monCompteTitre") + "</h2>" +
+      "<p>" + t("labelNomUtilisateurAffiche") + "<strong>" + esc(moi.adminUser || "") + "</strong></p>" +
+      "<p>" + t("labelAcces") + "<strong>" + (mesAcces.length ? esc(mesAcces.join(", ")) : t("aucun")) + "</strong></p>" +
+      "<label>" + t("labelNouveauMdp") + "</label>" +
       "<input id='champNouveauMdp1' type='password' />" +
-      "<label>Confirmer le nouveau mot de passe</label>" +
+      "<label>" + t("labelConfirmerMdp") + "</label>" +
       "<input id='champNouveauMdp2' type='password' />" +
-      "<div style='margin-top:14px;'><button id='btnChangerMdp' class='principal'>Changer mon mot de passe</button></div>" +
-      "<p class='raison'>Une fois le changement effectué, la page se recharge : reconnectez-vous avec votre nouveau mot de passe.</p>";
+      "<div style='margin-top:14px;'><button id='btnChangerMdp' class='principal'>" + t("btnChangerMdp") + "</button></div>" +
+      "<p class='raison'>" + t("noteRechargementMdp") + "</p>";
     document.getElementById("btnChangerMdp").onclick = async () => {
       const m1 = document.getElementById("champNouveauMdp1").value;
       const m2 = document.getElementById("champNouveauMdp2").value;
-      if (!m1 || m1 !== m2) { alert("Les deux mots de passe doivent être identiques et non vides."); return; }
-      if (m1.length < 6) { alert("Le mot de passe doit contenir au moins 6 caractères."); return; }
+      if (!m1 || m1 !== m2) { alert(t("alertMdpIdentiques")); return; }
+      if (m1.length < 6) { alert(t("alertMdp6Caracteres")); return; }
       try {
         await api("/api/" + marchandActif.id + "/employes/" + moi.employeId, { method: "PUT", body: JSON.stringify({ newPassword: m1 }) });
-        alert("Mot de passe changé avec succès. La page va se recharger : reconnectez-vous avec votre nouveau mot de passe.");
+        alert(t("alertMdpChangeSucces"));
         location.reload();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
     return;
   }
 
   // Vue "marchand" : uniquement son propre changement de mot de passe.
   zone.innerHTML =
-    "<h2>Mon compte</h2>" +
-    "<p>Nom d'utilisateur : <strong>" + esc(marchandActif.adminUser || "") + "</strong></p>" +
-    "<label>Nouveau mot de passe (au moins 6 caractères)</label>" +
+    "<h2>" + t("monCompteTitre") + "</h2>" +
+    "<p>" + t("labelNomUtilisateurAffiche") + "<strong>" + esc(marchandActif.adminUser || "") + "</strong></p>" +
+    "<label>" + t("labelNouveauMdp") + "</label>" +
     "<input id='champNouveauMdp1' type='password' />" +
-    "<label>Confirmer le nouveau mot de passe</label>" +
+    "<label>" + t("labelConfirmerMdp") + "</label>" +
     "<input id='champNouveauMdp2' type='password' />" +
-    "<div style='margin-top:14px;'><button id='btnChangerMdp' class='principal'>Changer mon mot de passe</button></div>" +
-    "<p class='raison'>Une fois le changement effectué, la page se recharge : reconnectez-vous avec votre nouveau mot de passe.</p>" +
-    "<h3>Numéro de notification</h3>" +
-    "<p class='raison'>Votre numéro WhatsApp personnel (pas votre numéro business), pour être averti par message quand un client demande à parler à un humain.</p>" +
-    "<label>Numéro de notification (format international sans le +, ex: 237699999999)</label>" +
+    "<div style='margin-top:14px;'><button id='btnChangerMdp' class='principal'>" + t("btnChangerMdp") + "</button></div>" +
+    "<p class='raison'>" + t("noteRechargementMdp") + "</p>" +
+    "<h3>" + t("h3NumeroNotification") + "</h3>" +
+    "<p class='raison'>" + t("noteNumeroNotifMarchand") + "</p>" +
+    "<label>" + t("labelNumeroNotif") + "</label>" +
     "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
-    "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>Enregistrer</button></div>";
+    "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>";
 
   document.getElementById("btnChangerMdp").onclick = async () => {
     const m1 = document.getElementById("champNouveauMdp1").value;
     const m2 = document.getElementById("champNouveauMdp2").value;
-    if (!m1 || m1 !== m2) { alert("Les deux mots de passe doivent être identiques et non vides."); return; }
-    if (m1.length < 6) { alert("Le mot de passe doit contenir au moins 6 caractères."); return; }
+    if (!m1 || m1 !== m2) { alert(t("alertMdpIdentiques")); return; }
+    if (m1.length < 6) { alert(t("alertMdp6Caracteres")); return; }
     try {
       await api("/api/" + marchandActif.id + "/identifiants", { method: "PUT", body: JSON.stringify({ newPassword: m1 }) });
-      alert("Mot de passe changé avec succès. La page va se recharger : reconnectez-vous avec votre nouveau mot de passe.");
+      alert(t("alertMdpChangeSucces"));
       location.reload();
-    } catch (e) { alert("Erreur : " + e.message); }
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
   document.getElementById("btnSauverNotification").onclick = async () => {
     try {
       await api("/api/" + marchandActif.id + "/notification", { method: "PUT", body: JSON.stringify({ phoneNotification: document.getElementById("champNotification").value.trim() || null }) });
-      alert("Numéro de notification enregistré.");
-    } catch (e) { alert("Erreur : " + e.message); }
+      alert(t("alertNumeroNotifEnregistre"));
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
 }
 
@@ -1188,7 +1844,7 @@ async function renderCompte() {
 
 async function renderEmployes() {
   const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>Chargement…</div>";
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const employes = await api("/api/" + marchandActif.id + "/employes");
   const roles = rolesDisponibles();
 
@@ -1208,58 +1864,58 @@ async function renderEmployes() {
 
   function redraw() {
     zone.innerHTML =
-      "<h2>Employés (" + employes.length + ")</h2>" +
-      "<p class='raison'>Chaque employé se connecte à /admin avec son propre identifiant et mot de passe, et ne voit que les onglets correspondant aux accès cochés ci-dessous — jamais cet onglet \"Employés\", ni la gestion du marchand.</p>" +
+      "<h2>" + t("employesTitre", { n: employes.length }) + "</h2>" +
+      "<p class='raison'>" + t("noteEmployes") + "</p>" +
       (employes.length ? employes.map((e) =>
         "<div class='carte-produit'>" +
           "<div class='ligne-produit'>" +
-            "<input data-emp='" + e.id + "' data-champ='nom' value=\"" + esc(e.nom) + "\" placeholder='Nom' />" +
-            "<span class='raison' style='align-self:center;'>Identifiant : <strong>" + esc(e.identifiant) + "</strong> (non modifiable)</span>" +
+            "<input data-emp='" + e.id + "' data-champ='nom' value=\"" + esc(e.nom) + "\" placeholder=\"" + esc(t("labelNom")) + "\" />" +
+            "<span class='raison' style='align-self:center;'>" + t("labelIdentifiantNonModifiable", { id: esc(e.identifiant) }) + "</span>" +
           "</div>" +
           "<div>" + casesRoles(e.id, e.roles) + "</div>" +
           "<div style='margin-top:8px;'>" +
-            "<button data-emp-sauver='" + e.id + "'>Enregistrer</button> " +
-            "<button data-emp-mdp='" + e.id + "'>Générer un nouveau mot de passe</button> " +
-            "<button data-emp-suppr='" + e.id + "' class='danger'>Supprimer</button>" +
+            "<button data-emp-sauver='" + e.id + "'>" + t("enregistrer") + "</button> " +
+            "<button data-emp-mdp='" + e.id + "'>" + t("btnGenererNouveauMdp") + "</button> " +
+            "<button data-emp-suppr='" + e.id + "' class='danger'>" + t("supprimer") + "</button>" +
           "</div>" +
         "</div>"
-      ).join("") : "<p>Aucun employé pour l'instant.</p>") +
-      "<h3>Ajouter un employé</h3>" +
-      "<label>Nom</label><input id='nouvEmpNom' placeholder=\"Nom de l'employé\" />" +
-      "<label>Identifiant de connexion</label><input id='nouvEmpIdentifiant' placeholder='Identifiant unique' />" +
-      "<label>Mot de passe initial (au moins 6 caractères)</label><input id='nouvEmpMdp' type='text' placeholder='Mot de passe' />" +
-      "<label>Accès</label><div>" + casesRoles("nouv", []) + "</div>" +
-      "<div style='margin-top:10px;'><button id='btnAjouterEmploye' class='principal'>Créer ce compte employé</button></div>";
+      ).join("") : "<p>" + t("aucunEmploye") + "</p>") +
+      "<h3>" + t("h3AjouterEmploye") + "</h3>" +
+      "<label>" + t("labelNom") + "</label><input id='nouvEmpNom' placeholder=\"" + esc(t("placeholderNomEmploye")) + "\" />" +
+      "<label>" + t("labelIdentifiantConnexion") + "</label><input id='nouvEmpIdentifiant' placeholder=\"" + esc(t("placeholderIdentifiantUnique")) + "\" />" +
+      "<label>" + t("labelMdpInitial") + "</label><input id='nouvEmpMdp' type='text' placeholder=\"" + esc(t("placeholderMdp")) + "\" />" +
+      "<label>" + t("labelAcces") + "</label><div>" + casesRoles("nouv", []) + "</div>" +
+      "<div style='margin-top:10px;'><button id='btnAjouterEmploye' class='principal'>" + t("btnCreerCompteEmploye") + "</button></div>";
 
     Array.prototype.forEach.call(zone.querySelectorAll("[data-emp-sauver]"), (btn) => {
       btn.onclick = async () => {
         const empId = btn.dataset.empSauver;
         const nom = zone.querySelector("[data-emp='" + empId + "'][data-champ='nom']").value.trim();
         const rolesChoisis = rolesCoches(empId);
-        if (!nom) { alert("Le nom ne peut pas être vide."); return; }
-        if (!rolesChoisis.length) { alert("Au moins un accès est requis."); return; }
+        if (!nom) { alert(t("alertNomVide")); return; }
+        if (!rolesChoisis.length) { alert(t("alertAuMoinsUnAcces")); return; }
         try {
           await api("/api/" + marchandActif.id + "/employes/" + empId, { method: "PUT", body: JSON.stringify({ nom, roles: rolesChoisis }) });
           renderEmployes();
-        } catch (e) { alert("Erreur : " + e.message); }
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-emp-mdp]"), (btn) => {
       btn.onclick = async () => {
-        if (!confirm("Générer un nouveau mot de passe aléatoire pour cet employé ? L'ancien cessera immédiatement de fonctionner.")) return;
+        if (!confirm(t("confirmGenererMdpEmploye"))) return;
         try {
           const rep = await api("/api/" + marchandActif.id + "/employes/" + btn.dataset.empMdp, { method: "PUT", body: JSON.stringify({ genererMotDePasse: true }) });
-          alert("Nouveau mot de passe généré. Communiquez-le à l'employé :\n\n" + rep.nouveauMotDePasse);
-        } catch (e) { alert("Erreur : " + e.message); }
+          alert(t("alertNouveauMdpGenereEmploye", { mdp: rep.nouveauMotDePasse }));
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-emp-suppr]"), (btn) => {
       btn.onclick = async () => {
-        if (!confirm("Supprimer définitivement ce compte employé ?")) return;
+        if (!confirm(t("confirmSupprimerEmploye"))) return;
         try {
           await api("/api/" + marchandActif.id + "/employes/" + btn.dataset.empSuppr, { method: "DELETE" });
           renderEmployes();
-        } catch (e) { alert("Erreur : " + e.message); }
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
     });
     document.getElementById("btnAjouterEmploye").onclick = async () => {
@@ -1267,14 +1923,14 @@ async function renderEmployes() {
       const identifiant = document.getElementById("nouvEmpIdentifiant").value.trim();
       const motDePasse = document.getElementById("nouvEmpMdp").value;
       const rolesChoisis = rolesCoches("nouv");
-      if (!nom || !identifiant || !motDePasse) { alert("Nom, identifiant et mot de passe sont requis."); return; }
-      if (motDePasse.length < 6) { alert("Le mot de passe doit contenir au moins 6 caractères."); return; }
-      if (!rolesChoisis.length) { alert("Au moins un accès est requis."); return; }
+      if (!nom || !identifiant || !motDePasse) { alert(t("alertChampsRequisEmploye")); return; }
+      if (motDePasse.length < 6) { alert(t("alertMdp6Caracteres")); return; }
+      if (!rolesChoisis.length) { alert(t("alertAuMoinsUnAcces")); return; }
       try {
         await api("/api/" + marchandActif.id + "/employes", { method: "POST", body: JSON.stringify({ nom, identifiant, motDePasse, roles: rolesChoisis }) });
-        alert("Compte employé créé. Identifiants à lui communiquer :\n\nIdentifiant : " + identifiant + "\nMot de passe : " + motDePasse);
+        alert(t("alertCompteEmployeCree", { id: identifiant, mdp: motDePasse }));
         renderEmployes();
-      } catch (e) { alert("Erreur : " + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   }
   redraw();
