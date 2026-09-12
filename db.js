@@ -62,6 +62,12 @@ async function ensureMerchantsTable() {
   // Suspension d'un marchand (ex: facture impayee) : coupe ses reponses automatiques sans toucher a ses
   // donnees. Actif par defaut pour ne suspendre personne au moment de la migration.
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS actif BOOLEAN NOT NULL DEFAULT true");
+  // Comptes "employe" d'un marchand : chacun a son propre identifiant/mot de passe et une liste de roles
+  // (voir ROLES_EMPLOYE_VALIDES dans server.js) qui limite les onglets/actions auxquels il a acces, par
+  // opposition au compte principal du marchand (adminUser/adminPassword) qui a toujours acces a tout ce
+  // qui concerne SON marchand. Tableau vide par defaut : aucun marchand existant n'a d'employe tant qu'il
+  // n'en cree pas depuis /admin.
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS employes JSONB NOT NULL DEFAULT '[]'::jsonb");
 }
 
 function defaultMerchantFromEnv() {
@@ -75,7 +81,8 @@ function defaultMerchantFromEnv() {
     adminUser: process.env.ADMIN_USER || "admin",
     adminPassword: process.env.ADMIN_PASSWORD || null,
     phoneNotification: null,
-    actif: true
+    actif: true,
+    employes: []
   };
 }
 
@@ -84,7 +91,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return res.rows.map(rowToMerchant);
     }
@@ -116,7 +123,8 @@ function rowToMerchant(row) {
     adminUser: row.admin_user,
     adminPassword: row.admin_password,
     phoneNotification: row.phone_notification || null,
-    actif: row.actif !== false
+    actif: row.actif !== false,
+    employes: Array.isArray(row.employes) ? row.employes : []
   };
 }
 
@@ -124,9 +132,9 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8",
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false]
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb",
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || [])]
     );
     return;
   }
@@ -134,6 +142,23 @@ async function insertMerchant(m) {
   const idx = liste.findIndex((x) => x.id === m.id);
   if (idx === -1) liste.push(m); else liste[idx] = m;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
+}
+
+// Lit la fiche COMPLETE d'un marchand (utilisee en interne par addEmploye/updateEmploye/deleteEmploye pour
+// lire son tableau `employes` avant de le muter puis le reecrire via insertMerchant). Retourne null si ce
+// marchand n'existe pas.
+async function getMerchantRecord(id) {
+  if (pool) {
+    await ensureMerchantsTable();
+    const res = await pool.query(
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes FROM merchants WHERE id = $1",
+      [id]
+    );
+    if (!res.rows.length) return null;
+    return rowToMerchant(res.rows[0]);
+  }
+  const liste = fs.existsSync(MERCHANTS_FILE) ? JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8")) : [];
+  return liste.find((x) => x.id === id) || null;
 }
 
 // Ajoute un nouveau marchand au registre (utilise lors de l'onboarding manuel d'un nouveau marchand).
@@ -207,6 +232,49 @@ async function deleteMerchant(id) {
   if (idx === -1) return false;
   liste.splice(idx, 1);
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
+  return true;
+}
+
+// ---------------- Employes d'un marchand (comptes a acces restreint) ----------------
+// Stockes DANS la fiche du marchand (colonne "employes", tableau JSON) plutot que dans une table a part :
+// un employe n'existe jamais independamment d'un marchand, et leur nombre par marchand reste toujours
+// petit (quelques employes tout au plus) - inutile d'alourdir le schema d'une table dediee pour ca. Chaque
+// employe : { id, nom, identifiant, motDePasseHash, roles: [...] } (voir ROLES_EMPLOYE_VALIDES et le
+// controle d'acces dans server.js).
+
+// Ajoute un employe a un marchand existant. Retourne l'employe ajoute, ou null si ce marchand n'existe pas.
+async function addEmploye(merchantId, employe) {
+  const m = await getMerchantRecord(merchantId);
+  if (!m) return null;
+  if (!Array.isArray(m.employes)) m.employes = [];
+  m.employes.push(employe);
+  await insertMerchant(m);
+  return employe;
+}
+
+// Met a jour un ou plusieurs champs (nom, roles, motDePasseHash) d'UN employe existant, sans toucher aux
+// autres. Retourne l'employe mis a jour, ou null si le marchand ou l'employe n'existe pas.
+async function updateEmploye(merchantId, employeId, patch) {
+  const m = await getMerchantRecord(merchantId);
+  if (!m) return null;
+  const emp = (m.employes || []).find((e) => e.id === employeId);
+  if (!emp) return null;
+  if (patch.nom !== undefined) emp.nom = patch.nom;
+  if (patch.roles !== undefined) emp.roles = patch.roles;
+  if (patch.motDePasseHash !== undefined) emp.motDePasseHash = patch.motDePasseHash;
+  await insertMerchant(m);
+  return emp;
+}
+
+// Supprime definitivement un employe. Retourne true si une entree a bien ete supprimee, false sinon
+// (marchand ou employe introuvable).
+async function deleteEmploye(merchantId, employeId) {
+  const m = await getMerchantRecord(merchantId);
+  if (!m) return false;
+  const avant = (m.employes || []).length;
+  m.employes = (m.employes || []).filter((e) => e.id !== employeId);
+  if (m.employes.length === avant) return false;
+  await insertMerchant(m);
   return true;
 }
 
@@ -396,6 +464,9 @@ module.exports = {
   addMerchant,
   updateMerchantFields,
   deleteMerchant,
+  addEmploye,
+  updateEmploye,
+  deleteEmploye,
   initMerchantState,
   persistMerchantState,
   logConversationMessage,

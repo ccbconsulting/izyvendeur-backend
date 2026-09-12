@@ -193,6 +193,14 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
   return motDePasseFourni === motDePasseStocke;
 }
 
+// Roles assignables a un compte "employe" d'un marchand (voir /api/:id/employes plus bas) — un employe
+// peut cumuler plusieurs de ces roles. "catalogue" n'a de sens que pour un marchand de type catalogue,
+// "rendezvous" que pour un marchand de type service ; "conversations" et "parametres" s'appliquent aux
+// deux types. Le PROPRIETAIRE du marchand (role "marchand") et le super-administrateur ont eux toujours
+// acces a tout ce qui concerne LEUR marchand, quels que soient ces roles - la restriction ne s'applique
+// qu'aux employes.
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "rendezvous", "conversations", "parametres"];
+
 function protegerAcces(req, res, next) {
   const superUtilisateur = process.env.ADMIN_USER || "admin";
   const superMotDePasse = process.env.ADMIN_PASSWORD;
@@ -226,6 +234,13 @@ function protegerAcces(req, res, next) {
         next();
         return;
       }
+      for (const emp of (m.employes || [])) {
+        if (emp.identifiant && utilisateur === emp.identifiant && motDePasseCorrespond(motDePasse, emp.motDePasseHash)) {
+          req.auth = { role: "employe", merchantId: id, adminUser: utilisateur, employeId: emp.id, roles: emp.roles || [] };
+          next();
+          return;
+        }
+      }
     }
   }
 
@@ -234,7 +249,9 @@ function protegerAcces(req, res, next) {
 }
 
 // Verifie que l'utilisateur authentifie (req.auth) a le droit d'agir sur le marchand `id` : le
-// super-administrateur peut toujours, un marchand uniquement sur lui-meme. Repond 403 sinon.
+// super-administrateur peut toujours, un marchand OU UN EMPLOYE uniquement sur le marchand auquel il
+// appartient (la restriction plus fine par role d'un employe est verifiee separement, voir
+// getMarchandAutorise ci-dessous). Repond 403 sinon.
 function verifierPortee(req, res, id) {
   if (req.auth.role === "superadmin" || req.auth.merchantId === id) return true;
   res.status(403).json({ erreur: "Accès non autorisé à ce marchand." });
@@ -247,10 +264,45 @@ function getMarchandOu404(req, res) {
   return entry;
 }
 
-// Combine les deux verifications precedentes : utilisee par toutes les routes /api/:id/...
-function getMarchandAutorise(req, res) {
+// Combine les verifications precedentes, PLUS (nouveau) le controle d'acces par role d'un employe.
+// `permission` est optionnel : un des ROLES_EMPLOYE_VALIDES, ou un tableau de plusieurs (acces accorde si
+// l'employe a AU MOINS UN des roles listes) pour une route accessible via plusieurs roles differents (ex:
+// le Simulateur WhatsApp, utile aussi bien a un employe "catalogue"/"rendezvous" qu'a un employe
+// "conversations"). Omis (ou pour un role "marchand"/"superadmin") = aucune restriction supplementaire.
+function getMarchandAutorise(req, res, permission) {
   if (!verifierPortee(req, res, req.params.id)) return null;
+  if (permission && req.auth.role === "employe") {
+    const permissionsAcceptees = Array.isArray(permission) ? permission : [permission];
+    const aAcces = permissionsAcceptees.some((p) => (req.auth.roles || []).indexOf(p) !== -1);
+    if (!aAcces) {
+      res.status(403).json({ erreur: "Vous n'avez pas accès à cette fonctionnalité." });
+      return null;
+    }
+  }
   return getMarchandOu404(req, res);
+}
+
+// true si l'utilisateur authentifie est le PROPRIETAIRE de ce marchand (role "marchand") ou le
+// super-administrateur - utilise pour les actions reservees au proprietaire (gestion des employes,
+// suspension, etc.) qu'un employe ne doit jamais pouvoir faire, quels que soient ses roles.
+function estGestionnaireDuMarchand(req, id) {
+  return req.auth.role === "superadmin" || (req.auth.role === "marchand" && req.auth.merchantId === id);
+}
+
+// true si cet identifiant est deja utilise par un compte existant (super-administrateur, marchand, ou
+// employe de N'IMPORTE QUEL marchand) - la connexion (Basic Auth) etant globale au serveur (pas de "choix
+// du marchand" prealable), deux comptes avec le meme identifiant seraient impossibles a distinguer a la
+// connexion (le premier trouve gagnerait toujours). Verifie a la CREATION d'un employe pour eviter ce
+// piege des le depart.
+function identifiantDejaUtilise(identifiant) {
+  const superUtilisateur = process.env.ADMIN_USER || "admin";
+  if (identifiant === superUtilisateur) return true;
+  for (const id of Object.keys(engines)) {
+    const m = engines[id].merchant;
+    if (m.adminUser === identifiant) return true;
+    if ((m.employes || []).some((e) => e.identifiant === identifiant)) return true;
+  }
+  return false;
 }
 
 function genererMotDePasseAleatoire() {
@@ -378,7 +430,7 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
 // super-administrateur (acces a tout, gestion des marchands et de leurs identifiants) ou un marchand
 // (limite a ses propres donnees, peut seulement changer son propre mot de passe).
 app.get("/api/moi", protegerAcces, (req, res) => {
-  res.json({ role: req.auth.role, merchantId: req.auth.merchantId, adminUser: req.auth.adminUser });
+  res.json({ role: req.auth.role, merchantId: req.auth.merchantId, adminUser: req.auth.adminUser, roles: req.auth.roles || null });
 });
 
 // Creation, modification ou reinitialisation des identifiants de connexion d'un marchand.
@@ -390,6 +442,9 @@ app.get("/api/moi", protegerAcces, (req, res) => {
 app.put("/api/:id/identifiants", protegerAcces, async (req, res) => {
   const id = req.params.id;
   if (!verifierPortee(req, res, id)) return;
+  // Ces identifiants sont ceux du PROPRIETAIRE du marchand (compte principal) — un employe a son propre
+  // compte, gere via PUT /api/:id/employes/:employeId (voir plus bas), jamais celui-ci.
+  if (req.auth.role === "employe") return res.status(403).json({ erreur: "Utilisez la gestion de votre compte employé pour changer votre mot de passe." });
   const entry = engines[id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + id });
 
@@ -423,6 +478,140 @@ app.put("/api/:id/identifiants", protegerAcces, async (req, res) => {
 
   console.log("Identifiants mis a jour pour le marchand '" + id + "' par " + req.auth.role + " (" + req.auth.adminUser + ").");
   res.json({ id, adminUser: maj.adminUser, nouveauMotDePasse: motDePasseEnClair || undefined });
+});
+
+// ---------------- Employes d'un marchand (comptes a acces restreint a certaines taches) ----------------
+// Un marchand peut creer, pour lui-meme, des comptes "employe" limites a certains onglets/actions (voir
+// ROLES_EMPLOYE_VALIDES plus haut) — ex: une receptionniste qui ne gere que les rendez-vous et repond aux
+// clients mis en relation avec un humain, sans jamais voir les parametres ni les chiffres. Creation,
+// modification (nom/roles/mot de passe) et suppression reservees au PROPRIETAIRE du marchand et au
+// super-administrateur (voir estGestionnaireDuMarchand) ; un employe ne peut jamais gerer d'autres
+// employes, seulement changer son propre mot de passe (voir le PUT ci-dessous).
+
+app.get("/api/:id/employes", protegerAcces, (req, res) => {
+  const id = req.params.id;
+  if (!verifierPortee(req, res, id)) return;
+  if (!estGestionnaireDuMarchand(req, id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  res.json((entry.merchant.employes || []).map((e) => ({ id: e.id, nom: e.nom, identifiant: e.identifiant, roles: e.roles || [] })));
+});
+
+app.post("/api/:id/employes", protegerAcces, async (req, res) => {
+  const id = req.params.id;
+  if (!verifierPortee(req, res, id)) return;
+  if (!estGestionnaireDuMarchand(req, id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+
+  const { nom, identifiant, motDePasse, roles } = req.body || {};
+  if (!nom || !String(nom).trim()) return res.status(400).json({ erreur: "nom requis." });
+  if (!identifiant || !String(identifiant).trim()) return res.status(400).json({ erreur: "identifiant requis." });
+  if (!motDePasse || String(motDePasse).length < 6) return res.status(400).json({ erreur: "motDePasse requis (6 caractères minimum)." });
+
+  const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
+  if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
+  const rolesIncompatibles = rolesDemandes.filter((r) =>
+    (r === "catalogue" && entry.engine.type !== "catalogue") || (r === "rendezvous" && entry.engine.type !== "service")
+  );
+  if (rolesIncompatibles.length) {
+    return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
+  }
+
+  const idNormalise = String(identifiant).trim();
+  if (identifiantDejaUtilise(idNormalise)) {
+    return res.status(409).json({ erreur: "Cet identifiant est déjà utilisé par un autre compte (marchand ou employé)." });
+  }
+
+  const employe = {
+    id: "emp" + Date.now() + Math.floor(Math.random() * 1000),
+    nom: String(nom).trim(),
+    identifiant: idNormalise,
+    motDePasseHash: bcrypt.hashSync(String(motDePasse), 10),
+    roles: rolesDemandes
+  };
+  const ajoute = await db.addEmploye(id, employe);
+  if (!ajoute) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.employes = entry.merchant.employes || [];
+  entry.merchant.employes.push(employe);
+
+  console.log(`[${id}] Nouvel employé créé par ${req.auth.adminUser} : ${employe.identifiant} (${employe.roles.join(", ")}).`);
+  res.status(201).json({ id: employe.id, nom: employe.nom, identifiant: employe.identifiant, roles: employe.roles });
+});
+
+// Modifie un employe existant :
+//   - Le proprietaire du marchand (ou le super-administrateur) peut changer son nom, ses roles, et/ou lui
+//     definir un nouveau mot de passe (ou lui en generer un aleatoirement), exactement comme pour le
+//     compte principal via PUT /api/:id/identifiants.
+//   - Un employe peut le faire UNIQUEMENT pour lui-meme, et UNIQUEMENT pour changer son propre mot de
+//     passe (jamais son nom ni ses roles).
+app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
+  const id = req.params.id;
+  const employeId = req.params.employeId;
+  if (!verifierPortee(req, res, id)) return;
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const employeActuel = (entry.merchant.employes || []).find((e) => e.id === employeId);
+  if (!employeActuel) return res.status(404).json({ erreur: "Employé introuvable." });
+
+  const patch = {};
+  let motDePasseEnClair = null;
+
+  if (req.auth.role === "employe") {
+    if (req.auth.employeId !== employeId) return res.status(403).json({ erreur: "Vous ne pouvez modifier que votre propre compte." });
+    if (req.body && (req.body.nom !== undefined || req.body.roles !== undefined)) {
+      return res.status(403).json({ erreur: "Seul le propriétaire du marchand peut changer le nom ou les rôles d'un compte employé." });
+    }
+    const { newPassword } = req.body || {};
+    if (!newPassword || String(newPassword).length < 6) return res.status(400).json({ erreur: "Le mot de passe doit contenir au moins 6 caractères." });
+    motDePasseEnClair = String(newPassword);
+    patch.motDePasseHash = bcrypt.hashSync(motDePasseEnClair, 10);
+  } else if (estGestionnaireDuMarchand(req, id)) {
+    const { nom, roles, newPassword, genererMotDePasse } = req.body || {};
+    if (nom !== undefined) {
+      if (!String(nom).trim()) return res.status(400).json({ erreur: "Le nom ne peut pas être vide." });
+      patch.nom = String(nom).trim();
+    }
+    if (roles !== undefined) {
+      const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
+      if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
+      const rolesIncompatibles = rolesDemandes.filter((r) =>
+        (r === "catalogue" && entry.engine.type !== "catalogue") || (r === "rendezvous" && entry.engine.type !== "service")
+      );
+      if (rolesIncompatibles.length) {
+        return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
+      }
+      patch.roles = rolesDemandes;
+    }
+    if (genererMotDePasse) {
+      motDePasseEnClair = genererMotDePasseAleatoire();
+      patch.motDePasseHash = bcrypt.hashSync(motDePasseEnClair, 10);
+    } else if (newPassword) {
+      if (String(newPassword).length < 6) return res.status(400).json({ erreur: "Le mot de passe doit contenir au moins 6 caractères." });
+      motDePasseEnClair = String(newPassword);
+      patch.motDePasseHash = bcrypt.hashSync(motDePasseEnClair, 10);
+    }
+  } else {
+    return res.status(403).json({ erreur: "Accès non autorisé." });
+  }
+
+  if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
+
+  const maj = await db.updateEmploye(id, employeId, patch);
+  if (!maj) return res.status(404).json({ erreur: "Employé introuvable." });
+  Object.assign(employeActuel, maj);
+
+  console.log(`[${id}] Compte employé '${employeId}' mis à jour par ${req.auth.adminUser}.`);
+  res.json({ id: maj.id, nom: maj.nom, identifiant: maj.identifiant, roles: maj.roles, nouveauMotDePasse: motDePasseEnClair || undefined });
+});
+
+app.delete("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
+  const id = req.params.id;
+  if (!verifierPortee(req, res, id)) return;
+  if (!estGestionnaireDuMarchand(req, id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const supprime = await db.deleteEmploye(id, req.params.employeId);
+  if (!supprime) return res.status(404).json({ erreur: "Employé introuvable." });
+  entry.merchant.employes = (entry.merchant.employes || []).filter((e) => e.id !== req.params.employeId);
+  console.log(`[${id}] Compte employé '${req.params.employeId}' supprimé par ${req.auth.adminUser}.`);
+  res.json({ id: req.params.employeId, supprime: true });
 });
 
 // Suspension / reactivation d'un marchand (ex: facture impayee) — reserve au super-administrateur, un
@@ -499,16 +688,16 @@ app.delete("/api/marchands/:id", protegerAcces, async (req, res) => {
   res.json({ id, supprime: true });
 });
 
-// -- Marchand catalogue --
+// -- Marchand catalogue -- (permission employe requise : "catalogue")
 
 app.get("/api/:id/catalogue", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getCatalog());
 });
 
 app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const nouveau = entry.engine.updateCatalog(req.body);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
@@ -520,7 +709,7 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
 // client des qu'il montre de l'interet (voir conversation.js, envoyerPhotoProduit) — pas besoin d'action
 // supplementaire une fois la photo ajoutee ici.
 app.post("/api/:id/catalogue/:productId/photos", protegerAcces, uploadPhoto.single("photo"), async (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!storage.estConfigure()) {
     return res.status(503).json({ erreur: "Hébergement des photos non configuré sur le serveur (variables R2_* manquantes sur Render). Voir le README, section « Photos des articles »." });
@@ -542,7 +731,7 @@ app.post("/api/:id/catalogue/:productId/photos", protegerAcces, uploadPhoto.sing
 });
 
 app.delete("/api/:id/catalogue/:productId/photos", protegerAcces, async (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { url } = req.body || {};
   if (!url) return res.status(400).json({ erreur: "url requise." });
@@ -553,13 +742,13 @@ app.delete("/api/:id/catalogue/:productId/photos", protegerAcces, async (req, re
 });
 
 app.get("/api/:id/commandes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getOrders());
 });
 
 app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { statut, raisonAnnulation } = req.body || {};
   const order = entry.engine.updateOrderStatus(req.params.orderId, statut, raisonAnnulation);
@@ -567,16 +756,16 @@ app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
   res.json(order);
 });
 
-// -- Marchand service (prise de rendez-vous) --
+// -- Marchand service (prise de rendez-vous) -- (permission employe requise : "rendezvous")
 
 app.get("/api/:id/services", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   res.json(entry.engine.getServices());
 });
 
 app.put("/api/:id/services", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   const nouveau = entry.engine.updateServices(req.body);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
@@ -584,13 +773,13 @@ app.put("/api/:id/services", protegerAcces, (req, res) => {
 });
 
 app.get("/api/:id/rendezvous", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   res.json(entry.engine.getAppointments());
 });
 
 app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   const { statut, raisonAnnulation } = req.body || {};
   const appt = entry.engine.updateAppointmentStatus(req.params.apptId, statut, raisonAnnulation);
@@ -599,23 +788,25 @@ app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
 });
 
 // -- Parametres : commun aux deux types (autoConfirmMessage, + horaires/dureeCreneauMinutes pour service) --
+// (permission employe requise : "parametres")
 
 app.get("/api/:id/parametres", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   res.json(entry.engine.getSettings());
 });
 
 app.put("/api/:id/parametres", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   res.json(entry.engine.updateSettings(req.body || {}));
 });
 
 // -- Numero de notification personnel (recoit un message WhatsApp quand un client demande a parler a un
 // humain) : le super-administrateur peut le regler pour n'importe quel marchand, un marchand pour
-// lui-meme uniquement (verifierPortee s'en charge via getMarchandAutorise). --
+// lui-meme uniquement (verifierPortee s'en charge via getMarchandAutorise). Permission employe requise :
+// "parametres" (c'est un reglage, pas une tache operationnelle du quotidien). --
 
 app.put("/api/:id/notification", protegerAcces, async (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   const { phoneNotification } = req.body || {};
   const maj = await db.updateMerchantFields(req.params.id, { phoneNotification: phoneNotification || null });
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
@@ -624,15 +815,16 @@ app.put("/api/:id/notification", protegerAcces, async (req, res) => {
 });
 
 // -- Mise en relation avec un humain : conversations actuellement en pause, et reponse manuelle du
-// marchand (envoyee au client via le meme compte WhatsApp que le bot). --
+// marchand (envoyee au client via le meme compte WhatsApp que le bot). Permission employe requise :
+// "conversations". --
 
 app.get("/api/:id/conversations", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
   res.json(entry.engine.getConversationsEnAttente());
 });
 
 app.post("/api/:id/conversations/:telephone/repondre", protegerAcces, async (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
   const { message } = req.body || {};
   if (!message || !String(message).trim()) return res.status(400).json({ erreur: "message requis." });
   const ok = await entry.engine.repondreConversationHumain(req.params.telephone, String(message));
@@ -641,10 +833,11 @@ app.post("/api/:id/conversations/:telephone/repondre", protegerAcces, async (req
 });
 
 // -- Historique complet des conversations (TOUS les echanges, pas seulement les mises en pause) : une
-// liste des clients ayant deja ecrit, puis le detail d'un client donne. --
+// liste des clients ayant deja ecrit, puis le detail d'un client donne. Permission employe requise :
+// "conversations". --
 
 app.get("/api/:id/conversations/historique", protegerAcces, async (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
   try {
     res.json(await db.getConversationSummaries(req.params.id));
   } catch (erreur) {
@@ -654,7 +847,7 @@ app.get("/api/:id/conversations/historique", protegerAcces, async (req, res) => 
 });
 
 app.get("/api/:id/conversations/historique/:telephone", protegerAcces, async (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
   try {
     res.json(await db.getConversationHistory(req.params.id, req.params.telephone));
   } catch (erreur) {
@@ -663,34 +856,42 @@ app.get("/api/:id/conversations/historique/:telephone", protegerAcces, async (re
   }
 });
 
-// -- Tableau de bord : statistiques resumees (commun aux deux types) --
+// -- Tableau de bord : statistiques resumees (commun aux deux types). Permission employe requise :
+// "parametres" (chiffres/CA — regroupe avec les reglages, voir ROLES_EMPLOYE_VALIDES). --
 
 app.get("/api/:id/tableau-de-bord", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   res.json(entry.engine.getTableauDeBord());
 });
 
 // -- Simulateur WhatsApp : permet au marchand de tester le bot depuis l'interface admin,
 // sans jamais toucher aux vraies conversations/commandes/rendez-vous des clients (voir
-// PHONE_SIMULATEUR dans conversation.js / conversationService.js). --
+// PHONE_SIMULATEUR dans conversation.js / conversationService.js). Accessible a un employe ayant le role
+// operationnel de ce type de marchand ("catalogue" ou "rendezvous") OU le role "conversations" (tester le
+// parcours bot fait aussi partie du service client). --
 
 app.post("/api/:id/simulateur/message", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const merchantExistant = engines[req.params.id];
+  const permissionOperationnelle = merchantExistant && merchantExistant.merchant.type === "service" ? "rendezvous" : "catalogue";
+  const entry = getMarchandAutorise(req, res, [permissionOperationnelle, "conversations"]); if (!entry) return;
   const { message } = req.body || {};
   if (!message || !String(message).trim()) return res.status(400).json({ erreur: "message requis." });
   res.json(entry.engine.handleMessageSimulateur(String(message)));
 });
 
 app.post("/api/:id/simulateur/reset", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const merchantExistant = engines[req.params.id];
+  const permissionOperationnelle = merchantExistant && merchantExistant.merchant.type === "service" ? "rendezvous" : "catalogue";
+  const entry = getMarchandAutorise(req, res, [permissionOperationnelle, "conversations"]); if (!entry) return;
   entry.engine.resetSimulateur();
   res.json({ ok: true });
 });
 
-// -- Rapports et inventaire : reserves aux marchands de type catalogue --
+// -- Rapports et inventaire : reserves aux marchands de type catalogue. Permission employe requise :
+// "parametres" (chiffres/analyses — regroupe avec le tableau de bord). --
 
 app.get("/api/:id/rapports/commandes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { periode, date, articleId } = req.query || {};
   const dateReference = date ? new Date(String(date)) : new Date();
@@ -702,26 +903,26 @@ app.get("/api/:id/rapports/commandes", protegerAcces, (req, res) => {
 });
 
 app.get("/api/:id/inventaire/actuel", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getInventaireActuel());
 });
 
 app.get("/api/:id/inventaire/instantanes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.listerInstantanesInventaire());
 });
 
 app.post("/api/:id/inventaire/instantanes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { nom } = req.body || {};
   res.status(201).json(entry.engine.enregistrerInstantaneInventaire(nom && String(nom).trim() ? String(nom).trim() : "Instantané"));
 });
 
 app.delete("/api/:id/inventaire/instantanes/:snapshotId", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const ok = entry.engine.supprimerInstantaneInventaire(req.params.snapshotId);
   if (!ok) return res.status(404).json({ erreur: "Instantané introuvable." });
