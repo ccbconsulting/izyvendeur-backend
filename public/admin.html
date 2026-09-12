@@ -217,10 +217,22 @@ function choisirMarchand(id) {
 // ROLES_EMPLOYE_VALIDES). Utilise a la fois pour filtrer les onglets visibles (ci-dessous) et pour
 // construire les cases a cocher de l'onglet "Employés" (voir renderEmployes plus bas).
 function rolesDisponibles() {
-  const base = [["conversations", "Conversations (service client)"], ["parametres", "Paramètres & tableau de bord"]];
-  if (marchandActif.type === "service") base.unshift(["rendezvous", "Services & rendez-vous"]);
-  else base.unshift(["catalogue", "Catalogue, stock & commandes"]);
-  return base;
+  if (marchandActif.type === "service") {
+    return [
+      ["rendezvous", "Services & rendez-vous"],
+      ["conversations", "Conversations (service client)"],
+      ["parametres", "Paramètres & tableau de bord"]
+    ];
+  }
+  // Le stock (catalogue) et les commandes sont volontairement des permissions distinctes : gérer le
+  // stock/prix (ex: un(e) gestionnaire de stock) n'implique pas de voir/traiter les commandes clients, et
+  // inversement quiconque parle aux clients (Conversations) doit pouvoir aussi suivre leurs commandes -
+  // d'ou le regroupement commandes+conversations plutot que commandes+catalogue.
+  return [
+    ["catalogue", "Catalogue & stock"],
+    ["conversations", "Conversations & commandes (service client)"],
+    ["parametres", "Paramètres & tableau de bord"]
+  ];
 }
 
 function construireOnglets() {
@@ -244,7 +256,7 @@ function construireOnglets() {
     : [
         ["dashboard", "Tableau de bord", renderTableauDeBord, "parametres"],
         ["catalogue", "Catalogue & stock", renderCatalogue, "catalogue"],
-        ["commandes", "Commandes", renderCommandes, "catalogue"],
+        ["commandes", "Commandes", renderCommandes, "conversations"],
         ["simulateur", "Simulateur WhatsApp", renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", "Rapports", renderRapports, "parametres"],
         ["conversations", "Conversations", renderConversations, "conversations"],
@@ -401,16 +413,43 @@ async function renderCatalogue() {
   redraw();
 }
 
+// Filtres/tri de l'onglet Commandes - variables hors fonction pour survivre a un redraw (ex: apres un
+// changement de statut) sans revenir aux valeurs par defaut a chaque fois.
+let commandesFiltreStatut = "Tous";
+let commandesFiltreMode = "Tous";
+let commandesTriDate = "recent"; // "recent" (plus recentes d'abord) ou "ancien"
+
 async function renderCommandes() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>Chargement…</div>";
   const commandes = await api("/api/" + marchandActif.id + "/commandes");
   const statuts = ["Nouvelle", "Confirmée", "Expédiée", "Livrée", "Annulée"];
-  const tri = commandes.slice().reverse();
+
+  let visibles = commandes.slice();
+  if (commandesFiltreStatut !== "Tous") visibles = visibles.filter((o) => o.statut === commandesFiltreStatut);
+  if (commandesFiltreMode !== "Tous") {
+    visibles = visibles.filter((o) => (o.modeLivraison === "retrait" ? "Retrait" : "Livraison") === commandesFiltreMode);
+  }
+  visibles.sort((a, b) => {
+    const diff = new Date(a.dateISO) - new Date(b.dateISO);
+    return commandesTriDate === "recent" ? -diff : diff;
+  });
+
+  const optionsFiltre = (valeurs, valeurActuelle) =>
+    valeurs.map((v) => "<option value='" + esc(v) + "'" + (v === valeurActuelle ? " selected" : "") + ">" + esc(v) + "</option>").join("");
+
   zone.innerHTML =
-    "<h2>Commandes (" + commandes.length + ")</h2>" +
+    "<h2>Commandes (" + visibles.length + (visibles.length !== commandes.length ? " sur " + commandes.length : "") + ")</h2>" +
+    "<div style='display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:14px;'>" +
+      "<label>Statut : <select id='commandesSelStatut'>" + optionsFiltre(["Tous"].concat(statuts), commandesFiltreStatut) + "</select></label>" +
+      "<label>Mode : <select id='commandesSelMode'>" + optionsFiltre(["Tous", "Livraison", "Retrait"], commandesFiltreMode) + "</select></label>" +
+      "<label>Date : <select id='commandesSelTri'>" +
+        "<option value='recent'" + (commandesTriDate === "recent" ? " selected" : "") + ">Plus récentes d'abord</option>" +
+        "<option value='ancien'" + (commandesTriDate === "ancien" ? " selected" : "") + ">Plus anciennes d'abord</option>" +
+      "</select></label>" +
+    "</div>" +
     "<table class='table-donnees'><tr><th>N°</th><th>Date</th><th>Articles</th><th>Nb articles</th><th>Total</th><th>Mode</th><th>Téléphone</th><th>Adresse</th><th>Statut</th></tr>" +
-    (tri.length ? tri.map((o) =>
+    (visibles.length ? visibles.map((o) =>
       "<tr>" +
         "<td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
         "<td>" + esc(new Date(o.dateISO).toLocaleString("fr-FR")) + "</td>" +
@@ -426,8 +465,13 @@ async function renderCommandes() {
           (o.raisonAnnulation ? "<div class='raison'>Raison : " + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
       "</tr>"
-    ).join("") : "<tr><td colspan='9'>Aucune commande pour l'instant.</td></tr>") +
+    ).join("") : "<tr><td colspan='9'>" + (commandes.length ? "Aucune commande ne correspond à ce filtre." : "Aucune commande pour l'instant.") + "</td></tr>") +
     "</table>";
+
+  document.getElementById("commandesSelStatut").onchange = (e) => { commandesFiltreStatut = e.target.value; renderCommandes(); };
+  document.getElementById("commandesSelMode").onchange = (e) => { commandesFiltreMode = e.target.value; renderCommandes(); };
+  document.getElementById("commandesSelTri").onchange = (e) => { commandesTriDate = e.target.value; renderCommandes(); };
+
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-commande]"), (sel) => {
     sel.addEventListener("change", async () => {
       let raison = null;
