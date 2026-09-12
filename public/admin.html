@@ -120,7 +120,7 @@ async function demarrer() {
     btnModifier.style.display = "";
     btnSuspendre.style.display = "";
     btnSupprimer.style.display = "";
-    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ")" + (m.actif === false ? " — SUSPENDU" : "") + "</option>").join("");
+    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(m.type) + ") — id: " + esc(m.id) + (m.actif === false ? " — SUSPENDU" : "") + "</option>").join("");
     sel.onchange = () => choisirMarchand(sel.value);
     btnSuspendre.onclick = async () => {
       const nouveauEtat = !(marchandActif.actif !== false);
@@ -178,7 +178,7 @@ async function demarrer() {
     btnModifier.style.display = "none";
     btnSupprimer.style.display = "none";
     nomSeul.style.display = "";
-    nomSeul.textContent = marchands.length ? marchands[0].nom : "";
+    nomSeul.textContent = marchands.length ? marchands[0].nom + " (id: " + marchands[0].id + ")" : "";
   }
   if (marchands.length) choisirMarchand(marchands[0].id);
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>Aucun marchand configuré.</div>";
