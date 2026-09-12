@@ -968,7 +968,9 @@ function createCatalogEngine(merchantKey, options) {
   // d'articles ou boutons Oui/Non), sans rien changer a handleMessage() ni a son contrat de retour.
   function getEtatSession(fromPhone) {
     const s = sessions[fromPhone];
-    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null, cart: s.cart || [] } : null;
+    // `langue` ("fr"/"en") permet a server.js de choisir la bonne langue pour le CHROME des menus WhatsApp
+    // cliquables (titres de boutons/listes, "Parler a un conseiller"...) - voir essayerEnvoyerMenuInteractif.
+    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null, cart: s.cart || [], langue: sh.langueSession(s) } : null;
   }
 
   // Ne renvoie JAMAIS les commandes creees par le Simulateur (source:"simulateur") — invisibles dans la

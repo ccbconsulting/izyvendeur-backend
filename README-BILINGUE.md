@@ -30,6 +30,20 @@ la commande, le bot ne reconnaissait pas la demande et l'avalait par erreur comm
 de l'adresse. Ce n'était pas un problème introduit par le bilingue (ça existait déjà en français avant),
 mais c'est maintenant corrigé dans les deux langues.
 
+Un deuxième oubli a été trouvé et corrigé : les menus tactiles (les listes et boutons cliquables
+WhatsApp eux-mêmes — "Voir les articles", "Parler à un conseiller", "Retirer", "Continuer mes achats",
+"Terminer ma commande", "Oui"/"Non", etc.) restaient tous affichés en français même quand le client
+avait choisi l'anglais, alors que le TEXTE du bot autour d'eux était bien traduit. C'est maintenant
+corrigé partout : tous les titres et libellés de menus cliquables suivent la langue choisie par le
+client, à chaque étape de la conversation (choix d'article, couleur, taille, quantité, panier,
+confirmation finale...). Comme pour le reste, seul l'AFFICHAGE change — les valeurs internes ne
+bougent pas.
+
+À noter (ce n'est pas un bug) : les noms d'articles et les noms de couleurs que vous avez saisis dans
+votre catalogue (ex: "Rouge", "Robe wax imprimée") ne sont pas traduits automatiquement, exactement
+comme indiqué plus bas dans "Ce qui n'est PAS encore fait" — un client anglophone doit donc taper ou
+choisir "Rouge" (et non "red") dans la liste, puisque c'est le nom exact que vous avez enregistré.
+
 ## Étape 2 — L'interface /admin (nouveau)
 
 L'interface /admin (tableau de bord, catalogue, commandes, rendez-vous, services, conversations,
@@ -72,6 +86,7 @@ langues, sans erreur.
 - `server.js` — reconnaissance du message de mise en relation dans les 2 langues + **menu déroulant
   tactile Français/English** pour la porte de langue (au lieu de devoir taper FR/EN), sur le même
   principe que les autres menus cliquables déjà présents dans le bot (choix d'article, couleur, taille...)
+  + traduction de TOUS les menus tactiles eux-mêmes (titres de listes/boutons) selon la langue du client
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN)
 
 ## Comment déployer

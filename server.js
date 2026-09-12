@@ -36,8 +36,10 @@ const GRAPH_API_VERSION = "v21.0";
 // Message envoye a la place du bot quand un marchand est suspendu (ex: facture impayee) — volontairement
 // neutre et poli : la cause reelle (interne, cote marchand) ne regarde pas le client, qui n'y est pour
 // rien. Voir merchant.actif (registre des marchands) et la verification en tout debut du webhook.
-const MESSAGE_SERVICE_SUSPENDU =
+const MESSAGE_SERVICE_SUSPENDU_FR =
   "Ce service est temporairement indisponible. Merci de réessayer un peu plus tard — nous nous excusons pour la gêne occasionnée 🙏";
+const MESSAGE_SERVICE_SUSPENDU_EN =
+  "This service is temporarily unavailable. Please try again later — we apologize for the inconvenience 🙏";
 
 // Templates WhatsApp utilises pour notifier le marchand (demande d'humain, commande confirmee, ...). Un
 // template (contrairement a un message texte libre) peut etre envoye a tout moment, meme si le numero de
@@ -981,10 +983,15 @@ app.post("/webhook", async (req, res) => {
     // journalise quand meme l'echange pour garder une trace dans /admin.
     if (marchand.merchant.actif === false) {
       const texteBrut = message.text?.body || "[message non-texte]";
+      // Le moteur ne traite pas ce message (bot desactive), mais si le client avait deja choisi sa langue
+      // avant la suspension, sa session existe encore en memoire - on la reutilise ici pour rester dans la
+      // meme langue plutot que de retomber sur le francais par defaut.
+      const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
+      const messageSuspendu = tW(etatPourLangue, MESSAGE_SERVICE_SUSPENDU_FR, MESSAGE_SERVICE_SUSPENDU_EN);
       db.logConversationMessage(merchantId, from, "client", texteBrut).catch(() => {});
-      db.logConversationMessage(merchantId, from, "bot", MESSAGE_SERVICE_SUSPENDU).catch(() => {});
+      db.logConversationMessage(merchantId, from, "bot", messageSuspendu).catch(() => {});
       console.log(`[${merchantId}] Marchand suspendu — reponse d'indisponibilite envoyee a ${from}.`);
-      await envoyerMessageWhatsApp(from, MESSAGE_SERVICE_SUSPENDU, phoneNumberId);
+      await envoyerMessageWhatsApp(from, messageSuspendu, phoneNumberId);
       return;
     }
 
@@ -999,13 +1006,16 @@ app.post("/webhook", async (req, res) => {
       const offset = Number(idInteractifClique.slice(PREFIXE_VOIR_PLUS.length)) || 0;
       const estCatalogue = marchand.engine.type === "catalogue";
       const items = construireItemsListe(marchand);
-      const rows = construireLignesListe(items, offset);
-      const texteCorps = estCatalogue ? "Voici la suite de nos articles :" : "Voici la suite de nos services :";
+      const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
+      const rows = construireLignesListe(items, offset, etatPourLangue);
+      const texteCorps = estCatalogue
+        ? tW(etatPourLangue, "Voici la suite de nos articles :", "Here are more of our items:")
+        : tW(etatPourLangue, "Voici la suite de nos services :", "Here are more of our services:");
       db.logConversationMessage(merchantId, from, "client", "Voir plus " + (estCatalogue ? "d'articles" : "de services")).catch(() => {});
       const envoye = await envoyerListeWhatsApp(
         from, phoneNumberId, texteCorps,
-        estCatalogue ? "Voir les articles" : "Voir les services",
-        [{ title: estCatalogue ? "Nos articles" : "Nos services", rows }]
+        estCatalogue ? tW(etatPourLangue, "Voir les articles", "See items") : tW(etatPourLangue, "Voir les services", "See services"),
+        [{ title: estCatalogue ? tW(etatPourLangue, "Nos articles", "Our items") : tW(etatPourLangue, "Nos services", "Our services"), rows }]
       ).catch(() => false);
       if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
       else await envoyerMessageWhatsApp(from, texteCorps + "\n" + items.slice(offset).map((it) => "• " + it.nom).join("\n"), phoneNumberId);
@@ -1023,9 +1033,13 @@ app.post("/webhook", async (req, res) => {
 
     if (!texteRecu) {
       console.log(`[${merchantId}] Message non-texte recu de ${from} (type: ${message.type}) — reponse d'orientation envoyee.`);
+      const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
       await envoyerMessageWhatsApp(
         from,
-        "Je ne peux lire que du texte pour l'instant 🙏 Merci de m'écrire votre demande en quelques mots.",
+        tW(etatPourLangue,
+          "Je ne peux lire que du texte pour l'instant 🙏 Merci de m'écrire votre demande en quelques mots.",
+          "I can only read text for now 🙏 Please write your request in a few words."
+        ),
         phoneNumberId
       );
       return;
@@ -1100,7 +1114,7 @@ function construireItemsListe(marchand) {
 // `lignesSupplementaires` (optionnel) : lignes de navigation ajoutees avant "Parler à un conseiller" - ex.
 // "◀ Autres articles" sur les listes de couleur/taille/variante (voir essayerEnvoyerMenuInteractif), pour
 // permettre au client d'explorer le catalogue avant de se decider sans jamais y etre oblige.
-function construireLignesListe(items, offset, lignesSupplementaires) {
+function construireLignesListe(items, offset, etat, lignesSupplementaires) {
   const restant = items.length - offset;
   const inclureVoirPlus = restant > 9;
   const nbAffiches = inclureVoirPlus ? 8 : Math.max(0, Math.min(restant, 9));
@@ -1111,10 +1125,10 @@ function construireLignesListe(items, offset, lignesSupplementaires) {
     description: tronquerTexte(it.description, 72)
   }));
   if (inclureVoirPlus) {
-    rows.push({ id: PREFIXE_VOIR_PLUS + (offset + nbAffiches), title: "Voir plus ▸" });
+    rows.push({ id: PREFIXE_VOIR_PLUS + (offset + nbAffiches), title: tW(etat, "Voir plus ▸", "See more ▸") });
   }
   (lignesSupplementaires || []).forEach((ligne) => rows.push(ligne));
-  rows.push({ id: ID_HUMAIN, title: "Parler à un conseiller", description: "Être mis en relation avec l'équipe" });
+  rows.push({ id: ID_HUMAIN, title: tW(etat, "Parler à un conseiller", "Talk to an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
   return rows;
 }
 
@@ -1155,6 +1169,13 @@ function resoudreTexteInteractif(marchand, interactive) {
   return s ? s.nom : id;
 }
 
+// Choisit FR ou EN pour le CHROME des menus WhatsApp cliquables (titres de boutons/listes, "Parler a un
+// conseiller"...) selon la langue de la session cliente (voir getEtatSession, conversation.js) - "fr" par
+// defaut si `etat` est absent/inconnu (avant tout choix de langue, ou moteur service pas encore bilingue).
+function tW(etat, texteFr, texteEn) {
+  return etat && etat.langue === "en" ? texteEn : texteFr;
+}
+
 // Tente d'accompagner `texte` (la reponse deja calculee par le moteur) d'un menu cliquable adapte a l'etat
 // de la conversation. Renvoie true si un message interactif a bien ete envoye (rien d'autre a faire),
 // false s'il n'y a pas de menu pertinent ICI ou si l'envoi a echoue (l'appelant se rabat alors sur
@@ -1183,14 +1204,14 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     const estCatalogue = marchand.engine.type === "catalogue";
     const items = construireItemsListe(marchand);
     if (!items.length) return false;
-    const rows = construireLignesListe(items, 0);
+    const rows = construireLignesListe(items, 0, etat);
 
     return envoyerListeWhatsApp(
       destinataire,
       phoneNumberId,
       texte,
-      estCatalogue ? "Voir les articles" : "Voir les services",
-      [{ title: estCatalogue ? "Nos articles" : "Nos services", rows }]
+      estCatalogue ? tW(etat, "Voir les articles", "See items") : tW(etat, "Voir les services", "See services"),
+      [{ title: estCatalogue ? tW(etat, "Nos articles", "Our items") : tW(etat, "Nos services", "Our services"), rows }]
     );
   }
 
@@ -1199,7 +1220,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   // dediee "awaiting_mode_livraison" (PAS "idle", contrairement a couleur/taille/variante ci-dessous).
   if (etat.stage === "awaiting_mode_livraison" && etat.pendingChoice && etat.pendingChoice.type === "mode_livraison") {
     const boutons = etat.pendingChoice.options.slice(0, 2).map((opt) => ({ id: String(opt), title: tronquerTexte(String(opt), 20) }));
-    boutons.push({ id: ID_HUMAIN, title: "Parler à un conseiller" });
+    boutons.push({ id: ID_HUMAIN, title: tW(etat, "Parler à un conseiller", "Talk to an advisor") });
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, boutons);
   }
 
@@ -1209,9 +1230,9 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   if (etat.stage === "idle" && etat.pendingChoice && etat.pendingChoice.options && etat.pendingChoice.options.length) {
     const pc = etat.pendingChoice;
     const labels = {
-      couleur: { bouton: "Voir les couleurs", section: "Couleurs disponibles" },
-      taille: { bouton: "Voir les tailles", section: "Tailles disponibles" },
-      variante: { bouton: "Voir les options", section: "Options disponibles" }
+      couleur: { bouton: tW(etat, "Voir les couleurs", "See colors"), section: tW(etat, "Couleurs disponibles", "Available colors") },
+      taille: { bouton: tW(etat, "Voir les tailles", "See sizes"), section: tW(etat, "Tailles disponibles", "Available sizes") },
+      variante: { bouton: tW(etat, "Voir les options", "See options"), section: tW(etat, "Options disponibles", "Available options") }
     }[pc.type];
     if (!labels) return false;
 
@@ -1222,8 +1243,8 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     // Le client peut regarder cette liste sans s'y engager : une ligne le ramène directement au catalogue
     // complet (voir conversation.js — abandon de la sélection en cours si le panier n'est pas vide, elle
     // reste intacte).
-    const rows = construireLignesListe(items, 0, [
-      { id: ID_AUTRE_ARTICLE, title: "◀ Autres articles", description: "Revenir au catalogue complet" }
+    const rows = construireLignesListe(items, 0, etat, [
+      { id: ID_AUTRE_ARTICLE, title: tW(etat, "◀ Autres articles", "◀ Other items"), description: tW(etat, "Revenir au catalogue complet", "Back to the full catalog") }
     ]);
 
     return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, labels.bouton, [{ title: labels.section, rows }]);
@@ -1234,9 +1255,9 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   // (session.stage "awaiting_more_items"/"viewing_cart") et sh.demandeVoirPanier().
   if (etat.stage === "awaiting_more_items") {
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
-      { id: ID_OUI, title: "Voir le catalogue" },
-      { id: ID_PANIER, title: "Mon panier" },
-      { id: ID_NON, title: "Terminer" }
+      { id: ID_OUI, title: tW(etat, "Voir le catalogue", "Browse catalog") },
+      { id: ID_PANIER, title: tW(etat, "Mon panier", "My cart") },
+      { id: ID_NON, title: tW(etat, "Terminer", "Done") }
     ]);
   }
 
@@ -1246,12 +1267,12 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     const rows = etat.cart.slice(0, 6).map((it, i) => ({
       id: PREFIXE_RETIRER_PANIER + i,
       title: tronquerTexte(it.produit, 24),
-      description: tronquerTexte("🗑️ Retirer — " + it.couleur + " " + it.taille + " × " + it.quantite + " — " + sh.formatFcfa(it.prixUnitaire * it.quantite), 72)
+      description: tronquerTexte(tW(etat, "🗑️ Retirer — ", "🗑️ Remove — ") + it.couleur + " " + it.taille + " × " + it.quantite + " — " + sh.formatFcfa(it.prixUnitaire * it.quantite), 72)
     }));
-    rows.push({ id: ID_PANIER_CONTINUER, title: tronquerTexte("🛍️ Continuer mes achats", 24) });
-    rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte("✅ Terminer ma commande", 24) });
-    rows.push({ id: ID_HUMAIN, title: "Parler à un conseiller", description: "Être mis en relation avec l'équipe" });
-    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, "Gérer mon panier", [{ title: "Votre panier", rows }]);
+    rows.push({ id: ID_PANIER_CONTINUER, title: tronquerTexte(tW(etat, "🛍️ Continuer mes achats", "🛍️ Keep shopping"), 24) });
+    rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte(tW(etat, "✅ Terminer ma commande", "✅ Complete my order"), 24) });
+    rows.push({ id: ID_HUMAIN, title: tW(etat, "Parler à un conseiller", "Talk to an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Gérer mon panier", "Manage my cart"), [{ title: tW(etat, "Votre panier", "Your cart"), rows }]);
   }
 
   // Choix rapide de quantité (moteur catalogue) : 1, 2, ou retour au catalogue - le client garde aussi la
@@ -1260,14 +1281,14 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
       { id: "1", title: "1" },
       { id: "2", title: "2" },
-      { id: ID_AUTRE_ARTICLE, title: "◀ Autres articles" }
+      { id: ID_AUTRE_ARTICLE, title: tW(etat, "◀ Autres articles", "◀ Other items") }
     ]);
   }
 
   if (etat.stage === "awaiting_order_confirmation" || etat.stage === "awaiting_confirmation") {
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
-      { id: ID_OUI, title: "Oui" },
-      { id: ID_NON, title: "Non" }
+      { id: ID_OUI, title: tW(etat, "Oui", "Yes") },
+      { id: ID_NON, title: tW(etat, "Non", "No") }
     ]);
   }
 
