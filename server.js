@@ -1156,7 +1156,7 @@ function resoudreTexteInteractif(marchand, interactive) {
 // false s'il n'y a pas de menu pertinent ICI ou si l'envoi a echoue (l'appelant se rabat alors sur
 // envoyerMessageWhatsApp comme avant).
 async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberId, texte) {
-  if (texte === sh.MESSAGE_MISE_EN_RELATION) return false; // jamais de menu juste apres une mise en relation
+  if (sh.estMessageMiseEnRelation(texte)) return false; // jamais de menu juste apres une mise en relation (FR ou EN)
   if (typeof marchand.engine.getEtatSession !== "function") return false;
   const etat = marchand.engine.getEtatSession(destinataire);
   if (!etat) return false;

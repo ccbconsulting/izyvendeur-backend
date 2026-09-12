@@ -49,4 +49,12 @@ const DEFAULT_AUTO_CONFIRM_MESSAGE =
   "Conditions : paiement à la livraison ou par Mobile Money, articles vérifiés avant expédition, " +
   "livraison sous 24 à 72h selon votre zone. Un souci avec votre commande ? Écrivez-nous ici même, on reste disponibles.";
 
-module.exports = { SEED_CATALOG, PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE };
+// Repli UNIQUEMENT quand le client est en session anglaise ET que le marchand n'a pas renseigne son propre
+// message de confirmation en anglais (voir Parametres > "Message de confirmation (English)" dans /admin) -
+// evite de montrer le message francais du marchand a un client qui a choisi English.
+const DEFAULT_AUTO_CONFIRM_MESSAGE_EN =
+  "Thank you so much for your order! 🙏 It's confirmed.\n\n" +
+  "Terms: payment on delivery or by Mobile Money, items checked before shipping, " +
+  "delivery within 24 to 72h depending on your area. Any issue with your order? Just write to us here, we're available.";
+
+module.exports = { SEED_CATALOG, PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, DEFAULT_AUTO_CONFIRM_MESSAGE_EN };

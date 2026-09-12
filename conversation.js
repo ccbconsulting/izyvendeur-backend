@@ -9,7 +9,7 @@
 // (catalogue + commandes + parametres) et ses propres sessions de conversation en cours - aucun risque de
 // melanger les clients ou le stock de deux marchands differents, meme s'ils ecrivent au meme moment.
 
-const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, SEED_CATALOG } = require("./catalog");
+const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, DEFAULT_AUTO_CONFIRM_MESSAGE_EN, SEED_CATALOG } = require("./catalog");
 const db = require("./db");
 const sh = require("./shared");
 const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
@@ -26,17 +26,28 @@ const MAX_PENDING_ORDERS_PER_PHONE = 3;
 const PENDING_ORDERS_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 heures
 
 const OUVERTURES_PRODUIT = ["Excellent choix !", "Très bon choix !", "Superbe choix !", "Vous avez bon goût !", "Beau choix !"];
+const OUVERTURES_PRODUIT_EN = ["Excellent choice!", "Great choice!", "Superb choice!", "You have great taste!", "Nice pick!"];
 const OUVERTURES_COULEUR = ["Jolie couleur !", "Bon choix de couleur !", "Ça va très bien !", "Très élégant !"];
+const OUVERTURES_COULEUR_EN = ["Lovely color!", "Great color choice!", "That looks great!", "Very elegant!"];
 const OUVERTURES_DISPO = ["Parfait,", "Très bien,", "Super,", "Excellente nouvelle,"];
+const OUVERTURES_DISPO_EN = ["Perfect,", "Great,", "Awesome,", "Great news,"];
 const OUVERTURES_AJOUT = ["Très bien !", "Parfait !", "Excellent !", "Noté !", "Top !"];
+const OUVERTURES_AJOUT_EN = ["Great!", "Perfect!", "Excellent!", "Got it!", "Awesome!"];
 const OUVERTURES_RECAP = ["Très bien !", "Parfait, on y est presque !", "Super !"];
+const OUVERTURES_RECAP_EN = ["Great!", "Perfect, almost there!", "Awesome!"];
+
+// Tire une ouverture aleatoire dans la bonne langue pour cette session (evite de repeter
+// `piocheParmi(sh.t(session, POOL_FR, POOL_EN))` a chaque point d'appel).
+function ouverture(session, poolFr, poolEn) {
+  return piocheParmi(sh.t(session, poolFr, poolEn));
+}
 
 function seedState() {
   return {
     catalog: JSON.parse(JSON.stringify(SEED_CATALOG)),
     orders: [],
     nextId: 1,
-    settings: { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE },
+    settings: { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE, autoConfirmMessageEn: "" },
     inventorySnapshots: [] // instantanés d'inventaire enregistrés depuis l'onglet Rapports (voir plus bas)
   };
 }
@@ -94,7 +105,11 @@ function createCatalogEngine(merchantKey, options) {
     });
   }
 
-  function freshSession() {
+  // `precedente` (optionnel) : session existante dont on veut CONSERVER la langue deja choisie (et le fait
+  // que la porte bilingue a deja ete montree) lors d'une reinitialisation en cours de conversation (voir
+  // les 3 points d'appel "Object.assign(session, freshSession(session))" plus bas, apres confirmation ou
+  // refus de commande) - un client qui vient de commander ne doit pas se refaire redemander sa langue.
+  function freshSession(precedente) {
     return {
       stage: "idle",
       cart: [],
@@ -105,6 +120,11 @@ function createCatalogEngine(merchantKey, options) {
       telephone: null,
       adresse: null,
       pendingOrderId: null,
+      // "fr"/"en" une fois choisie par le client (voir handleMessage, porte bilingue) - null tant qu'elle
+      // ne l'est pas encore. `gateLangueEnvoyee` distingue "jamais montree" (on la montre) de "montree,
+      // reponse en attente" (on interprete le prochain message comme la reponse) - voir handleMessage.
+      langue: precedente ? precedente.langue : null,
+      gateLangueEnvoyee: precedente ? precedente.gateLangueEnvoyee : false,
       // "livraison" ou "retrait" une fois que le client a choisi (uniquement si le marchand a configure
       // une adresse de retrait en boutique, voir retraitConfigure() plus bas - sinon la question n'est
       // jamais posee et modeLivraison reste "livraison" par defaut sur la commande, comme avant).
@@ -158,9 +178,15 @@ function createCatalogEngine(merchantKey, options) {
   // Texte du panier avec position numerotee de chaque article, pour que le client puisse en retirer un en
   // indiquant simplement son numero (voir le stage "viewing_cart" plus bas) - utilise a la fois pour
   // l'affichage initial et pour le rappel apres une action (retrait, numero invalide, texte incompris...).
-  function afficherPanierTexte(cart) {
-    return "Voici votre panier :\n" + describeItemsNumbered(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) +
-      "\n\nPour retirer un article, indiquez simplement son numéro. Tapez *continuer* pour poursuivre vos achats, ou *terminé* pour valider votre commande.";
+  function afficherPanierTexte(session, cart) {
+    const items = describeItemsNumbered(cart);
+    const total = formatFcfa(itemsTotal(cart));
+    return sh.t(session,
+      "Voici votre panier :\n" + items + "\nTotal : " + total +
+        "\n\nPour retirer un article, indiquez simplement son numéro. Tapez *continuer* pour poursuivre vos achats, ou *terminé* pour valider votre commande.",
+      "Here is your cart:\n" + items + "\nTotal: " + total +
+        "\n\nTo remove an item, just reply with its number. Type *continue* to keep shopping, or *done* to place your order."
+    );
   }
 
   // Point d'entree de la vue panier (mot-cle "panier" tape librement, ou bouton "Mon panier" - voir
@@ -171,18 +197,27 @@ function createCatalogEngine(merchantKey, options) {
     if (!session.cart.length) {
       session.stage = "idle";
       session.pretPourChoix = true;
-      return "Votre panier est vide pour l'instant. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+      const liste = state.catalog.map((p) => p.nom).join(", ");
+      return sh.t(session,
+        "Votre panier est vide pour l'instant. Quel article vous intéresse ? Nous avons : " + liste + ".",
+        "Your cart is empty for now. Which item are you interested in? We have: " + liste + "."
+      );
     }
     session.stage = "viewing_cart";
-    return afficherPanierTexte(session.cart);
+    return afficherPanierTexte(session, session.cart);
   }
 
   function orderRef(o) {
     return "CMD-" + String(o.id).padStart(4, "0");
   }
 
-  function messageRecapPanier(cart) {
-    return piocheParmi(OUVERTURES_RECAP) + " Voici votre panier :\n" + describeItems(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.";
+  function messageRecapPanier(session, cart) {
+    const items = describeItems(cart);
+    const total = formatFcfa(itemsTotal(cart));
+    return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + sh.t(session,
+      " Voici votre panier :\n" + items + "\nTotal : " + total + "\n\nPour finaliser, envoyez-moi votre numéro et votre adresse de livraison.",
+      " Here's your cart:\n" + items + "\nTotal: " + total + "\n\nTo finish, please send me your phone number and delivery address."
+    );
   }
 
   // true si le marchand a renseigne une adresse de retrait en boutique (Paramètres > Retrait en boutique -
@@ -202,8 +237,13 @@ function createCatalogEngine(merchantKey, options) {
   // Meme recapitulatif que messageRecapPanier(), mais enchaine sur la question livraison/retrait au lieu
   // de demander directement l'adresse - utilise uniquement quand retraitConfigure() est vrai (voir les 2
   // points d'appel dans processMessage, sur l'abandon du panier).
-  function messageChoixModeLivraison(cart) {
-    return piocheParmi(OUVERTURES_RECAP) + " Voici votre panier :\n" + describeItems(cart) + "\nTotal : " + formatFcfa(itemsTotal(cart)) + "\n\nSouhaitez-vous une livraison à domicile, ou un retrait en boutique ?";
+  function messageChoixModeLivraison(session, cart) {
+    const items = describeItems(cart);
+    const total = formatFcfa(itemsTotal(cart));
+    return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + sh.t(session,
+      " Voici votre panier :\n" + items + "\nTotal : " + total + "\n\nSouhaitez-vous une livraison à domicile, ou un retrait en boutique ?",
+      " Here's your cart:\n" + items + "\nTotal: " + total + "\n\nWould you like home delivery, or in-store pickup?"
+    );
   }
 
   // Point commun aux 3 endroits ou le panier vient d'etre finalise (panier confirme, selection abandonnee
@@ -214,10 +254,10 @@ function createCatalogEngine(merchantKey, options) {
     if (retraitConfigure()) {
       session.stage = "awaiting_mode_livraison";
       session.pendingChoice = { type: "mode_livraison", options: ["Livraison", "Retrait en boutique"] };
-      return messageChoixModeLivraison(session.cart);
+      return messageChoixModeLivraison(session, session.cart);
     }
     session.stage = "awaiting_delivery";
-    return messageRecapPanier(session.cart);
+    return messageRecapPanier(session, session.cart);
   }
 
   function distinctValues(getter) {
@@ -403,23 +443,33 @@ function createCatalogEngine(merchantKey, options) {
           trace.action = "Client abandonne cet article pendant la demande de quantité — sélection effacée";
           logTrace(session, trace);
           session.pretPourChoix = true;
-          return "Pas de souci, on laisse cet article de côté. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+          const liste = state.catalog.map((p) => p.nom).join(", ");
+          return sh.t(session,
+            "Pas de souci, on laisse cet article de côté. Quel article vous intéresse ? Nous avons : " + liste + ".",
+            "No worries, we'll set that item aside. Which item are you interested in? We have: " + liste + "."
+          );
         }
         trace.action = "Quantité non comprise — nouvelle demande";
         logTrace(session, trace);
-        return "Merci d'indiquer un nombre de pièces (ex : 1, 2, 3…).";
+        return sh.t(session, "Merci d'indiquer un nombre de pièces (ex : 1, 2, 3…).", "Please tell me a quantity (e.g. 1, 2, 3…).");
       }
       if (qty > virt0) {
         trace.action = "Quantité demandée supérieure au stock virtuel disponible";
         logTrace(session, trace);
-        return "Il ne me reste que " + virt0 + " pièce(s) disponible(s) pour " + product0.nom + " " + variant0.couleur + " " + variant0.taille + ". Combien en voulez-vous (max " + virt0 + ") ?";
+        return sh.t(session,
+          "Il ne me reste que " + virt0 + " pièce(s) disponible(s) pour " + product0.nom + " " + variant0.couleur + " " + variant0.taille + ". Combien en voulez-vous (max " + virt0 + ") ?",
+          "I only have " + virt0 + " piece(s) left for " + product0.nom + " " + variant0.couleur + " " + variant0.taille + ". How many would you like (max " + virt0 + ")?"
+        );
       }
       session.cart.push({ productId: product0.id, produit: product0.nom, couleur: variant0.couleur, taille: variant0.taille, quantite: qty, prixUnitaire: variant0.prix });
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
       session.stage = "awaiting_more_items";
       trace.action = "Article ajouté au panier — proposition d'ajouter un autre article";
       logTrace(session, trace);
-      return piocheParmi(OUVERTURES_AJOUT) + " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article, voir votre panier, ou terminer votre commande ?";
+      return ouverture(session, OUVERTURES_AJOUT, OUVERTURES_AJOUT_EN) + sh.t(session,
+        " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article, voir votre panier, ou terminer votre commande ?",
+        " Added to cart ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nWould you like to add another item, view your cart, or complete your order?"
+      );
     }
 
     if (session.stage === "awaiting_more_items") {
@@ -429,7 +479,7 @@ function createCatalogEngine(merchantKey, options) {
         trace.action = "Client souhaite ajouter un autre article au panier";
         logTrace(session, trace);
         session.pretPourChoix = true;
-        return "Très bien, quel autre article souhaitez-vous ?";
+        return sh.t(session, "Très bien, quel autre article souhaitez-vous ?", "Great, what other item would you like?");
       }
       const directProduct = !parseNegative(text) ? matchProduct(text) : null;
       if (directProduct) {
@@ -461,24 +511,28 @@ function createCatalogEngine(merchantKey, options) {
           if (!session.cart.length) {
             session.stage = "idle";
             session.pretPourChoix = true;
-            return "Article retiré ✅ Votre panier est maintenant vide. Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+            const liste = state.catalog.map((p) => p.nom).join(", ");
+            return sh.t(session,
+              "Article retiré ✅ Votre panier est maintenant vide. Quel article vous intéresse ? Nous avons : " + liste + ".",
+              "Item removed ✅ Your cart is now empty. Which item are you interested in? We have: " + liste + "."
+            );
           }
-          return "Article retiré ✅\n\n" + afficherPanierTexte(session.cart);
+          return sh.t(session, "Article retiré ✅\n\n", "Item removed ✅\n\n") + afficherPanierTexte(session, session.cart);
         }
         trace.action = "Numéro d'article invalide pour le retrait du panier";
         logTrace(session, trace);
-        return "Je n'ai pas trouvé cet article dans votre panier. " + afficherPanierTexte(session.cart);
+        return sh.t(session, "Je n'ai pas trouvé cet article dans votre panier. ", "I couldn't find that item in your cart. ") + afficherPanierTexte(session, session.cart);
       }
 
-      if (/continu|catalogue|achats?|autre\s+article|encore/.test(t)) {
+      if (/continu|catalogue|achats?|autre\s+article|encore|more/.test(t)) {
         session.stage = "idle";
         trace.action = "Client reprend ses achats depuis la vue panier";
         logTrace(session, trace);
         session.pretPourChoix = true;
-        return "Très bien, quel autre article souhaitez-vous ?";
+        return sh.t(session, "Très bien, quel autre article souhaitez-vous ?", "Great, what other item would you like?");
       }
 
-      if (/termin|valid|c['’]est\s*tout|fini/.test(t)) {
+      if (/termin|valid|c['’]est\s*tout|fini|done|finish|checkout|that.?s all/.test(t)) {
         trace.action = "Panier validé depuis la vue panier (" + session.cart.length + " article(s))";
         const reponseFinalisation = finaliserPanier(session);
         logTrace(session, trace);
@@ -495,14 +549,14 @@ function createCatalogEngine(merchantKey, options) {
 
       trace.action = "Réponse non comprise dans la vue panier — rappel des options";
       logTrace(session, trace);
-      return "Je n'ai pas compris. " + afficherPanierTexte(session.cart);
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't quite understand. ") + afficherPanierTexte(session, session.cart);
     }
 
     if (session.stage === "awaiting_mode_livraison") {
       trace.entites = { "Réponse client": text };
       const t = text.toLowerCase();
-      const veutRetrait = /retrait|boutique|magasin|chercher|passer\s+prendre|sur\s*place/.test(t);
-      const veutLivraison = /livraison|domicile|livrer|envoie[rz]?[- ]moi|livre[sz]?[- ]moi/.test(t);
+      const veutRetrait = /retrait|boutique|magasin|chercher|passer\s+prendre|sur\s*place|pickup|pick up|in.?store/.test(t);
+      const veutLivraison = /livraison|domicile|livrer|envoie[rz]?[- ]moi|livre[sz]?[- ]moi|delivery|deliver|ship/.test(t);
 
       if (veutRetrait && !veutLivraison) {
         session.modeLivraison = "retrait";
@@ -510,24 +564,50 @@ function createCatalogEngine(merchantKey, options) {
         session.stage = "awaiting_delivery"; // reutilise la meme etape/logique de collecte (adresse deja pre-remplie, seul le telephone manque)
         trace.action = "Client choisit le retrait en boutique — adresse pré-remplie, téléphone encore demandé";
         logTrace(session, trace);
-        return "Parfait, vous pourrez récupérer votre commande à " + infosRetrait() + ". Merci de m'indiquer votre numéro de téléphone pour vous joindre.";
+        return sh.t(session,
+          "Parfait, vous pourrez récupérer votre commande à " + infosRetrait() + ". Merci de m'indiquer votre numéro de téléphone pour vous joindre.",
+          "Great, you can pick up your order at " + infosRetrait() + ". Please share your phone number so we can reach you."
+        );
       }
       if (veutLivraison && !veutRetrait) {
         session.modeLivraison = "livraison";
         session.stage = "awaiting_delivery";
         trace.action = "Client choisit la livraison à domicile — infos de livraison demandées";
         logTrace(session, trace);
-        return "Très bien, merci de m'indiquer votre numéro de téléphone et votre adresse de livraison.";
+        return sh.t(session,
+          "Très bien, merci de m'indiquer votre numéro de téléphone et votre adresse de livraison.",
+          "Great, please share your phone number and delivery address."
+        );
       }
       trace.action = "Choix livraison/retrait ambigu — nouvelle demande de précision";
       logTrace(session, trace);
       session.pendingChoice = { type: "mode_livraison", options: ["Livraison", "Retrait en boutique"] };
-      return "Je n'ai pas bien compris : souhaitez-vous une livraison à domicile, ou un retrait en boutique ?";
+      return sh.t(session,
+        "Je n'ai pas bien compris : souhaitez-vous une livraison à domicile, ou un retrait en boutique ?",
+        "I didn't quite catch that: would you like home delivery, or in-store pickup?"
+      );
     }
 
     if (session.stage === "awaiting_delivery") {
+      // "panier" tape pendant la collecte telephone/adresse (ex: le client veut revoir son panier avant
+      // de finir de donner ses infos) - reconnu en priorite, sans quoi le texte serait avale comme un bout
+      // d'adresse. On affiche le panier SANS changer d'etape (on reste en awaiting_delivery, rien de deja
+      // saisi n'est perdu) puis on rappelle ce qu'il manque encore pour ne pas perdre le fil.
+      if (sh.demandeVoirPanier(text)) {
+        trace.entites = { "Réponse client": text };
+        trace.action = "Client consulte son panier (pendant la collecte des infos de livraison)";
+        const missing = [];
+        if (!session.telephone) missing.push(sh.t(session, "numéro de téléphone", "phone number"));
+        if (!session.adresse) missing.push(sh.t(session, "adresse de livraison", "delivery address"));
+        const relance = missing.length
+          ? sh.t(session, "\n\nIl me manque encore : " + missing.join(" et ") + ".", "\n\nI still need: " + missing.join(" and ") + ".")
+          : "";
+        const reponsePanier = (session.cart.length ? afficherPanierTexte(session, session.cart) : afficherPanier(session)) + relance;
+        logTrace(session, trace);
+        return reponsePanier;
+      }
       const phoneMatch = text.match(/(\+?237)?[\s.-]?[62]\d{7,8}/);
-      const additiveIntent = /\b(aussi|encore|ajout|en\s*plus)\b/i.test(text);
+      const additiveIntent = /\b(aussi|encore|ajout|en\s*plus|also|more|add)\b/i.test(text);
       if (!phoneMatch && !session.adresse && (text.trim().length <= 20 || additiveIntent)) {
         const directProduct = matchProduct(text);
         if (directProduct) {
@@ -557,22 +637,31 @@ function createCatalogEngine(merchantKey, options) {
         if (pendingCount >= MAX_PENDING_ORDERS_PER_PHONE) {
           trace.action = "Trop de commandes non confirmées en attente pour ce numéro (" + pendingCount + ") — nouvelle commande refusée";
           logTrace(session, trace);
-          return "Vous avez déjà " + pendingCount + " commande(s) en attente de confirmation. Merci de confirmer ou d'annuler l'une d'entre elles avant d'en passer une nouvelle — notre équipe reste disponible si besoin.";
+          return sh.t(session,
+            "Vous avez déjà " + pendingCount + " commande(s) en attente de confirmation. Merci de confirmer ou d'annuler l'une d'entre elles avant d'en passer une nouvelle — notre équipe reste disponible si besoin.",
+            "You already have " + pendingCount + " order(s) awaiting confirmation. Please confirm or cancel one of them before placing a new one — our team remains available if needed."
+          );
         }
         const order = createOrderFromCart(session);
         session.pendingOrderId = order.id;
         session.stage = "awaiting_order_confirmation";
         trace.action = "Commande " + orderRef(order) + " créée (statut Nouvelle) — récapitulatif envoyé, confirmation demandée";
         logTrace(session, trace);
-        const libelleAdresse = session.modeLivraison === "retrait" ? "Retrait" : "Livraison";
-        return "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\n" + libelleAdresse + " : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)";
+        const libelleAdresse = sh.t(session, session.modeLivraison === "retrait" ? "Retrait" : "Livraison", session.modeLivraison === "retrait" ? "Pickup" : "Delivery");
+        return sh.t(session,
+          "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\n" + libelleAdresse + " : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)",
+          "Thanks for these details! Here's your order summary (" + orderRef(order) + "):\n" + describeItems(order.items) + "\nTotal: " + formatFcfa(order.prix) + "\n" + libelleAdresse + ": " + session.adresse + "\n\nDo you confirm this order? (yes / no)"
+        );
       }
       const missing = [];
-      if (!session.telephone) missing.push("numéro de téléphone");
-      if (!session.adresse) missing.push("adresse de livraison");
+      if (!session.telephone) missing.push(sh.t(session, "numéro de téléphone", "phone number"));
+      if (!session.adresse) missing.push(sh.t(session, "adresse de livraison", "delivery address"));
       trace.action = "Information manquante demandée : " + missing.join(" et ");
       logTrace(session, trace);
-      return "Presque ! Il me manque encore : " + missing.join(" et ") + ".";
+      return sh.t(session,
+        "Presque ! Il me manque encore : " + missing.join(" et ") + ".",
+        "Almost there! I still need: " + missing.join(" and ") + "."
+      );
     }
 
     if (session.stage === "awaiting_order_confirmation") {
@@ -591,16 +680,24 @@ function createCatalogEngine(merchantKey, options) {
         ]).catch((erreur) =>
           console.error("[" + merchantKey + "] Echec de la notification marchand (commande confirmée) :", erreur)
         );
-        const reply = (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
-        Object.assign(session, freshSession());
+        // Message de confirmation : celui redige par le marchand dans Parametres (dans la langue de la
+        // session s'il a rempli le champ anglais, sinon repli sur un message par defaut DANS LA BONNE
+        // LANGUE plutot que d'imposer le francais du marchand a un client qui a choisi English).
+        const reply = sh.langueSession(session) === "en"
+          ? (state.settings && state.settings.autoConfirmMessageEn) || DEFAULT_AUTO_CONFIRM_MESSAGE_EN
+          : (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
+        Object.assign(session, freshSession(session));
         logTrace(session, trace);
         return reply;
       }
 
       if (pendingOrder && parseNegative(text)) {
         trace.action = "Client décline la confirmation automatique — commande " + orderRef(pendingOrder) + " reste en Nouvelle, à confirmer manuellement";
-        const reply = "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.";
-        Object.assign(session, freshSession());
+        const reply = sh.t(session,
+          "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.",
+          "No problem, your order remains on file. Our team will get back to you to confirm it."
+        );
+        Object.assign(session, freshSession(session));
         logTrace(session, trace);
         return reply;
       }
@@ -608,11 +705,14 @@ function createCatalogEngine(merchantKey, options) {
       if (pendingOrder) {
         trace.action = "Réponse ambiguë — nouvelle demande de confirmation claire pour " + orderRef(pendingOrder);
         logTrace(session, trace);
-        return "Je n'ai pas bien compris. Confirmez-vous votre commande " + orderRef(pendingOrder) + " ? Répondez simplement par oui ou non — notre équipe reviendra vers vous pour toute autre question.";
+        return sh.t(session,
+          "Je n'ai pas bien compris. Confirmez-vous votre commande " + orderRef(pendingOrder) + " ? Répondez simplement par oui ou non — notre équipe reviendra vers vous pour toute autre question.",
+          "I didn't quite understand. Do you confirm your order " + orderRef(pendingOrder) + "? Just reply yes or no — our team will get back to you for anything else."
+        );
       }
 
-      const reply = "Très bien, votre commande reste enregistrée.";
-      Object.assign(session, freshSession());
+      const reply = sh.t(session, "Très bien, votre commande reste enregistrée.", "No problem, your order remains on file.");
+      Object.assign(session, freshSession(session));
       logTrace(session, trace);
       return reply;
     }
@@ -631,7 +731,11 @@ function createCatalogEngine(merchantKey, options) {
       trace.action = "Client abandonne cette sélection en cours — retour au catalogue" + (session.cart.length ? " (panier conservé, " + session.cart.length + " article(s))" : "");
       logTrace(session, trace);
       session.pretPourChoix = true;
-      return "Pas de souci ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+      const liste0 = state.catalog.map((p) => p.nom).join(", ");
+      return sh.t(session,
+        "Pas de souci ! Quel article vous intéresse ? Nous avons : " + liste0 + ".",
+        "No worries! Which item are you interested in? We have: " + liste0 + "."
+      );
     }
 
     const produitIdPrecedent = session.productId;
@@ -657,7 +761,11 @@ function createCatalogEngine(merchantKey, options) {
       trace.action = "Précision demandée : quel article ?";
       logTrace(session, trace);
       session.pretPourChoix = true;
-      return "Bonjour ! Quel article vous intéresse ? Nous avons : " + state.catalog.map((p) => p.nom).join(", ") + ".";
+      const liste1 = state.catalog.map((p) => p.nom).join(", ");
+      return sh.t(session,
+        "Bonjour ! Quel article vous intéresse ? Nous avons : " + liste1 + ".",
+        "Hello! Which item are you interested in? We have: " + liste1 + "."
+      );
     }
 
     const product = state.catalog.filter((p) => p.id === produitId)[0];
@@ -683,8 +791,11 @@ function createCatalogEngine(merchantKey, options) {
       trace.action = "Précision demandée : quelle couleur ?";
       logTrace(session, trace);
       session.pendingChoice = { type: "couleur", options: availableColors };
-      const ouverture = produitReconnu ? piocheParmi(OUVERTURES_PRODUIT) + " " : "";
-      return ouverture + product.nom + " — quelle couleur souhaitez-vous ? Disponible en : " + availableColors.join(", ") + ".";
+      const prefixeCouleur = produitReconnu ? ouverture(session, OUVERTURES_PRODUIT, OUVERTURES_PRODUIT_EN) + " " : "";
+      return prefixeCouleur + sh.t(session,
+        product.nom + " — quelle couleur souhaitez-vous ? Disponible en : " + availableColors.join(", ") + ".",
+        product.nom + " — which color would you like? Available in: " + availableColors.join(", ") + "."
+      );
     }
 
     const sizesForColor = product.variantes.filter((v) => v.couleur === couleur).map((v) => v.taille);
@@ -698,8 +809,11 @@ function createCatalogEngine(merchantKey, options) {
       trace.action = "Précision demandée : quelle taille ?";
       logTrace(session, trace);
       session.pendingChoice = { type: "taille", options: uniqueSizes };
-      const ouverture = couleurReconnue ? piocheParmi(OUVERTURES_COULEUR) + " " : "";
-      return ouverture + "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".";
+      const prefixeTaille = couleurReconnue ? ouverture(session, OUVERTURES_COULEUR, OUVERTURES_COULEUR_EN) + " " : "";
+      return prefixeTaille + sh.t(session,
+        "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".",
+        "What size for " + product.nom + " " + couleur + "? Available: " + uniqueSizes.join(", ") + "."
+      );
     }
 
     const variant = product.variantes.filter((v) => v.couleur === couleur && v.taille === taille)[0];
@@ -707,7 +821,11 @@ function createCatalogEngine(merchantKey, options) {
       trace.action = "Combinaison introuvable — options proposées";
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
       logTrace(session, trace);
-      return "Désolée, je n'ai pas cette combinaison pour " + product.nom + ". Options disponibles : " + product.variantes.map((v) => v.couleur + " " + v.taille).join(", ") + ".";
+      const options0 = product.variantes.map((v) => v.couleur + " " + v.taille).join(", ");
+      return sh.t(session,
+        "Désolée, je n'ai pas cette combinaison pour " + product.nom + ". Options disponibles : " + options0 + ".",
+        "Sorry, I don't have that combination for " + product.nom + ". Available options: " + options0 + "."
+      );
     }
 
     const virt = virtualStock(product.id, variant);
@@ -720,15 +838,25 @@ function createCatalogEngine(merchantKey, options) {
       logTrace(session, trace);
       if (alternatives.length) {
         session.pendingChoice = { type: "variante", options: alternatives.map((v) => ({ couleur: v.couleur, taille: v.taille })) };
-        return "Désolée, " + product.nom + " " + variant.couleur + " " + variant.taille + " est en rupture 😕. Il me reste : " + alternatives.map((v) => v.couleur + " " + v.taille + " (" + virtualStock(product.id, v) + ")").join(", ") + ". Lequel voulez-vous ?";
+        const alt = alternatives.map((v) => v.couleur + " " + v.taille + " (" + virtualStock(product.id, v) + ")").join(", ");
+        return sh.t(session,
+          "Désolée, " + product.nom + " " + variant.couleur + " " + variant.taille + " est en rupture 😕. Il me reste : " + alt + ". Lequel voulez-vous ?",
+          "Sorry, " + product.nom + " " + variant.couleur + " " + variant.taille + " is out of stock 😕. I still have: " + alt + ". Which one would you like?"
+        );
       }
-      return "Désolée, " + product.nom + " est actuellement en rupture sur tous les modèles. Je vous notifie dès le réassort ?";
+      return sh.t(session,
+        "Désolée, " + product.nom + " est actuellement en rupture sur tous les modèles. Je vous notifie dès le réassort ?",
+        "Sorry, " + product.nom + " is currently out of stock in all variants. Should I notify you when it's back?"
+      );
     }
 
     trace.action = "Article disponible — quantité demandée";
     session.stage = "awaiting_quantity";
     logTrace(session, trace);
-    return piocheParmi(OUVERTURES_DISPO) + " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?";
+    return ouverture(session, OUVERTURES_DISPO, OUVERTURES_DISPO_EN) + sh.t(session,
+      " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?",
+      " it's available ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " each (" + virt + " piece(s) in stock). How many would you like?"
+    );
   }
 
   // Envoie (ou simule l'envoi de) la premiere photo enregistree pour cet article, si le marchand en a
@@ -758,7 +886,7 @@ function createCatalogEngine(merchantKey, options) {
   }
 
   function handleMessage(fromPhone, text) {
-    if (!state) return "Le service redemarre, un instant s'il vous plait...";
+    if (!state) return "Le service redémarre, un instant s'il vous plaît... / The service is restarting, please hold on...";
 
     journaliser(fromPhone, "client", text);
 
@@ -770,23 +898,51 @@ function createCatalogEngine(merchantKey, options) {
       return null;
     }
 
+    const session = getSession(fromPhone);
+
+    // ---------------- Choix de langue (bilingue FR/EN) ----------------
+    // Le tout premier message d'un client recoit une porte bilingue (on ne sait pas encore quelle langue
+    // il parle). Sa reponse suivante fixe la langue pour tout le reste de la conversation - si elle n'est
+    // pas explicitement "FR"/"EN", on part du principe que ce message etait deja une vraie demande et on
+    // la traite normalement ci-dessous, en francais par defaut (comportement historique). Le client peut
+    // ensuite changer de langue a tout moment (voir sh.detecterChangementLangue plus bas), quel que soit
+    // le stade de la conversation en cours.
+    if (session.langue == null) {
+      if (!session.gateLangueEnvoyee) {
+        session.gateLangueEnvoyee = true;
+        const reponseGate = sh.messageChoixLangue();
+        journaliser(fromPhone, "bot", reponseGate);
+        return reponseGate;
+      }
+      session.langue = sh.detecterChoixLangueInitial(text) || "fr";
+      // Pas de `return` ici : ce message est traite normalement plus bas, maintenant que la langue est fixee.
+    }
+
+    const changementLangue = sh.detecterChangementLangue(text);
+    if (changementLangue && changementLangue !== session.langue) {
+      session.langue = changementLangue;
+      const confirmationLangue = sh.t(session, "Très bien, je continue en français. 🇫🇷", "Sure, I'll continue in English. 🇬🇧");
+      journaliser(fromPhone, "bot", confirmationLangue);
+      return confirmationLangue;
+    }
+
     if (sh.demandeUnHumain(text)) {
       sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
       notifierMarchand("humain", [fromPhone, text]).catch((erreur) =>
         console.error("[" + merchantKey + "] Echec de la notification marchand (humain) :", erreur)
       );
-      journaliser(fromPhone, "bot", sh.MESSAGE_MISE_EN_RELATION);
-      return sh.MESSAGE_MISE_EN_RELATION;
+      const msgHumain = sh.messageMiseEnRelation(session);
+      journaliser(fromPhone, "bot", msgHumain);
+      return msgHumain;
     }
 
-    // Premier contact JAMAIS vu de ce numero (avant que getSession() ne cree sa session) : on glissera la
-    // mention du conseiller humain disponible a la reponse qui suit, une seule fois.
-    const estPremierContact = !sessions[fromPhone] && !humanHintDonne[fromPhone];
-    const session = getSession(fromPhone);
+    // Premiere reponse REELLE (pas la porte de langue ni un accuse de reception) apportee a ce client : on
+    // y glisse la mention du conseiller humain disponible, une seule fois (voir sh.mentionHumainDisponible).
+    const estPremiereReponseReelle = !humanHintDonne[fromPhone];
     let reponse = processMessage(session, text);
-    if (estPremierContact && reponse) {
+    if (estPremiereReponseReelle && reponse) {
       humanHintDonne[fromPhone] = true;
-      reponse += sh.MENTION_HUMAIN_DISPONIBLE;
+      reponse += sh.mentionHumainDisponible(session);
     }
     journaliser(fromPhone, "bot", reponse);
     return reponse;

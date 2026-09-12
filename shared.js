@@ -38,6 +38,57 @@ function echapperHtml(valeur) {
     .replace(/'/g, "&#39;");
 }
 
+// ---------------- Bilingue (francais / anglais) ----------------
+// Le Cameroun etant bilingue, chaque client choisit sa langue en tout debut de conversation (porte geree
+// par le moteur - voir conversation.js/conversationService.js, handleMessage) et peut en changer a tout
+// moment via une phrase reconnue ci-dessous. Le reste du moteur produit alors ses reponses dans la langue
+// de LA SESSION (session.langue, "fr" ou "en") via `t(session, texteFr, texteEn)` plutot que du texte fixe.
+// Les noms d'articles/services/categories restent eux tels que le marchand les a saisis (pas de champ nom
+// anglais separe pour l'instant) - seules les PHRASES DU BOT sont traduites.
+
+function langueSession(session) {
+  return session && session.langue === "en" ? "en" : "fr"; // "fr" par defaut (comportement historique)
+}
+
+function t(session, texteFr, texteEn) {
+  return langueSession(session) === "en" ? texteEn : texteFr;
+}
+
+function normaliserPourRechercheLangue(texte) {
+  return String(texte || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+// Reconnait une demande explicite de CHANGER de langue en cours de route, quel que soit le stade de la
+// conversation (meme principe que demandeUnHumain/demandeVoirPanier ci-dessus). Renvoie "fr"/"en"/null.
+const MOTS_CLES_VERS_ANGLAIS = ["in english", "speak english", "en anglais", "parle anglais", "switch to english", "english please", "passe en anglais"];
+const MOTS_CLES_VERS_FRANCAIS = ["en francais", "parle francais", "switch to french", "in french", "french please", "passe en francais"];
+
+function detecterChangementLangue(texte) {
+  const t2 = normaliserPourRechercheLangue(texte);
+  if (MOTS_CLES_VERS_ANGLAIS.some((m) => t2.indexOf(normaliserPourRechercheLangue(m)) !== -1)) return "en";
+  if (MOTS_CLES_VERS_FRANCAIS.some((m) => t2.indexOf(normaliserPourRechercheLangue(m)) !== -1)) return "fr";
+  return null;
+}
+
+// Reconnait la reponse du client au tout premier message bilingue de bienvenue ("Repondez FR / Reply EN").
+// Volontairement tres permissif (le client peut taper "fr", "français", "1", "en", "english", "2"...).
+function detecterChoixLangueInitial(texte) {
+  const t2 = normaliserPourRechercheLangue(texte).trim();
+  if (["fr", "francais", "french", "1"].indexOf(t2) !== -1) return "fr";
+  if (["en", "english", "anglais", "2"].indexOf(t2) !== -1) return "en";
+  return null;
+}
+
+// Le tout premier message envoye a un nouveau client, AVANT meme de savoir sa langue - forcement bilingue
+// par construction. Renvoye une seule fois par session (voir handleMessage), la reponse suivante fixe
+// session.langue pour tout le reste de la conversation.
+function messageChoixLangue() {
+  return "Bienvenue 👋 / Welcome!\nRépondez *FR* pour continuer en français.\nReply *EN* to continue in English.";
+}
+
 // ---------------- Mise en relation avec un humain ----------------
 // Partage entre conversation.js et conversationService.js : detection de la demande, gestion de la
 // pause (10 minutes sans intervention du marchand), et historique - le tout garde EN MEMOIRE (comme les
@@ -53,12 +104,18 @@ function normaliserPourRecherche(texte) {
     .replace(/[\u0300-\u036f]/g, ""); // retire les accents pour une recherche plus tolerante
 }
 
+// Bilingue (voir plus haut) : le client peut demander un humain dans l'une ou l'autre langue, quelle que
+// soit celle choisie pour le reste de la conversation (une demande urgente ne doit jamais depende d'avoir
+// tape le mot-cle dans la "bonne" langue).
 const MOTS_CLES_HUMAIN = [
   "parler a un humain", "parler a quelqu'un", "parler a une personne", "vraie personne",
   "personne reelle", "un humain", "une humaine", "un vendeur", "une vendeuse", "un conseiller",
   "une conseillere", "un representant", "une representante", "un agent", "un responsable",
   "le gerant", "la gerante", "le patron", "la patronne", "quelqu'un d'autre", "assistance humaine",
-  "parler a un vrai", "un etre humain"
+  "parler a un vrai", "un etre humain",
+  "talk to a human", "speak to a human", "talk to someone", "speak to someone", "real person",
+  "a human being", "human agent", "customer service", "customer support", "talk to an agent",
+  "speak to an agent", "the manager", "someone else", "talk to a person", "speak to a person"
 ];
 
 // Reconnait qu'un client demande a parler a un humain, quel que soit le moment de la conversation.
@@ -67,7 +124,10 @@ function demandeUnHumain(texte) {
   return MOTS_CLES_HUMAIN.some((mot) => t.includes(normaliserPourRecherche(mot)));
 }
 
-const MOTS_CLES_PANIER = ["panier", "mon panier", "voir mon panier", "voir le panier"];
+const MOTS_CLES_PANIER = [
+  "panier", "mon panier", "voir mon panier", "voir le panier",
+  "cart", "my cart", "view cart", "view my cart", "show cart", "show my cart", "see my cart"
+];
 
 // Reconnait qu'un client veut consulter son panier (mot-cle "panier" tape librement, ou bouton "Mon
 // panier" - voir server.js), quel que soit le moment du parcours d'achat en cours (voir conversation.js,
@@ -93,17 +153,31 @@ function detecterIntentionRdv(texte) {
   return null;
 }
 
-// Le message envoye au client UNE SEULE fois, au moment ou la pause commence.
-const MESSAGE_MISE_EN_RELATION =
-  "Je vous mets en relation avec un membre de notre équipe, merci de patienter quelques instants 🙏";
+// Le message envoye au client UNE SEULE fois, au moment ou la pause commence - bilingue (voir plus haut),
+// donc fonction de la session plutot que constante fixe. `estMessageMiseEnRelation` sert au cote appelant
+// (server.js) qui a besoin de reconnaitre CE message precis sans connaitre sa langue exacte.
+const MESSAGE_MISE_EN_RELATION_FR = "Je vous mets en relation avec un membre de notre équipe, merci de patienter quelques instants 🙏";
+const MESSAGE_MISE_EN_RELATION_EN = "I'm connecting you with a member of our team, please hold on for a moment 🙏";
 
-// Glissee UNE SEULE fois par client (a la toute premiere reponse du bot), pour qu'il sache des le depart
-// qu'un humain reste accessible sur simple demande - constat remonte par un marchand : un client qui
-// n'a jamais utilise ce genre d'assistant ne devine pas spontanement cette option. Ajoutee en suffixe du
-// tout premier message (voir conversation.js / conversationService.js, handleMessage), jamais repetee
-// ensuite pour ne pas alourdir la conversation.
-const MENTION_HUMAIN_DISPONIBLE =
-  "\n\n(À tout moment, vous pouvez me demander de vous mettre en relation avec un conseiller si vous préférez échanger avec une personne.)";
+function messageMiseEnRelation(session) {
+  return t(session, MESSAGE_MISE_EN_RELATION_FR, MESSAGE_MISE_EN_RELATION_EN);
+}
+
+function estMessageMiseEnRelation(texte) {
+  return texte === MESSAGE_MISE_EN_RELATION_FR || texte === MESSAGE_MISE_EN_RELATION_EN;
+}
+
+// Glissee UNE SEULE fois par client (a la toute premiere reponse REELLE du bot), pour qu'il sache des le
+// depart qu'un humain reste accessible sur simple demande - constat remonte par un marchand : un client
+// qui n'a jamais utilise ce genre d'assistant ne devine pas spontanement cette option. Ajoutee en suffixe
+// du premier message (voir conversation.js / conversationService.js, handleMessage), jamais repetee
+// ensuite pour ne pas alourdir la conversation. Bilingue, comme le reste (voir plus haut).
+const MENTION_HUMAIN_DISPONIBLE_FR = "\n\n(À tout moment, vous pouvez me demander de vous mettre en relation avec un conseiller si vous préférez échanger avec une personne.)";
+const MENTION_HUMAIN_DISPONIBLE_EN = "\n\n(At any time, you can ask me to connect you with a team member if you'd rather speak with a person.)";
+
+function mentionHumainDisponible(session) {
+  return t(session, MENTION_HUMAIN_DISPONIBLE_FR, MENTION_HUMAIN_DISPONIBLE_EN);
+}
 
 // true si ce message doit rester SANS reponse automatique (pause en cours et delai pas encore ecoule).
 // Si le delai de 10 minutes sans reponse du marchand est ecoule, remet automatiquement enAttente a
@@ -160,11 +234,17 @@ module.exports = {
   parseNegative,
   parseWantsSomethingElse,
   echapperHtml,
+  langueSession,
+  t,
+  detecterChangementLangue,
+  detecterChoixLangueInitial,
+  messageChoixLangue,
   demandeUnHumain,
   demandeVoirPanier,
   detecterIntentionRdv,
-  MESSAGE_MISE_EN_RELATION,
-  MENTION_HUMAIN_DISPONIBLE,
+  messageMiseEnRelation,
+  estMessageMiseEnRelation,
+  mentionHumainDisponible,
   pauseHumainActive,
   ajouterMessageHistorique,
   demarrerPauseHumain,
