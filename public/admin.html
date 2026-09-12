@@ -491,8 +491,10 @@ async function renderParametresCatalogue() {
   const retrait = parametres.retrait || {};
   zone.innerHTML =
     "<h2>Paramètres</h2>" +
-    "<label>Message de confirmation automatique (envoyé au client quand il confirme sa commande)</label>" +
+    "<label>Message de confirmation automatique — français (envoyé au client quand il confirme sa commande)</label>" +
     "<textarea id='msgConfirm' rows='6'>" + esc(parametres.autoConfirmMessage || "") + "</textarea>" +
+    "<label>Message de confirmation automatique — English (facultatif : utilisé uniquement si le client a choisi English dans la conversation ; laissez vide pour utiliser une version par défaut)</label>" +
+    "<textarea id='msgConfirmEn' rows='6'>" + esc(parametres.autoConfirmMessageEn || "") + "</textarea>" +
     "<h3>Retrait en boutique</h3>" +
     "<p style='color:#666; font-size:0.9em;'>Optionnel : si vous renseignez une adresse, le bot proposera au client de choisir entre livraison et retrait en boutique après chaque commande. Si vous laissez ce champ vide, rien ne change — la livraison reste demandée directement comme avant.</p>" +
     "<label>Adresse de la boutique</label>" +
@@ -506,6 +508,7 @@ async function renderParametresCatalogue() {
         method: "PUT",
         body: JSON.stringify({
           autoConfirmMessage: document.getElementById("msgConfirm").value,
+          autoConfirmMessageEn: document.getElementById("msgConfirmEn").value,
           retrait: {
             adresse: document.getElementById("retraitAdresse").value.trim(),
             horaires: document.getElementById("retraitHoraires").value.trim()
