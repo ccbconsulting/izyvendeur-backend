@@ -284,9 +284,10 @@ const I18N = {
     erreurChargerConversation: "Impossible de charger cette conversation : ",
 
     tableauDeBordTitre: "Tableau de bord",
-    libelleCommandesAujourdhui: "Commandes aujourd'hui",
-    libelleRdvAujourdhui: "Rendez-vous pris aujourd'hui",
-    libelleCaJour: "Chiffre d'affaires du jour",
+    labelPeriodeDashboard: "Période affichée",
+    libelleCommandesPeriodeDash: "Commandes",
+    libelleRdvPeriodeDash: "Rendez-vous pris",
+    libelleCaPeriodeDash: "Chiffre d'affaires",
     libelleConvEnAttente: "Conversations en attente d'un humain",
     libelleArticlesSurveiller: "Articles à surveiller",
     libelleRuptures: "Ruptures de stock",
@@ -319,6 +320,8 @@ const I18N = {
     optionJour: "Jour",
     optionSemaine: "Semaine",
     optionMois: "Mois",
+    optionTrimestre: "Trimestre",
+    optionAnnee: "Année",
     labelDateReference: "Date de référence",
     labelArticleFiltre: "Article",
     optionTousArticles: "Tous les articles",
@@ -573,9 +576,10 @@ const I18N = {
     erreurChargerConversation: "Couldn't load this conversation: ",
 
     tableauDeBordTitre: "Dashboard",
-    libelleCommandesAujourdhui: "Orders today",
-    libelleRdvAujourdhui: "Appointments booked today",
-    libelleCaJour: "Today's revenue",
+    labelPeriodeDashboard: "Period shown",
+    libelleCommandesPeriodeDash: "Orders",
+    libelleRdvPeriodeDash: "Appointments booked",
+    libelleCaPeriodeDash: "Revenue",
     libelleConvEnAttente: "Conversations waiting for a human",
     libelleArticlesSurveiller: "Items to watch",
     libelleRuptures: "Out-of-stock items",
@@ -608,6 +612,8 @@ const I18N = {
     optionJour: "Day",
     optionSemaine: "Week",
     optionMois: "Month",
+    optionTrimestre: "Quarter",
+    optionAnnee: "Year",
     labelDateReference: "Reference date",
     labelArticleFiltre: "Item",
     optionTousArticles: "All items",
@@ -747,6 +753,9 @@ async function api(chemin, opts) {
 let marchands = [];
 let marchandActif = null;
 let moi = null; // { role: "superadmin" | "marchand", merchantId, adminUser }
+// Periode choisie dans le selecteur du Tableau de bord (jour/semaine/mois/trimestre/annee) - gardee en
+// memoire pour rester stable si on quitte l'onglet puis qu'on y revient.
+let dashboardPeriodeActuelle = "jour";
 
 async function demarrer() {
   document.getElementById("titreHeader").textContent = "IzyVendeur — " + t("admin");
@@ -1493,16 +1502,28 @@ async function renderHistoriqueDetail(telephone) {
 async function renderTableauDeBord() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
-  const d = await api("/api/" + marchandActif.id + "/tableau-de-bord");
+  const d = await api("/api/" + marchandActif.id + "/tableau-de-bord?periode=" + encodeURIComponent(dashboardPeriodeActuelle));
   const estCatalogue = marchandActif.type !== "service";
   const jours = t("joursAbrev");
   const maxSpark = Math.max(1, ...d.sparkline7j);
   const aujourdhuiIndex = (new Date().getDay() + 6) % 7; // 0 = lundi
 
+  const selecteurPeriode =
+    "<div class='controles-rapport'>" +
+      "<div><label>" + t("labelPeriodeDashboard") + "</label><select id='dashPeriode'>" +
+        "<option value='jour'>" + t("optionJour") + "</option>" +
+        "<option value='semaine'>" + t("optionSemaine") + "</option>" +
+        "<option value='mois'>" + t("optionMois") + "</option>" +
+        "<option value='trimestre'>" + t("optionTrimestre") + "</option>" +
+        "<option value='annee'>" + t("optionAnnee") + "</option>" +
+      "</select></div>" +
+      "<div class='raison'>" + esc(new Date(d.debutISO).toLocaleDateString(localeCourante())) + " – " + esc(new Date(new Date(d.finISO).getTime() - 1).toLocaleDateString(localeCourante())) + "</div>" +
+    "</div>";
+
   let tuiles =
     "<div class='tuiles'>" +
-      "<div class='tuile'><div class='valeur'>" + d.commandesAujourdhui + "</div><div class='libelle'>" + (estCatalogue ? t("libelleCommandesAujourdhui") : t("libelleRdvAujourdhui")) + "</div></div>" +
-      "<div class='tuile'><div class='valeur'>" + (d.caJour || 0).toLocaleString(localeCourante()) + " FCFA</div><div class='libelle'>" + t("libelleCaJour") + "</div></div>" +
+      "<div class='tuile'><div class='valeur'>" + d.commandesPeriode + "</div><div class='libelle'>" + (estCatalogue ? t("libelleCommandesPeriodeDash") : t("libelleRdvPeriodeDash")) + "</div></div>" +
+      "<div class='tuile'><div class='valeur'>" + (d.caPeriode || 0).toLocaleString(localeCourante()) + " FCFA</div><div class='libelle'>" + t("libelleCaPeriodeDash") + "</div></div>" +
       "<div class='tuile" + (d.conversationsEnAttente ? " avertissement" : "") + "'><div class='valeur'>" + d.conversationsEnAttente + "</div><div class='libelle'>" + t("libelleConvEnAttente") + "</div></div>";
   if (estCatalogue) {
     tuiles +=
@@ -1549,7 +1570,14 @@ async function renderTableauDeBord() {
         : "<p class='raison'>" + t("msgAucunRdvProchain") + "</p>");
   }
 
-  zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + tuiles + sparkline + top + bas;
+  zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode + tuiles + sparkline + top + bas;
+
+  const selectPeriode = document.getElementById("dashPeriode");
+  selectPeriode.value = dashboardPeriodeActuelle;
+  selectPeriode.onchange = () => {
+    dashboardPeriodeActuelle = selectPeriode.value;
+    renderTableauDeBord();
+  };
 }
 
 // ---------------- Simulateur WhatsApp ----------------
@@ -1637,7 +1665,7 @@ async function renderRapports() {
   zone.innerHTML =
     "<h2>" + t("rapportsTitre") + "</h2>" +
     "<div class='controles-rapport'>" +
-      "<div><label>" + t("labelPeriode") + "</label><select id='rapportPeriode'><option value='jour'>" + t("optionJour") + "</option><option value='semaine'>" + t("optionSemaine") + "</option><option value='mois'>" + t("optionMois") + "</option></select></div>" +
+      "<div><label>" + t("labelPeriode") + "</label><select id='rapportPeriode'><option value='jour'>" + t("optionJour") + "</option><option value='semaine'>" + t("optionSemaine") + "</option><option value='mois'>" + t("optionMois") + "</option><option value='trimestre'>" + t("optionTrimestre") + "</option><option value='annee'>" + t("optionAnnee") + "</option></select></div>" +
       "<div><label>" + t("labelDateReference") + "</label><input type='date' id='rapportDate' value='" + aujourdhui + "' /></div>" +
       "<div><label>" + t("labelArticleFiltre") + "</label><select id='rapportArticle'><option value='tous'>" + t("optionTousArticles") + "</option>" +
         catalogue.map((p) => "<option value=\"" + esc(p.id) + "\">" + esc(p.nom) + "</option>").join("") +
