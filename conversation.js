@@ -636,7 +636,7 @@ function createCatalogEngine(merchantKey, options) {
 
     const produitIdPrecedent = session.productId;
     let produitId = produitReconnu || session.productId;
-    const couleur = couleurReconnue || (produitId === session.productId ? session.couleur : null);
+    let couleur = couleurReconnue || (produitId === session.productId ? session.couleur : null);
     let taille = tailleReconnue || (produitId === session.productId ? session.taille : null);
     session.productId = produitId; session.couleur = couleur; session.taille = taille;
 
@@ -670,6 +670,14 @@ function createCatalogEngine(merchantKey, options) {
     }
 
     const availableColors = product.variantes.map((v) => v.couleur).filter((v, i, a) => a.indexOf(v) === i);
+
+    // Comme pour la taille plus bas : si l'article n'a qu'une seule couleur possible (cas frequent hors
+    // vetements - papeterie, gadgets, etc.), pas besoin de faire choisir le client, on la retient direct.
+    if (!couleur && availableColors.length === 1) {
+      couleur = availableColors[0];
+      session.couleur = couleur;
+      trace.entites["Couleur"] = couleur + " (couleur unique disponible)";
+    }
 
     if (!couleur) {
       trace.action = "Précision demandée : quelle couleur ?";
