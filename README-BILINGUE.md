@@ -1,6 +1,6 @@
-# IzyVendeur — Choix de langue FR/EN pour le moteur catalogue
+# IzyVendeur — Choix de langue FR/EN (bot catalogue + interface /admin)
 
-## Ce qui est fait maintenant
+## Étape 1 — Le bot WhatsApp (moteur catalogue)
 
 Le bot WhatsApp (moteur "catalogue" — boutique en ligne, PAS le moteur rendez-vous) parle maintenant
 français OU anglais, au choix du client.
@@ -22,49 +22,61 @@ et de téléphone, récapitulatif de commande, message de confirmation final, mi
 humain, etc. Le bot reconnaît aussi les mots-clés anglais ("cart", "view my cart", "talk to a human",
 "pickup", "delivery"...) exactement comme les mots-clés français.
 
-Le message de confirmation automatique que VOUS personnalisez dans /admin (Paramètres > Catalogue)
-a maintenant un deuxième champ optionnel "Message de confirmation — English". Si vous le laissez vide,
-le client anglophone reçoit un message de confirmation par défaut déjà traduit — il ne verra jamais
-votre texte français par erreur.
-
-## Correctif ajouté (v2)
-
 Un petit bug a été trouvé et corrigé pendant les tests : si un client tapait "voir mon panier" (ou
 "view my cart") juste au moment où le bot lui demandait son téléphone et son adresse pour finaliser
 la commande, le bot ne reconnaissait pas la demande et l'avalait par erreur comme si c'était le début
 de l'adresse. Ce n'était pas un problème introduit par le bilingue (ça existait déjà en français avant),
-mais c'est maintenant corrigé dans les deux langues : à cette étape précise, le bot affiche le panier
-puis rappelle ce qu'il manque encore (téléphone et/ou adresse), sans rien perdre de ce qui a déjà été
-donné.
+mais c'est maintenant corrigé dans les deux langues.
+
+## Étape 2 — L'interface /admin (nouveau)
+
+L'interface /admin (tableau de bord, catalogue, commandes, rendez-vous, services, conversations,
+paramètres, employés, mon compte...) a maintenant un bouton **FR / EN** en haut à droite de l'écran,
+à côté du sélecteur de marchand.
+
+- Chacun (vous, un marchand, un employé) choisit sa langue à tout moment en cliquant sur ce bouton —
+  ça ne demande aucune configuration. Le choix est mémorisé dans le navigateur, donc il reste d'une
+  visite à l'autre sur le même appareil.
+- Absolument tout est traduit : les onglets, les titres, les libellés de formulaires, les en-têtes de
+  tableaux, les messages d'erreur, les fenêtres de confirmation/saisie (par exemple "Supprimer ce
+  marchand ?", création d'un employé, etc.).
+- Important : les **données elles-mêmes ne changent jamais de langue**. Un statut de commande
+  ("Nouvelle", "Confirmée"...), un jour de la semaine dans les horaires, ou le mode de livraison,
+  restent stockés exactement comme avant côté serveur — seul leur **affichage** est traduit selon la
+  langue choisie. Vous pouvez donc basculer FR ↔ EN sans jamais rien casser ni perdre.
+- Les noms d'articles, de catégories, de services que vous avez saisis restent tels quels (pas de
+  traduction automatique de vos propres textes).
+
+J'ai testé cette interface de bout en bout (marchand catalogue et marchand service, super-administrateur
+et employé, les deux langues, création réelle d'un compte employé, sauvegarde de paramètres) avec un
+navigateur automatisé avant de vous l'envoyer — tout s'affiche et fonctionne correctement dans les deux
+langues, sans erreur.
 
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
-- **Le moteur rendez-vous (conversationService.js)** — la prise de RDV reste entièrement en français
-  pour l'instant. Ce sera la prochaine étape si vous le souhaitez.
-- **L'interface /admin elle-même** — les menus, boutons, écrans du tableau de bord restent en français
-  (seul le nouveau champ "message de confirmation anglais" a été ajouté). Traduire tout /admin serait
-  une 3ème étape séparée.
+- **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
+  entièrement en français pour l'instant (l'interface /admin pour gérer les rendez-vous/services, elle,
+  est déjà bilingue depuis l'étape 2 ci-dessus). Ce sera la prochaine étape si vous le souhaitez.
 - **Les noms d'articles/catégories/services** — un article s'appelle comme vous l'avez écrit
-  (ex: "Robe wax imprimée"), il n'y a pas de traduction automatique du nom lui-même. Seules les phrases
-  du bot autour de ce nom sont bilingues.
+  (ex: "Robe wax imprimée"), il n'y a pas de traduction automatique du nom lui-même.
 - Les messages que le bot vous envoie à VOUS, marchand, pour vous notifier d'une nouvelle commande
   restent en français — c'est votre langue, pas celle du client, donc pas concerné.
 
 ## Fichiers modifiés dans ce zip
 
 - `conversation.js` — moteur catalogue, logique de choix de langue + traduction de toutes les réponses
-- `shared.js` — nouvelles fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)
+- `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)
 - `catalog.js` — message de confirmation par défaut en anglais
 - `server.js` — petit ajustement pour reconnaître le message de mise en relation dans les 2 langues
-- `public/admin.html` — nouveau champ "Message de confirmation — English" dans Paramètres > Catalogue
+- `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN)
 
 ## Comment déployer
 
 1. Remplacez les 5 fichiers ci-dessus dans votre dépôt par ceux de ce zip (mêmes emplacements).
-2. `git add -A && git commit -m "Ajout du choix de langue FR/EN pour le bot catalogue"`
+2. `git add -A && git commit -m "Choix de langue FR/EN pour le bot catalogue et l'interface /admin"`
 3. `git push`
 4. Render redéploie automatiquement (ou lancez un "Manual Deploy" depuis le tableau de bord Render
    si l'auto-deploy n'est pas activé).
 
-Testez ensuite en envoyant "hello" ou "hi" à votre numéro WhatsApp bot — vous devriez recevoir le
-message de bienvenue bilingue.
+Testez ensuite en envoyant "hello" ou "hi" à votre numéro WhatsApp bot (message de bienvenue bilingue),
+et en ouvrant /admin pour essayer le bouton FR/EN en haut de l'écran.
