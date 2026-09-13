@@ -63,10 +63,14 @@
   .selecteur-langue { margin-left: auto; display: flex; gap: 4px; }
   .selecteur-langue button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 6px 10px; font-size: 0.85em; opacity: 0.75; }
   .selecteur-langue button.actif { background: rgba(255,255,255,0.18); opacity: 1; font-weight: 600; }
+  #logoMarchandHeader { height: 34px; width: 34px; object-fit: cover; border-radius: 6px; display: none; background: #fff; }
+  .bloc-logo { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .bloc-logo img { height: 72px; width: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #e3e7ec; background: #fff; }
 </style>
 </head>
 <body>
 <header>
+  <img id="logoMarchandHeader" alt="" />
   <h1 id="titreHeader">IzyVendeur — Administration</h1>
   <select id="selecteurMarchand"></select>
   <span id="nomMarchandSeul" style="font-weight:600; display:none;"></span>
@@ -354,6 +358,10 @@ const I18N = {
     placeholderNouveauMdp: "Nouveau mot de passe",
     btnDefinirMdp: "Définir ce mot de passe",
     btnGenererMdp: "Générer un mot de passe aléatoire",
+    h3Logo: "Logo",
+    descLogo: "Facultatif. Affiché dans /admin en haut de l'écran, et envoyé par le bot en tout premier (avant le message de bienvenue) au tout premier message d'un nouveau contact WhatsApp. JPEG, PNG ou WEBP, 5 Mo maximum.",
+    btnUploaderLogo: "Envoyer",
+    confirmSupprimerLogo: "Supprimer ce logo ?",
     h3NumeroNotification: "Numéro de notification",
     noteNumeroNotifSuperadmin: "Le numéro WhatsApp personnel (pas le numéro business du bot) qui reçoit un message quand un client de ce marchand demande à parler à un humain.",
     labelNumeroNotif: "Numéro de notification (format international sans le +, ex: 237699999999)",
@@ -650,6 +658,10 @@ const I18N = {
     placeholderNouveauMdp: "New password",
     btnDefinirMdp: "Set this password",
     btnGenererMdp: "Generate a random password",
+    h3Logo: "Logo",
+    descLogo: "Optional. Shown in /admin at the top of the screen, and sent by the bot first (before the welcome message) on a new WhatsApp contact's very first message. JPEG, PNG or WEBP, 5 MB max.",
+    btnUploaderLogo: "Upload",
+    confirmSupprimerLogo: "Delete this logo?",
     h3NumeroNotification: "Notification number",
     noteNumeroNotifSuperadmin: "The personal WhatsApp number (not the bot's business number) that receives a message when one of this merchant's customers asks to talk to a human.",
     labelNumeroNotif: "Notification number (international format without the +, e.g. 237699999999)",
@@ -868,6 +880,14 @@ document.getElementById("btnNouveauMarchand").onclick = async () => {
 function choisirMarchand(id) {
   marchandActif = marchands.filter((m) => m.id === id)[0];
   document.getElementById("selecteurMarchand").value = id;
+  const logoHeader = document.getElementById("logoMarchandHeader");
+  if (marchandActif.logoUrl) {
+    logoHeader.src = marchandActif.logoUrl;
+    logoHeader.style.display = "inline-block";
+  } else {
+    logoHeader.style.display = "none";
+    logoHeader.removeAttribute("src");
+  }
   if (moi.role === "superadmin") {
     const btnSuspendre = document.getElementById("btnSuspendreMarchand");
     const estActif = marchandActif.actif !== false;
@@ -1761,6 +1781,45 @@ async function renderRapports() {
 
 // ---------------- Mon compte (identifiants de connexion) ----------------
 
+// Bloc "Logo" reutilise a l'identique dans les deux vues de renderCompte() ci-dessous (super-administrateur
+// gerant un marchand, et marchand gerant son propre compte) - meme HTML, memes branchements d'evenements.
+function blocLogoHtml() {
+  return "<h3>" + t("h3Logo") + "</h3>" +
+    "<p class='raison'>" + t("descLogo") + "</p>" +
+    "<div class='bloc-logo'>" +
+      (marchandActif.logoUrl
+        ? "<img src=\"" + esc(marchandActif.logoUrl) + "\" alt='' />"
+        : "") +
+      "<div>" +
+        "<input type='file' id='champLogo' accept='image/png,image/jpeg,image/webp' /> " +
+        "<button id='btnUploaderLogo'>" + t("btnUploaderLogo") + "</button>" +
+        (marchandActif.logoUrl ? " <button id='btnSupprimerLogo' class='danger'>" + t("supprimer") + "</button>" : "") +
+      "</div>" +
+    "</div>";
+}
+
+function brancherBlocLogo() {
+  document.getElementById("btnUploaderLogo").onclick = async () => {
+    const fichier = document.getElementById("champLogo").files[0];
+    if (!fichier) { alert(t("alertChoisirImage")); return; }
+    const donnees = new FormData();
+    donnees.append("logo", fichier);
+    try {
+      await fetch("/api/marchands/" + marchandActif.id + "/logo", { method: "POST", body: donnees })
+        .then(async (r) => { if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erreur || r.statusText); } });
+      await demarrer();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  const btnSuppr = document.getElementById("btnSupprimerLogo");
+  if (btnSuppr) btnSuppr.onclick = async () => {
+    if (!confirm(t("confirmSupprimerLogo"))) return;
+    try {
+      await api("/api/marchands/" + marchandActif.id + "/logo", { method: "DELETE" });
+      await demarrer();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
+
 async function renderCompte() {
   const zone = document.getElementById("contenuOnglet");
 
@@ -1782,7 +1841,9 @@ async function renderCompte() {
       "<p class='raison'>" + t("noteNumeroNotifSuperadmin") + "</p>" +
       "<label>" + t("labelNumeroNotif") + "</label>" +
       "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
-      "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>";
+      "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
+      blocLogoHtml();
+    brancherBlocLogo();
 
     document.getElementById("btnSauverUtilisateur").onclick = async () => {
       const nouvUtilisateur = document.getElementById("champUtilisateur").value.trim();
@@ -1861,7 +1922,9 @@ async function renderCompte() {
     "<p class='raison'>" + t("noteNumeroNotifMarchand") + "</p>" +
     "<label>" + t("labelNumeroNotif") + "</label>" +
     "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
-    "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>";
+    "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
+    blocLogoHtml();
+  brancherBlocLogo();
 
   document.getElementById("btnChangerMdp").onclick = async () => {
     const m1 = document.getElementById("champNouveauMdp1").value;
