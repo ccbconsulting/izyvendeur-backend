@@ -209,6 +209,10 @@ const I18N = {
     statutAnnulee: "Annulée",
 
     paramTitre: "Paramètres",
+    h3AccueilPerso: "Message d'accueil personnalisé (facultatif)",
+    descAccueilPerso: "Affiché une seule fois, avant le choix de langue, au tout premier message d'un nouveau contact. Laissez vide pour ne rien changer. Utile par exemple pour un marchand de démonstration : prévenir que c'est une plateforme test et indiquer comment souscrire au vrai service. Restez court : ce texte partage la même bulle WhatsApp que le message de bienvenue et le menu de langue.",
+    labelAccueilPersoFr: "Message d'accueil personnalisé — français",
+    labelAccueilPersoEn: "Message d'accueil personnalisé — English (facultatif)",
     labelMsgConfirmFr: "Message de confirmation automatique — français (envoyé au client quand il confirme sa commande)",
     labelMsgConfirmEn: "Message de confirmation automatique — English (facultatif : utilisé uniquement si le client a choisi English dans la conversation ; laissez vide pour utiliser une version par défaut)",
     h3RetraitBoutique: "Retrait en boutique",
@@ -501,6 +505,10 @@ const I18N = {
     statutAnnulee: "Cancelled",
 
     paramTitre: "Settings",
+    h3AccueilPerso: "Custom welcome message (optional)",
+    descAccueilPerso: "Shown once, before the language choice, on a new contact's very first message. Leave blank to change nothing. Useful for a demo merchant, for example: to warn that this is a test platform and explain how to subscribe to the real service. Keep it short: this text shares the same WhatsApp bubble as the welcome message and the language menu.",
+    labelAccueilPersoFr: "Custom welcome message — French",
+    labelAccueilPersoEn: "Custom welcome message — English (optional)",
     labelMsgConfirmFr: "Automatic confirmation message — French (sent to the customer when they confirm their order)",
     labelMsgConfirmEn: "Automatic confirmation message — English (optional: used only if the customer chose English in the conversation; leave blank to use a default version)",
     h3RetraitBoutique: "In-store pickup",
@@ -1156,6 +1164,12 @@ async function renderParametresCatalogue() {
   const retrait = parametres.retrait || {};
   zone.innerHTML =
     "<h2>" + t("paramTitre") + "</h2>" +
+    "<h3>" + t("h3AccueilPerso") + "</h3>" +
+    "<p style='color:#666; font-size:0.9em;'>" + t("descAccueilPerso") + "</p>" +
+    "<label>" + t("labelAccueilPersoFr") + "</label>" +
+    "<textarea id='accueilPerso' rows='3'>" + esc(parametres.messageAccueilSupplementaire || "") + "</textarea>" +
+    "<label>" + t("labelAccueilPersoEn") + "</label>" +
+    "<textarea id='accueilPersoEn' rows='3'>" + esc(parametres.messageAccueilSupplementaireEn || "") + "</textarea>" +
     "<label>" + t("labelMsgConfirmFr") + "</label>" +
     "<textarea id='msgConfirm' rows='6'>" + esc(parametres.autoConfirmMessage || "") + "</textarea>" +
     "<label>" + t("labelMsgConfirmEn") + "</label>" +
@@ -1172,6 +1186,8 @@ async function renderParametresCatalogue() {
       await api("/api/" + marchandActif.id + "/parametres", {
         method: "PUT",
         body: JSON.stringify({
+          messageAccueilSupplementaire: document.getElementById("accueilPerso").value,
+          messageAccueilSupplementaireEn: document.getElementById("accueilPersoEn").value,
           autoConfirmMessage: document.getElementById("msgConfirm").value,
           autoConfirmMessageEn: document.getElementById("msgConfirmEn").value,
           retrait: {
