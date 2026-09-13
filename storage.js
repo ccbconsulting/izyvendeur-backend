@@ -40,12 +40,15 @@ function estConfigure() {
   return Boolean(ACCOUNT_ID && ACCESS_KEY_ID && SECRET_ACCESS_KEY && BUCKET && PUBLIC_BASE_URL);
 }
 
-// Upload une photo d'article et renvoie son URL publique. `merchantKey`/`productId` servent uniquement a
-// ranger les fichiers de facon lisible dans le bucket (un dossier par marchand) - aucune donnee sensible
-// n'y transite, ce ne sont que des identifiants techniques deja publics dans l'URL de l'API.
-async function uploaderPhotoProduit({ merchantKey, productId, buffer, mimeType }) {
+// Upload generique d'une image vers R2 et renvoie son URL publique. `merchantKey`/`sousDossier` servent
+// uniquement a ranger les fichiers de facon lisible dans le bucket (un dossier par marchand, puis un
+// sous-dossier au choix de l'appelant - ex: l'id d'un article pour ses photos, ou "logo" pour le logo du
+// marchand) - aucune donnee sensible n'y transite, ce ne sont que des identifiants techniques deja publics
+// dans l'URL de l'API. Fonction interne : voir uploaderPhotoProduit/uploaderLogoMarchand ci-dessous pour
+// les deux usages concrets (memes regles de validation - format et taille - pour les deux).
+async function uploaderImage({ merchantKey, sousDossier, buffer, mimeType }) {
   if (!estConfigure()) {
-    throw new Error("Hébergement des photos non configuré (variables R2_* manquantes sur le serveur).");
+    throw new Error("Hébergement des images non configuré (variables R2_* manquantes sur le serveur).");
   }
   const extension = EXTENSIONS_AUTORISEES[mimeType];
   if (!extension) {
@@ -55,7 +58,7 @@ async function uploaderPhotoProduit({ merchantKey, productId, buffer, mimeType }
     throw new Error("Image trop volumineuse (5 Mo maximum).");
   }
 
-  const cle = `marchands/${merchantKey}/${productId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+  const cle = `marchands/${merchantKey}/${sousDossier}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
 
   await getClient().send(new PutObjectCommand({
     Bucket: BUCKET,
@@ -66,6 +69,19 @@ async function uploaderPhotoProduit({ merchantKey, productId, buffer, mimeType }
   }));
 
   return `${PUBLIC_BASE_URL}/${cle}`;
+}
+
+// Upload une photo d'article et renvoie son URL publique.
+async function uploaderPhotoProduit({ merchantKey, productId, buffer, mimeType }) {
+  return uploaderImage({ merchantKey, sousDossier: productId, buffer, mimeType });
+}
+
+// Upload le logo d'un marchand (affiche dans /admin et, en option, envoye par le bot au tout premier
+// contact - voir messageAccueilPersonnalise/logoUrl dans conversation.js et server.js) et renvoie son URL
+// publique. Un seul logo par marchand : l'ancien (le cas echeant) est supprime cote appelant (server.js)
+// apres un upload reussi, pas ici (cette fonction reste volontairement une simple primitive d'upload).
+async function uploaderLogoMarchand({ merchantKey, buffer, mimeType }) {
+  return uploaderImage({ merchantKey, sousDossier: "logo", buffer, mimeType });
 }
 
 // Supprime une photo du bucket a partir de son URL publique (best-effort : une erreur ici ne doit jamais
@@ -80,4 +96,4 @@ async function supprimerPhotoProduit(url) {
   }
 }
 
-module.exports = { estConfigure, uploaderPhotoProduit, supprimerPhotoProduit, EXTENSIONS_AUTORISEES, TAILLE_MAX_OCTETS };
+module.exports = { estConfigure, uploaderPhotoProduit, uploaderLogoMarchand, supprimerPhotoProduit, EXTENSIONS_AUTORISEES, TAILLE_MAX_OCTETS };

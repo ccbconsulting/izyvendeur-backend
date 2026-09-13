@@ -115,6 +115,34 @@ Testé de bout en bout (sans réglage = comportement inchangé, avec réglage = 
 correctement et menu de langue toujours cliquable, sauvegarde/rechargement dans /admin, les deux
 langues de l'interface) avant livraison.
 
+## Étape 5 — Logo du marchand (nouveau, hors sujet bilingue)
+
+Encore un ajout indépendant, discuté avec vous avant d'être construit.
+
+- Nouveau bloc **"Logo"** dans l'onglet **Mon compte** (visible pour vous en tant que super-administrateur
+  quand vous gérez un marchand, et pour un marchand qui gère son propre compte) : upload d'une image
+  (JPEG, PNG ou WEBP, 5 Mo max), avec aperçu et bouton pour la supprimer/remplacer.
+- Une fois envoyé, ce logo s'affiche :
+  1. **Dans /admin** : en haut de l'écran, à côté du titre, pour le marchand actif.
+  2. **Dans WhatsApp** : envoyé par le bot en toute première image, avant même le message de bienvenue
+     bilingue, au tout premier message d'un nouveau contact — une seule fois, jamais répété ensuite.
+- Facultatif et vide par défaut : un marchand qui n'en envoie pas ne voit et n'envoie rien de nouveau.
+- **Important — nécessite l'hébergement d'images déjà utilisé pour les photos d'articles** (Cloudflare
+  R2, variables `R2_*` sur Render — voir la section correspondante du README principal du projet). Sans
+  cette configuration, le bouton "Envoyer" du logo renvoie une erreur claire au lieu de planter,
+  exactement comme pour les photos d'articles.
+
+**Petit bug pré-existant corrigé au passage** (repéré en travaillant sur le stockage du logo, sans
+rapport avec le bilingue) : dans certaines conditions, changer le numéro de notification, suspendre/
+réactiver un marchand, ou corriger son nom/numéro WhatsApp depuis /admin, effaçait silencieusement la
+liste de ses employés en base de données (uniquement en production avec PostgreSQL — pas en mode local
+sans base de données). C'est corrigé, testé avec une vraie base PostgreSQL avant livraison, et cela ne
+demande aucune action de votre part.
+
+Testé de bout en bout avant livraison : logo affiché dans /admin et envoyé par le bot en premier message,
+suppression/remplacement, erreur claire sans configuration R2, et le correctif employés vérifié avec une
+vraie base PostgreSQL (pas seulement le mode local).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -140,11 +168,15 @@ langues de l'interface) avant livraison.
   + la route du Tableau de bord accepte maintenant un paramètre de période
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
-  personnalisé" dans l'onglet Paramètres
+  personnalisé" dans l'onglet Paramètres + nouveau bloc "Logo" dans l'onglet Mon compte
+- `storage.js` — nouvelle fonction d'upload pour le logo (réutilise l'hébergement Cloudflare R2 déjà en
+  place pour les photos d'articles)
+- `db.js` — nouvelle colonne `logo_url` pour le marchand (avec migration automatique au démarrage) +
+  correctif du bug employés décrit ci-dessus
 
 ## Comment déployer
 
-1. Remplacez les 6 fichiers ci-dessus dans votre dépôt par ceux de ce zip (mêmes emplacements).
+1. Remplacez les 8 fichiers ci-dessus dans votre dépôt par ceux de ce zip (mêmes emplacements).
 2. `git add -A && git commit -m "Choix de langue FR/EN + sélecteur de période sur le Tableau de bord"`
 3. `git push`
 4. Render redéploie automatiquement (ou lancez un "Manual Deploy" depuis le tableau de bord Render

@@ -68,6 +68,10 @@ async function ensureMerchantsTable() {
   // qui concerne SON marchand. Tableau vide par defaut : aucun marchand existant n'a d'employe tant qu'il
   // n'en cree pas depuis /admin.
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS employes JSONB NOT NULL DEFAULT '[]'::jsonb");
+  // Logo du marchand (URL hebergee sur Cloudflare R2, voir storage.js) - facultatif, NULL par defaut.
+  // Affiche dans /admin (en-tete) et, en option, envoye par le bot au tout premier message d'un nouveau
+  // contact (voir server.js, essayerEnvoyerMenuInteractif).
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS logo_url TEXT");
 }
 
 function defaultMerchantFromEnv() {
@@ -82,7 +86,8 @@ function defaultMerchantFromEnv() {
     adminPassword: process.env.ADMIN_PASSWORD || null,
     phoneNotification: null,
     actif: true,
-    employes: []
+    employes: [],
+    logoUrl: null
   };
 }
 
@@ -91,7 +96,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return res.rows.map(rowToMerchant);
     }
@@ -124,7 +129,8 @@ function rowToMerchant(row) {
     adminPassword: row.admin_password,
     phoneNotification: row.phone_notification || null,
     actif: row.actif !== false,
-    employes: Array.isArray(row.employes) ? row.employes : []
+    employes: Array.isArray(row.employes) ? row.employes : [],
+    logoUrl: row.logo_url || null
   };
 }
 
@@ -132,9 +138,9 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb",
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || [])]
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10",
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null]
     );
     return;
   }
@@ -151,7 +157,7 @@ async function getMerchantRecord(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -176,8 +182,14 @@ async function addMerchant(m) {
 async function updateMerchantFields(id, patch) {
   if (pool) {
     await ensureMerchantsTable();
+    // IMPORTANT : cette lecture doit inclure TOUTES les colonnes que rowToMerchant() lit, meme celles que
+    // cette fonction ne modifie jamais elle-meme (employes, logo_url...) - sinon rowToMerchant() leur
+    // applique sa valeur par defaut (employes: [], logoUrl: null) et l'ecriture plus bas (insertMerchant,
+    // un UPSERT qui reecrit TOUTES les colonnes) efface silencieusement la vraie valeur en base. C'etait le
+    // cas pour "employes" avant ce correctif : changer par ex. le numero de notification d'un marchand
+    // ayant des employes les supprimait tous sans le vouloir.
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -186,6 +198,7 @@ async function updateMerchantFields(id, patch) {
     if (patch.adminPassword !== undefined) m.adminPassword = patch.adminPassword;
     if (patch.phoneNotification !== undefined) m.phoneNotification = patch.phoneNotification;
     if (patch.actif !== undefined) m.actif = !!patch.actif;
+    if (patch.logoUrl !== undefined) m.logoUrl = patch.logoUrl || null;
     // NOUVEAU : nom affiche et phone_number_id WhatsApp corrigeables apres coup (ex: faute de frappe a la
     // creation). Volontairement PAS "id" ni "type" ici : "id" sert de cle a tout l'etat deja persiste
     // (app_state, journal des conversations) et de cle aux sessions/moteurs EN MEMOIRE — le changer
@@ -208,6 +221,7 @@ async function updateMerchantFields(id, patch) {
   if (patch.actif !== undefined) liste[idx].actif = !!patch.actif;
   if (patch.nom !== undefined) liste[idx].nom = patch.nom;
   if (patch.phoneNumberId !== undefined) liste[idx].phoneNumberId = patch.phoneNumberId || null;
+  if (patch.logoUrl !== undefined) liste[idx].logoUrl = patch.logoUrl || null;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
 }
