@@ -76,12 +76,20 @@ async function uploaderPhotoProduit({ merchantKey, productId, buffer, mimeType }
   return uploaderImage({ merchantKey, sousDossier: productId, buffer, mimeType });
 }
 
-// Upload le logo d'un marchand (affiche dans /admin et, en option, envoye par le bot au tout premier
-// contact - voir messageAccueilPersonnalise/logoUrl dans conversation.js et server.js) et renvoie son URL
-// publique. Un seul logo par marchand : l'ancien (le cas echeant) est supprime cote appelant (server.js)
-// apres un upload reussi, pas ici (cette fonction reste volontairement une simple primitive d'upload).
+// Upload le logo d'un marchand (affiche UNIQUEMENT dans /admin, voir db.js pour la distinction avec
+// l'image d'accueil WhatsApp ci-dessous) et renvoie son URL publique. Un seul logo par marchand : l'ancien
+// (le cas echeant) est supprime cote appelant (server.js) apres un upload reussi, pas ici (cette fonction
+// reste volontairement une simple primitive d'upload).
 async function uploaderLogoMarchand({ merchantKey, buffer, mimeType }) {
   return uploaderImage({ merchantKey, sousDossier: "logo", buffer, mimeType });
+}
+
+// Upload l'image d'accueil WhatsApp d'un marchand (envoyee par le bot au tout premier message d'un nouveau
+// contact, voir server.js) et renvoie son URL publique. Volontairement SEPAREE du logo /admin ci-dessus :
+// un marchand peut la changer librement (flyer de promo, offre du moment...) sans jamais toucher a son
+// logo officiel. Une seule image a la fois : l'ancienne est supprimee cote appelant apres un upload reussi.
+async function uploaderImageAccueilWhatsapp({ merchantKey, buffer, mimeType }) {
+  return uploaderImage({ merchantKey, sousDossier: "accueil-whatsapp", buffer, mimeType });
 }
 
 // Supprime une photo du bucket a partir de son URL publique (best-effort : une erreur ici ne doit jamais
@@ -96,4 +104,4 @@ async function supprimerPhotoProduit(url) {
   }
 }
 
-module.exports = { estConfigure, uploaderPhotoProduit, uploaderLogoMarchand, supprimerPhotoProduit, EXTENSIONS_AUTORISEES, TAILLE_MAX_OCTETS };
+module.exports = { estConfigure, uploaderPhotoProduit, uploaderLogoMarchand, uploaderImageAccueilWhatsapp, supprimerPhotoProduit, EXTENSIONS_AUTORISEES, TAILLE_MAX_OCTETS };

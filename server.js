@@ -394,7 +394,7 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
   const tous = Object.values(engines).map((e) => ({
     id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
     phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false,
-    logoUrl: e.merchant.logoUrl || null
+    logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -820,13 +820,15 @@ app.put("/api/:id/notification", protegerAcces, async (req, res) => {
   res.json({ id: req.params.id, phoneNotification: maj.phoneNotification });
 });
 
-// -- Logo du marchand : affiche dans /admin (en-tete) et, en option, envoye par le bot au tout premier
-// message d'un nouveau contact WhatsApp (voir essayerEnvoyerMenuInteractif plus bas). Memes regles de
-// portee que /notification ci-dessus (super-administrateur pour n'importe qui, marchand pour lui-meme) —
-// c'est un reglage cosmetique/de marque, pas un champ structurant comme "nom"/"phone_number_id" (voir
-// /infos plus haut, reserve au super-administrateur car changer ces deux-la peut casser le routage ou la
-// lecture de l'etat existant). Un seul logo par marchand : l'ancien est supprime du bucket R2 apres un
-// upload reussi. --
+// -- Logo du marchand : affiche UNIQUEMENT dans /admin (en-tete) - identite de marque stable. Voir plus
+// bas /image-accueil-whatsapp pour l'image envoyee cote client WhatsApp : deux reglages VOLONTAIREMENT
+// separes (aucun repli de l'un vers l'autre) pour qu'un marchand puisse changer librement son image
+// d'accueil WhatsApp (flyer de promo, offre du moment...) sans jamais toucher a son logo officiel, et
+// inversement. Memes regles de portee que /notification ci-dessus (super-administrateur pour n'importe
+// qui, marchand pour lui-meme) — ce sont des reglages cosmetiques/de marque, pas des champs structurants
+// comme "nom"/"phone_number_id" (voir /infos plus haut, reserve au super-administrateur car changer
+// ces deux-la peut casser le routage ou la lecture de l'etat existant). Une seule image a la fois pour
+// chacun : l'ancienne est supprimee du bucket R2 apres un upload reussi. --
 
 app.post("/api/marchands/:id/logo", protegerAcces, uploadPhoto.single("logo"), async (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
@@ -857,6 +859,39 @@ app.delete("/api/marchands/:id/logo", protegerAcces, async (req, res) => {
   const maj = await db.updateMerchantFields(req.params.id, { logoUrl: null });
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
   entry.merchant.logoUrl = null;
+  if (ancienUrl) await storage.supprimerPhotoProduit(ancienUrl); // best-effort
+  res.json({ ok: true });
+});
+
+app.post("/api/marchands/:id/image-accueil-whatsapp", protegerAcces, uploadPhoto.single("image"), async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  if (!storage.estConfigure()) {
+    return res.status(503).json({ erreur: "Hébergement des images non configuré sur le serveur (variables R2_* manquantes sur Render)." });
+  }
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"image\" requis)." });
+  try {
+    const ancienUrl = entry.merchant.imageAccueilWhatsappUrl || null;
+    const url = await storage.uploaderImageAccueilWhatsapp({
+      merchantKey: req.params.id,
+      buffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+    });
+    const maj = await db.updateMerchantFields(req.params.id, { imageAccueilWhatsappUrl: url });
+    if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+    entry.merchant.imageAccueilWhatsappUrl = maj.imageAccueilWhatsappUrl;
+    if (ancienUrl) await storage.supprimerPhotoProduit(ancienUrl); // best-effort, remplace l'ancienne image
+    res.status(201).json({ id: req.params.id, imageAccueilWhatsappUrl: maj.imageAccueilWhatsappUrl });
+  } catch (erreur) {
+    res.status(400).json({ erreur: erreur.message || "Échec de l'envoi de l'image." });
+  }
+});
+
+app.delete("/api/marchands/:id/image-accueil-whatsapp", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  const ancienUrl = entry.merchant.imageAccueilWhatsappUrl || null;
+  const maj = await db.updateMerchantFields(req.params.id, { imageAccueilWhatsappUrl: null });
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.imageAccueilWhatsappUrl = null;
   if (ancienUrl) await storage.supprimerPhotoProduit(ancienUrl); // best-effort
   res.json({ ok: true });
 });
@@ -1098,15 +1133,17 @@ app.post("/webhook", async (req, res) => {
     // Une reponse "vide" (null) signifie que la conversation est en pause pour un humain (voir shared.js)
     // - on reste volontairement silencieux, le marchand repondra depuis /admin.
     if (reponse) {
-      // Logo du marchand (facultatif, voir /api/marchands/:id/logo) : envoye en PREMIER, avant le message
-      // de bienvenue/porte de langue, au tout premier contact d'un client - jamais aux messages suivants
-      // (sh.estMessageChoixLangue ne reconnait QUE ce message precis). Best-effort : un echec ici ne doit
-      // jamais empecher le client de recevoir la vraie reponse juste apres.
-      if (marchand.merchant.logoUrl && sh.estMessageChoixLangue(reponse)) {
+      // Image d'accueil WhatsApp du marchand (facultative, voir /api/marchands/:id/image-accueil-whatsapp -
+      // VOLONTAIREMENT distincte du logo /admin, voir le commentaire au-dessus de ces routes) : envoyee en
+      // PREMIER, avant le message de bienvenue/porte de langue, au tout premier contact d'un client -
+      // jamais aux messages suivants (sh.estMessageChoixLangue ne reconnait QUE ce message precis).
+      // Best-effort : un echec ici ne doit jamais empecher le client de recevoir la vraie reponse juste
+      // apres.
+      if (marchand.merchant.imageAccueilWhatsappUrl && sh.estMessageChoixLangue(reponse)) {
         try {
-          await envoyerImageWhatsApp(from, marchand.merchant.logoUrl, null, phoneNumberId);
+          await envoyerImageWhatsApp(from, marchand.merchant.imageAccueilWhatsappUrl, null, phoneNumberId);
         } catch (erreur) {
-          console.error(`[${merchantId}] Echec de l'envoi du logo au premier contact (ignore) :`, erreur);
+          console.error(`[${merchantId}] Echec de l'envoi de l'image d'accueil au premier contact (ignore) :`, erreur);
         }
       }
       let envoiInteractifReussi = false;

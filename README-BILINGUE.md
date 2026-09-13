@@ -143,6 +143,36 @@ Testé de bout en bout avant livraison : logo affiché dans /admin et envoyé pa
 suppression/remplacement, erreur claire sans configuration R2, et le correctif employés vérifié avec une
 vraie base PostgreSQL (pas seulement le mode local).
 
+## Étape 6 — Logo et image d'accueil WhatsApp séparés en deux champs indépendants (nouveau)
+
+Suite à votre question ("permets que le marchand ait le choix... ou peut-être deux endroits, le logo
+pour sa plateforme et le logo pour les messages"), le bloc "Logo" unique de l'Étape 5 est maintenant
+**scindé en deux champs totalement indépendants** dans l'onglet **Mon compte** :
+
+1. **"Logo (interface /admin)"** — inchangé par rapport à l'Étape 5 : affiché uniquement en haut de
+   l'écran /admin, jamais envoyé sur WhatsApp. C'est votre identité de marque stable.
+2. **"Image d'accueil WhatsApp"** (nouveau) — envoyée par le bot au tout premier message d'un nouveau
+   contact (avant le message de bienvenue bilingue), exactement comme le faisait le logo à l'Étape 5.
+   Vous pouvez la changer librement — un flyer de promo, une offre du moment — **sans jamais toucher à
+   votre logo officiel**.
+
+**Comportement important, confirmé avec vous avant de coder** : les deux champs n'ont AUCUN lien entre
+eux. Si vous mettez un logo (interface /admin) mais laissez l'image d'accueil WhatsApp vide, le bot
+n'envoie **aucune image** au premier contact (pas de repli automatique sur le logo). Et inversement, si
+vous mettez seulement une image d'accueil WhatsApp, elle n'apparaît jamais dans /admin. Chaque champ se
+gère (upload/suppression) indépendamment, dans les deux vues (super-administrateur et marchand).
+
+Si vous aviez déjà un logo envoyé via l'Étape 5, il reste affiché dans /admin (rien ne change pour vous)
+mais n'est plus envoyé automatiquement sur WhatsApp — remettez-le (ou une autre image) dans le nouveau
+bloc "Image d'accueil WhatsApp" si vous voulez continuer à l'envoyer aux clients.
+
+Testé de bout en bout avant livraison (avec une vraie base PostgreSQL locale, comme pour le correctif
+employés de l'Étape 5) : logo seul → aucune image envoyée au premier contact ; image d'accueil seule →
+envoyée en premier, logo /admin non affecté ; les deux ensemble → chacun affiché/envoyé au bon endroit ;
+suppression de l'un sans effet sur l'autre ; les deux champs survivent à une modification non liée
+(numéro de notification, etc.) sans être effacés ; interface vérifiée en français et en anglais, dans
+la vue super-administrateur et dans la vue marchand.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -168,11 +198,13 @@ vraie base PostgreSQL (pas seulement le mode local).
   + la route du Tableau de bord accepte maintenant un paramètre de période
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
-  personnalisé" dans l'onglet Paramètres + nouveau bloc "Logo" dans l'onglet Mon compte
-- `storage.js` — nouvelle fonction d'upload pour le logo (réutilise l'hébergement Cloudflare R2 déjà en
-  place pour les photos d'articles)
-- `db.js` — nouvelle colonne `logo_url` pour le marchand (avec migration automatique au démarrage) +
-  correctif du bug employés décrit ci-dessus
+  personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
+  d'accueil WhatsApp" dans l'onglet Mon compte
+- `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
+  séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
+- `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
+  migration automatique au démarrage) + correctif du bug employés décrit ci-dessus, étendu pour protéger
+  également ces deux colonnes
 
 ## Comment déployer
 
