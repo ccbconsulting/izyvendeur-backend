@@ -910,7 +910,11 @@ function createCatalogEngine(merchantKey, options) {
     if (session.langue == null) {
       if (!session.gateLangueEnvoyee) {
         session.gateLangueEnvoyee = true;
-        const reponseGate = sh.messageChoixLangue();
+        const accueilPerso = messageAccueilPersonnalise();
+        // Le message d'accueil personnalise (s'il est configure) vient AVANT la porte de langue, dans le
+        // MEME message (separes par une ligne vide) - voir estMessageChoixLangue dans shared.js qui sait
+        // reconnaitre ce message compose pour y attacher quand meme le menu tactile Français/English.
+        const reponseGate = (accueilPerso ? accueilPerso + "\n\n" : "") + sh.messageChoixLangue();
         journaliser(fromPhone, "bot", reponseGate);
         return reponseGate;
       }
@@ -1195,6 +1199,21 @@ function createCatalogEngine(merchantKey, options) {
 
   function getSettings() {
     return state ? state.settings : {};
+  }
+
+  // Message d'accueil personnalise, OPTIONNEL, configurable par marchand (/admin > Parametres > "Message
+  // d'accueil personnalise") - affiche UNE SEULE FOIS, juste avant la porte de langue, pour tout nouveau
+  // contact. Vide par defaut : rien ne change pour un marchand qui ne l'a pas rempli. Usage type : un
+  // marchand de demonstration qui veut prevenir un prospect que c'est une plateforme test et lui indiquer
+  // comment souscrire au vrai service - mais n'importe quel marchand peut s'en servir pour sa propre
+  // intro. Les deux langues sont facultatives independamment l'une de l'autre.
+  function messageAccueilPersonnalise() {
+    if (!state || !state.settings) return null;
+    const fr = (state.settings.messageAccueilSupplementaire || "").trim();
+    const en = (state.settings.messageAccueilSupplementaireEn || "").trim();
+    if (!fr && !en) return null;
+    if (fr && en) return fr + "\n\n" + en;
+    return fr || en;
   }
 
   function updateSettings(patch) {

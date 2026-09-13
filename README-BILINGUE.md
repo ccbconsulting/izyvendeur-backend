@@ -93,6 +93,28 @@ que rien n'est encore déployé chez vous.
 J'ai testé les deux onglets avec un navigateur automatisé (les deux langues, plusieurs périodes, avec
 une vraie commande passée pour vérifier que les chiffres bougent correctement) avant de vous l'envoyer.
 
+## Étape 4 — Message d'accueil personnalisé (nouveau, hors sujet bilingue)
+
+Autre ajout indépendant, livré dans le même zip.
+
+- Nouveau réglage dans l'onglet **Paramètres** (marchand catalogue uniquement) : **"Message d'accueil
+  personnalisé"**, en français et en anglais, facultatif, vide par défaut (rien ne change tant que vous
+  ne le remplissez pas).
+- Quand il est rempli, ce texte s'affiche **une seule fois**, juste avant le message de bienvenue
+  bilingue et le menu de choix de langue, au tout premier message d'un nouveau contact — les deux
+  langues (si vous remplissez les deux champs) sont affichées ensemble, séparées par une ligne vide,
+  dans la même bulle WhatsApp que le message de bienvenue.
+- Pensé au départ pour votre marchand de test/démonstration : vous pouvez y écrire par exemple "Ceci
+  est la plateforme de démonstration IzyVendeur, sentez-vous libre de la tester, pour obtenir le
+  service contactez le [votre numéro]" — mais n'importe quel marchand peut s'en servir pour sa propre
+  intro personnalisée.
+- Restez concis : ce texte partage la même bulle WhatsApp (et donc la même limite de longueur) que le
+  message de bienvenue et le menu de langue — quelques phrases suffisent.
+
+Testé de bout en bout (sans réglage = comportement inchangé, avec réglage = message affiché
+correctement et menu de langue toujours cliquable, sauvegarde/rechargement dans /admin, les deux
+langues de l'interface) avant livraison.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -117,7 +139,8 @@ une vraie commande passée pour vérifier que les chiffres bougent correctement)
   + traduction de TOUS les menus tactiles eux-mêmes (titres de listes/boutons) selon la langue du client
   + la route du Tableau de bord accepte maintenant un paramètre de période
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
-  le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports
+  le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
+  personnalisé" dans l'onglet Paramètres
 
 ## Comment déployer
 

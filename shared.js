@@ -170,10 +170,13 @@ function estMessageMiseEnRelation(texte) {
 // Sert au cote appelant (server.js) qui a besoin de reconnaitre CE message precis (la toute premiere
 // porte bilingue, voir messageChoixLangue ci-dessus) pour lui substituer un menu tactile (liste WhatsApp
 // Français/English) plutot que de laisser le client taper "FR"/"EN" au clavier - voir
-// essayerEnvoyerMenuInteractif. Comparaison stricte : messageChoixLangue() n'a qu'une seule forme (pas de
-// variante par session, la langue n'est justement pas encore connue a ce stade).
+// essayerEnvoyerMenuInteractif. On verifie que le texte SE TERMINE PAR messageChoixLangue() (plutot qu'une
+// egalite stricte) car un marchand peut avoir configure un message d'accueil personnalise (voir
+// messageAccueilPersonnalise dans conversation.js) qui vient s'ajouter AVANT, dans le meme message -
+// messageChoixLangue() lui-meme n'a qu'une seule forme (pas de variante par session, la langue n'est
+// justement pas encore connue a ce stade).
 function estMessageChoixLangue(texte) {
-  return texte === messageChoixLangue();
+  return typeof texte === "string" && texte.length > 0 && texte.slice(-messageChoixLangue().length) === messageChoixLangue();
 }
 
 // Glissee UNE SEULE fois par client (a la toute premiere reponse REELLE du bot), pour qu'il sache des le
