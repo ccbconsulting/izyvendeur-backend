@@ -820,6 +820,56 @@ app.put("/api/:id/notification", protegerAcces, async (req, res) => {
   res.json({ id: req.params.id, phoneNotification: maj.phoneNotification });
 });
 
+// -- Diagnostic "Tester l'alerte maintenant" -------------------------------------------------------
+// Demande apres un cas reel ou un marchand ne recevait ni alerte "commande" ni alerte "humain" alors
+// que ses templates WhatsApp etaient pourtant actifs cote Meta : le probleme se situe presque toujours
+// dans la configuration (numero de notification absent/mal forme, template approuve sous un AUTRE
+// compte WhatsApp Business que celui reellement branche sur Render, jeton expire...), jamais visible
+// depuis les seuls logs serveur que le marchand n'a pas l'habitude de consulter. Cette route envoie une
+// VRAIE alerte de test (template "izyvendeur_alerte_humain", memes parametres qu'une vraie demande
+// humaine) au numero de notification configure, et renvoie le detail BRUT de la reponse WhatsApp
+// (reussite ou erreur exacte de Meta) directement affichable dans /admin - voir les fonctions
+// envoyerTemplateWhatsAppDiag/envoyerMessageWhatsAppDiag ci-dessous (variantes des fonctions d'envoi
+// habituelles qui, contrairement a elles, remontent le detail au lieu de se contenter de logguer).
+app.post("/api/marchands/:id/tester-alerte", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  const destinataire = entry.merchant.phoneNotification;
+  if (!destinataire) {
+    return res.status(400).json({ erreur: "Configurez d'abord un numéro de notification ci-dessus avant de tester l'alerte." });
+  }
+  const phoneNumberId = entry.merchant.phoneNumberId;
+  if (!WHATSAPP_TOKEN || !phoneNumberId) {
+    return res.status(503).json({ erreur: "WHATSAPP_TOKEN ou le numéro WhatsApp business de ce marchand n'est pas configuré sur le serveur." });
+  }
+
+  const config = TEMPLATES_ALERTE_MARCHAND.humain;
+  const paramsTest = [
+    "N/A (test)",
+    "Ceci est une alerte de TEST envoyée depuis /admin (bouton \"Tester l'alerte\") — aucune action requise.",
+  ];
+
+  const resultatTemplate = await envoyerTemplateWhatsAppDiag(destinataire, phoneNumberId, config.nom, config.langue, paramsTest);
+  if (resultatTemplate.ok) {
+    return res.json({ ok: true, canal: "template", destinataire, nomTemplate: config.nom });
+  }
+
+  // Le template a echoue : on tente le repli texte libre (fonctionne seulement si `destinataire` a deja
+  // ecrit au numero WhatsApp business de ce marchand dans les 24h) - un succes ici, alors que le template
+  // a echoue, pointe precisement vers un souci de TEMPLATE (nom incorrect, pas approuve, ou approuve sous
+  // un compte WhatsApp Business different de celui reellement utilise) plutot que vers le numero ou le
+  // jeton, qui eux fonctionnent visiblement.
+  const resultatTexteLibre = await envoyerMessageWhatsAppDiag(destinataire, config.texteLibreRepli(paramsTest), phoneNumberId);
+
+  res.json({
+    ok: resultatTexteLibre.ok,
+    canal: resultatTexteLibre.ok ? "texte_libre" : "aucun",
+    destinataire,
+    nomTemplate: config.nom,
+    detailTemplate: { statusHttp: resultatTemplate.status, erreur: resultatTemplate.erreur },
+    detailTexteLibre: { statusHttp: resultatTexteLibre.status, erreur: resultatTexteLibre.erreur },
+  });
+});
+
 // -- Logo du marchand : affiche UNIQUEMENT dans /admin (en-tete) - identite de marque stable. Voir plus
 // bas /image-accueil-whatsapp pour l'image envoyee cote client WhatsApp : deux reglages VOLONTAIREMENT
 // separes (aucun repli de l'un vers l'autre) pour qu'un marchand puisse changer librement son image
@@ -1582,6 +1632,63 @@ async function envoyerTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate,
   } catch (erreur) {
     console.error(`Erreur reseau lors de l'envoi du template WhatsApp "${nomTemplate}" :`, erreur);
     return false;
+  }
+}
+
+// --- Variantes "diagnostic" utilisees UNIQUEMENT par /api/marchands/:id/tester-alerte ci-dessus ---
+// Identiques a envoyerTemplateWhatsApp/envoyerMessageWhatsApp ci-dessus (memes appels a l'API WhatsApp),
+// mais renvoient le detail brut { ok, status, erreur } au lieu d'un simple booleen/rien - utile pour
+// afficher l'erreur EXACTE renvoyee par Meta directement dans /admin, plutot que de forcer le marchand a
+// aller chercher dans les logs serveur (qu'il ne consulte de toute facon pas). Le chemin de production
+// (notifierMarchand ci-dessus) continue d'utiliser les fonctions d'origine, inchangees.
+async function envoyerTemplateWhatsAppDiag(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte) {
+  if (!WHATSAPP_TOKEN || !phoneNumberId) {
+    return { ok: false, status: null, erreur: "WHATSAPP_TOKEN ou phone_number_id manquant sur le serveur." };
+  }
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+  try {
+    const reponse = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: destinataire,
+        type: "template",
+        template: {
+          name: nomTemplate,
+          language: { code: langue },
+          components: [{ type: "body", parameters: parametresTexte.map((texte) => ({ type: "text", text: texte })) }],
+        },
+      }),
+    });
+    if (!reponse.ok) {
+      const detail = await reponse.text();
+      return { ok: false, status: reponse.status, erreur: detail };
+    }
+    return { ok: true, status: reponse.status, erreur: null };
+  } catch (erreur) {
+    return { ok: false, status: null, erreur: String((erreur && erreur.message) || erreur) };
+  }
+}
+
+async function envoyerMessageWhatsAppDiag(destinataire, texte, phoneNumberId) {
+  if (!WHATSAPP_TOKEN || !phoneNumberId) {
+    return { ok: false, status: null, erreur: "WHATSAPP_TOKEN ou phone_number_id manquant sur le serveur." };
+  }
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+  try {
+    const reponse = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", to: destinataire, type: "text", text: { body: texte } }),
+    });
+    if (!reponse.ok) {
+      const detail = await reponse.text();
+      return { ok: false, status: reponse.status, erreur: detail };
+    }
+    return { ok: true, status: reponse.status, erreur: null };
+  } catch (erreur) {
+    return { ok: false, status: null, erreur: String((erreur && erreur.message) || erreur) };
   }
 }
 

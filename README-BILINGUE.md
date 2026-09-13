@@ -173,6 +173,51 @@ suppression de l'un sans effet sur l'autre ; les deux champs survivent à une mo
 (numéro de notification, etc.) sans être effacés ; interface vérifiée en français et en anglais, dans
 la vue super-administrateur et dans la vue marchand.
 
+## Étape 7 — Bouton "Tester l'alerte maintenant" (diagnostic, nouveau)
+
+Suite à un cas réel où vous ne receviez ni l'alerte "commande confirmée" ni l'alerte "parler à un
+humain" pour le marchand Test Izyvendeur, alors que vos templates WhatsApp étaient pourtant bien
+"Actif" côté Meta.
+
+**Deux précisions importantes avant l'explication technique**, pour écarter deux fausses pistes :
+
+- **L'alerte "commande confirmée" ne se déclenche QUE quand le CLIENT confirme sa commande en tapant
+  "oui" dans la conversation WhatsApp** (confirmation automatique) — pas quand vous confirmez
+  vous-même une commande manuellement depuis /admin, onglet Commandes. Si votre test consistait à
+  confirmer une commande depuis /admin, c'est normal qu'aucune alerte ne soit partie : ce n'est pas un
+  bug, juste un comportement à connaître.
+- **L'alerte "humain" ne se déclenche que si le client tape une phrase reconnue** ("parler à un
+  conseiller", "un vendeur", "talk to a human"...) — la liste complète est dans `shared.js`.
+
+Cela dit, ces deux précisions n'expliquent pas tout, donc j'ai ajouté un nouveau bouton **"Tester
+l'alerte maintenant"** juste sous le champ "Numéro de notification" dans l'onglet **Mon compte**
+(visible pour vous en tant que super-administrateur, et pour chaque marchand sur son propre compte).
+Il envoie une VRAIE alerte de test (le même template que "parler à un humain") au numéro de
+notification enregistré, et affiche directement à l'écran, en clair, le résultat exact renvoyé par
+WhatsApp :
+
+- **Succès** (fond vert) : l'alerte est bien partie via le template WhatsApp. Si elle n'arrive
+  toujours pas sur votre téléphone dans ce cas, le souci est probablement le numéro lui-même (mauvais
+  numéro enregistré, ou WhatsApp désinstallé/désactivé sur cet appareil), pas IzyVendeur.
+- **Partiel** (fond orange) : le template a échoué, mais un message de secours en texte libre est
+  quand même arrivé. Cela signifie que votre numéro et votre jeton WhatsApp fonctionnent bien — le
+  problème vient précisément du template (nom incorrect, pas approuvé, ou **approuvé sous un compte
+  WhatsApp Business différent de celui réellement branché sur Render** — j'ai remarqué sur vos
+  captures que vous avez plusieurs comptes WhatsApp nommés "Test Izyvendeur" : si le template est
+  actif sur l'un d'eux mais que c'est un AUTRE qui est configuré comme PHONE_NUMBER_ID sur Render,
+  l'envoi échoue silencieusement malgré le statut "Actif" affiché dans Meta).
+- **Échec complet** (texte rouge) : ni le template ni le texte libre de secours ne sont partis.
+  L'erreur brute renvoyée par WhatsApp est affichée telle quelle (code d'erreur Meta compris), pour
+  que vous puissiez la interpréter vous-même ou me la transmettre.
+
+Dans les trois cas, le détail technique complet (code HTTP + message d'erreur exact de Meta) s'affiche
+sous le résultat, pour diagnostiquer sans avoir besoin d'aller consulter les logs du serveur sur
+Render.
+
+Testé de bout en bout avant livraison (base PostgreSQL réelle + API WhatsApp simulée pour les trois cas
+de figure : succès, échec du template avec repli réussi, échec complet) dans les deux vues
+(super-administrateur et marchand), avec vérification visuelle du rendu (navigateur automatisé).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -195,11 +240,12 @@ la vue super-administrateur et dans la vue marchand.
   tactile Français/English** pour la porte de langue (au lieu de devoir taper FR/EN), sur le même
   principe que les autres menus cliquables déjà présents dans le bot (choix d'article, couleur, taille...)
   + traduction de TOUS les menus tactiles eux-mêmes (titres de listes/boutons) selon la langue du client
-  + la route du Tableau de bord accepte maintenant un paramètre de période
+  + la route du Tableau de bord accepte maintenant un paramètre de période + nouvelle route
+  `POST /api/marchands/:id/tester-alerte` (bouton "Tester l'alerte maintenant", voir Étape 7)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
-  d'accueil WhatsApp" dans l'onglet Mon compte
+  d'accueil WhatsApp" dans l'onglet Mon compte + nouveau bouton "Tester l'alerte maintenant" (Étape 7)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
