@@ -386,6 +386,15 @@ const I18N = {
     alertMdp6Caracteres: "Le mot de passe doit contenir au moins 6 caractères.",
     alertMdpChangeSucces: "Mot de passe changé avec succès. La page va se recharger : reconnectez-vous avec votre nouveau mot de passe.",
     noteNumeroNotifMarchand: "Votre numéro WhatsApp personnel (pas votre numéro business), pour être averti par message quand un client demande à parler à un humain.",
+    btnTesterAlerte: "Tester l'alerte maintenant",
+    noteTesterAlerte: "Envoie une vraie alerte de test à ce numéro et affiche ici le résultat exact renvoyé par WhatsApp (utile pour vérifier pourquoi une alerte n'arrive pas).",
+    alertTesterAlerteSansNumero: "Enregistrez d'abord un numéro de notification ci-dessus.",
+    testAlerteEnCours: "Envoi de l'alerte de test en cours…",
+    testAlerteSuccesTemplate: "Réussi — alerte envoyée via le template WhatsApp \"{nom}\" au {numero}. Si elle n'arrive toujours pas sur WhatsApp, le souci est probablement le numéro lui-même (mauvais numéro, ou WhatsApp désinstallé/désactivé sur cet appareil) plutôt que la configuration IzyVendeur.",
+    testAlertePartiel: "Le template WhatsApp \"{nom}\" a échoué, MAIS le message de repli en texte libre a bien été envoyé au {numero} — le numéro et le jeton fonctionnent, le souci vient précisément du template (nom, langue, ou approuvé sous un autre compte WhatsApp Business que celui réellement branché sur Render).",
+    testAlerteEchec: "Échec complet : ni le template \"{nom}\" ni le repli en texte libre n'ont pu être envoyés au {numero}. L'échec du repli en texte libre est normal si ce numéro n'a jamais écrit au bot (WhatsApp l'exige dans les 24h) — regardez d'abord l'erreur du template ci-dessous.",
+    labelDetailTemplate: "Détail du template :",
+    labelDetailTexteLibre: "Détail du repli texte libre :",
 
     employesTitre: "Employés ({n})",
     noteEmployes: "Chaque employé se connecte à /admin avec son propre identifiant et mot de passe, et ne voit que les onglets correspondant aux accès cochés ci-dessous — jamais cet onglet \"Employés\", ni la gestion du marchand.",
@@ -690,6 +699,15 @@ const I18N = {
     alertMdp6Caracteres: "The password must be at least 6 characters long.",
     alertMdpChangeSucces: "Password changed successfully. The page will reload: log back in with your new password.",
     noteNumeroNotifMarchand: "Your personal WhatsApp number (not your business number), to be notified by message when a customer asks to talk to a human.",
+    btnTesterAlerte: "Test the alert now",
+    noteTesterAlerte: "Sends a real test alert to this number and shows the exact result WhatsApp returns here (useful to check why an alert isn't arriving).",
+    alertTesterAlerteSansNumero: "Save a notification number above first.",
+    testAlerteEnCours: "Sending the test alert…",
+    testAlerteSuccesTemplate: "Success — alert sent via the WhatsApp template \"{nom}\" to {numero}. If it still doesn't arrive on WhatsApp, the issue is likely the number itself (wrong number, or WhatsApp uninstalled/disabled on that device) rather than the IzyVendeur setup.",
+    testAlertePartiel: "The WhatsApp template \"{nom}\" failed, BUT the free-text fallback message was sent successfully to {numero} — the number and token work, the issue is specifically the template (name, language, or approved under a different WhatsApp Business account than the one actually connected on Render).",
+    testAlerteEchec: "Complete failure: neither the template \"{nom}\" nor the free-text fallback could be sent to {numero}. The free-text fallback failing is normal if this number never messaged the bot (WhatsApp requires it within 24h) — check the template error below first.",
+    labelDetailTemplate: "Template detail:",
+    labelDetailTexteLibre: "Free-text fallback detail:",
 
     employesTitre: "Employees ({n})",
     noteEmployes: "Each employee logs in to /admin with their own username and password, and only sees the tabs matching the access checked below — never this \"Employees\" tab, nor the merchant management.",
@@ -1868,6 +1886,51 @@ function brancherBlocImageAccueilWhatsapp() {
   };
 }
 
+// Diagnostic "Tester l'alerte maintenant" - voir POST /api/marchands/:id/tester-alerte cote serveur.
+// Affiche le resultat BRUT (succes, ou detail exact de l'echec renvoye par WhatsApp) directement dans
+// /admin, pour qu'un marchand puisse comprendre par lui-meme pourquoi une alerte n'arrive pas au lieu
+// d'avoir a demander d'aller consulter des logs serveur auxquels il n'a de toute facon pas acces.
+function blocTesterAlerteHtml() {
+  return "<div style='margin-top:10px;'>" +
+    "<button id='btnTesterAlerte'>" + t("btnTesterAlerte") + "</button>" +
+    "<p class='raison'>" + t("noteTesterAlerte") + "</p>" +
+    "<div id='resultatTesterAlerte'></div>" +
+  "</div>";
+}
+
+function detailEchecHtml(detail) {
+  if (!detail) return "";
+  const morceaux = [];
+  if (detail.statusHttp != null) morceaux.push("HTTP " + detail.statusHttp);
+  if (detail.erreur) morceaux.push(esc(String(detail.erreur)));
+  return "<pre style='white-space:pre-wrap;background:#f5f6f8;border:1px solid #e1e5ea;border-radius:6px;padding:8px;font-size:0.85em;margin:4px 0 10px;'>" + morceaux.join(" — ") + "</pre>";
+}
+
+function brancherBlocTesterAlerte() {
+  document.getElementById("btnTesterAlerte").onclick = async () => {
+    if (!marchandActif.phoneNotification) { alert(t("alertTesterAlerteSansNumero")); return; }
+    const zoneResultat = document.getElementById("resultatTesterAlerte");
+    zoneResultat.innerHTML = "<p class='raison'>" + t("testAlerteEnCours") + "</p>";
+    try {
+      const rep = await api("/api/marchands/" + marchandActif.id + "/tester-alerte", { method: "POST" });
+      if (rep.canal === "template") {
+        zoneResultat.innerHTML = "<div class='tuile' style='border-color:#1e8a4c;background:#eafaf0;padding:10px;border-radius:6px;'>" +
+          esc(t("testAlerteSuccesTemplate", { nom: rep.nomTemplate, numero: rep.destinataire })) + "</div>";
+      } else if (rep.canal === "texte_libre") {
+        zoneResultat.innerHTML = "<div class='tuile avertissement' style='padding:10px;border-radius:6px;'>" +
+          esc(t("testAlertePartiel", { nom: rep.nomTemplate, numero: rep.destinataire })) + "</div>" +
+          "<p><strong>" + t("labelDetailTemplate") + "</strong></p>" + detailEchecHtml(rep.detailTemplate);
+      } else {
+        zoneResultat.innerHTML = "<p class='erreur'>" + esc(t("testAlerteEchec", { nom: rep.nomTemplate, numero: rep.destinataire })) + "</p>" +
+          "<p><strong>" + t("labelDetailTemplate") + "</strong></p>" + detailEchecHtml(rep.detailTemplate) +
+          "<p><strong>" + t("labelDetailTexteLibre") + "</strong></p>" + detailEchecHtml(rep.detailTexteLibre);
+      }
+    } catch (e) {
+      zoneResultat.innerHTML = "<p class='erreur'>" + t("erreurPrefixe") + esc(e.message) + "</p>";
+    }
+  };
+}
+
 async function renderCompte() {
   const zone = document.getElementById("contenuOnglet");
 
@@ -1890,8 +1953,10 @@ async function renderCompte() {
       "<label>" + t("labelNumeroNotif") + "</label>" +
       "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
       "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
+      blocTesterAlerteHtml() +
       blocLogoHtml() +
       blocImageAccueilWhatsappHtml();
+    brancherBlocTesterAlerte();
     brancherBlocLogo();
     brancherBlocImageAccueilWhatsapp();
 
@@ -1973,8 +2038,10 @@ async function renderCompte() {
     "<label>" + t("labelNumeroNotif") + "</label>" +
     "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
     "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
+    blocTesterAlerteHtml() +
     blocLogoHtml() +
     blocImageAccueilWhatsappHtml();
+  brancherBlocTesterAlerte();
   brancherBlocLogo();
   brancherBlocImageAccueilWhatsapp();
 
