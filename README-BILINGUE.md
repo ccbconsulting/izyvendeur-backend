@@ -222,16 +222,15 @@ de figure : succès, échec du template avec repli réussi, échec complet) dans
 
 Petite amélioration demandée pour guider le client : partout où le bot lui demande son numéro de
 téléphone pour conclure une commande, un exemple de format est maintenant ajouté entre parenthèses
-— **"(exemple : 677123456)"** — dans les 4 endroits concernés : le récapitulatif du panier qui demande
+— **"(exemple : 6xxxxxxxx)"** — dans les 4 endroits concernés : le récapitulatif du panier qui demande
 numéro + adresse d'un coup (le cas le plus fréquent), la demande de numéro après un choix "retrait en
 boutique", la demande après un choix "livraison à domicile" (pour les marchands qui ont activé le
 retrait en boutique dans Paramètres), et la relance "il me manque encore..." si le client n'a donné
-que l'adresse. L'exemple utilisé (677123456, 9 chiffres, sans espace) correspond exactement à ce que
-le bot sait reconnaître automatiquement dans le message du client — pas d'espace dans l'exemple pour
-éviter qu'un client ne tape lui-même des espaces qui empêcheraient la reconnaissance. Traduit en
-anglais également ("e.g. 677123456"). Testé de bout en bout avant livraison (commande complète en
-français et en anglais, avec et sans retrait en boutique configuré, cas où le client ne donne que
-l'adresse).
+que l'adresse. Le format "6xxxxxxxx" (un modèle générique avec des x, pas un vrai numéro) a été
+préféré à un numéro qui aurait pu ressembler à un numéro réellement utilisé — sur votre remarque.
+Traduit en anglais également ("e.g. 6xxxxxxxx"). Testé de bout en bout avant livraison (commande
+complète en français et en anglais, avec et sans retrait en boutique configuré, cas où le client ne
+donne que l'adresse).
 
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 

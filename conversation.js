@@ -215,8 +215,8 @@ function createCatalogEngine(merchantKey, options) {
     const items = describeItems(cart);
     const total = formatFcfa(itemsTotal(cart));
     return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + sh.t(session,
-      " Voici votre panier :\n" + items + "\nTotal : " + total + "\n\nPour finaliser, envoyez-moi votre numéro (exemple : 677123456) et votre adresse de livraison.",
-      " Here's your cart:\n" + items + "\nTotal: " + total + "\n\nTo finish, please send me your phone number (e.g. 677123456) and delivery address."
+      " Voici votre panier :\n" + items + "\nTotal : " + total + "\n\nPour finaliser, envoyez-moi votre numéro (exemple : 6xxxxxxxx) et votre adresse de livraison.",
+      " Here's your cart:\n" + items + "\nTotal: " + total + "\n\nTo finish, please send me your phone number (e.g. 6xxxxxxxx) and delivery address."
     );
   }
 
@@ -565,8 +565,8 @@ function createCatalogEngine(merchantKey, options) {
         trace.action = "Client choisit le retrait en boutique — adresse pré-remplie, téléphone encore demandé";
         logTrace(session, trace);
         return sh.t(session,
-          "Parfait, vous pourrez récupérer votre commande à " + infosRetrait() + ". Merci de m'indiquer votre numéro de téléphone pour vous joindre (exemple : 677123456).",
-          "Great, you can pick up your order at " + infosRetrait() + ". Please share your phone number so we can reach you (e.g. 677123456)."
+          "Parfait, vous pourrez récupérer votre commande à " + infosRetrait() + ". Merci de m'indiquer votre numéro de téléphone pour vous joindre (exemple : 6xxxxxxxx).",
+          "Great, you can pick up your order at " + infosRetrait() + ". Please share your phone number so we can reach you (e.g. 6xxxxxxxx)."
         );
       }
       if (veutLivraison && !veutRetrait) {
@@ -575,8 +575,8 @@ function createCatalogEngine(merchantKey, options) {
         trace.action = "Client choisit la livraison à domicile — infos de livraison demandées";
         logTrace(session, trace);
         return sh.t(session,
-          "Très bien, merci de m'indiquer votre numéro de téléphone (exemple : 677123456) et votre adresse de livraison.",
-          "Great, please share your phone number (e.g. 677123456) and delivery address."
+          "Très bien, merci de m'indiquer votre numéro de téléphone (exemple : 6xxxxxxxx) et votre adresse de livraison.",
+          "Great, please share your phone number (e.g. 6xxxxxxxx) and delivery address."
         );
       }
       trace.action = "Choix livraison/retrait ambigu — nouvelle demande de précision";
@@ -597,7 +597,7 @@ function createCatalogEngine(merchantKey, options) {
         trace.entites = { "Réponse client": text };
         trace.action = "Client consulte son panier (pendant la collecte des infos de livraison)";
         const missing = [];
-        if (!session.telephone) missing.push(sh.t(session, "numéro de téléphone (exemple : 677123456)", "phone number (e.g. 677123456)"));
+        if (!session.telephone) missing.push(sh.t(session, "numéro de téléphone (exemple : 6xxxxxxxx)", "phone number (e.g. 6xxxxxxxx)"));
         if (!session.adresse) missing.push(sh.t(session, "adresse de livraison", "delivery address"));
         const relance = missing.length
           ? sh.t(session, "\n\nIl me manque encore : " + missing.join(" et ") + ".", "\n\nI still need: " + missing.join(" and ") + ".")
@@ -654,7 +654,7 @@ function createCatalogEngine(merchantKey, options) {
         );
       }
       const missing = [];
-      if (!session.telephone) missing.push(sh.t(session, "numéro de téléphone (exemple : 677123456)", "phone number (e.g. 677123456)"));
+      if (!session.telephone) missing.push(sh.t(session, "numéro de téléphone (exemple : 6xxxxxxxx)", "phone number (e.g. 6xxxxxxxx)"));
       if (!session.adresse) missing.push(sh.t(session, "adresse de livraison", "delivery address"));
       trace.action = "Information manquante demandée : " + missing.join(" et ");
       logTrace(session, trace);
