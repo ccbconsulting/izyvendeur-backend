@@ -218,6 +218,21 @@ Testé de bout en bout avant livraison (base PostgreSQL réelle + API WhatsApp s
 de figure : succès, échec du template avec repli réussi, échec complet) dans les deux vues
 (super-administrateur et marchand), avec vérification visuelle du rendu (navigateur automatisé).
 
+## Étape 8 — Exemple de format ajouté à la demande du numéro de téléphone (nouveau)
+
+Petite amélioration demandée pour guider le client : partout où le bot lui demande son numéro de
+téléphone pour conclure une commande, un exemple de format est maintenant ajouté entre parenthèses
+— **"(exemple : 677123456)"** — dans les 4 endroits concernés : le récapitulatif du panier qui demande
+numéro + adresse d'un coup (le cas le plus fréquent), la demande de numéro après un choix "retrait en
+boutique", la demande après un choix "livraison à domicile" (pour les marchands qui ont activé le
+retrait en boutique dans Paramètres), et la relance "il me manque encore..." si le client n'a donné
+que l'adresse. L'exemple utilisé (677123456, 9 chiffres, sans espace) correspond exactement à ce que
+le bot sait reconnaître automatiquement dans le message du client — pas d'espace dans l'exemple pour
+éviter qu'un client ne tape lui-même des espaces qui empêcheraient la reconnaissance. Traduit en
+anglais également ("e.g. 677123456"). Testé de bout en bout avant livraison (commande complète en
+français et en anglais, avec et sans retrait en boutique configuré, cas où le client ne donne que
+l'adresse).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -231,7 +246,8 @@ de figure : succès, échec du template avec repli réussi, échec complet) dans
 ## Fichiers modifiés dans ce zip
 
 - `conversation.js` — moteur catalogue : logique de choix de langue + traduction de toutes les réponses,
-  et calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année)
+  calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année), et exemple de
+  format ajouté à la demande du numéro de téléphone (Étape 8)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue
 - `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)
