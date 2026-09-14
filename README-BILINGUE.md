@@ -232,6 +232,17 @@ Traduit en anglais également ("e.g. 6xxxxxxxx"). Testé de bout en bout avant l
 complète en français et en anglais, avec et sans retrait en boutique configuré, cas où le client ne
 donne que l'adresse).
 
+## Étape 9 — Formule de politesse quand le client ne confirme pas sa commande (nouveau)
+
+Petite amélioration de ton demandée : quand un client répond "non" à la confirmation automatique de sa
+commande, le bot ajoute maintenant un remerciement à la fin de son message ("Merci pour votre
+confiance !", "Merci pour votre intérêt !", "Merci et à bientôt !", "Merci pour votre visite !" — une
+formule tirée au hasard parmi plusieurs, jamais toujours la même, sur le même principe que les petits
+mots valorisants déjà utilisés ailleurs dans le bot). Sa commande reste bien enregistrée pour que vous
+puissiez la confirmer manuellement depuis /admin, seul le ton du message change. Traduit en anglais
+également ("Thank you for your trust!", "Thanks for your interest!"...). Testé de bout en bout avant
+livraison (plusieurs déclinaisons en français et en anglais pour vérifier la variété des formulations).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -245,8 +256,9 @@ donne que l'adresse).
 ## Fichiers modifiés dans ce zip
 
 - `conversation.js` — moteur catalogue : logique de choix de langue + traduction de toutes les réponses,
-  calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année), et exemple de
-  format ajouté à la demande du numéro de téléphone (Étape 8)
+  calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année), exemple de
+  format ajouté à la demande du numéro de téléphone (Étape 8), et formule de politesse ajoutée quand le
+  client ne confirme pas sa commande (Étape 9)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue
 - `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)

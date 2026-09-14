@@ -35,6 +35,13 @@ const OUVERTURES_AJOUT = ["Très bien !", "Parfait !", "Excellent !", "Noté !",
 const OUVERTURES_AJOUT_EN = ["Great!", "Perfect!", "Excellent!", "Got it!", "Awesome!"];
 const OUVERTURES_RECAP = ["Très bien !", "Parfait, on y est presque !", "Super !"];
 const OUVERTURES_RECAP_EN = ["Great!", "Perfect, almost there!", "Awesome!"];
+// Formule de politesse ajoutee APRES le message quand le client ne confirme pas sa commande (repond
+// "non" a la confirmation automatique) - meme principe de pool tire au hasard que les OUVERTURES_*
+// ci-dessus (jamais la meme formule a chaque fois), mais en cloture plutot qu'en ouverture : la commande
+// reste enregistree et sera confirmee manuellement par le marchand, donc on remercie le client pour son
+// interet plutot que de le laisser sur un message sec.
+const REMERCIEMENTS_DECLIN = ["Merci pour votre confiance !", "Merci pour votre intérêt !", "Merci et à bientôt !", "Merci pour votre visite !"];
+const REMERCIEMENTS_DECLIN_EN = ["Thank you for your trust!", "Thanks for your interest!", "Thank you, see you soon!", "Thanks for stopping by!"];
 
 // Tire une ouverture aleatoire dans la bonne langue pour cette session (evite de repeter
 // `piocheParmi(sh.t(session, POOL_FR, POOL_EN))` a chaque point d'appel).
@@ -696,7 +703,7 @@ function createCatalogEngine(merchantKey, options) {
         const reply = sh.t(session,
           "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.",
           "No problem, your order remains on file. Our team will get back to you to confirm it."
-        );
+        ) + " " + ouverture(session, REMERCIEMENTS_DECLIN, REMERCIEMENTS_DECLIN_EN);
         Object.assign(session, freshSession(session));
         logTrace(session, trace);
         return reply;
@@ -711,7 +718,8 @@ function createCatalogEngine(merchantKey, options) {
         );
       }
 
-      const reply = sh.t(session, "Très bien, votre commande reste enregistrée.", "No problem, your order remains on file.");
+      const reply = sh.t(session, "Très bien, votre commande reste enregistrée.", "No problem, your order remains on file.")
+        + " " + ouverture(session, REMERCIEMENTS_DECLIN, REMERCIEMENTS_DECLIN_EN);
       Object.assign(session, freshSession(session));
       logTrace(session, trace);
       return reply;
