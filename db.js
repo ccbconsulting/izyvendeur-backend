@@ -80,6 +80,12 @@ async function ensureMerchantsTable() {
   // ne la configure pas ne voit RIEN de nouveau (pas de repli automatique sur logo_url, voir commentaire
   // ci-dessus).
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS image_accueil_whatsapp_url TEXT");
+  // Numero WhatsApp "affichable" du marchand (celui que ses clients contactent reellement, au format
+  // international avec indicatif pays - ex: 237677123456), distinct du phone_number_id technique (l'ID
+  // interne Meta utilise pour appeler l'API, illisible et inutilisable pour construire un lien). Sert
+  // UNIQUEMENT a generer les liens de commande wa.me par article (voir /api/.../lien-commande dans
+  // server.js) - facultatif, NULL par defaut, aucun impact sur l'envoi/reception de messages.
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS numero_whatsapp_public TEXT");
 }
 
 function defaultMerchantFromEnv() {
@@ -96,7 +102,8 @@ function defaultMerchantFromEnv() {
     actif: true,
     employes: [],
     logoUrl: null,
-    imageAccueilWhatsappUrl: null
+    imageAccueilWhatsappUrl: null,
+    numeroWhatsappPublic: null
   };
 }
 
@@ -105,7 +112,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return res.rows.map(rowToMerchant);
     }
@@ -140,7 +147,8 @@ function rowToMerchant(row) {
     actif: row.actif !== false,
     employes: Array.isArray(row.employes) ? row.employes : [],
     logoUrl: row.logo_url || null,
-    imageAccueilWhatsappUrl: row.image_accueil_whatsapp_url || null
+    imageAccueilWhatsappUrl: row.image_accueil_whatsapp_url || null,
+    numeroWhatsappPublic: row.numero_whatsapp_public || null
   };
 }
 
@@ -148,9 +156,9 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11",
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null]
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12",
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null]
     );
     return;
   }
@@ -167,7 +175,7 @@ async function getMerchantRecord(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -199,7 +207,7 @@ async function updateMerchantFields(id, patch) {
     // cas pour "employes" avant ce correctif : changer par ex. le numero de notification d'un marchand
     // ayant des employes les supprimait tous sans le vouloir.
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -210,6 +218,7 @@ async function updateMerchantFields(id, patch) {
     if (patch.actif !== undefined) m.actif = !!patch.actif;
     if (patch.logoUrl !== undefined) m.logoUrl = patch.logoUrl || null;
     if (patch.imageAccueilWhatsappUrl !== undefined) m.imageAccueilWhatsappUrl = patch.imageAccueilWhatsappUrl || null;
+    if (patch.numeroWhatsappPublic !== undefined) m.numeroWhatsappPublic = patch.numeroWhatsappPublic || null;
     // NOUVEAU : nom affiche et phone_number_id WhatsApp corrigeables apres coup (ex: faute de frappe a la
     // creation). Volontairement PAS "id" ni "type" ici : "id" sert de cle a tout l'etat deja persiste
     // (app_state, journal des conversations) et de cle aux sessions/moteurs EN MEMOIRE — le changer
@@ -234,6 +243,7 @@ async function updateMerchantFields(id, patch) {
   if (patch.phoneNumberId !== undefined) liste[idx].phoneNumberId = patch.phoneNumberId || null;
   if (patch.logoUrl !== undefined) liste[idx].logoUrl = patch.logoUrl || null;
   if (patch.imageAccueilWhatsappUrl !== undefined) liste[idx].imageAccueilWhatsappUrl = patch.imageAccueilWhatsappUrl || null;
+  if (patch.numeroWhatsappPublic !== undefined) liste[idx].numeroWhatsappPublic = patch.numeroWhatsappPublic || null;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
 }

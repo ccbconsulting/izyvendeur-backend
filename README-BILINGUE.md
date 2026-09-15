@@ -243,6 +243,26 @@ puissiez la confirmer manuellement depuis /admin, seul le ton du message change.
 également ("Thank you for your trust!", "Thanks for your interest!"...). Testé de bout en bout avant
 livraison (plusieurs déclinaisons en français et en anglais pour vérifier la variété des formulations).
 
+## Étape 10 — Lien de commande WhatsApp par article (nouveau)
+
+Demandé pour les marchands qui postent leurs articles dans des groupes WhatsApp (par exemple une
+marchande qui trouve un article intéressant, le poste dans plusieurs groupes, et devait jusqu'ici
+répondre manuellement à chaque client intéressé). Les groupes WhatsApp eux-mêmes ne permettent pas
+d'automatiser ce genre de réponse (l'API de groupes de Meta est limitée à 8 participants et ne
+supporte pas les menus tactiles utilisés par le bot) — la solution retenue est donc de rediriger le
+client vers une conversation directe avec le numéro business du marchand, où le bot prend le relais
+automatiquement comme d'habitude.
+
+Concrètement : un nouveau réglage "Numéro WhatsApp affiché" a été ajouté dans /admin > Mon compte (le
+numéro que vos clients contactent réellement, distinct de l'identifiant technique `phone_number_id`
+déjà utilisé côté serveur). Une fois ce numéro renseigné, chaque article de l'onglet Catalogue affiche
+un bouton "Copier le lien de commande" qui génère un lien `wa.me` prêt à coller dans un post de groupe
+— le client n'a plus qu'à cliquer et envoyer le message pré-rempli ("Bonjour, je suis intéressé(e)
+par : <nom de l'article>" / l'équivalent anglais si votre interface /admin est en anglais) pour tomber
+directement dans la conversation avec le bot. Facultatif : tant que le numéro n'est pas configuré, une
+note l'indique à la place du bouton. Testé de bout en bout (vraie base PostgreSQL, vues
+super-administrateur ET marchand, français et anglais) avant livraison.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -268,16 +288,19 @@ livraison (plusieurs déclinaisons en français et en anglais pour vérifier la 
   principe que les autres menus cliquables déjà présents dans le bot (choix d'article, couleur, taille...)
   + traduction de TOUS les menus tactiles eux-mêmes (titres de listes/boutons) selon la langue du client
   + la route du Tableau de bord accepte maintenant un paramètre de période + nouvelle route
-  `POST /api/marchands/:id/tester-alerte` (bouton "Tester l'alerte maintenant", voir Étape 7)
+  `POST /api/marchands/:id/tester-alerte` (bouton "Tester l'alerte maintenant", voir Étape 7) +
+  nouvelle route `PUT /api/:id/numero-whatsapp-public` (numéro WhatsApp affiché, voir Étape 10)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
   d'accueil WhatsApp" dans l'onglet Mon compte + nouveau bouton "Tester l'alerte maintenant" (Étape 7)
+  + nouveau champ "Numéro WhatsApp affiché" et bouton "Copier le lien de commande" par article dans
+  l'onglet Catalogue (Étape 10)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
   migration automatique au démarrage) + correctif du bug employés décrit ci-dessus, étendu pour protéger
-  également ces deux colonnes
+  également ces deux colonnes + nouvelle colonne `numero_whatsapp_public` (Étape 10)
 
 ## Comment déployer
 

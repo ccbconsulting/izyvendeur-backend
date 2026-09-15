@@ -394,7 +394,8 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
   const tous = Object.values(engines).map((e) => ({
     id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
     phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false,
-    logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null
+    logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null,
+    numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -818,6 +819,22 @@ app.put("/api/:id/notification", protegerAcces, async (req, res) => {
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
   entry.merchant.phoneNotification = maj.phoneNotification;
   res.json({ id: req.params.id, phoneNotification: maj.phoneNotification });
+});
+
+// -- Numero WhatsApp "public" du marchand (celui que ses clients contactent reellement) : sert UNIQUEMENT
+// a generer les liens de commande wa.me par article (bouton "Copier le lien" dans /admin > Catalogue,
+// demande le 15 septembre 2026 pour les marchands qui postent leurs articles dans des groupes WhatsApp et
+// veulent rediriger les clients interesses vers une conversation directe avec le bot plutot que de leur
+// repondre manuellement). N'a AUCUN effet sur l'envoi/reception reels de messages (ca reste phone_number_id
+// + WHATSAPP_TOKEN cote Meta) - c'est juste le numero affiche dans le lien. Memes regles de portee que
+// /notification ci-dessus. --
+app.put("/api/:id/numero-whatsapp-public", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  const { numeroWhatsappPublic } = req.body || {};
+  const maj = await db.updateMerchantFields(req.params.id, { numeroWhatsappPublic: numeroWhatsappPublic || null });
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.numeroWhatsappPublic = maj.numeroWhatsappPublic;
+  res.json({ id: req.params.id, numeroWhatsappPublic: maj.numeroWhatsappPublic });
 });
 
 // -- Diagnostic "Tester l'alerte maintenant" -------------------------------------------------------
