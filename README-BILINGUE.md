@@ -300,6 +300,28 @@ cette bascule. Testé de bout en bout (vraie base PostgreSQL) : refus confirmé 
 tente de s'auto-débloquer, activation par vous puis apparition immédiate des fonctionnalités côté
 super-administrateur ET côté marchand self-service, filtrage serveur vérifié par appel API direct.
 
+## Étape 13 — Le lien de commande atterrit directement sur l'article après le choix de langue (correction)
+
+Bug remonté après test réel de l'Étape 10 : un client qui cliquait sur le lien de commande d'un
+article se retrouvait, une fois sa langue choisie, renvoyé sur le catalogue général au lieu
+d'atterrir directement sur l'article visé — le texte pré-rempli du lien ("Bonjour, je suis
+intéressé(e) par : Robe wax bleue") était traité uniquement comme déclencheur de la porte de langue,
+puis jeté sans être réutilisé.
+
+Corrigé : le texte du tout premier message d'un client (celui qui déclenche la porte de langue FR/EN)
+est maintenant mémorisé le temps du choix de langue, puis automatiquement repassé dans la
+reconnaissance d'article juste après. Résultat : un client qui clique sur le lien "Robe wax bleue",
+choisit sa langue, se retrouve directement face à la question couleur/taille/quantité de cet article
+— exactement le comportement décrit lors de la construction de l'Étape 10.
+
+Aucun changement pour un client qui écrit normalement (sans passer par un lien) : son premier message
+("Bonjour" par exemple) est traité de la même façon qu'avant, il tombe sur la liste des articles une
+fois sa langue choisie. Aucun autre flux touché (panier, livraison, confirmation de commande, options
+payantes). Testé par appel direct du moteur de conversation : lien + choix FR → atterrit sur la
+question de taille (couleur déjà reconnue dans le texte du lien) ; lien + choix EN → atterrit
+directement sur la question de quantité (article à couleur/taille uniques) en anglais ; message
+classique sans lien → comportement inchangé (liste des articles proposée).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -315,8 +337,9 @@ super-administrateur ET côté marchand self-service, filtrage serveur vérifié
 - `conversation.js` — moteur catalogue : logique de choix de langue + traduction de toutes les réponses,
   calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année), exemple de
   format ajouté à la demande du numéro de téléphone (Étape 8), formule de politesse ajoutée quand le
-  client ne confirme pas sa commande (Étape 9), et vérification de stock qui ignore les articles marqués
-  "Stock illimité" (Étape 11)
+  client ne confirme pas sa commande (Étape 9), vérification de stock qui ignore les articles marqués
+  "Stock illimité" (Étape 11), et mémorisation du texte du premier message pour le réutiliser juste
+  après le choix de langue (Étape 13)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue
 - `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)

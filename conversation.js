@@ -929,6 +929,10 @@ function createCatalogEngine(merchantKey, options) {
     if (session.langue == null) {
       if (!session.gateLangueEnvoyee) {
         session.gateLangueEnvoyee = true;
+        // On garde le texte de ce tout premier message (ex: le texte pre-rempli d'un lien de commande
+        // genere depuis le Catalogue - voir Etape 10) pour pouvoir le retraiter juste apres le choix de
+        // langue ci-dessous, au lieu de le perdre purement et simplement derriere la porte de langue.
+        session.texteAvantLangue = text;
         const accueilPerso = messageAccueilPersonnalise();
         // Le message d'accueil personnalise (s'il est configure) vient AVANT la porte de langue, dans le
         // MEME message (separes par une ligne vide) - voir estMessageChoixLangue dans shared.js qui sait
@@ -938,6 +942,16 @@ function createCatalogEngine(merchantKey, options) {
         return reponseGate;
       }
       session.langue = sh.detecterChoixLangueInitial(text) || "fr";
+      // On retraite maintenant le texte du message D'ORIGINE (celui qui a declenche la porte de langue -
+      // ex: "Bonjour, je suis interesse(e) par : Robe wax bleue" issu d'un lien de commande) plutot que ce
+      // message-ci (qui n'est que le choix "Français"/"English" et ne correspond a aucun article). Ainsi
+      // le client atterrit directement sur l'article vise une fois sa langue choisie, au lieu de retomber
+      // sur le catalogue general. S'il n'y avait pas de texte a l'origine (accueil classique), on garde ce
+      // message-ci tel quel - comportement historique inchange.
+      if (session.texteAvantLangue) {
+        text = session.texteAvantLangue;
+        delete session.texteAvantLangue;
+      }
       // Pas de `return` ici : ce message est traite normalement plus bas, maintenant que la langue est fixee.
     }
 
