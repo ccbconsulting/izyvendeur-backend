@@ -177,6 +177,10 @@ const I18N = {
     btnAjouterArticle: "+ Ajouter un article",
     btnEnregistrerCatalogue: "Enregistrer le catalogue",
     alertCatalogueEnregistre: "Catalogue enregistré.",
+    btnCopierLien: "Copier le lien de commande",
+    alertLienCopie: "Lien copié ! Collez-le dans votre post de groupe WhatsApp.",
+    alertCopieManuelle: "Copie automatique indisponible — sélectionnez et copiez le lien ci-dessous manuellement.",
+    noteLienCommandeSansNumero: "Configurez d'abord votre numéro WhatsApp affiché (onglet Mon compte) pour générer un lien de commande pour cet article.",
     alertChoisirImage: "Choisissez d'abord une image.",
     confirmSupprimerPhoto: "Supprimer cette photo ?",
     nouvelArticle: "Nouvel article",
@@ -395,6 +399,11 @@ const I18N = {
     testAlerteEchec: "Échec complet : ni le template \"{nom}\" ni le repli en texte libre n'ont pu être envoyés au {numero}. L'échec du repli en texte libre est normal si ce numéro n'a jamais écrit au bot (WhatsApp l'exige dans les 24h) — regardez d'abord l'erreur du template ci-dessous.",
     labelDetailTemplate: "Détail du template :",
     labelDetailTexteLibre: "Détail du repli texte libre :",
+    h3NumeroPublic: "Numéro WhatsApp affiché (liens de commande)",
+    noteNumeroPublic: "Le numéro WhatsApp que vos clients contactent réellement, au format international sans le + (ex : 237677123456). Sert uniquement à générer les liens de commande par article dans l'onglet Catalogue — n'affecte pas l'envoi/réception des messages.",
+    labelNumeroPublic: "Numéro WhatsApp",
+    placeholderNumeroPublic: "ex : 237677123456",
+    alertNumeroPublicEnregistre: "Numéro enregistré.",
 
     employesTitre: "Employés ({n})",
     noteEmployes: "Chaque employé se connecte à /admin avec son propre identifiant et mot de passe, et ne voit que les onglets correspondant aux accès cochés ci-dessous — jamais cet onglet \"Employés\", ni la gestion du marchand.",
@@ -490,6 +499,10 @@ const I18N = {
     btnAjouterArticle: "+ Add an item",
     btnEnregistrerCatalogue: "Save the catalog",
     alertCatalogueEnregistre: "Catalog saved.",
+    btnCopierLien: "Copy order link",
+    alertLienCopie: "Link copied! Paste it into your WhatsApp group post.",
+    alertCopieManuelle: "Automatic copy unavailable — select and copy the link below manually.",
+    noteLienCommandeSansNumero: "Set your displayed WhatsApp number first (My account tab) to generate an order link for this item.",
     alertChoisirImage: "Choose an image first.",
     confirmSupprimerPhoto: "Delete this photo?",
     nouvelArticle: "New item",
@@ -708,6 +721,11 @@ const I18N = {
     testAlerteEchec: "Complete failure: neither the template \"{nom}\" nor the free-text fallback could be sent to {numero}. The free-text fallback failing is normal if this number never messaged the bot (WhatsApp requires it within 24h) — check the template error below first.",
     labelDetailTemplate: "Template detail:",
     labelDetailTexteLibre: "Free-text fallback detail:",
+    h3NumeroPublic: "Displayed WhatsApp number (order links)",
+    noteNumeroPublic: "The WhatsApp number your customers actually contact, in international format without the + (e.g. 237677123456). Used only to generate the per-item order links in the Catalog tab — doesn't affect sending/receiving messages.",
+    labelNumeroPublic: "WhatsApp number",
+    placeholderNumeroPublic: "e.g. 237677123456",
+    alertNumeroPublicEnregistre: "Number saved.",
 
     employesTitre: "Employees ({n})",
     noteEmployes: "Each employee logs in to /admin with their own username and password, and only sees the tabs matching the access checked below — never this \"Employees\" tab, nor the merchant management.",
@@ -1049,6 +1067,11 @@ async function renderCatalogue() {
           ).join("") +
           "</table>" +
           "<button data-ajouter-variante='" + pi + "'>" + t("btnAjouterVariante") + "</button>" +
+          "<div class='bloc-lien-commande' style='margin-top:10px;'>" + (
+            numeroPublicConfigure()
+              ? "<button data-copier-lien='" + pi + "'>" + t("btnCopierLien") + "</button><div id='resultatLien" + pi + "'></div>"
+              : "<p class='raison'>" + t("noteLienCommandeSansNumero") + "</p>"
+          ) + "</div>" +
         "</div>"
       ).join("") + (local.length ? "" : "<p>" + t("aucunArticle") + "</p>") + "</div>" +
       "<button id='btnAjouterProduit'>" + t("btnAjouterArticle") + "</button> " +
@@ -1079,6 +1102,20 @@ async function renderCatalogue() {
       btn.onclick = () => {
         local[Number(btn.dataset.ajouterVariante)].variantes.push({ couleur: "", taille: "", prix: 0, stockReel: 0, seuilAlerte: 0 });
         redraw();
+      };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-copier-lien]"), (btn) => {
+      btn.onclick = async () => {
+        const pi = Number(btn.dataset.copierLien);
+        const lien = construireLienCommande(local[pi].nom);
+        const zoneResultat = document.getElementById("resultatLien" + pi);
+        const champLien = "<input readonly value=\"" + esc(lien) + "\" style='width:100%;max-width:420px;font-size:0.85em;margin-top:6px;' onclick='this.select()' />";
+        try {
+          await navigator.clipboard.writeText(lien);
+          zoneResultat.innerHTML = "<p class='raison'>" + esc(t("alertLienCopie")) + "</p>" + champLien;
+        } catch (e) {
+          zoneResultat.innerHTML = champLien + "<p class='raison'>" + esc(t("alertCopieManuelle")) + "</p>";
+        }
       };
     });
     document.getElementById("btnAjouterProduit").onclick = () => {
@@ -1886,6 +1923,44 @@ function brancherBlocImageAccueilWhatsapp() {
   };
 }
 
+// Lien de commande wa.me par article (onglet Catalogue) - demande le 15 septembre 2026 pour les marchands
+// qui postent leurs articles dans des groupes WhatsApp (ils ne peuvent pas y automatiser de reponse, voir
+// la limitation des groupes WhatsApp) et veulent plutot rediriger les clients interesses vers une
+// conversation 1-a-1 avec le bot. Construit purement cote client a partir du numero WhatsApp "public" du
+// marchand (voir blocNumeroPublicHtml ci-dessous) - aucune dependance serveur autre que ce numero.
+function texteMessageCommande(nomArticle) {
+  const nom = (nomArticle || "").trim() || (langueAdmin === "en" ? "this item" : "cet article");
+  return langueAdmin === "en" ? ("Hello, I'm interested in: " + nom) : ("Bonjour, je suis intéressé(e) par : " + nom);
+}
+function numeroPublicConfigure() {
+  return !!((marchandActif.numeroWhatsappPublic || "").replace(/[^0-9]/g, ""));
+}
+function construireLienCommande(nomArticle) {
+  const brut = (marchandActif.numeroWhatsappPublic || "").replace(/[^0-9]/g, "");
+  if (!brut) return null;
+  return "https://wa.me/" + brut + "?text=" + encodeURIComponent(texteMessageCommande(nomArticle));
+}
+
+// Reglage du numero WhatsApp "public" lui-meme (onglet Mon compte) - voir PUT /api/:id/numero-whatsapp-public
+// cote serveur.
+function blocNumeroPublicHtml() {
+  return "<h3>" + t("h3NumeroPublic") + "</h3>" +
+    "<p class='raison'>" + t("noteNumeroPublic") + "</p>" +
+    "<label>" + t("labelNumeroPublic") + "</label>" +
+    "<input id='champNumeroPublic' value=\"" + esc(marchandActif.numeroWhatsappPublic || "") + "\" placeholder=\"" + esc(t("placeholderNumeroPublic")) + "\" />" +
+    "<div style='margin-top:10px;'><button id='btnSauverNumeroPublic' class='principal'>" + t("enregistrer") + "</button></div>";
+}
+function brancherBlocNumeroPublic() {
+  document.getElementById("btnSauverNumeroPublic").onclick = async () => {
+    const valeur = document.getElementById("champNumeroPublic").value.trim() || null;
+    try {
+      await api("/api/" + marchandActif.id + "/numero-whatsapp-public", { method: "PUT", body: JSON.stringify({ numeroWhatsappPublic: valeur }) });
+      marchandActif.numeroWhatsappPublic = valeur;
+      alert(t("alertNumeroPublicEnregistre"));
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
+
 // Diagnostic "Tester l'alerte maintenant" - voir POST /api/marchands/:id/tester-alerte cote serveur.
 // Affiche le resultat BRUT (succes, ou detail exact de l'echec renvoye par WhatsApp) directement dans
 // /admin, pour qu'un marchand puisse comprendre par lui-meme pourquoi une alerte n'arrive pas au lieu
@@ -1954,9 +2029,11 @@ async function renderCompte() {
       "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
       "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
       blocTesterAlerteHtml() +
+      blocNumeroPublicHtml() +
       blocLogoHtml() +
       blocImageAccueilWhatsappHtml();
     brancherBlocTesterAlerte();
+    brancherBlocNumeroPublic();
     brancherBlocLogo();
     brancherBlocImageAccueilWhatsapp();
 
@@ -2039,9 +2116,11 @@ async function renderCompte() {
     "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
     "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
     blocTesterAlerteHtml() +
+    blocNumeroPublicHtml() +
     blocLogoHtml() +
     blocImageAccueilWhatsappHtml();
   brancherBlocTesterAlerte();
+  brancherBlocNumeroPublic();
   brancherBlocLogo();
   brancherBlocImageAccueilWhatsapp();
 
