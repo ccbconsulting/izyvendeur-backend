@@ -263,6 +263,21 @@ directement dans la conversation avec le bot. Facultatif : tant que le numéro n
 note l'indique à la place du bouton. Testé de bout en bout (vraie base PostgreSQL, vues
 super-administrateur ET marchand, français et anglais) avant livraison.
 
+## Étape 11 — Case "Stock illimité" par article (nouveau)
+
+Question soulevée directement par l'Étape 10 ci-dessus : pour un article "trouvaille" sans stock suivi,
+le bot vérifiait jusqu'ici le stock réel avant chaque vente — resté à 0 par défaut sur un nouvel
+article, il aurait dit "en rupture" à TOUS les clients. Nouvelle case à cocher "Stock illimité" par
+article dans l'onglet Catalogue : une fois cochée, le bot ne vérifie plus jamais le stock de cet
+article et ne le proposera jamais comme en rupture, quelle que soit la quantité demandée — stock réel
+et seuil d'alerte sont simplement ignorés tant que la case reste cochée (mais restent visibles et
+modifiables, pour le jour où vous la décochez). La colonne "Stock virtuel" affiche alors "∞ Illimité"
+au lieu d'un chiffre. Décochable à tout moment, à la guise du marchand. Testé de bout en bout : moteur
+de conversation (une commande de 50 pièces acceptée sur un article à stock réel 0 marqué illimité, un
+article normal continue lui de refuser au-delà de son vrai stock) et interface /admin (case cochée,
+enregistrement, et persistance vérifiée après un rechargement complet de la page, vraie base
+PostgreSQL).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -277,8 +292,9 @@ super-administrateur ET marchand, français et anglais) avant livraison.
 
 - `conversation.js` — moteur catalogue : logique de choix de langue + traduction de toutes les réponses,
   calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année), exemple de
-  format ajouté à la demande du numéro de téléphone (Étape 8), et formule de politesse ajoutée quand le
-  client ne confirme pas sa commande (Étape 9)
+  format ajouté à la demande du numéro de téléphone (Étape 8), formule de politesse ajoutée quand le
+  client ne confirme pas sa commande (Étape 9), et vérification de stock qui ignore les articles marqués
+  "Stock illimité" (Étape 11)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue
 - `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)
@@ -295,7 +311,8 @@ super-administrateur ET marchand, français et anglais) avant livraison.
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
   d'accueil WhatsApp" dans l'onglet Mon compte + nouveau bouton "Tester l'alerte maintenant" (Étape 7)
   + nouveau champ "Numéro WhatsApp affiché" et bouton "Copier le lien de commande" par article dans
-  l'onglet Catalogue (Étape 10)
+  l'onglet Catalogue (Étape 10) + case "Stock illimité" par article, avec affichage "∞ Illimité" dans
+  la colonne Stock virtuel (Étape 11)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec

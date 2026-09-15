@@ -14,6 +14,15 @@ const db = require("./db");
 const sh = require("./shared");
 const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
+// Sentinelle "stock illimite" (voir virtualStock ci-dessous) : un article marche "Stock illimite" depuis
+// /admin (case a cocher, demandee le 15 septembre 2026 pour les marchands sans inventaire fixe - style
+// dropshipping, qui trouvent un article et le postent au coup par coup sans suivre de vraie quantite) est
+// traite comme ayant ce nombre de pieces disponibles, plutot que son stockReel reel. Delibermenet enorme
+// pour traverser TOUTES les comparaisons existantes (quantite demandee, seuil d'alerte, tri des ruptures a
+// surveiller...) sans avoir a modifier chaque site d'appel individuellement : aucune commande realiste ne
+// pourra jamais l'atteindre.
+const STOCK_ILLIMITE_SENTINELLE = 999999;
+
 const RESERVING_STATUSES = ["Confirmée", "Expédiée"];
 const STATUT_LIST = ["Nouvelle", "Confirmée", "Expédiée", "Livrée", "Annulée"];
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "2", "3"];
@@ -301,6 +310,8 @@ function createCatalogEngine(merchantKey, options) {
   }
 
   function virtualStock(productId, variant) {
+    const p = state.catalog.filter((x) => x.id === productId)[0];
+    if (p && p.stockIllimite) return STOCK_ILLIMITE_SENTINELLE;
     return Math.max(0, variant.stockReel - reservedQty(productId, variant.couleur, variant.taille));
   }
 
