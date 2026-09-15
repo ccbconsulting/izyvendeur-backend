@@ -172,6 +172,9 @@ const I18N = {
     theadStockVirtuel: "Stock virtuel",
     theadSeuilAlerte: "Seuil alerte",
     titleStockVirtuel: "Stock réel moins ce qui est déjà engagé dans des commandes Confirmée/Expédiée — c'est ce nombre que le bot vérifie avant de proposer l'article à un client.",
+    labelStockIllimite: "Stock illimité",
+    noteStockIllimite: "Le bot ne vérifie jamais le stock de cet article et ne le proposera jamais comme en rupture — pratique pour un article trouvé au coup par coup, sans quantité suivie. Stock réel et seuil d'alerte sont ignorés tant que c'est coché.",
+    stockIllimiteSymbole: "Illimité",
     btnAjouterVariante: "+ Variante",
     aucunArticle: "Aucun article. Ajoutez-en un.",
     btnAjouterArticle: "+ Ajouter un article",
@@ -494,6 +497,9 @@ const I18N = {
     theadStockVirtuel: "Virtual stock",
     theadSeuilAlerte: "Alert threshold",
     titleStockVirtuel: "Real stock minus what's already committed to Confirmed/Shipped orders — this is the number the bot checks before offering the item to a customer.",
+    labelStockIllimite: "Unlimited stock",
+    noteStockIllimite: "The bot never checks stock for this item and will never treat it as out of stock — handy for a found-item-by-item business with no tracked quantity. Real stock and the alert threshold are ignored while this is checked.",
+    stockIllimiteSymbole: "Unlimited",
     btnAjouterVariante: "+ Variant",
     aucunArticle: "No items yet. Add one.",
     btnAjouterArticle: "+ Add an item",
@@ -1052,6 +1058,10 @@ async function renderCatalogue() {
             "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder=\"" + esc(t("placeholderCategorie")) + "\" />" +
             "<button data-suppr-produit='" + pi + "' class='danger'>" + t("btnSupprimerArticle") + "</button>" +
           "</div>" +
+          "<label style='display:inline-block;margin-bottom:8px;'>" +
+            "<input type='checkbox' data-illimite='" + pi + "'" + (p.stockIllimite ? " checked" : "") + " /> " + t("labelStockIllimite") +
+          "</label>" +
+          "<p class='raison'>" + t("noteStockIllimite") + "</p>" +
           rendreBlocPhotos(p, pi, catalogue.some((c) => c.id === p.id)) +
           "<table class='table-variantes'><tr><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadPrixFcfa") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadStockVirtuel") + "</th><th>" + t("theadSeuilAlerte") + "</th><th></th></tr>" +
           p.variantes.map((v, vi) =>
@@ -1059,8 +1069,8 @@ async function renderCatalogue() {
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='couleur' value=\"" + esc(v.couleur) + "\" /></td>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='taille' value=\"" + esc(v.taille) + "\" /></td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='prix' value='" + v.prix + "' /></td>" +
-              "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='stockReel' value='" + v.stockReel + "' class=\"" + (v.stockReel <= (v.seuilAlerte || 0) ? "alerte-stock" : "") + "\" /></td>" +
-              "<td title=\"" + esc(t("titleStockVirtuel")) + "\">" + (v.stockVirtuel != null ? v.stockVirtuel : v.stockReel) + "</td>" +
+              "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='stockReel' value='" + v.stockReel + "' class=\"" + (!p.stockIllimite && v.stockReel <= (v.seuilAlerte || 0) ? "alerte-stock" : "") + "\" /></td>" +
+              "<td title=\"" + esc(t("titleStockVirtuel")) + "\">" + (p.stockIllimite ? "∞ " + t("stockIllimiteSymbole") : (v.stockVirtuel != null ? v.stockVirtuel : v.stockReel)) + "</td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='seuilAlerte' value='" + (v.seuilAlerte || 0) + "' /></td>" +
               "<td><button data-suppr-variante='" + pi + ":" + vi + "' class='danger'>×</button></td>" +
             "</tr>"
@@ -1077,6 +1087,12 @@ async function renderCatalogue() {
       "<button id='btnAjouterProduit'>" + t("btnAjouterArticle") + "</button> " +
       "<button id='btnSauverCatalogue' class='principal'>" + t("btnEnregistrerCatalogue") + "</button>";
 
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-illimite]"), (chk) => {
+      chk.addEventListener("change", () => {
+        local[Number(chk.dataset.illimite)].stockIllimite = chk.checked;
+        redraw();
+      });
+    });
     Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
       inp.addEventListener("input", () => {
         const pi = Number(inp.dataset.p);
