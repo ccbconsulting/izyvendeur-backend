@@ -86,6 +86,14 @@ async function ensureMerchantsTable() {
   // UNIQUEMENT a generer les liens de commande wa.me par article (voir /api/.../lien-commande dans
   // server.js) - facultatif, NULL par defaut, aucun impact sur l'envoi/reception de messages.
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS numero_whatsapp_public TEXT");
+  // Options payantes (demandees le 15 septembre 2026) : "Stock illimite" (case a cocher par article, voir
+  // conversation.js/virtualStock) et "Lien de commande" (numero WhatsApp public + bouton "Copier le lien"
+  // par article, voir server.js) n'etaient au depart accessibles a tous les marchands sans distinction —
+  // desormais reservees, chacune independamment, aux marchands pour qui LE SUPER-ADMINISTRATEUR les a
+  // explicitement debloquees (voir PUT /api/marchands/:id/options-payantes). Faux par defaut : aucun
+  // marchand existant n'y a acces tant qu'il n'est pas explicitement debloque.
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_stock_illimite BOOLEAN NOT NULL DEFAULT false");
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_lien_commande BOOLEAN NOT NULL DEFAULT false");
 }
 
 function defaultMerchantFromEnv() {
@@ -103,7 +111,9 @@ function defaultMerchantFromEnv() {
     employes: [],
     logoUrl: null,
     imageAccueilWhatsappUrl: null,
-    numeroWhatsappPublic: null
+    numeroWhatsappPublic: null,
+    optionStockIllimite: false,
+    optionLienCommande: false
   };
 }
 
@@ -112,7 +122,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return res.rows.map(rowToMerchant);
     }
@@ -148,7 +158,9 @@ function rowToMerchant(row) {
     employes: Array.isArray(row.employes) ? row.employes : [],
     logoUrl: row.logo_url || null,
     imageAccueilWhatsappUrl: row.image_accueil_whatsapp_url || null,
-    numeroWhatsappPublic: row.numero_whatsapp_public || null
+    numeroWhatsappPublic: row.numero_whatsapp_public || null,
+    optionStockIllimite: row.option_stock_illimite === true,
+    optionLienCommande: row.option_lien_commande === true
   };
 }
 
@@ -156,9 +168,9 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12",
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null]
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14",
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande]
     );
     return;
   }
@@ -175,7 +187,7 @@ async function getMerchantRecord(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -207,7 +219,7 @@ async function updateMerchantFields(id, patch) {
     // cas pour "employes" avant ce correctif : changer par ex. le numero de notification d'un marchand
     // ayant des employes les supprimait tous sans le vouloir.
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -219,6 +231,8 @@ async function updateMerchantFields(id, patch) {
     if (patch.logoUrl !== undefined) m.logoUrl = patch.logoUrl || null;
     if (patch.imageAccueilWhatsappUrl !== undefined) m.imageAccueilWhatsappUrl = patch.imageAccueilWhatsappUrl || null;
     if (patch.numeroWhatsappPublic !== undefined) m.numeroWhatsappPublic = patch.numeroWhatsappPublic || null;
+    if (patch.optionStockIllimite !== undefined) m.optionStockIllimite = !!patch.optionStockIllimite;
+    if (patch.optionLienCommande !== undefined) m.optionLienCommande = !!patch.optionLienCommande;
     // NOUVEAU : nom affiche et phone_number_id WhatsApp corrigeables apres coup (ex: faute de frappe a la
     // creation). Volontairement PAS "id" ni "type" ici : "id" sert de cle a tout l'etat deja persiste
     // (app_state, journal des conversations) et de cle aux sessions/moteurs EN MEMOIRE — le changer
@@ -244,6 +258,8 @@ async function updateMerchantFields(id, patch) {
   if (patch.logoUrl !== undefined) liste[idx].logoUrl = patch.logoUrl || null;
   if (patch.imageAccueilWhatsappUrl !== undefined) liste[idx].imageAccueilWhatsappUrl = patch.imageAccueilWhatsappUrl || null;
   if (patch.numeroWhatsappPublic !== undefined) liste[idx].numeroWhatsappPublic = patch.numeroWhatsappPublic || null;
+  if (patch.optionStockIllimite !== undefined) liste[idx].optionStockIllimite = !!patch.optionStockIllimite;
+  if (patch.optionLienCommande !== undefined) liste[idx].optionLienCommande = !!patch.optionLienCommande;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
 }

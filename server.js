@@ -395,7 +395,8 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
     phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false,
     logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null,
-    numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null
+    numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null,
+    optionStockIllimite: e.merchant.optionStockIllimite === true, optionLienCommande: e.merchant.optionLienCommande === true
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -635,6 +636,31 @@ app.put("/api/:id/actif", protegerAcces, async (req, res) => {
   res.json({ id: req.params.id, actif: maj.actif });
 });
 
+// -- Options payantes par marchand (demandees le 15 septembre 2026) : "Stock illimite" (case a cocher par
+// article dans le Catalogue) et "Lien de commande" (numero WhatsApp public + bouton "Copier le lien" par
+// article) sont des ameliorations qu'IzyVendeur n'offrait pas a l'origine - reservees, chacune
+// independamment, aux marchands pour qui le super-administrateur les debloque explicitement ici. Reserve
+// au super-administrateur, exactement comme la suspension ci-dessus - un marchand ne peut jamais se les
+// debloquer lui-meme, meme via son propre acces "parametres". Voir aussi le filtrage cote
+// PUT /api/:id/catalogue et PUT /api/:id/numero-whatsapp-public ci-dessous, qui empechent un contournement
+// par appel direct a l'API tant que l'option n'est pas debloquee. --
+app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = engines[req.params.id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
+  const { optionStockIllimite, optionLienCommande } = req.body || {};
+  const patch = {};
+  if (optionStockIllimite !== undefined) patch.optionStockIllimite = !!optionStockIllimite;
+  if (optionLienCommande !== undefined) patch.optionLienCommande = !!optionLienCommande;
+  if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
+  const maj = await db.updateMerchantFields(req.params.id, patch);
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.optionStockIllimite = maj.optionStockIllimite;
+  entry.merchant.optionLienCommande = maj.optionLienCommande;
+  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}.`);
+  res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande });
+});
+
 // Corrige le nom affiche et/ou le phone_number_id WhatsApp d'un marchand DEJA CREE (ex: faute de frappe a
 // la creation). Reserve au super-administrateur. Volontairement PAS "id" ni "type" ici — voir le
 // commentaire de db.updateMerchantFields pour pourquoi ces deux champs-la ne sont jamais modifiables une
@@ -703,7 +729,15 @@ app.get("/api/:id/catalogue", protegerAcces, (req, res) => {
 app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
-  const nouveau = entry.engine.updateCatalog(req.body);
+  // Filet de securite pour l'option payante "Stock illimite" (voir PUT /api/marchands/:id/options-payantes) :
+  // /admin cache deja la case a cocher tant que l'option n'est pas debloquee, mais un appel direct a cette
+  // route (hors interface) pourrait sinon quand meme glisser stockIllimite:true - on l'ignore silencieusement
+  // ici plutot que de rejeter tout l'enregistrement du catalogue pour ca.
+  let corps = req.body;
+  if (!entry.merchant.optionStockIllimite && Array.isArray(corps)) {
+    corps = corps.map((p) => (p && p.stockIllimite ? Object.assign({}, p, { stockIllimite: false }) : p));
+  }
+  const nouveau = entry.engine.updateCatalog(corps);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
   res.json(nouveau);
 });
@@ -830,6 +864,7 @@ app.put("/api/:id/notification", protegerAcces, async (req, res) => {
 // /notification ci-dessus. --
 app.put("/api/:id/numero-whatsapp-public", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  if (!entry.merchant.optionLienCommande) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
   const { numeroWhatsappPublic } = req.body || {};
   const maj = await db.updateMerchantFields(req.params.id, { numeroWhatsappPublic: numeroWhatsappPublic || null });
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });

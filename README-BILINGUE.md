@@ -278,6 +278,28 @@ article normal continue lui de refuser au-delà de son vrai stock) et interface 
 enregistrement, et persistance vérifiée après un rechargement complet de la page, vraie base
 PostgreSQL).
 
+## Étape 12 — Stock illimité et Lien de commande transformés en options payantes (nouveau)
+
+Suite logique des Étapes 10 et 11 : IzyVendeur n'était pas prévu à l'origine pour ces deux
+améliorations — vous seul, en tant que super-administrateur, pouvez désormais les débloquer,
+indépendamment l'une de l'autre, pour chaque marchand. Nouveau bloc "Options payantes" tout en haut de
+/admin > Mon compte, visible UNIQUEMENT par vous (jamais par un marchand, même celui concerné) : deux
+cases à cocher, "Stock illimité" et "Lien de commande", avec un bouton Enregistrer. Tant qu'une option
+n'est pas cochée pour un marchand, il ne voit RIEN de la fonctionnalité correspondante — ni la case
+"Stock illimité" dans son Catalogue, ni le bouton "Copier le lien de commande", ni le champ "Numéro
+WhatsApp affiché" dans son Mon compte. Dès que vous cochez l'option, tout réapparaît instantanément
+pour lui.
+
+Protection ajoutée aussi côté serveur (pas seulement l'affichage) : même en cas d'appel direct à
+l'API (hors interface /admin), impossible pour un marchand d'activer une case "Stock illimité" sur un
+article tant que l'option n'est pas débloquée pour lui (silencieusement ignorée à l'enregistrement du
+catalogue), et impossible d'enregistrer un numéro WhatsApp affiché sans l'option "Lien de commande"
+(refusé explicitement). Par défaut, les deux options sont désactivées pour TOUS les marchands existants
+(y compris ceux qui avaient déjà testé ces fonctionnalités) — rien n'était encore activé au moment de
+cette bascule. Testé de bout en bout (vraie base PostgreSQL) : refus confirmé pour un marchand qui
+tente de s'auto-débloquer, activation par vous puis apparition immédiate des fonctionnalités côté
+super-administrateur ET côté marchand self-service, filtrage serveur vérifié par appel API direct.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -305,19 +327,26 @@ PostgreSQL).
   + traduction de TOUS les menus tactiles eux-mêmes (titres de listes/boutons) selon la langue du client
   + la route du Tableau de bord accepte maintenant un paramètre de période + nouvelle route
   `POST /api/marchands/:id/tester-alerte` (bouton "Tester l'alerte maintenant", voir Étape 7) +
-  nouvelle route `PUT /api/:id/numero-whatsapp-public` (numéro WhatsApp affiché, voir Étape 10)
+  nouvelle route `PUT /api/:id/numero-whatsapp-public` (numéro WhatsApp affiché, voir Étape 10) +
+  nouvelle route `PUT /api/marchands/:id/options-payantes` (réservée au super-administrateur, voir
+  Étape 12) + filtrage serveur sur `PUT /api/:id/catalogue` et `PUT /api/:id/numero-whatsapp-public`
+  qui empêche un contournement de ces options par appel direct à l'API
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
   d'accueil WhatsApp" dans l'onglet Mon compte + nouveau bouton "Tester l'alerte maintenant" (Étape 7)
   + nouveau champ "Numéro WhatsApp affiché" et bouton "Copier le lien de commande" par article dans
   l'onglet Catalogue (Étape 10) + case "Stock illimité" par article, avec affichage "∞ Illimité" dans
-  la colonne Stock virtuel (Étape 11)
+  la colonne Stock virtuel (Étape 11) + nouveau bloc "Options payantes" réservé au super-administrateur
+  dans Mon compte, qui masque entièrement les deux fonctionnalités ci-dessus côté marchand tant qu'elles
+  ne sont pas débloquées (Étape 12)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
   migration automatique au démarrage) + correctif du bug employés décrit ci-dessus, étendu pour protéger
-  également ces deux colonnes + nouvelle colonne `numero_whatsapp_public` (Étape 10)
+  également ces deux colonnes + nouvelle colonne `numero_whatsapp_public` (Étape 10) + nouvelles colonnes
+  `option_stock_illimite` et `option_lien_commande`, fausses par défaut pour tous les marchands existants
+  (Étape 12)
 
 ## Comment déployer
 
