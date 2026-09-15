@@ -407,6 +407,11 @@ const I18N = {
     labelNumeroPublic: "Numéro WhatsApp",
     placeholderNumeroPublic: "ex : 237677123456",
     alertNumeroPublicEnregistre: "Numéro enregistré.",
+    h3OptionsPayantes: "Options payantes",
+    noteOptionsPayantes: "Réservé au super-administrateur : ces améliorations n'existaient pas à l'origine dans IzyVendeur — débloquez-les ici uniquement pour les marchands qui y ont souscrit. Un marchand ne voit ni la case ni le bouton correspondant tant que l'option n'est pas cochée ici.",
+    labelOptionStockIllimite: "Stock illimité (case à cocher par article dans le Catalogue)",
+    labelOptionLienCommande: "Lien de commande (numéro WhatsApp affiché + bouton « Copier le lien » par article)",
+    alertOptionsEnregistrees: "Options enregistrées.",
 
     employesTitre: "Employés ({n})",
     noteEmployes: "Chaque employé se connecte à /admin avec son propre identifiant et mot de passe, et ne voit que les onglets correspondant aux accès cochés ci-dessous — jamais cet onglet \"Employés\", ni la gestion du marchand.",
@@ -732,6 +737,11 @@ const I18N = {
     labelNumeroPublic: "WhatsApp number",
     placeholderNumeroPublic: "e.g. 237677123456",
     alertNumeroPublicEnregistre: "Number saved.",
+    h3OptionsPayantes: "Paid options",
+    noteOptionsPayantes: "Super-administrator only: these enhancements weren't part of IzyVendeur originally — unlock them here only for merchants who've subscribed to them. A merchant sees neither the checkbox nor the button until it's checked here.",
+    labelOptionStockIllimite: "Unlimited stock (per-item checkbox in the Catalog tab)",
+    labelOptionLienCommande: "Order link (displayed WhatsApp number + per-item \"Copy link\" button)",
+    alertOptionsEnregistrees: "Options saved.",
 
     employesTitre: "Employees ({n})",
     noteEmployes: "Each employee logs in to /admin with their own username and password, and only sees the tabs matching the access checked below — never this \"Employees\" tab, nor the merchant management.",
@@ -1058,10 +1068,12 @@ async function renderCatalogue() {
             "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder=\"" + esc(t("placeholderCategorie")) + "\" />" +
             "<button data-suppr-produit='" + pi + "' class='danger'>" + t("btnSupprimerArticle") + "</button>" +
           "</div>" +
-          "<label style='display:inline-block;margin-bottom:8px;'>" +
-            "<input type='checkbox' data-illimite='" + pi + "'" + (p.stockIllimite ? " checked" : "") + " /> " + t("labelStockIllimite") +
-          "</label>" +
-          "<p class='raison'>" + t("noteStockIllimite") + "</p>" +
+          (marchandActif.optionStockIllimite
+            ? "<label style='display:inline-block;margin-bottom:8px;'>" +
+                "<input type='checkbox' data-illimite='" + pi + "'" + (p.stockIllimite ? " checked" : "") + " /> " + t("labelStockIllimite") +
+              "</label>" +
+              "<p class='raison'>" + t("noteStockIllimite") + "</p>"
+            : "") +
           rendreBlocPhotos(p, pi, catalogue.some((c) => c.id === p.id)) +
           "<table class='table-variantes'><tr><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadPrixFcfa") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadStockVirtuel") + "</th><th>" + t("theadSeuilAlerte") + "</th><th></th></tr>" +
           p.variantes.map((v, vi) =>
@@ -1077,11 +1089,13 @@ async function renderCatalogue() {
           ).join("") +
           "</table>" +
           "<button data-ajouter-variante='" + pi + "'>" + t("btnAjouterVariante") + "</button>" +
-          "<div class='bloc-lien-commande' style='margin-top:10px;'>" + (
-            numeroPublicConfigure()
-              ? "<button data-copier-lien='" + pi + "'>" + t("btnCopierLien") + "</button><div id='resultatLien" + pi + "'></div>"
-              : "<p class='raison'>" + t("noteLienCommandeSansNumero") + "</p>"
-          ) + "</div>" +
+          (marchandActif.optionLienCommande
+            ? "<div class='bloc-lien-commande' style='margin-top:10px;'>" + (
+                numeroPublicConfigure()
+                  ? "<button data-copier-lien='" + pi + "'>" + t("btnCopierLien") + "</button><div id='resultatLien" + pi + "'></div>"
+                  : "<p class='raison'>" + t("noteLienCommandeSansNumero") + "</p>"
+              ) + "</div>"
+            : "") +
         "</div>"
       ).join("") + (local.length ? "" : "<p>" + t("aucunArticle") + "</p>") + "</div>" +
       "<button id='btnAjouterProduit'>" + t("btnAjouterArticle") + "</button> " +
@@ -1977,6 +1991,36 @@ function brancherBlocNumeroPublic() {
   };
 }
 
+// Options payantes (superadmin uniquement, demandees le 15 septembre 2026) : "Stock illimite" et "Lien de
+// commande" n'etaient pas prevues a l'origine dans IzyVendeur - desormais debloquables independamment par
+// marchand, uniquement depuis ce bloc. Tant que ce n'est pas coche ici, la case "Stock illimite" (onglet
+// Catalogue) et tout le bloc "Lien de commande" (bouton "Copier le lien" + reglage du numero WhatsApp
+// affiche ci-dessus) restent totalement invisibles cote marchand - voir renderCatalogue() et les deux
+// points d'appel de blocNumeroPublicHtml()/brancherBlocNumeroPublic() dans renderCompte() ci-dessous, tous
+// gardes par marchandActif.optionStockIllimite / optionLienCommande.
+function blocOptionsPayantesHtml() {
+  return "<h3>" + t("h3OptionsPayantes") + "</h3>" +
+    "<p class='raison'>" + t("noteOptionsPayantes") + "</p>" +
+    "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionStockIllimite'" + (marchandActif.optionStockIllimite ? " checked" : "") + " /> " + t("labelOptionStockIllimite") + "</label>" +
+    "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionLienCommande'" + (marchandActif.optionLienCommande ? " checked" : "") + " /> " + t("labelOptionLienCommande") + "</label>" +
+    "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>";
+}
+function brancherBlocOptionsPayantes() {
+  document.getElementById("btnSauverOptionsPayantes").onclick = async () => {
+    try {
+      await api("/api/marchands/" + marchandActif.id + "/options-payantes", {
+        method: "PUT",
+        body: JSON.stringify({
+          optionStockIllimite: document.getElementById("champOptionStockIllimite").checked,
+          optionLienCommande: document.getElementById("champOptionLienCommande").checked
+        })
+      });
+      alert(t("alertOptionsEnregistrees"));
+      await demarrer();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
+
 // Diagnostic "Tester l'alerte maintenant" - voir POST /api/marchands/:id/tester-alerte cote serveur.
 // Affiche le resultat BRUT (succes, ou detail exact de l'echec renvoye par WhatsApp) directement dans
 // /admin, pour qu'un marchand puisse comprendre par lui-meme pourquoi une alerte n'arrive pas au lieu
@@ -2029,6 +2073,7 @@ async function renderCompte() {
     zone.innerHTML =
       "<h2>" + t("compteTitreAvecNom", { nom: esc(marchandActif.nom) }) + "</h2>" +
       "<p class='raison'>" + t("noteSuperadminCompte") + "</p>" +
+      blocOptionsPayantesHtml() +
       "<label>" + t("labelNomUtilisateur") + "</label>" +
       "<input id='champUtilisateur' value=\"" + esc(marchandActif.adminUser || "") + "\" />" +
       "<div style='margin-top:10px;'><button id='btnSauverUtilisateur'>" + t("btnEnregistrerNomUtilisateur") + "</button></div>" +
@@ -2045,11 +2090,12 @@ async function renderCompte() {
       "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
       "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
       blocTesterAlerteHtml() +
-      blocNumeroPublicHtml() +
+      (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "") +
       blocLogoHtml() +
       blocImageAccueilWhatsappHtml();
+    brancherBlocOptionsPayantes();
     brancherBlocTesterAlerte();
-    brancherBlocNumeroPublic();
+    if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
     brancherBlocLogo();
     brancherBlocImageAccueilWhatsapp();
 
@@ -2132,11 +2178,11 @@ async function renderCompte() {
     "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
     "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
     blocTesterAlerteHtml() +
-    blocNumeroPublicHtml() +
+    (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "") +
     blocLogoHtml() +
     blocImageAccueilWhatsappHtml();
   brancherBlocTesterAlerte();
-  brancherBlocNumeroPublic();
+  if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
   brancherBlocLogo();
   brancherBlocImageAccueilWhatsapp();
 
