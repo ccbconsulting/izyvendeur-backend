@@ -322,6 +322,19 @@ question de taille (couleur déjà reconnue dans le texte du lien) ; lien + choi
 directement sur la question de quantité (article à couleur/taille uniques) en anglais ; message
 classique sans lien → comportement inchangé (liste des articles proposée).
 
+## Étape 14 — Un article "Stock illimité" n'affiche plus de nombre de pièces au client (correction)
+
+Bug remonté le 15 septembre 2026 : pour un article marqué "Stock illimité" (Étape 11), le bot
+affichait quand même un nombre de pièces en stock au client dans le message "il est disponible"
+— en réalité le chiffre interne utilisé en coulisses pour ne jamais bloquer la vente (999999), ce
+qui donnait un message absurde du type "(999999 pièce(s) en stock)".
+
+Corrigé : quand un article est en Stock illimité, le bot ne mentionne plus du tout de nombre de
+pièces dans ce message ("il est disponible ✅ Robe wax bleue Bleu M — 15 000 FCFA l'unité. Combien
+de pièces souhaitez-vous ?"). Aucun changement pour un article à stock normal, qui continue
+d'afficher son nombre de pièces réellement disponibles comme avant. Testé par appel direct du
+moteur de conversation avec un article en Stock illimité et un article à stock normal côte à côte.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -338,8 +351,9 @@ classique sans lien → comportement inchangé (liste des articles proposée).
   calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année), exemple de
   format ajouté à la demande du numéro de téléphone (Étape 8), formule de politesse ajoutée quand le
   client ne confirme pas sa commande (Étape 9), vérification de stock qui ignore les articles marqués
-  "Stock illimité" (Étape 11), et mémorisation du texte du premier message pour le réutiliser juste
-  après le choix de langue (Étape 13)
+  "Stock illimité" (Étape 11), mémorisation du texte du premier message pour le réutiliser juste
+  après le choix de langue (Étape 13), et suppression de l'affichage du nombre de pièces pour un
+  article en Stock illimité (Étape 14)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue
 - `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)

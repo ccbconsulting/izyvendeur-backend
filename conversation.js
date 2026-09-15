@@ -872,9 +872,14 @@ function createCatalogEngine(merchantKey, options) {
     trace.action = "Article disponible — quantité demandée";
     session.stage = "awaiting_quantity";
     logTrace(session, trace);
+    // Article "Stock illimité" : virt vaut la sentinelle interne (999999, voir virtualStock) qui ne doit
+    // JAMAIS apparaitre telle quelle dans un message envoye au client - on omet simplement la mention du
+    // nombre de pieces en stock plutot que d'afficher ce chiffre absurde.
+    const mentionStock = product.stockIllimite ? "" : (" (" + virt + " pièce(s) en stock)");
+    const mentionStockEn = product.stockIllimite ? "" : (" (" + virt + " piece(s) in stock)");
     return ouverture(session, OUVERTURES_DISPO, OUVERTURES_DISPO_EN) + sh.t(session,
-      " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité (" + virt + " pièce(s) en stock). Combien de pièces souhaitez-vous ?",
-      " it's available ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " each (" + virt + " piece(s) in stock). How many would you like?"
+      " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité" + mentionStock + ". Combien de pièces souhaitez-vous ?",
+      " it's available ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " each" + mentionStockEn + ". How many would you like?"
     );
   }
 
