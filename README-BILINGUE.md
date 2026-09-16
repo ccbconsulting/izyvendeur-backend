@@ -335,6 +335,40 @@ de pièces souhaitez-vous ?"). Aucun changement pour un article à stock normal,
 d'afficher son nombre de pièces réellement disponibles comme avant. Testé par appel direct du
 moteur de conversation avec un article en Stock illimité et un article à stock normal côte à côte.
 
+## Étape 15 — Nouveau statut "Commandée" + notifications WhatsApp au client sur changement de statut (nouveau, option payante)
+
+Discussion tenue le 15-16 septembre 2026 (retours marchands) avant construction. Deux ajouts liés :
+
+**Nouveau statut "Commandée"**, place entre "Confirmée" et "Expédiée" dans le suivi de commande
+(onglet Commandes) : pensé pour les marchands façon dropshipping, pour signaler que l'article a été
+commandé auprès du fournisseur. Comme "Confirmée" et "Expédiée", ce statut réserve le stock (un
+autre client ne peut pas commander le même article tant qu'il est "Commandée") — pas de trou de
+survente pendant que l'article est chez le fournisseur.
+
+**Notifications de statut** : un message WhatsApp automatique peut désormais être envoyé au CLIENT
+quand une de ses commandes passe à Commandée, Expédiée, Livrée, ou Annulée. Chaque statut s'active
+indépendamment ("Confirmée" n'a pas été ajoutée exprès : le message de confirmation automatique
+existant la couvre déjà). Pour "Annulée", la raison d'annulation (si renseignée) est automatiquement
+ajoutée au message — pensé pour protéger le marchand en cas de litige. Texte personnalisable par
+statut, bilingue FR/EN (le client reçoit le message dans sa propre langue ; si vous ne remplissez
+que le français, un client anglophone reçoit un message par défaut en anglais, jamais votre texte
+français). "{ref}" dans votre texte est remplacé par la référence de la commande (ex : CMD-0042).
+
+Comme Stock illimité et Lien de commande, cette fonctionnalité est **une option payante réservée à
+vous** : nouvelle case "Notifications de statut" dans le bloc "Options payantes" de Mon compte
+(super-administrateur uniquement). Tant qu'elle n'est pas cochée pour un marchand, il ne voit ni le
+nouveau bloc de réglages dans Paramètres, ni ne peut l'activer par un appel API direct (filtrage
+côté serveur en plus de l'interface, même principe que les deux options précédentes).
+
+Testé de bout en bout le 16 septembre 2026 : conversation complète (appel direct du moteur ET vraie
+base PostgreSQL via un webhook simulé) créant une commande réelle, statut "Commandée" apparaissant
+au bon endroit dans le menu déroulant, réservation de stock vérifiée pendant "Commandée", message
+par défaut envoyé quand le marchand active un statut sans avoir écrit de texte, texte personnalisé
+avec "{ref}" substitué, repli sur le message anglais par défaut (jamais le texte français) pour un
+client ayant choisi English, raison d'annulation automatiquement ajoutée pour "Annulée", persistance
+des réglages après rechargement de la page, et blocage confirmé d'une tentative de contournement par
+appel API direct tant que l'option n'est pas débloquée.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -352,8 +386,9 @@ moteur de conversation avec un article en Stock illimité et un article à stock
   format ajouté à la demande du numéro de téléphone (Étape 8), formule de politesse ajoutée quand le
   client ne confirme pas sa commande (Étape 9), vérification de stock qui ignore les articles marqués
   "Stock illimité" (Étape 11), mémorisation du texte du premier message pour le réutiliser juste
-  après le choix de langue (Étape 13), et suppression de l'affichage du nombre de pièces pour un
-  article en Stock illimité (Étape 14)
+  après le choix de langue (Étape 13), suppression de l'affichage du nombre de pièces pour un
+  article en Stock illimité (Étape 14), et nouveau statut de commande "Commandée" (réservant le
+  stock comme Confirmée/Expédiée) + envoi des notifications de statut au client (Étape 15)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue
 - `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)
@@ -367,7 +402,10 @@ moteur de conversation avec un article en Stock illimité et un article à stock
   nouvelle route `PUT /api/:id/numero-whatsapp-public` (numéro WhatsApp affiché, voir Étape 10) +
   nouvelle route `PUT /api/marchands/:id/options-payantes` (réservée au super-administrateur, voir
   Étape 12) + filtrage serveur sur `PUT /api/:id/catalogue` et `PUT /api/:id/numero-whatsapp-public`
-  qui empêche un contournement de ces options par appel direct à l'API
+  qui empêche un contournement de ces options par appel direct à l'API + route
+  `PUT /api/marchands/:id/options-payantes` étendue à une 3e option (`optionNotificationsStatut`) +
+  filtrage serveur équivalent sur `PUT /api/:id/parametres` (bloc `notifStatut`) + branchement de
+  l'envoi de notification client sur `PUT /api/:id/commandes/:orderId/statut` (Étape 15)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -376,14 +414,17 @@ moteur de conversation avec un article en Stock illimité et un article à stock
   l'onglet Catalogue (Étape 10) + case "Stock illimité" par article, avec affichage "∞ Illimité" dans
   la colonne Stock virtuel (Étape 11) + nouveau bloc "Options payantes" réservé au super-administrateur
   dans Mon compte, qui masque entièrement les deux fonctionnalités ci-dessus côté marchand tant qu'elles
-  ne sont pas débloquées (Étape 12)
+  ne sont pas débloquées (Étape 12) + statut "Commandée" ajouté au menu déroulant des commandes + nouveau
+  bloc "Notifications de statut" (4 statuts activables indépendamment, texte bilingue par statut) dans
+  l'onglet Paramètres, visible uniquement si l'option est débloquée + 3e case dans "Options payantes"
+  (Étape 15)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
   migration automatique au démarrage) + correctif du bug employés décrit ci-dessus, étendu pour protéger
   également ces deux colonnes + nouvelle colonne `numero_whatsapp_public` (Étape 10) + nouvelles colonnes
   `option_stock_illimite` et `option_lien_commande`, fausses par défaut pour tous les marchands existants
-  (Étape 12)
+  (Étape 12) + nouvelle colonne `option_notifications_statut`, fausse par défaut (Étape 15)
 
 ## Comment déployer
 

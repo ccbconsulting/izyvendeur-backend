@@ -396,7 +396,8 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false,
     logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null,
     numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null,
-    optionStockIllimite: e.merchant.optionStockIllimite === true, optionLienCommande: e.merchant.optionLienCommande === true
+    optionStockIllimite: e.merchant.optionStockIllimite === true, optionLienCommande: e.merchant.optionLienCommande === true,
+    optionNotificationsStatut: e.merchant.optionNotificationsStatut === true
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -648,17 +649,19 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut } = req.body || {};
   const patch = {};
   if (optionStockIllimite !== undefined) patch.optionStockIllimite = !!optionStockIllimite;
   if (optionLienCommande !== undefined) patch.optionLienCommande = !!optionLienCommande;
+  if (optionNotificationsStatut !== undefined) patch.optionNotificationsStatut = !!optionNotificationsStatut;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
   const maj = await db.updateMerchantFields(req.params.id, patch);
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
   entry.merchant.optionStockIllimite = maj.optionStockIllimite;
   entry.merchant.optionLienCommande = maj.optionLienCommande;
-  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}.`);
-  res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande });
+  entry.merchant.optionNotificationsStatut = maj.optionNotificationsStatut;
+  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}.`);
+  res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut });
 });
 
 // Corrige le nom affiche et/ou le phone_number_id WhatsApp d'un marchand DEJA CREE (ex: faute de frappe a
@@ -792,7 +795,11 @@ app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { statut, raisonAnnulation } = req.body || {};
-  const order = entry.engine.updateOrderStatus(req.params.orderId, statut, raisonAnnulation);
+  // Le 4e argument decide si un message WhatsApp de notification part vers le CLIENT (voir
+  // notifierChangementStatutCommande dans conversation.js) - reserve aux marchands debloques par le
+  // super-administrateur (option payante "Notifications de statut", voir /options-payantes ci-dessus).
+  // L'engine lui-meme decide ensuite, statut par statut, si ce marchand l'a active et avec quel texte.
+  const order = entry.engine.updateOrderStatus(req.params.orderId, statut, raisonAnnulation, entry.merchant.optionNotificationsStatut === true);
   if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
   res.json(order);
 });
@@ -838,7 +845,16 @@ app.get("/api/:id/parametres", protegerAcces, (req, res) => {
 
 app.put("/api/:id/parametres", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
-  res.json(entry.engine.updateSettings(req.body || {}));
+  let corps = req.body || {};
+  // Meme principe de filtrage cote serveur que stockIllimite (PUT /api/:id/catalogue) et
+  // numero-whatsapp-public ci-dessous : un marchand ne peut pas regler ses notifications de statut par
+  // appel API direct tant que le super-administrateur n'a pas debloque l'option pour lui, meme si
+  // l'interface /admin ne montre jamais ce bloc dans ce cas.
+  if (!entry.merchant.optionNotificationsStatut && corps.notifStatut !== undefined) {
+    corps = Object.assign({}, corps);
+    delete corps.notifStatut;
+  }
+  res.json(entry.engine.updateSettings(corps));
 });
 
 // -- Numero de notification personnel (recoit un message WhatsApp quand un client demande a parler a un

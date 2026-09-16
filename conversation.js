@@ -23,8 +23,40 @@ const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSome
 // pourra jamais l'atteindre.
 const STOCK_ILLIMITE_SENTINELLE = 999999;
 
-const RESERVING_STATUSES = ["Confirmée", "Expédiée"];
-const STATUT_LIST = ["Nouvelle", "Confirmée", "Expédiée", "Livrée", "Annulée"];
+// "Commandée" (ajoutee le 16 septembre 2026, pour les marchands style dropshipping - voir plus bas) se
+// place entre "Confirmée" et "Expédiée" : le marchand a confirme avec le client PUIS commande l'article
+// chez son propre fournisseur. Elle reste une statut "reservant" comme les deux autres, sinon le stock
+// redeviendrait disponible pour un autre client pendant que l'article est chez le fournisseur - ce serait
+// une regression par rapport au comportement actuel.
+const RESERVING_STATUSES = ["Confirmée", "Commandée", "Expédiée"];
+const STATUT_LIST = ["Nouvelle", "Confirmée", "Commandée", "Expédiée", "Livrée", "Annulée"];
+
+// Notifications client automatiques sur changement de statut (ajoutees le 16 septembre 2026, option
+// payante superadmin - voir server.js option "optionNotificationsStatut" sur le marchand). Le marchand
+// active/desactive independamment chacun de ces 4 statuts (pas "Nouvelle" - creation automatique, ni
+// "Confirmée" - deja couverte par le message de confirmation automatique existant) et peut personnaliser
+// son propre texte par statut (bilingue) ; un texte par defaut est utilise si le marchand laisse le champ
+// vide alors que le statut est active. "{ref}" dans un texte personnalise est remplace par la reference
+// de la commande (ex: CMD-0042).
+const CLES_STATUT_NOTIF = { "Commandée": "commandee", "Expédiée": "expediee", "Livrée": "livree", "Annulée": "annulee" };
+const NOTIF_STATUT_DEFAUT = {
+  commandee: {
+    fr: "Bonjour ! Votre commande {ref} vient d'être passée auprès de notre fournisseur. Nous vous tiendrons informé(e) de la suite.",
+    en: "Hello! Your order {ref} has just been placed with our supplier. We'll keep you posted."
+  },
+  expediee: {
+    fr: "Bonne nouvelle ! Votre commande {ref} a été expédiée. Elle est en route vers vous.",
+    en: "Good news! Your order {ref} has been shipped and is on its way."
+  },
+  livree: {
+    fr: "Votre commande {ref} a été livrée. Merci pour votre confiance !",
+    en: "Your order {ref} has been delivered. Thank you for your trust!"
+  },
+  annulee: {
+    fr: "Votre commande {ref} a été annulée.",
+    en: "Your order {ref} has been cancelled."
+  }
+};
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "2", "3"];
 
 // Garde-fou anti-inondation : au-dela de ce nombre de commandes "Nouvelle" (jamais confirmees) creees
@@ -389,7 +421,11 @@ function createCatalogEngine(merchantKey, options) {
       statut: "Nouvelle",
       raisonAnnulation: null,
       source: sess.fromPhone === PHONE_SIMULATEUR ? "simulateur" : "whatsapp",
-      fromWhatsapp: sess.fromPhone || null
+      fromWhatsapp: sess.fromPhone || null,
+      // Langue choisie par le client au moment de l'achat - conservee sur la commande (pas seulement sur
+      // la session, qui peut etre remise a zero ou disparaitre) pour pouvoir notifier le client dans la
+      // bonne langue lors d'un changement de statut fait bien plus tard depuis /admin.
+      langue: sess.langue === "en" ? "en" : "fr"
     };
     state.orders.push(order);
     saveState();
@@ -1293,11 +1329,43 @@ function createCatalogEngine(merchantKey, options) {
     return p;
   }
 
-  function updateOrderStatus(orderId, newStatus, raisonAnnulation) {
+  // Envoie (si applicable) le message WhatsApp de notification de changement de statut au CLIENT (pas au
+  // marchand - voir notifierMarchand plus haut pour les alertes marchand). Ne fait rien silencieusement
+  // si : le statut n'est pas l'un des 4 notifiables, la commande n'a pas de vrai numero WhatsApp client
+  // (Simulateur), ou le marchand n'a pas active ce statut precis dans ses parametres (voir getSettings /
+  // updateSettings, cle state.settings.notifStatut). Toujours en fire-and-forget (voir updateOrderStatus).
+  async function notifierChangementStatutCommande(order, newStatus) {
+    const cle = CLES_STATUT_NOTIF[newStatus];
+    if (!cle || !order.fromWhatsapp || order.source !== "whatsapp") return;
+    const conf = (state.settings.notifStatut && state.settings.notifStatut[cle]) || {};
+    if (!conf.active) return;
+    const langue = order.langue === "en" ? "en" : "fr";
+    const ref = "CMD-" + String(order.id).padStart(4, "0");
+    let texte = langue === "en"
+      ? (conf.messageEn && conf.messageEn.trim()) || NOTIF_STATUT_DEFAUT[cle].en
+      : (conf.message && conf.message.trim()) || NOTIF_STATUT_DEFAUT[cle].fr;
+    texte = texte.split("{ref}").join(ref);
+    if (newStatus === "Annulée" && order.raisonAnnulation) {
+      texte += langue === "en" ? "\nReason: " + order.raisonAnnulation : "\nRaison : " + order.raisonAnnulation;
+    }
+    await envoyer(order.fromWhatsapp, texte);
+    journaliser(order.fromWhatsapp, "bot", texte);
+  }
+
+  // `notifierClientActif` : decide par server.js a partir du marchand (option payante superadmin
+  // "optionNotificationsStatut", voir db.js) - l'engine ne connait pas ce reglage-la, seulement les
+  // reglages fins par statut (state.settings.notifStatut) via notifierChangementStatutCommande ci-dessus.
+  function updateOrderStatus(orderId, newStatus, raisonAnnulation, notifierClientActif) {
     if (!state) return null;
     const order = state.orders.filter((o) => o.id === Number(orderId))[0];
     if (!order) return null;
+    const oldStatus = order.statut;
     applyStatusChange(order, newStatus, raisonAnnulation);
+    if (notifierClientActif && oldStatus !== newStatus) {
+      notifierChangementStatutCommande(order, newStatus).catch((erreur) =>
+        console.error("[" + merchantKey + "] Echec de la notification client (changement de statut " + newStatus + ") :", erreur)
+      );
+    }
     return order;
   }
 
