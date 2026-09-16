@@ -215,6 +215,7 @@ const I18N = {
     promptRaisonAnnulation: "Raison de l'annulation (optionnel) :",
     statutNouvelle: "Nouvelle",
     statutConfirmee: "Confirmée",
+    statutCommandee: "Commandée",
     statutExpediee: "Expédiée",
     statutLivree: "Livrée",
     statutAnnulee: "Annulée",
@@ -411,7 +412,17 @@ const I18N = {
     noteOptionsPayantes: "Réservé au super-administrateur : ces améliorations n'existaient pas à l'origine dans IzyVendeur — débloquez-les ici uniquement pour les marchands qui y ont souscrit. Un marchand ne voit ni la case ni le bouton correspondant tant que l'option n'est pas cochée ici.",
     labelOptionStockIllimite: "Stock illimité (case à cocher par article dans le Catalogue)",
     labelOptionLienCommande: "Lien de commande (numéro WhatsApp affiché + bouton « Copier le lien » par article)",
+    labelOptionNotifStatut: "Notifications de statut (message WhatsApp automatique au client)",
     alertOptionsEnregistrees: "Options enregistrées.",
+
+    h3NotifStatut: "Notifications de statut (facultatif)",
+    descNotifStatut: "Envoyez automatiquement un message WhatsApp au client quand une de ses commandes change de statut. Activez uniquement les statuts qui vous intéressent — les autres restent silencieux. Laissez un texte vide pour utiliser un message par défaut correct. « {ref} » dans votre texte est remplacé par la référence de la commande (ex : CMD-0042).",
+    labelNotifCommandeeActive: "Notifier à « Commandée » (article commandé auprès du fournisseur)",
+    labelNotifExpedieeActive: "Notifier à « Expédiée »",
+    labelNotifLivreeActive: "Notifier à « Livrée »",
+    labelNotifAnnuleeActive: "Notifier à « Annulée » (inclut automatiquement la raison si vous l'avez renseignée)",
+    labelMessageFr: "Message — français",
+    labelMessageEn: "Message — English (facultatif : utilisé uniquement si le client a choisi English ; laissez vide pour utiliser une version par défaut)",
 
     employesTitre: "Employés ({n})",
     noteEmployes: "Chaque employé se connecte à /admin avec son propre identifiant et mot de passe, et ne voit que les onglets correspondant aux accès cochés ci-dessous — jamais cet onglet \"Employés\", ni la gestion du marchand.",
@@ -545,6 +556,7 @@ const I18N = {
     promptRaisonAnnulation: "Cancellation reason (optional):",
     statutNouvelle: "New",
     statutConfirmee: "Confirmed",
+    statutCommandee: "Ordered",
     statutExpediee: "Shipped",
     statutLivree: "Delivered",
     statutAnnulee: "Cancelled",
@@ -741,7 +753,17 @@ const I18N = {
     noteOptionsPayantes: "Super-administrator only: these enhancements weren't part of IzyVendeur originally — unlock them here only for merchants who've subscribed to them. A merchant sees neither the checkbox nor the button until it's checked here.",
     labelOptionStockIllimite: "Unlimited stock (per-item checkbox in the Catalog tab)",
     labelOptionLienCommande: "Order link (displayed WhatsApp number + per-item \"Copy link\" button)",
+    labelOptionNotifStatut: "Status notifications (automatic WhatsApp message to the customer)",
     alertOptionsEnregistrees: "Options saved.",
+
+    h3NotifStatut: "Status notifications (optional)",
+    descNotifStatut: "Automatically send a WhatsApp message to the customer when one of their orders changes status. Only enable the statuses you care about — the others stay silent. Leave a text empty to use a sensible default message. \"{ref}\" in your text is replaced with the order reference (e.g. CMD-0042).",
+    labelNotifCommandeeActive: "Notify on \"Ordered\" (item placed with the supplier)",
+    labelNotifExpedieeActive: "Notify on \"Shipped\"",
+    labelNotifLivreeActive: "Notify on \"Delivered\"",
+    labelNotifAnnuleeActive: "Notify on \"Cancelled\" (automatically includes the reason if you provided one)",
+    labelMessageFr: "Message — French",
+    labelMessageEn: "Message — English (optional: used only if the customer chose English; leave empty to use a default version)",
 
     employesTitre: "Employees ({n})",
     noteEmployes: "Each employee logs in to /admin with their own username and password, and only sees the tabs matching the access checked below — never this \"Employees\" tab, nor the merchant management.",
@@ -783,7 +805,7 @@ function localeCourante() { return langueAdmin === "en" ? "en-US" : "fr-FR"; }
 // Libelles AFFICHES pour des valeurs de donnees qui, elles, restent fixes (francaises) cote
 // API/base - voir le commentaire en tete de section.
 function libelleStatutCommande(s) {
-  const map = { "Nouvelle": "statutNouvelle", "Confirmée": "statutConfirmee", "Expédiée": "statutExpediee", "Livrée": "statutLivree", "Annulée": "statutAnnulee" };
+  const map = { "Nouvelle": "statutNouvelle", "Confirmée": "statutConfirmee", "Commandée": "statutCommandee", "Expédiée": "statutExpediee", "Livrée": "statutLivree", "Annulée": "statutAnnulee" };
   return map[s] ? t(map[s]) : s;
 }
 function libelleStatutRdv(s) {
@@ -1204,7 +1226,7 @@ async function renderCommandes() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const commandes = await api("/api/" + marchandActif.id + "/commandes");
-  const statuts = ["Nouvelle", "Confirmée", "Expédiée", "Livrée", "Annulée"];
+  const statuts = ["Nouvelle", "Confirmée", "Commandée", "Expédiée", "Livrée", "Annulée"];
 
   let visibles = commandes.slice();
   if (commandesFiltreStatut !== "Tous") visibles = visibles.filter((o) => o.statut === commandesFiltreStatut);
@@ -1270,6 +1292,42 @@ async function renderCommandes() {
   });
 }
 
+// Notifications de statut (option payante superadmin "optionNotificationsStatut", voir
+// blocOptionsPayantesHtml plus bas) : 4 statuts activables independamment, chacun avec son propre texte
+// bilingue - voir notifierChangementStatutCommande dans conversation.js pour ce qui est reellement envoye.
+const STATUTS_NOTIF = [
+  { cle: "commandee", labelActive: "labelNotifCommandeeActive" },
+  { cle: "expediee", labelActive: "labelNotifExpedieeActive" },
+  { cle: "livree", labelActive: "labelNotifLivreeActive" },
+  { cle: "annulee", labelActive: "labelNotifAnnuleeActive" }
+];
+function blocNotifStatutHtml(notifStatut) {
+  const ns = notifStatut || {};
+  return "<h3>" + t("h3NotifStatut") + "</h3>" +
+    "<p style='color:#666; font-size:0.9em;'>" + t("descNotifStatut") + "</p>" +
+    STATUTS_NOTIF.map((s) => {
+      const conf = ns[s.cle] || {};
+      return "<div style='border:1px solid #e1e5ea;border-radius:8px;padding:10px 12px;margin-bottom:10px;'>" +
+        "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='notifActive_" + s.cle + "'" + (conf.active ? " checked" : "") + " /> " + t(s.labelActive) + "</label>" +
+        "<label>" + t("labelMessageFr") + "</label>" +
+        "<textarea id='notifMsgFr_" + s.cle + "' rows='2'>" + esc(conf.message || "") + "</textarea>" +
+        "<label>" + t("labelMessageEn") + "</label>" +
+        "<textarea id='notifMsgEn_" + s.cle + "' rows='2'>" + esc(conf.messageEn || "") + "</textarea>" +
+      "</div>";
+    }).join("");
+}
+function lireNotifStatutFormulaire() {
+  const out = {};
+  STATUTS_NOTIF.forEach((s) => {
+    out[s.cle] = {
+      active: document.getElementById("notifActive_" + s.cle).checked,
+      message: document.getElementById("notifMsgFr_" + s.cle).value,
+      messageEn: document.getElementById("notifMsgEn_" + s.cle).value
+    };
+  });
+  return out;
+}
+
 async function renderParametresCatalogue() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -1293,22 +1351,22 @@ async function renderParametresCatalogue() {
     "<input id='retraitAdresse' value=\"" + esc(retrait.adresse || "") + "\" placeholder=\"" + esc(t("placeholderAdresseBoutique")) + "\" />" +
     "<label>" + t("labelHorairesRetrait") + "</label>" +
     "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder=\"" + esc(t("placeholderHorairesRetrait")) + "\" />" +
+    (marchandActif.optionNotificationsStatut ? blocNotifStatutHtml(parametres.notifStatut) : "") +
     "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>";
   document.getElementById("btnSauverParams").onclick = async () => {
     try {
-      await api("/api/" + marchandActif.id + "/parametres", {
-        method: "PUT",
-        body: JSON.stringify({
-          messageAccueilSupplementaire: document.getElementById("accueilPerso").value,
-          messageAccueilSupplementaireEn: document.getElementById("accueilPersoEn").value,
-          autoConfirmMessage: document.getElementById("msgConfirm").value,
-          autoConfirmMessageEn: document.getElementById("msgConfirmEn").value,
-          retrait: {
-            adresse: document.getElementById("retraitAdresse").value.trim(),
-            horaires: document.getElementById("retraitHoraires").value.trim()
-          }
-        })
-      });
+      const corps = {
+        messageAccueilSupplementaire: document.getElementById("accueilPerso").value,
+        messageAccueilSupplementaireEn: document.getElementById("accueilPersoEn").value,
+        autoConfirmMessage: document.getElementById("msgConfirm").value,
+        autoConfirmMessageEn: document.getElementById("msgConfirmEn").value,
+        retrait: {
+          adresse: document.getElementById("retraitAdresse").value.trim(),
+          horaires: document.getElementById("retraitHoraires").value.trim()
+        }
+      };
+      if (marchandActif.optionNotificationsStatut) corps.notifStatut = lireNotifStatutFormulaire();
+      await api("/api/" + marchandActif.id + "/parametres", { method: "PUT", body: JSON.stringify(corps) });
       alert(t("alertParametresEnregistres"));
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
@@ -1991,18 +2049,21 @@ function brancherBlocNumeroPublic() {
   };
 }
 
-// Options payantes (superadmin uniquement, demandees le 15 septembre 2026) : "Stock illimite" et "Lien de
-// commande" n'etaient pas prevues a l'origine dans IzyVendeur - desormais debloquables independamment par
-// marchand, uniquement depuis ce bloc. Tant que ce n'est pas coche ici, la case "Stock illimite" (onglet
-// Catalogue) et tout le bloc "Lien de commande" (bouton "Copier le lien" + reglage du numero WhatsApp
-// affiche ci-dessus) restent totalement invisibles cote marchand - voir renderCatalogue() et les deux
-// points d'appel de blocNumeroPublicHtml()/brancherBlocNumeroPublic() dans renderCompte() ci-dessous, tous
-// gardes par marchandActif.optionStockIllimite / optionLienCommande.
+// Options payantes (superadmin uniquement, demandees le 15 puis le 16 septembre 2026) : "Stock illimite",
+// "Lien de commande" et "Notifications de statut" n'etaient pas prevues a l'origine dans IzyVendeur -
+// desormais debloquables independamment par marchand, uniquement depuis ce bloc. Tant que ce n'est pas
+// coche ici, la case "Stock illimite" (onglet Catalogue), tout le bloc "Lien de commande" (bouton "Copier
+// le lien" + reglage du numero WhatsApp affiche ci-dessus) et le bloc "Notifications de statut" (onglet
+// Parametres, voir blocNotifStatutHtml plus bas) restent totalement invisibles cote marchand - voir
+// renderCatalogue(), renderParametresCatalogue() et les deux points d'appel de
+// blocNumeroPublicHtml()/brancherBlocNumeroPublic() dans renderCompte() ci-dessous, tous gardes par
+// marchandActif.optionStockIllimite / optionLienCommande / optionNotificationsStatut.
 function blocOptionsPayantesHtml() {
   return "<h3>" + t("h3OptionsPayantes") + "</h3>" +
     "<p class='raison'>" + t("noteOptionsPayantes") + "</p>" +
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionStockIllimite'" + (marchandActif.optionStockIllimite ? " checked" : "") + " /> " + t("labelOptionStockIllimite") + "</label>" +
-    "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionLienCommande'" + (marchandActif.optionLienCommande ? " checked" : "") + " /> " + t("labelOptionLienCommande") + "</label>" +
+    "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionLienCommande'" + (marchandActif.optionLienCommande ? " checked" : "") + " /> " + t("labelOptionLienCommande") + "</label>" +
+    "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionNotifStatut'" + (marchandActif.optionNotificationsStatut ? " checked" : "") + " /> " + t("labelOptionNotifStatut") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>";
 }
 function brancherBlocOptionsPayantes() {
@@ -2012,7 +2073,8 @@ function brancherBlocOptionsPayantes() {
         method: "PUT",
         body: JSON.stringify({
           optionStockIllimite: document.getElementById("champOptionStockIllimite").checked,
-          optionLienCommande: document.getElementById("champOptionLienCommande").checked
+          optionLienCommande: document.getElementById("champOptionLienCommande").checked,
+          optionNotificationsStatut: document.getElementById("champOptionNotifStatut").checked
         })
       });
       alert(t("alertOptionsEnregistrees"));
