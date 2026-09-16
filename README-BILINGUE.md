@@ -369,6 +369,51 @@ client ayant choisi English, raison d'annulation automatiquement ajoutée pour "
 des réglages après rechargement de la page, et blocage confirmé d'une tentative de contournement par
 appel API direct tant que l'option n'est pas débloquée.
 
+## Étape 16 — "Contacter un conseiller" (renommage) + choix réponse écrite/rappel + reprise à 5 min (nouveau)
+
+Demandé le 16 septembre 2026 : le bouton/menu "Parler à un conseiller" laissait penser à un échange
+vocal alors que tout se passe par écrit sur WhatsApp — renommé en **"Contacter un conseiller"** /
+"Contact an advisor" partout où il apparaît (menu déroulant du catalogue/services, boutons de choix
+livraison, menu du panier).
+
+**Choix réponse écrite ou rappel** : dès qu'un client demande à être mis en relation avec un humain
+(bouton "Contacter un conseiller" ou phrase libre du type "je veux parler à un conseiller"), le bot
+lui pose UNE question tactile ("Réponse ici" / "Être rappelé(e)") avant de le mettre en attente.
+Aucun numéro supplémentaire n'est demandé : c'est le numéro WhatsApp du client qui sert de numéro de
+rappel. Vous recevez l'alerte habituelle dès la demande initiale (comme avant, sans délai) ; si le
+client choisit ensuite "Être rappelé(e)", vous recevez un second message signalant sa préférence
+(préfixé "[Préfère être rappelé(e)]"), sans toucher au nombre de variables de votre modèle Meta
+`izyvendeur_alerte_humain` déjà approuvé — seul le texte à l'intérieur change. Si le client choisit
+"Réponse ici", rien de plus ne vous est envoyé.
+
+**Le choix d'un rappel n'empêche jamais l'écrit** : c'est exactement le même mécanisme de mise en
+pause dans les deux cas — si l'appel ne peut pas aboutir (mauvais numéro, indisponibilité...), la
+conversation écrite reste le filet de sécurité, avec la même reprise automatique décrite ci-dessous.
+
+**Délai de pause réduit à 5 minutes** (au lieu de 10) : si vous n'avez pas répondu au client dans les
+5 minutes suivant sa demande (écrite ou par téléphone), le bot reprend automatiquement la main — mais
+annonce désormais clairement la reprise ("Merci de votre patience 🙏 Pouvons-nous continuer, là où
+nous nous étions arrêté(e)s ?") au lieu de répondre silencieusement comme avant. Le panier/la sélection
+en cours du client est toujours conservé(e) tel(le) quel(le) pendant toute la pause, reprise incluse.
+
+⚠️ Limite technique WhatsApp à connaître : cette phrase de reprise ne peut être envoyée qu'en réaction
+au PROCHAIN message du client après les 5 minutes (WhatsApp n'autorise pas d'envoi spontané en dehors
+d'une réponse à un message entrant) — si le client ne réécrit jamais, il ne la reçoit simplement pas,
+mais le bot reste évidemment prêt à répondre normalement dès qu'il écrit à nouveau.
+
+En prime, un bug préexistant a été corrigé au passage : côté moteur rendez-vous
+(`conversationService.js`), le message envoyé au client lors d'une demande d'humain, ainsi que la
+mention "un conseiller reste disponible", référençaient des constantes qui n'existaient pas dans
+`shared.js` — le client recevait donc littéralement le mot "undefined" au lieu du message prévu. Ce
+volet est maintenant branché sur les mêmes fonctions que le moteur catalogue et testé en conséquence.
+
+Testé par appel direct des deux moteurs (catalogue et rendez-vous) le 16 septembre 2026 : question
+écrit/appel posée à la demande d'un humain, alerte marchand immédiate avec le texte d'origine,
+confirmation écrite correcte, confirmation "on vous appelle" correcte avec second message marchand
+préfixé, silence du bot pendant la pause, reprise automatique après 5 minutes avec la phrase attendue
+ET poursuite exacte de la sélection en cours (couleur déjà choisie conservée), et absence du mot
+"undefined" pour un premier contact côté moteur rendez-vous.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -387,11 +432,17 @@ appel API direct tant que l'option n'est pas débloquée.
   client ne confirme pas sa commande (Étape 9), vérification de stock qui ignore les articles marqués
   "Stock illimité" (Étape 11), mémorisation du texte du premier message pour le réutiliser juste
   après le choix de langue (Étape 13), suppression de l'affichage du nombre de pièces pour un
-  article en Stock illimité (Étape 14), et nouveau statut de commande "Commandée" (réservant le
-  stock comme Confirmée/Expédiée) + envoi des notifications de statut au client (Étape 15)
+  article en Stock illimité (Étape 14), nouveau statut de commande "Commandée" (réservant le
+  stock comme Confirmée/Expédiée) + envoi des notifications de statut au client (Étape 15), et
+  question "réponse écrite ici / être rappelé(e)" à la demande d'un humain + délai de pause réduit
+  à 5 minutes avec phrase de reprise explicite (Étape 16)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
-  logique de calcul du Tableau de bord par période que le moteur catalogue
-- `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV)
+  logique de calcul du Tableau de bord par période que le moteur catalogue, ainsi que la même question
+  "réponse écrite ici / être rappelé(e)" et la même reprise à 5 minutes que le moteur catalogue, en
+  corrigeant au passage un bug préexistant (message "undefined" envoyé au client, voir Étape 16)
+- `shared.js` — fonctions de gestion de langue partagées (utilisées aussi plus tard par le moteur RDV) +
+  question réponse écrite/rappel, préfixe d'alerte marchand pour le choix "rappel", délai de pause ramené
+  à 5 minutes et signal de reprise consommé une seule fois après expiration automatique (Étape 16)
 - `catalog.js` — message de confirmation par défaut en anglais
 - `server.js` — reconnaissance du message de mise en relation dans les 2 langues + **menu déroulant
   tactile Français/English** pour la porte de langue (au lieu de devoir taper FR/EN), sur le même
@@ -405,7 +456,9 @@ appel API direct tant que l'option n'est pas débloquée.
   qui empêche un contournement de ces options par appel direct à l'API + route
   `PUT /api/marchands/:id/options-payantes` étendue à une 3e option (`optionNotificationsStatut`) +
   filtrage serveur équivalent sur `PUT /api/:id/parametres` (bloc `notifStatut`) + branchement de
-  l'envoi de notification client sur `PUT /api/:id/commandes/:orderId/statut` (Étape 15)
+  l'envoi de notification client sur `PUT /api/:id/commandes/:orderId/statut` (Étape 15) +
+  renommage "Parler à un conseiller" → "Contacter un conseiller" partout + nouveau menu tactile à 2
+  boutons "Réponse ici" / "Être rappelé(e)" (Étape 16)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image

@@ -95,7 +95,7 @@ function messageChoixLangue() {
 // sessions de conversation), pas en base de donnees : un redemarrage du serveur remet les compteurs a
 // zero, ce qui est un compromis accepte pour l'instant.
 
-const DUREE_PAUSE_HUMAIN_MS = 10 * 60 * 1000; // 10 minutes
+const DUREE_PAUSE_HUMAIN_MS = 5 * 60 * 1000; // 5 minutes
 
 function normaliserPourRecherche(texte) {
   return String(texte || "")
@@ -163,8 +163,86 @@ function messageMiseEnRelation(session) {
   return t(session, MESSAGE_MISE_EN_RELATION_FR, MESSAGE_MISE_EN_RELATION_EN);
 }
 
+// Reconnait aussi bien la variante "reponse ecrite" que "rappel" (voir messageMiseEnRelationAppel
+// ci-dessous) : dans les deux cas, jamais de menu tactile apres coup (voir essayerEnvoyerMenuInteractif,
+// server.js) - l'etat de session fige derriere reste celui d'AVANT la demande d'humain (voir
+// session.attenteChoixContactHumain) et n'a plus rien a voir avec ce message de confirmation.
 function estMessageMiseEnRelation(texte) {
-  return texte === MESSAGE_MISE_EN_RELATION_FR || texte === MESSAGE_MISE_EN_RELATION_EN;
+  return (
+    texte === MESSAGE_MISE_EN_RELATION_FR ||
+    texte === MESSAGE_MISE_EN_RELATION_EN ||
+    texte === MESSAGE_MISE_EN_RELATION_APPEL_FR ||
+    texte === MESSAGE_MISE_EN_RELATION_APPEL_EN
+  );
+}
+
+// Variante utilisee quand le client a demande a etre RAPPELE (voir messageChoixContact ci-dessous) plutot
+// qu'une reponse ecrite - le reste du mecanisme (pause, historique, reprise) est rigoureusement identique,
+// seul ce message de confirmation change.
+const MESSAGE_MISE_EN_RELATION_APPEL_FR = "Très bien, un membre de notre équipe va vous appeler sous peu 🙏";
+const MESSAGE_MISE_EN_RELATION_APPEL_EN = "Great, a member of our team will call you back shortly 🙏";
+
+function messageMiseEnRelationAppel(session) {
+  return t(session, MESSAGE_MISE_EN_RELATION_APPEL_FR, MESSAGE_MISE_EN_RELATION_APPEL_EN);
+}
+
+// Prefixe ajoute au texte transmis au marchand (2e parametre du template izyvendeur_alerte_humain, voir
+// server.js/TEMPLATES_ALERTE_MARCHAND) quand le client a choisi d'etre rappele - volontairement une simple
+// annotation textuelle plutot qu'un 3e parametre de template, pour ne jamais toucher au nombre de variables
+// d'un template deja approuve par Meta. Toujours en francais (cote marchand).
+const PREFIXE_PREFERENCE_APPEL = "[Préfère être rappelé(e)] ";
+
+// ---------------- Choix "reponse ecrite" vs "etre rappele(e)" ----------------
+// Pose UNE fois, juste apres qu'un client a demande un humain (voir demandeUnHumain), pour savoir s'il
+// prefere continuer par ecrit ici ou recevoir un appel - le numero WhatsApp du client sert directement de
+// numero de rappel, aucune saisie supplementaire n'est demandee. Cote tactile, voir server.js
+// (essayerEnvoyerMenuInteractif / ID_CONTACT_ECRIT / ID_CONTACT_APPEL) pour les 2 boutons correspondants.
+const MESSAGE_CHOIX_CONTACT_FR = "Je vous mets en relation avec un membre de notre équipe. Préférez-vous une réponse écrite ici, ou être rappelé(e) ? 🙏";
+const MESSAGE_CHOIX_CONTACT_EN = "I'm connecting you with a member of our team. Would you prefer a written reply here, or a call back? 🙏";
+
+function messageChoixContact(session) {
+  return t(session, MESSAGE_CHOIX_CONTACT_FR, MESSAGE_CHOIX_CONTACT_EN);
+}
+
+// Sert au cote appelant (server.js) qui a besoin de reconnaitre CE message precis pour lui substituer les
+// 2 boutons tactiles "Reponse ici" / "Etre rappele(e)" - meme principe que estMessageMiseEnRelation, mais
+// en verifiant que le texte SE TERMINE PAR l'un des deux (comme estMessageChoixLangue) : une phrase de
+// reprise (voir messageReprisePause) peut etre ajoutee AVANT, dans le meme message.
+function estMessageChoixContact(texte) {
+  if (typeof texte !== "string" || !texte.length) return false;
+  return (
+    texte.slice(-MESSAGE_CHOIX_CONTACT_FR.length) === MESSAGE_CHOIX_CONTACT_FR ||
+    texte.slice(-MESSAGE_CHOIX_CONTACT_EN.length) === MESSAGE_CHOIX_CONTACT_EN
+  );
+}
+
+// Reconnait qu'un client, invite a choisir entre reponse ecrite et rappel (voir messageChoixContact),
+// prefere etre rappele - volontairement permissif (mots-cles FR/EN), et volontairement le SEUL cas
+// "positif" : tout le reste (y compris une reponse ambigue ou hors-sujet) est traite comme une preference
+// pour l'ecrit, le choix par defaut le moins surprenant.
+const MOTS_CLES_APPEL = [
+  "etre rappele", "etre rappelee", "rappelez moi", "rappelle moi", "un rappel", "me rappeler",
+  "m'appeler", "m appeler", "par telephone", "au telephone", "un appel", "appelez moi",
+  "appel telephonique", "telephonez moi", "je prefere un appel", "plutot un appel",
+  "call me", "call me back", "phone me", "give me a call", "by phone", "call back", "a call"
+];
+
+function detecteChoixAppel(texte) {
+  const t2 = normaliserPourRecherche(texte);
+  return MOTS_CLES_APPEL.some((mot) => t2.includes(normaliserPourRecherche(mot)));
+}
+
+// ---------------- Reprise automatique apres pause humain ----------------
+// Quand pauseHumainActive() constate que le delai est ecoule et remet enAttente a false (voir plus bas),
+// elle laisse aussi une trace (repriseAAnnoncer) pour que le TOUT PROCHAIN message du client declenche une
+// phrase explicite de reprise plutot qu'une reponse silencieuse - WhatsApp n'autorisant un envoi qu'en
+// reaction a un message entrant, ce signal ne peut etre consomme qu'a ce moment-la (voir
+// consommerSignalReprise ci-dessous).
+const MESSAGE_REPRISE_PAUSE_FR = "Merci de votre patience 🙏 Pouvons-nous continuer, là où nous nous étions arrêté(e)s ?";
+const MESSAGE_REPRISE_PAUSE_EN = "Thanks for your patience 🙏 Shall we continue, right where we left off?";
+
+function messageReprisePause(session) {
+  return t(session, MESSAGE_REPRISE_PAUSE_FR, MESSAGE_REPRISE_PAUSE_EN);
 }
 
 // Sert au cote appelant (server.js) qui a besoin de reconnaitre CE message precis (la toute premiere
@@ -192,16 +270,29 @@ function mentionHumainDisponible(session) {
 }
 
 // true si ce message doit rester SANS reponse automatique (pause en cours et delai pas encore ecoule).
-// Si le delai de 10 minutes sans reponse du marchand est ecoule, remet automatiquement enAttente a
-// false (le bot reprend la main sur CE message) et renvoie false.
+// Si le delai de 5 minutes sans reponse du marchand est ecoule, remet automatiquement enAttente a
+// false (le bot reprend la main sur CE message), pose repriseAAnnoncer pour que ce retour soit annonce
+// explicitement au client (voir consommerSignalReprise) et renvoie false.
 function pauseHumainActive(conversationsHumain, telephone) {
   const c = conversationsHumain[telephone];
   if (!c || !c.enAttente) return false;
   const ecouleMs = Date.now() - new Date(c.depuisISO).getTime();
   if (ecouleMs >= DUREE_PAUSE_HUMAIN_MS) {
     c.enAttente = false;
+    c.repriseAAnnoncer = true;
     return false;
   }
+  return true;
+}
+
+// A appeler juste apres pauseHumainActive() : renvoie true UNE SEULE fois (puis efface le signal) si la
+// pause vient tout juste de se terminer automatiquement (delai ecoule, marchand toujours pas intervenu) -
+// permet a l'appelant (conversation.js/conversationService.js) de faire preceder sa prochaine reponse de
+// messageReprisePause() plutot que de reprendre silencieusement la main.
+function consommerSignalReprise(conversationsHumain, telephone) {
+  const c = conversationsHumain[telephone];
+  if (!c || !c.repriseAAnnoncer) return false;
+  c.repriseAAnnoncer = false;
   return true;
 }
 
@@ -216,6 +307,7 @@ function demarrerPauseHumain(conversationsHumain, telephone, messageClient) {
   const c = conversationsHumain[telephone] || { historique: [] };
   c.enAttente = true;
   c.depuisISO = new Date().toISOString();
+  c.repriseAAnnoncer = false; // une nouvelle pause qui commence efface tout signal de reprise laisse par la precedente
   conversationsHumain[telephone] = c;
   ajouterMessageHistorique(conversationsHumain, telephone, "client", messageClient);
   return c;
@@ -256,9 +348,17 @@ module.exports = {
   detecterIntentionRdv,
   messageMiseEnRelation,
   estMessageMiseEnRelation,
+  messageMiseEnRelationAppel,
+  PREFIXE_PREFERENCE_APPEL,
+  messageChoixContact,
+  estMessageChoixContact,
+  MESSAGE_CHOIX_CONTACT_EN,
+  detecteChoixAppel,
+  messageReprisePause,
   estMessageChoixLangue,
   mentionHumainDisponible,
   pauseHumainActive,
+  consommerSignalReprise,
   ajouterMessageHistorique,
   demarrerPauseHumain,
   repondreHumain,

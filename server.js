@@ -1299,6 +1299,10 @@ const ID_PANIER_TERMINER = "IZY_PANIER_TERMINER";
 const ID_LANG_FR = "IZY_LANG_FR";
 const ID_LANG_EN = "IZY_LANG_EN";
 const PREFIXE_RETIRER_PANIER = "IZY_DELCART_";
+// Choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact, conversation.js /
+// conversationService.js) : 2 boutons proposes juste apres une demande d'humain.
+const ID_CONTACT_ECRIT = "IZY_CONTACT_ECRIT";
+const ID_CONTACT_APPEL = "IZY_CONTACT_APPEL";
 
 function tronquerTexte(texte, max) {
   const t = String(texte == null ? "" : texte);
@@ -1323,7 +1327,7 @@ function construireItemsListe(marchand) {
 // ce qui laisse 9 places pour les articles/services ; si plus de 9 restent apres cette page, la derniere
 // place est prise par "Voir plus ▸" a la place d'un 9eme article, pour ne jamais depasser la limite tout
 // en gardant tout le catalogue/service atteignable par clics (pas seulement les 9 premiers).
-// `lignesSupplementaires` (optionnel) : lignes de navigation ajoutees avant "Parler à un conseiller" - ex.
+// `lignesSupplementaires` (optionnel) : lignes de navigation ajoutees avant "Contacter un conseiller" - ex.
 // "◀ Autres articles" sur les listes de couleur/taille/variante (voir essayerEnvoyerMenuInteractif), pour
 // permettre au client d'explorer le catalogue avant de se decider sans jamais y etre oblige.
 function construireLignesListe(items, offset, etat, lignesSupplementaires) {
@@ -1340,7 +1344,7 @@ function construireLignesListe(items, offset, etat, lignesSupplementaires) {
     rows.push({ id: PREFIXE_VOIR_PLUS + (offset + nbAffiches), title: tW(etat, "Voir plus ▸", "See more ▸") });
   }
   (lignesSupplementaires || []).forEach((ligne) => rows.push(ligne));
-  rows.push({ id: ID_HUMAIN, title: tW(etat, "Parler à un conseiller", "Talk to an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
+  rows.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
   return rows;
 }
 
@@ -1360,6 +1364,8 @@ function resoudreTexteInteractif(marchand, interactive) {
   if (id === ID_LANG_FR) return "fr"; // reponse a la porte bilingue (voir sh.detecterChoixLangueInitial)
   if (id === ID_LANG_EN) return "en";
   if (id === ID_HUMAIN) return "un conseiller";
+  if (id === ID_CONTACT_ECRIT) return "réponse écrite ici";
+  if (id === ID_CONTACT_APPEL) return "être rappelé";
   if (id === ID_OUI) return "oui";
   if (id === ID_NON) return "non";
   if (id === ID_PANIER) return "voir mon panier";
@@ -1408,6 +1414,18 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     ]);
   }
 
+  // Choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact) : pose juste apres une
+  // demande d'humain, avant meme qu'un etat de session interactif soit pertinent ici - meme logique de
+  // retour immediat que la porte de langue ci-dessus. La langue du message deja calcule (FR ou EN, voir
+  // sh.MESSAGE_CHOIX_CONTACT_EN) determine celle des 2 boutons, `etat` n'etant pas encore disponible ici.
+  if (sh.estMessageChoixContact(texte)) {
+    const langueEn = texte.slice(-sh.MESSAGE_CHOIX_CONTACT_EN.length) === sh.MESSAGE_CHOIX_CONTACT_EN;
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: ID_CONTACT_ECRIT, title: langueEn ? "Reply here" : "Réponse ici" },
+      { id: ID_CONTACT_APPEL, title: langueEn ? "Call me back" : "Être rappelé(e)" }
+    ]);
+  }
+
   if (typeof marchand.engine.getEtatSession !== "function") return false;
   const etat = marchand.engine.getEtatSession(destinataire);
   if (!etat) return false;
@@ -1432,7 +1450,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   // dediee "awaiting_mode_livraison" (PAS "idle", contrairement a couleur/taille/variante ci-dessous).
   if (etat.stage === "awaiting_mode_livraison" && etat.pendingChoice && etat.pendingChoice.type === "mode_livraison") {
     const boutons = etat.pendingChoice.options.slice(0, 2).map((opt) => ({ id: String(opt), title: tronquerTexte(String(opt), 20) }));
-    boutons.push({ id: ID_HUMAIN, title: tW(etat, "Parler à un conseiller", "Talk to an advisor") });
+    boutons.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor") });
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, boutons);
   }
 
@@ -1483,7 +1501,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     }));
     rows.push({ id: ID_PANIER_CONTINUER, title: tronquerTexte(tW(etat, "🛍️ Continuer mes achats", "🛍️ Keep shopping"), 24) });
     rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte(tW(etat, "✅ Terminer ma commande", "✅ Complete my order"), 24) });
-    rows.push({ id: ID_HUMAIN, title: tW(etat, "Parler à un conseiller", "Talk to an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
+    rows.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
     return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Gérer mon panier", "Manage my cart"), [{ title: tW(etat, "Votre panier", "Your cart"), rows }]);
   }
 

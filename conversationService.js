@@ -693,31 +693,67 @@ function createServiceEngine(merchantKey, options) {
 
     journaliser(fromPhone, "client", text);
 
+    // Reponse du client au choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact,
+    // pose juste apres une demande d'humain ci-dessous) : verifiee AVANT pauseHumainActive() car la pause
+    // demarre des la demande initiale (meme mecanisme unique pour les 2 cas, voir shared.js) - sans cette
+    // priorite, ce message serait avale par la pause et le client n'aurait jamais de reponse.
+    const sessionExistante = sessions[fromPhone];
+    if (sessionExistante && sessionExistante.attenteChoixContactHumain) {
+      sessionExistante.attenteChoixContactHumain = false;
+      const veutAppel = sh.detecteChoixAppel(text);
+      const texteOrigine = sessionExistante.texteDemandeHumainOrigine || text;
+      delete sessionExistante.texteDemandeHumainOrigine;
+      sh.ajouterMessageHistorique(conversationsHumain, fromPhone, "client", text);
+      if (veutAppel) {
+        // Deja alerte au moment de la demande initiale (texte d'origine) - on complete ici avec un second
+        // message signalant la preference d'appel, sans jamais toucher au nombre de parametres du template
+        // izyvendeur_alerte_humain deja approuve par Meta (voir sh.PREFIXE_PREFERENCE_APPEL).
+        notifierMarchand("humain", [fromPhone, sh.PREFIXE_PREFERENCE_APPEL + texteOrigine]).catch((erreur) =>
+          console.error("[" + merchantKey + "] Echec de la notification marchand (appel) :", erreur)
+        );
+      }
+      const msgHumain = veutAppel ? sh.messageMiseEnRelationAppel(sessionExistante) : sh.messageMiseEnRelation(sessionExistante);
+      journaliser(fromPhone, "bot", msgHumain);
+      return msgHumain;
+    }
+
     if (sh.pauseHumainActive(conversationsHumain, fromPhone)) {
       sh.ajouterMessageHistorique(conversationsHumain, fromPhone, "client", text);
       return null;
     }
 
-    if (sh.demandeUnHumain(text)) {
-      sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
-      notifierMarchand("humain", [fromPhone, text]).catch((erreur) =>
-        console.error("[" + merchantKey + "] Echec de la notification marchand (humain) :", erreur)
-      );
-      journaliser(fromPhone, "bot", sh.MESSAGE_MISE_EN_RELATION);
-      return sh.MESSAGE_MISE_EN_RELATION;
-    }
+    // Vient de reprendre la main automatiquement (delai de pause ecoule, voir sh.consommerSignalReprise) :
+    // la reponse de ce tour-ci (quelle qu'elle soit plus bas) sera precedee d'une phrase de reprise
+    // explicite plutot que de reprendre silencieusement, pour ne pas deconcerter le client.
+    const reprisePauseHumain = sh.consommerSignalReprise(conversationsHumain, fromPhone);
 
     // Premier contact JAMAIS vu de ce numero (avant que getSession() ne cree sa session) : on glissera la
     // mention du conseiller humain disponible a la reponse qui suit, une seule fois.
     const estPremierContact = !sessions[fromPhone] && !humanHintDonne[fromPhone];
     const session = getSession(fromPhone);
 
+    if (sh.demandeUnHumain(text)) {
+      session.attenteChoixContactHumain = true;
+      session.texteDemandeHumainOrigine = text;
+      sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
+      notifierMarchand("humain", [fromPhone, text]).catch((erreur) =>
+        console.error("[" + merchantKey + "] Echec de la notification marchand (humain) :", erreur)
+      );
+      let msgChoix = sh.messageChoixContact(session);
+      if (reprisePauseHumain) msgChoix = sh.messageReprisePause(session) + "\n\n" + msgChoix;
+      journaliser(fromPhone, "bot", msgChoix);
+      return msgChoix;
+    }
+
     const intentionRdv = sh.detecterIntentionRdv(text);
     let reponse = intentionRdv ? gererAnnulationOuReport(session, intentionRdv) : processMessage(session, text);
 
     if (estPremierContact && reponse) {
       humanHintDonne[fromPhone] = true;
-      reponse += sh.MENTION_HUMAIN_DISPONIBLE;
+      reponse += sh.mentionHumainDisponible(session);
+    }
+    if (reprisePauseHumain && reponse) {
+      reponse = sh.messageReprisePause(session) + "\n\n" + reponse;
     }
     journaliser(fromPhone, "bot", reponse);
     return reponse;

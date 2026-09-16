@@ -950,6 +950,30 @@ function createCatalogEngine(merchantKey, options) {
 
     journaliser(fromPhone, "client", text);
 
+    // Reponse du client au choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact,
+    // pose juste apres une demande d'humain ci-dessous) : verifiee AVANT pauseHumainActive() car la pause
+    // demarre des la demande initiale (meme mecanisme unique pour les 2 cas, voir shared.js) - sans cette
+    // priorite, ce message serait avale par la pause et le client n'aurait jamais de reponse.
+    const sessionExistante = sessions[fromPhone];
+    if (sessionExistante && sessionExistante.attenteChoixContactHumain) {
+      sessionExistante.attenteChoixContactHumain = false;
+      const veutAppel = sh.detecteChoixAppel(text);
+      const texteOrigine = sessionExistante.texteDemandeHumainOrigine || text;
+      delete sessionExistante.texteDemandeHumainOrigine;
+      sh.ajouterMessageHistorique(conversationsHumain, fromPhone, "client", text);
+      if (veutAppel) {
+        // Deja alerte au moment de la demande initiale (texte d'origine) - on complete ici avec un second
+        // message signalant la preference d'appel, sans jamais toucher au nombre de parametres du template
+        // izyvendeur_alerte_humain deja approuve par Meta (voir sh.PREFIXE_PREFERENCE_APPEL).
+        notifierMarchand("humain", [fromPhone, sh.PREFIXE_PREFERENCE_APPEL + texteOrigine]).catch((erreur) =>
+          console.error("[" + merchantKey + "] Echec de la notification marchand (appel) :", erreur)
+        );
+      }
+      const msgHumain = veutAppel ? sh.messageMiseEnRelationAppel(sessionExistante) : sh.messageMiseEnRelation(sessionExistante);
+      journaliser(fromPhone, "bot", msgHumain);
+      return msgHumain;
+    }
+
     // Conversation deja mise en pause pour un humain : on reste silencieux tant que le delai n'est pas
     // ecoule (voir shared.js). Une fois le delai depasse, pauseHumainActive() remet enAttente a false et
     // le traitement normal reprend plus bas sur CE message.
@@ -957,6 +981,11 @@ function createCatalogEngine(merchantKey, options) {
       sh.ajouterMessageHistorique(conversationsHumain, fromPhone, "client", text);
       return null;
     }
+
+    // Vient de reprendre la main automatiquement (delai de pause ecoule, voir sh.consommerSignalReprise) :
+    // la reponse de ce tour-ci (quelle qu'elle soit plus bas) sera precedee d'une phrase de reprise
+    // explicite plutot que de reprendre silencieusement, pour ne pas deconcerter le client.
+    const reprisePauseHumain = sh.consommerSignalReprise(conversationsHumain, fromPhone);
 
     const session = getSession(fromPhone);
 
@@ -999,19 +1028,23 @@ function createCatalogEngine(merchantKey, options) {
     const changementLangue = sh.detecterChangementLangue(text);
     if (changementLangue && changementLangue !== session.langue) {
       session.langue = changementLangue;
-      const confirmationLangue = sh.t(session, "Très bien, je continue en français. 🇫🇷", "Sure, I'll continue in English. 🇬🇧");
+      let confirmationLangue = sh.t(session, "Très bien, je continue en français. 🇫🇷", "Sure, I'll continue in English. 🇬🇧");
+      if (reprisePauseHumain) confirmationLangue = sh.messageReprisePause(session) + "\n\n" + confirmationLangue;
       journaliser(fromPhone, "bot", confirmationLangue);
       return confirmationLangue;
     }
 
     if (sh.demandeUnHumain(text)) {
+      session.attenteChoixContactHumain = true;
+      session.texteDemandeHumainOrigine = text;
       sh.demarrerPauseHumain(conversationsHumain, fromPhone, text);
       notifierMarchand("humain", [fromPhone, text]).catch((erreur) =>
         console.error("[" + merchantKey + "] Echec de la notification marchand (humain) :", erreur)
       );
-      const msgHumain = sh.messageMiseEnRelation(session);
-      journaliser(fromPhone, "bot", msgHumain);
-      return msgHumain;
+      let msgChoix = sh.messageChoixContact(session);
+      if (reprisePauseHumain) msgChoix = sh.messageReprisePause(session) + "\n\n" + msgChoix;
+      journaliser(fromPhone, "bot", msgChoix);
+      return msgChoix;
     }
 
     // Premiere reponse REELLE (pas la porte de langue ni un accuse de reception) apportee a ce client : on
@@ -1021,6 +1054,9 @@ function createCatalogEngine(merchantKey, options) {
     if (estPremiereReponseReelle && reponse) {
       humanHintDonne[fromPhone] = true;
       reponse += sh.mentionHumainDisponible(session);
+    }
+    if (reprisePauseHumain && reponse) {
+      reponse = sh.messageReprisePause(session) + "\n\n" + reponse;
     }
     journaliser(fromPhone, "bot", reponse);
     return reponse;
