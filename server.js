@@ -1154,11 +1154,19 @@ app.post("/api/:id/inventaire/instantanes", protegerAcces, (req, res) => {
   res.status(201).json(entry.engine.enregistrerInstantaneInventaire(nom && String(nom).trim() ? String(nom).trim() : "Instantané"));
 });
 
+// Suppression d'un instantané d'inventaire, RESERVEE AU PROPRIETAIRE DU MARCHAND (ou super-administrateur) -
+// depuis le 25 septembre 2026, un employé ayant le rôle "inventaire" peut consulter/créer des instantanés
+// mais ne voit plus le bouton Supprimer (voir estGestionnaireDuMarchand ci-dessus, meme principe que pour
+// la gestion des employés). La suppression elle-même est "en douceur" : voir supprimerInstantaneInventaire
+// dans conversation.js - l'instantané reste consultable ensuite, marqué "Supprimé le ... par ...".
 app.delete("/api/:id/inventaire/instantanes/:snapshotId", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "inventaire"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
-  const ok = entry.engine.supprimerInstantaneInventaire(req.params.snapshotId);
-  if (!ok) return res.status(404).json({ erreur: "Instantané introuvable." });
+  if (!estGestionnaireDuMarchand(req, req.params.id)) {
+    return res.status(403).json({ erreur: "La suppression d'un instantané est réservée au propriétaire du marchand." });
+  }
+  const ok = entry.engine.supprimerInstantaneInventaire(req.params.snapshotId, req.auth.adminUser || null);
+  if (!ok) return res.status(404).json({ erreur: "Instantané introuvable ou déjà supprimé." });
   res.json({ ok: true });
 });
 

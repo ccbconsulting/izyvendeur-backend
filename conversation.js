@@ -1285,12 +1285,20 @@ function createCatalogEngine(merchantKey, options) {
     return snapshot;
   }
 
-  function supprimerInstantaneInventaire(id) {
+  // Suppression EN DOUCEUR (soft delete), depuis le 25 septembre 2026 : un instantané supprimé n'est plus
+  // jamais retiré du tableau `inventorySnapshots` - il est simplement marque `supprimeLe`/`supprimePar`, et
+  // reste renvoye par listerInstantanesInventaire() comme les autres (voir server.js pour la restriction de
+  // cette action au propriétaire/super-administrateur uniquement, et admin.html pour l'affichage "Supprimé
+  // le ... par ..." a la place du bouton Supprimer). Idempotent : un instantané deja supprime ne peut pas
+  // etre "re-supprime" (renvoie false, comme un instantané introuvable).
+  function supprimerInstantaneInventaire(id, parQui) {
     if (!state) return false;
-    const avant = state.inventorySnapshots.length;
-    state.inventorySnapshots = state.inventorySnapshots.filter((s) => s.id !== id);
-    if (state.inventorySnapshots.length !== avant) { saveState(); return true; }
-    return false;
+    const snapshot = state.inventorySnapshots.find((s) => s.id === id);
+    if (!snapshot || snapshot.supprimeLe) return false;
+    snapshot.supprimeLe = new Date().toISOString();
+    snapshot.supprimePar = parQui || null;
+    saveState();
+    return true;
   }
 
   // Renvoie le catalogue avec, pour chaque variante, un "stockVirtuel" calcule a la volee (stock reel

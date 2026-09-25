@@ -491,6 +491,38 @@ qu'aucun droit retiré ne revient jamais tout seul, y compris spécifiquement po
 Rapports→Inventaire**. Un marchand tout juste créé via l'API a aussi été vérifié comme démarrant
 directement sans rien à migrer (les 4 clés de migration).
 
+## Étape 18 — Commandes non supprimables + suppression d'un instantané d'inventaire réservée au propriétaire, et "en douceur" (nouveau)
+
+Deux précisions demandées après l'Étape 17.
+
+**Les commandes ne peuvent pas être supprimées** — en vérifiant, c'était déjà le cas : il n'a jamais existé
+de route ni de bouton pour supprimer une commande dans IzyVendeur (seul son statut peut changer, via
+`PUT /api/:id/commandes/:orderId/statut`). Rien à construire ici, donc, mais je l'ai quand même vérifié par
+un vrai appel HTTP `DELETE` sur une commande (avec le compte propriétaire ET avec le super-administrateur) :
+les deux échouent avec une erreur "route inexistante", ce qui confirme qu'aucun chemin, y compris détourné,
+ne permet de supprimer une commande.
+
+**Suppression d'un instantané d'inventaire réservée au propriétaire du marchand (ou au
+super-administrateur)** — jusqu'ici, n'importe quel employé ayant le droit "Inventaire" pouvait aussi
+supprimer un instantané. Désormais, un tel employé peut toujours consulter la liste et en créer de
+nouveaux, mais le bouton "Supprimer" n'apparaît plus que pour vous (le propriétaire du marchand) ou le
+super-administrateur — même règle côté serveur (une tentative de suppression par un employé renvoie
+maintenant une erreur, même en appelant l'API directement).
+
+**Et la suppression elle-même est "en douceur"** : un instantané supprimé n'est plus effacé, il reste
+visible dans la liste de l'onglet Inventaire, avec la mention "Supprimé le [date] par [qui]" à la place du
+bouton Supprimer — vous (et vos employés ayant le droit Inventaire) pouvez toujours cliquer sur "Voir" pour
+consulter le détail du stock qu'il contenait. Une tentative de le supprimer une seconde fois échoue
+(il est déjà marqué supprimé). Ça vous donne une trace complète de qui a supprimé quoi et quand, sans jamais
+perdre l'information de stock elle-même.
+
+Testé le 25 septembre 2026 par de vrais appels HTTP : un employé n'ayant que le droit "Inventaire" crée bien
+un instantané mais reçoit un refus (403) en tentant de le supprimer, et l'instantané reste intact après ce
+refus ; le propriétaire du marchand, lui, supprime bien le même instantané avec succès, qui reste ensuite
+visible dans la liste avec sa date et son auteur de suppression et les données de stock qu'il contenait
+toujours présentes ; une 2e tentative de suppression du même instantané échoue (déjà supprimé) ; le
+super-administrateur peut également supprimer, pas seulement le propriétaire.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -517,7 +549,9 @@ directement sans rien à migrer (les 4 clés de migration).
   article en Stock illimité (Étape 14), nouveau statut de commande "Commandée" (réservant le
   stock comme Confirmée/Expédiée) + envoi des notifications de statut au client (Étape 15), et
   question "réponse écrite ici / être rappelé(e)" à la demande d'un humain + délai de pause réduit
-  à 5 minutes avec phrase de reprise explicite (Étape 16)
+  à 5 minutes avec phrase de reprise explicite (Étape 16), et suppression d'un instantané d'inventaire
+  transformée en suppression "en douceur" (marque `supprimeLe`/`supprimePar` au lieu d'effacer, ne peut
+  plus être re-supprimé une fois déjà marqué, Étape 18)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue, ainsi que la même question
   "réponse écrite ici / être rappelé(e)" et la même reprise à 5 minutes que le moteur catalogue, en
@@ -546,7 +580,9 @@ directement sans rien à migrer (les 4 clés de migration).
   "rapports", indépendant de "tableaudebord", appliqué uniquement à `/api/:id/rapports/commandes` +
   nouveau rôle employé "inventaire", indépendant de "rapports", appliqué aux 4 routes `/api/:id/inventaire/*`
   + marchand tout juste créé (`POST /api/marchands`) marqué directement "rien à migrer" pour ces 4 rôles
-  (Étape 17)
+  (Étape 17) + route `DELETE /api/:id/inventaire/instantanes/:snapshotId` désormais réservée au propriétaire
+  du marchand/super-administrateur (un employé ayant seulement le rôle "inventaire" reçoit une erreur 403),
+  confirmation par un vrai test qu'aucune route de suppression de commande n'existe (Étape 18)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -563,7 +599,9 @@ directement sans rien à migrer (les 4 clés de migration).
   cases indépendantes "Paramètres", "Tableau de bord", "Rapports" et "Inventaire" + l'onglet "Rapports" est
   lui-même scindé en deux onglets indépendants "Rapports" (filtres + statistiques de commandes) et
   "Inventaire" (instantanés de stock), chacun visible et chargé uniquement selon le droit correspondant de
-  l'employé connecté (Étape 17)
+  l'employé connecté (Étape 17) + bouton "Supprimer" d'un instantané d'inventaire visible uniquement pour le
+  propriétaire du marchand/super-administrateur, remplacé par la mention "Supprimé le ... par ..." pour un
+  instantané déjà supprimé (toujours consultable via "Voir") (Étape 18)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
