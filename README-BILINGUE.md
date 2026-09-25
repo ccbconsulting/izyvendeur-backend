@@ -523,6 +523,49 @@ visible dans la liste avec sa date et son auteur de suppression et les données 
 toujours présentes ; une 2e tentative de suppression du même instantané échoue (déjà supprimé) ; le
 super-administrateur peut également supprimer, pas seulement le propriétaire.
 
+## Étape 19 — Rapports et Inventaire téléchargeables en PDF + tri des commandes par jour ou plage de dates (nouveau)
+
+Trois précisions demandées après l'Étape 18.
+
+**"Garder consultable" confirmé pour l'inventaire** : pas de bouton "Restaurer" un instantané supprimé pour
+l'instant — vous avez confirmé qu'en cas d'erreur, vous préférez ressaisir et ré-enregistrer vous-même les
+bonnes données plutôt que d'avoir un mécanisme de restauration. Rien à changer ici, c'est déjà le
+comportement livré à l'Étape 18 (l'instantané reste visible et consultable, juste marqué comme supprimé).
+
+**Rapports et Inventaire téléchargeables en PDF** : trois nouveaux boutons "Télécharger en PDF" — sur
+l'onglet Rapports (le rapport actuellement généré, avec ses filtres période/date/article), sur l'onglet
+Inventaire pour le stock actuel (nouveau bouton "Télécharger le stock actuel en PDF", en plus de la liste
+des instantanés déjà existante), et pour chaque instantané individuellement (bouton "Télécharger en PDF" à
+côté de "Voir"/"Supprimer" dans la liste — fonctionne aussi pour un instantané déjà supprimé, toujours
+consultable). Techniquement, le PDF est généré directement dans le navigateur (bibliothèque jsPDF chargée
+depuis un CDN), donc **aucun changement côté serveur, aucune dépendance à installer sur Render** — juste le
+fichier `admin.html` mis à jour. Seule condition : une connexion internet au moment du clic (comme pour le
+reste de l'interface /admin). Si jamais elle venait à manquer pile à ce moment-là, un message clair
+apparaît au lieu de planter la page.
+
+**Tri/filtrage des commandes par jour ou par plage de dates** : dans l'onglet Commandes, un nouveau filtre
+"Période" vient s'ajouter à ceux déjà existants (Statut, Mode, tri par date) — "Toutes" (comme avant), "Un
+jour précis" (une seule date), ou "Une plage de dates" (Du ... Au ...). Le nombre de commandes affichées
+dans le titre de l'onglet reflète le filtre actif.
+
+**Point important trouvé et corrigé en testant avant livraison** : en testant ces nouveautés avec un vrai
+navigateur (et pas seulement par appels à l'API), j'ai découvert que l'onglet Inventaire de la précédente
+livraison (Étape 18) contenait une erreur qui LE FAISAIT PLANTER ENTIÈREMENT dès l'ouverture — un défaut de
+code JavaScript présent dans le zip livré à l'Étape 18, jamais détecté à l'époque car je ne l'avais testé
+que par appels HTTP directs à l'API (qui contournent le navigateur et donc ne pouvaient pas le révéler).
+Corrigé avant cette livraison. Si vous avez déployé le zip de l'Étape 18 entre-temps, ce zip-ci corrige cet
+onglet Inventaire cassé — désolé pour la gêne si vous l'aviez remarqué.
+
+Testé le 25 septembre 2026 avec un vrai navigateur piloté automatiquement (Chromium, pas seulement des
+appels à l'API comme d'habitude) : 5 commandes réparties sur 3 jours différents, filtre "Un jour précis"
+qui ne montre bien que les commandes de ce jour-là, filtre "Une plage de dates" qui montre bien celles de
+l'intervalle choisi, retour à "Toutes" qui remontre tout ; le bouton "Générer" du Rapport (qui partage
+maintenant sa logique avec le bouton PDF) continue de donner le bon résultat ; les 3 nouveaux boutons PDF
+sont bien présents et, en l'absence de connexion à l'outil de génération PDF (situation simulée pour ce
+test), affichent bien un message clair au lieu de planter la page ; aucune erreur JavaScript imprévue
+pendant tout le parcours (c'est ce test qui a révélé et permis de corriger le défaut de l'Étape 18
+mentionné ci-dessus).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -601,7 +644,12 @@ super-administrateur peut également supprimer, pas seulement le propriétaire.
   "Inventaire" (instantanés de stock), chacun visible et chargé uniquement selon le droit correspondant de
   l'employé connecté (Étape 17) + bouton "Supprimer" d'un instantané d'inventaire visible uniquement pour le
   propriétaire du marchand/super-administrateur, remplacé par la mention "Supprimé le ... par ..." pour un
-  instantané déjà supprimé (toujours consultable via "Voir") (Étape 18)
+  instantané déjà supprimé (toujours consultable via "Voir") (Étape 18) + bibliothèque **jsPDF chargée
+  depuis un CDN** (`<script src>`, aucun changement serveur) + 3 boutons "Télécharger en PDF" (Rapport
+  généré, stock actuel, instantané individuel) avec repli propre (message clair) si le PDF ne peut pas se
+  charger + nouveau filtre "Période" (Toutes / Un jour précis / Une plage de dates) dans l'onglet Commandes
+  + **correctif d'un défaut de l'Étape 18 qui faisait planter tout l'onglet Inventaire** dès son ouverture
+  (variable utilisée avant sa déclaration, détecté grâce à un test avec un vrai navigateur) (Étape 19)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
