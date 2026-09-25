@@ -208,11 +208,15 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 // le Tableau de bord (commun aux deux types), et pour un marchand catalogue les Rapports/l'Inventaire,
 // etaient rattaches au role "parametres" (regroupement "chiffres/analyses" avec les reglages) - desormais
 // "parametres" ne couvre plus que les vrais reglages (Paramètres + Mon compte), et "tableaudebord" couvre
-// Tableau de bord + Rapports + Inventaire.
+// le Tableau de bord (commun aux deux types de marchand).
+// "rapports" (demande le 25 septembre 2026, meme journee) detache a son tour Rapports et Inventaire de
+// "tableaudebord" - ce sont les deux volets affiches ensemble dans l'onglet "Rapports" de /admin (marchand
+// catalogue uniquement), regroupes entre eux mais desormais independants du Tableau de bord.
 // Une migration au demarrage (voir db.js, initRegistry) ajoute automatiquement "commandes" a tout employe
-// qui avait deja "conversations", et "tableaudebord" a tout employe qui avait deja "parametres", pour ne
-// retirer d'acces a personne au moment de ces deux changements.
-const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord"];
+// qui avait deja "conversations", "tableaudebord" a tout employe qui avait deja "parametres", et "rapports"
+// a tout employe qui avait deja "tableaudebord" (que ce soit de longue date ou tout juste migre a l'instant
+// depuis "parametres") - pour ne retirer d'acces a personne au fil de ces changements successifs.
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports"];
 
 function protegerAcces(req, res, next) {
   const superUtilisateur = process.env.ADMIN_USER || "admin";
@@ -431,7 +435,12 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
     phoneNumberId: phoneNumberId || null,
     adminUser,
     adminPassword: bcrypt.hashSync(String(adminPassword), 10),
-    phoneNotification: phoneNotification || null
+    phoneNotification: phoneNotification || null,
+    // Marchand tout juste cree : n'a jamais connu l'ancien regroupement de roles employe (commandes dans
+    // conversations, tableaudebord/rapports dans parametres - voir migrerRolesEmployes dans db.js), donc
+    // rien a migrer pour lui. Sans ce marquage explicite, un futur redemarrage du serveur risquerait de
+    // "corriger" les roles d'un de ses employes vers un regroupement qui n'a jamais existe pour ce marchand.
+    rolesMigres: db.CLES_MIGRATIONS_ROLES_CONNUES
   };
   await db.addMerchant(merchant);
   const options = creerOptionsEngine(id);
@@ -1103,11 +1112,11 @@ app.post("/api/:id/simulateur/reset", protegerAcces, (req, res) => {
 });
 
 // -- Rapports et inventaire : reserves aux marchands de type catalogue. Permission employe requise :
-// "tableaudebord" (chiffres/analyses, meme role que le tableau de bord — independante de "parametres"
-// depuis le 25 septembre 2026). --
+// "rapports" (chiffres/analyses de l'onglet "Rapports" — independante de "tableaudebord" depuis le 25
+// septembre 2026, meme journee que sa creation). --
 
 app.get("/api/:id/rapports/commandes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "tableaudebord"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rapports"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { periode, date, articleId } = req.query || {};
   const dateReference = date ? new Date(String(date)) : new Date();
@@ -1119,26 +1128,26 @@ app.get("/api/:id/rapports/commandes", protegerAcces, (req, res) => {
 });
 
 app.get("/api/:id/inventaire/actuel", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "tableaudebord"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rapports"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getInventaireActuel());
 });
 
 app.get("/api/:id/inventaire/instantanes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "tableaudebord"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rapports"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.listerInstantanesInventaire());
 });
 
 app.post("/api/:id/inventaire/instantanes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "tableaudebord"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rapports"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { nom } = req.body || {};
   res.status(201).json(entry.engine.enregistrerInstantaneInventaire(nom && String(nom).trim() ? String(nom).trim() : "Instantané"));
 });
 
 app.delete("/api/:id/inventaire/instantanes/:snapshotId", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "tableaudebord"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "rapports"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const ok = entry.engine.supprimerInstantaneInventaire(req.params.snapshotId);
   if (!ok) return res.status(404).json({ erreur: "Instantané introuvable." });

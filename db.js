@@ -99,35 +99,91 @@ async function ensureMerchantsTable() {
   // textes reglables individuellement dans Parametres - voir conversation.js) - meme principe d'option
   // payante que les deux precedentes, reservee aux marchands debloques par le super-administrateur.
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_notifications_statut BOOLEAN NOT NULL DEFAULT false");
+  // Cles des migrations de roles employe (voir migrerRolesEmployes plus bas) deja appliquees a ce marchand -
+  // vide par defaut (aucune migration encore appliquee). CHAQUE cle n'est appliquee QU'UNE SEULE FOIS par
+  // marchand, jamais reappliquee ensuite meme si un employe n'a plus le role migre : sans cette colonne, la
+  // migration (basee uniquement sur les roles actuels d'un employe) se represente a chaque redemarrage du
+  // serveur et re-ajouterait silencieusement un role qu'un marchand aurait volontairement retire a un
+  // employe apres coup - ce qui viderait de son sens l'independance nouvellement introduite entre ces roles.
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS roles_migres JSONB NOT NULL DEFAULT '[]'::jsonb");
 }
 
+// Cles de migration connues pour les roles employe (voir migrerRolesEmployes ci-dessous). Un marchand cree
+// APRES l'introduction de ces migrations (voir POST /api/marchands dans server.js) n'a jamais connu
+// l'ancien regroupement de roles - il est cree directement avec toutes ces cles deja marquees "appliquees",
+// pour qu'un de ses employes puisse avoir par exemple "tableaudebord" sans "rapports" des le depart, sans
+// qu'un redemarrage ulterieur du serveur ne revienne dessus.
+const CLES_MIGRATIONS_ROLES_CONNUES = [
+  "commandes_depuis_conversations",
+  "tableaudebord_depuis_parametres",
+  "rapports_depuis_tableaudebord"
+];
+
 // Migrations ponctuelles (25 septembre 2026) sur les roles employe (voir ROLES_EMPLOYE_VALIDES dans
-// server.js) : deux roles autrefois regroupes avec un autre deviennent independants, et on ajoute
+// server.js) : des roles autrefois regroupes avec un autre deviennent independants, et on ajoute
 // automatiquement le nouveau role a tout employe qui beneficiait deja de l'acces via l'ancien
-// regroupement, pour ne retirer d'acces a personne au moment du changement. Sans effet ensuite (idempotent
-// : n'ajoute rien a un employe qui a deja explicitement le nouveau role, ni a un employe qui n'avait pas
-// l'ancien).
+// regroupement, pour ne retirer d'acces a personne au moment du changement.
 //   - "commandes" : jusque-la rattache au role "conversations" (marchands catalogue uniquement).
 //   - "tableaudebord" : jusque-la rattache au role "parametres" (Tableau de bord commun aux deux types de
-//     marchand ; Rapports et Inventaire, marchand catalogue uniquement, y etaient deja aussi rattaches).
-// Mute et persiste directement les marchands concernes (un seul insertMerchant meme si les deux migrations
-// s'appliquent), puis retourne la liste (inchangee dans son contenu, sauf les roles migres).
+//     marchand).
+//   - "rapports" : jusque-la rattache au role "tableaudebord" (Rapports et Inventaire, marchand catalogue
+//     uniquement).
+// IMPORTANT : chaque cle de migration ne s'applique QU'UNE SEULE FOIS par marchand (voir roles_migres,
+// ensureMerchantsTable) - une fois marquee, elle n'est plus jamais reappliquee, meme a un futur
+// redemarrage du serveur. Sans ca, un marchand qui retirerait volontairement "rapports" a un employe ayant
+// gardé "tableaudebord" se le verrait silencieusement rendre au prochain redemarrage : la migration se
+// re-representerait indefiniment puisqu'elle ne fait que regarder les roles ACTUELS de l'employe, sans se
+// souvenir qu'elle a deja fait son travail une fois. Les trois cles sont verifiees DANS L'ORDRE pour chaque
+// marchand a sa toute premiere migration (parametres -> tableaudebord d'abord, PUIS tableaudebord ->
+// rapports juste apres, sur le tableau de roles deja mis a jour) : un employe qui n'a jamais eu que
+// "parametres" recoit donc bien "tableaudebord" ET "rapports" en une seule passe, meme si ce marchand n'a
+// jamais ete migre auparavant.
+// Mute et persiste directement les marchands concernes (un seul insertMerchant meme si plusieurs cles
+// s'appliquent au meme marchand), puis retourne la liste (inchangee dans son contenu, sauf les roles et
+// roles_migres migres).
 async function migrerRolesEmployes(marchands) {
   for (const m of marchands) {
-    if (!Array.isArray(m.employes) || !m.employes.length) continue;
+    const dejaAppliquees = new Set(Array.isArray(m.rolesMigres) ? m.rolesMigres : []);
     let modifie = false;
-    for (const emp of m.employes) {
-      if (!Array.isArray(emp.roles)) continue;
-      if (m.type === "catalogue" && emp.roles.indexOf("conversations") !== -1 && emp.roles.indexOf("commandes") === -1) {
-        emp.roles.push("commandes");
-        modifie = true;
+
+    if (!dejaAppliquees.has("commandes_depuis_conversations")) {
+      if (m.type === "catalogue" && Array.isArray(m.employes)) {
+        for (const emp of m.employes) {
+          if (Array.isArray(emp.roles) && emp.roles.indexOf("conversations") !== -1 && emp.roles.indexOf("commandes") === -1) {
+            emp.roles.push("commandes");
+          }
+        }
       }
-      if (emp.roles.indexOf("parametres") !== -1 && emp.roles.indexOf("tableaudebord") === -1) {
-        emp.roles.push("tableaudebord");
-        modifie = true;
-      }
+      dejaAppliquees.add("commandes_depuis_conversations");
+      modifie = true;
     }
+
+    if (!dejaAppliquees.has("tableaudebord_depuis_parametres")) {
+      if (Array.isArray(m.employes)) {
+        for (const emp of m.employes) {
+          if (Array.isArray(emp.roles) && emp.roles.indexOf("parametres") !== -1 && emp.roles.indexOf("tableaudebord") === -1) {
+            emp.roles.push("tableaudebord");
+          }
+        }
+      }
+      dejaAppliquees.add("tableaudebord_depuis_parametres");
+      modifie = true;
+    }
+
+    if (!dejaAppliquees.has("rapports_depuis_tableaudebord")) {
+      if (m.type === "catalogue" && Array.isArray(m.employes)) {
+        for (const emp of m.employes) {
+          if (Array.isArray(emp.roles) && emp.roles.indexOf("tableaudebord") !== -1 && emp.roles.indexOf("rapports") === -1) {
+            emp.roles.push("rapports");
+          }
+        }
+      }
+      dejaAppliquees.add("rapports_depuis_tableaudebord");
+      modifie = true;
+    }
+
     if (modifie) {
+      m.rolesMigres = Array.from(dejaAppliquees);
       await insertMerchant(m);
     }
   }
@@ -152,7 +208,11 @@ function defaultMerchantFromEnv() {
     numeroWhatsappPublic: null,
     optionStockIllimite: false,
     optionLienCommande: false,
-    optionNotificationsStatut: false
+    optionNotificationsStatut: false,
+    // Marchand HISTORIQUE (pas nouvellement cree) : contrairement a un marchand cree via l'API (voir
+    // insertMerchant), on ne suppose rien - il peut deja avoir des employes avec d'anciens roles regroupes,
+    // donc [] (a migrer normalement) plutot que CLES_MIGRATIONS_ROLES_CONNUES.
+    rolesMigres: []
   };
 }
 
@@ -161,7 +221,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return migrerRolesEmployes(res.rows.map(rowToMerchant));
     }
@@ -200,7 +260,8 @@ function rowToMerchant(row) {
     numeroWhatsappPublic: row.numero_whatsapp_public || null,
     optionStockIllimite: row.option_stock_illimite === true,
     optionLienCommande: row.option_lien_commande === true,
-    optionNotificationsStatut: row.option_notifications_statut === true
+    optionNotificationsStatut: row.option_notifications_statut === true,
+    rolesMigres: Array.isArray(row.roles_migres) ? row.roles_migres : []
   };
 }
 
@@ -208,13 +269,17 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15",
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut]
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb",
+      // rolesMigres absent (nouveau marchand cree via l'API, voir server.js POST /api/marchands) -> on
+      // suppose qu'il n'a jamais connu l'ancien regroupement de roles, donc toutes les cles de migration
+      // connues sont deja "appliquees" par defaut (rien a migrer pour un marchand qui vient de naitre).
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES)]
     );
     return;
   }
   const liste = fs.existsSync(MERCHANTS_FILE) ? JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8")) : [];
+  if (!Array.isArray(m.rolesMigres)) m.rolesMigres = CLES_MIGRATIONS_ROLES_CONNUES.slice();
   const idx = liste.findIndex((x) => x.id === m.id);
   if (idx === -1) liste.push(m); else liste[idx] = m;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
@@ -227,7 +292,7 @@ async function getMerchantRecord(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -259,7 +324,7 @@ async function updateMerchantFields(id, patch) {
     // cas pour "employes" avant ce correctif : changer par ex. le numero de notification d'un marchand
     // ayant des employes les supprimait tous sans le vouloir.
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -566,5 +631,6 @@ module.exports = {
   logConversationMessage,
   getConversationSummaries,
   getConversationHistory,
-  usingDatabase: !!pool
+  usingDatabase: !!pool,
+  CLES_MIGRATIONS_ROLES_CONNUES
 };
