@@ -142,7 +142,7 @@ const I18N = {
     roleConversationsService: "Conversations (service client)",
     roleParametres: "Paramètres & tableau de bord",
     roleCatalogue: "Catalogue & stock",
-    roleConversationsCommandes: "Conversations & commandes (service client)",
+    roleCommandes: "Commandes",
 
     ongletTableauDeBord: "Tableau de bord",
     ongletServices: "Services",
@@ -483,7 +483,7 @@ const I18N = {
     roleConversationsService: "Conversations (customer service)",
     roleParametres: "Settings & dashboard",
     roleCatalogue: "Catalog & stock",
-    roleConversationsCommandes: "Conversations & orders (customer service)",
+    roleCommandes: "Orders",
 
     ongletTableauDeBord: "Dashboard",
     ongletServices: "Services",
@@ -991,13 +991,14 @@ function rolesDisponibles() {
       ["parametres", t("roleParametres")]
     ];
   }
-  // Le stock (catalogue) et les commandes sont volontairement des permissions distinctes : gérer le
-  // stock/prix (ex: un(e) gestionnaire de stock) n'implique pas de voir/traiter les commandes clients, et
-  // inversement quiconque parle aux clients (Conversations) doit pouvoir aussi suivre leurs commandes -
-  // d'ou le regroupement commandes+conversations plutot que commandes+catalogue.
+  // Catalogue, Commandes et Conversations sont volontairement trois permissions distinctes (depuis le 25
+  // septembre 2026) : gérer le stock/prix (ex: un(e) gestionnaire de stock) n'implique pas de voir/traiter
+  // les commandes clients, et inversement quelqu'un qui prépare/expédie les commandes n'a pas forcément
+  // besoin d'échanger avec les clients (Conversations) - chacune s'attribue indépendamment.
   return [
     ["catalogue", t("roleCatalogue")],
-    ["conversations", t("roleConversationsCommandes")],
+    ["commandes", t("roleCommandes")],
+    ["conversations", t("roleConversationsService")],
     ["parametres", t("roleParametres")]
   ];
 }
@@ -1023,7 +1024,7 @@ function construireOnglets() {
     : [
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "parametres"],
         ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue"],
-        ["commandes", t("ongletCommandes"), renderCommandes, "conversations"],
+        ["commandes", t("ongletCommandes"), renderCommandes, "commandes"],
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", t("ongletRapports"), renderRapports, "parametres"],
         ["conversations", t("ongletConversations"), renderConversations, "conversations"],
