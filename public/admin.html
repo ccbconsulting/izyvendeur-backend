@@ -142,7 +142,8 @@ const I18N = {
     roleConversationsService: "Conversations (service client)",
     roleParametres: "Paramètres",
     roleTableauDeBord: "Tableau de bord",
-    roleRapports: "Rapports & inventaire",
+    roleRapports: "Rapports",
+    roleInventaire: "Inventaire",
     roleCatalogue: "Catalogue & stock",
     roleCommandes: "Commandes",
 
@@ -157,6 +158,7 @@ const I18N = {
     ongletCatalogue: "Catalogue & stock",
     ongletCommandes: "Commandes",
     ongletRapports: "Rapports",
+    ongletInventaire: "Inventaire",
     ongletParametres: "Paramètres",
     accesNonConfigure: "Aucun accès configuré pour ce compte — contactez le propriétaire du marchand.",
 
@@ -485,7 +487,8 @@ const I18N = {
     roleConversationsService: "Conversations (customer service)",
     roleParametres: "Settings",
     roleTableauDeBord: "Dashboard",
-    roleRapports: "Reports & inventory",
+    roleRapports: "Reports",
+    roleInventaire: "Inventory",
     roleCatalogue: "Catalog & stock",
     roleCommandes: "Orders",
 
@@ -500,6 +503,7 @@ const I18N = {
     ongletCatalogue: "Catalog & stock",
     ongletCommandes: "Orders",
     ongletRapports: "Reports",
+    ongletInventaire: "Inventory",
     ongletParametres: "Settings",
     accesNonConfigure: "No access configured for this account — contact the merchant owner.",
 
@@ -991,8 +995,9 @@ function rolesDisponibles() {
   // "tableaudebord" est desormais independant de "parametres" (depuis le 25 septembre 2026) : couvre
   // uniquement le Tableau de bord (les deux types) - voir ROLES_EMPLOYE_VALIDES / construireOnglets()
   // ci-dessous. "parametres" ne couvre plus que les vrais réglages (onglet Paramètres + Mon compte).
-  // "rapports" (meme journee) detache a son tour Rapports + Inventaire de "tableaudebord", marchand
-  // catalogue uniquement (ces deux volets partagent un seul onglet "Rapports" dans /admin).
+  // "rapports" (meme journee) detache Rapports de "tableaudebord", et "inventaire" (juste apres, meme
+  // journee) detache a son tour Inventaire de "rapports" - les deux etaient a l'origine un seul onglet
+  // "Rapports" dans /admin, desormais deux onglets distincts, marchand catalogue uniquement.
   if (marchandActif.type === "service") {
     return [
       ["rendezvous", t("roleRendezvous")],
@@ -1011,6 +1016,7 @@ function rolesDisponibles() {
     ["conversations", t("roleConversationsService")],
     ["tableaudebord", t("roleTableauDeBord")],
     ["rapports", t("roleRapports")],
+    ["inventaire", t("roleInventaire")],
     ["parametres", t("roleParametres")]
   ];
 }
@@ -1039,6 +1045,7 @@ function construireOnglets() {
         ["commandes", t("ongletCommandes"), renderCommandes, "commandes"],
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", t("ongletRapports"), renderRapports, "rapports"],
+        ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire"],
         ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
@@ -1855,11 +1862,13 @@ async function renderSimulateur() {
 
 // ---------------- Rapports (marchand catalogue uniquement) ----------------
 
+// Onglet "Rapports" (statistiques de commandes) : separe de l'onglet "Inventaire" depuis le 25 septembre
+// 2026 (voir renderInventaire ci-dessous) - les deux vivaient ensemble dans un seul onglet "Rapports" avant
+// ce jour, desormais deux onglets independants avec chacun leur propre droit employe.
 async function renderRapports() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const catalogue = await api("/api/" + marchandActif.id + "/catalogue");
-  const instantanes = await api("/api/" + marchandActif.id + "/inventaire/instantanes");
   const aujourdhui = new Date().toISOString().slice(0, 10);
 
   zone.innerHTML =
@@ -1872,8 +1881,40 @@ async function renderRapports() {
       "</select></div>" +
       "<div><button id='btnGenererRapport' class='principal'>" + t("btnGenerer") + "</button></div>" +
     "</div>" +
-    "<div id='resultatRapport'></div>" +
-    "<h3>" + t("h3InstantanesInventaire") + "</h3>" +
+    "<div id='resultatRapport'></div>";
+
+  document.getElementById("btnGenererRapport").onclick = async () => {
+    const periode = document.getElementById("rapportPeriode").value;
+    const date = document.getElementById("rapportDate").value;
+    const articleId = document.getElementById("rapportArticle").value;
+    const zoneResultat = document.getElementById("resultatRapport");
+    zoneResultat.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+    try {
+      const r = await api("/api/" + marchandActif.id + "/rapports/commandes?periode=" + encodeURIComponent(periode) + "&date=" + encodeURIComponent(date) + "&articleId=" + encodeURIComponent(articleId));
+      zoneResultat.innerHTML =
+        "<div class='tuiles'>" +
+          "<div class='tuile'><div class='valeur'>" + r.nbCommandes + "</div><div class='libelle'>" + t("libelleCommandesPeriode") + "</div></div>" +
+          "<div class='tuile'><div class='valeur'>" + (r.chiffreAffaires || 0).toLocaleString(localeCourante()) + " FCFA</div><div class='libelle'>" + t("libelleCaHorsAnnulees") + "</div></div>" +
+        "</div>" +
+        "<h3>" + t("h3RepartitionStatut") + "</h3>" +
+        "<table class='table-donnees'><tr>" + Object.keys(r.parStatut).map((s) => "<th>" + esc(libelleStatutCommande(s)) + "</th>").join("") + "</tr><tr>" + Object.keys(r.parStatut).map((s) => "<td>" + r.parStatut[s] + "</td>").join("") + "</tr></table>" +
+        "<h3>" + t("h3QuantitesVendues") + "</h3>" +
+        (r.parArticle.length
+          ? "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadQuantite") + "</th></tr>" + r.parArticle.map((a) => "<tr><td>" + esc(a.nom) + "</td><td>" + a.quantite + "</td></tr>").join("") + "</table>"
+          : "<p class='raison'>" + t("msgAucuneVentePeriode") + "</p>");
+    } catch (e) { zoneResultat.innerHTML = "<div class='erreur'>" + t("erreurPrefixe") + esc(e.message) + "</div>"; }
+  };
+}
+
+// Onglet "Inventaire" (instantanés de stock) : separe de l'onglet "Rapports" depuis le 25 septembre 2026
+// (voir renderRapports ci-dessus).
+async function renderInventaire() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const instantanes = await api("/api/" + marchandActif.id + "/inventaire/instantanes");
+
+  zone.innerHTML =
+    "<h2>" + t("h3InstantanesInventaire") + "</h2>" +
     "<p class='raison'>" + t("noteInstantanes") + "</p>" +
     "<button id='btnNouvelInstantane'>" + t("btnNouvelInstantane") + "</button>" +
     "<div id='listeInstantanes' style='margin-top:14px;'>" + rendreListeInstantanes(instantanes) + "</div>";
@@ -1904,41 +1945,19 @@ async function renderRapports() {
         if (!confirm(t("confirmSupprimerInstantane"))) return;
         try {
           await api("/api/" + marchandActif.id + "/inventaire/instantanes/" + encodeURIComponent(btn.dataset.supprInstantane), { method: "DELETE" });
-          renderRapports();
+          renderInventaire();
         } catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
     });
   }
   brancherActionsInstantanes(instantanes);
 
-  document.getElementById("btnGenererRapport").onclick = async () => {
-    const periode = document.getElementById("rapportPeriode").value;
-    const date = document.getElementById("rapportDate").value;
-    const articleId = document.getElementById("rapportArticle").value;
-    const zoneResultat = document.getElementById("resultatRapport");
-    zoneResultat.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
-    try {
-      const r = await api("/api/" + marchandActif.id + "/rapports/commandes?periode=" + encodeURIComponent(periode) + "&date=" + encodeURIComponent(date) + "&articleId=" + encodeURIComponent(articleId));
-      zoneResultat.innerHTML =
-        "<div class='tuiles'>" +
-          "<div class='tuile'><div class='valeur'>" + r.nbCommandes + "</div><div class='libelle'>" + t("libelleCommandesPeriode") + "</div></div>" +
-          "<div class='tuile'><div class='valeur'>" + (r.chiffreAffaires || 0).toLocaleString(localeCourante()) + " FCFA</div><div class='libelle'>" + t("libelleCaHorsAnnulees") + "</div></div>" +
-        "</div>" +
-        "<h3>" + t("h3RepartitionStatut") + "</h3>" +
-        "<table class='table-donnees'><tr>" + Object.keys(r.parStatut).map((s) => "<th>" + esc(libelleStatutCommande(s)) + "</th>").join("") + "</tr><tr>" + Object.keys(r.parStatut).map((s) => "<td>" + r.parStatut[s] + "</td>").join("") + "</tr></table>" +
-        "<h3>" + t("h3QuantitesVendues") + "</h3>" +
-        (r.parArticle.length
-          ? "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadQuantite") + "</th></tr>" + r.parArticle.map((a) => "<tr><td>" + esc(a.nom) + "</td><td>" + a.quantite + "</td></tr>").join("") + "</table>"
-          : "<p class='raison'>" + t("msgAucuneVentePeriode") + "</p>");
-    } catch (e) { zoneResultat.innerHTML = "<div class='erreur'>" + t("erreurPrefixe") + esc(e.message) + "</div>"; }
-  };
-
   document.getElementById("btnNouvelInstantane").onclick = async () => {
     const nom = prompt(t("promptNomInstantane"), t("prefixeInstantaneDu") + new Date().toLocaleDateString(localeCourante()));
     if (nom === null) return;
     try {
       await api("/api/" + marchandActif.id + "/inventaire/instantanes", { method: "POST", body: JSON.stringify({ nom }) });
-      renderRapports();
+      renderInventaire();
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
 }
