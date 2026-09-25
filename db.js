@@ -116,7 +116,8 @@ async function ensureMerchantsTable() {
 const CLES_MIGRATIONS_ROLES_CONNUES = [
   "commandes_depuis_conversations",
   "tableaudebord_depuis_parametres",
-  "rapports_depuis_tableaudebord"
+  "rapports_depuis_tableaudebord",
+  "inventaire_depuis_rapports"
 ];
 
 // Migrations ponctuelles (25 septembre 2026) sur les roles employe (voir ROLES_EMPLOYE_VALIDES dans
@@ -128,16 +129,18 @@ const CLES_MIGRATIONS_ROLES_CONNUES = [
 //     marchand).
 //   - "rapports" : jusque-la rattache au role "tableaudebord" (Rapports et Inventaire, marchand catalogue
 //     uniquement).
+//   - "inventaire" : jusque-la rattache au role "rapports" (l'onglet unique "Rapports" scinde en deux,
+//     marchand catalogue uniquement).
 // IMPORTANT : chaque cle de migration ne s'applique QU'UNE SEULE FOIS par marchand (voir roles_migres,
 // ensureMerchantsTable) - une fois marquee, elle n'est plus jamais reappliquee, meme a un futur
 // redemarrage du serveur. Sans ca, un marchand qui retirerait volontairement "rapports" a un employe ayant
 // gardé "tableaudebord" se le verrait silencieusement rendre au prochain redemarrage : la migration se
 // re-representerait indefiniment puisqu'elle ne fait que regarder les roles ACTUELS de l'employe, sans se
-// souvenir qu'elle a deja fait son travail une fois. Les trois cles sont verifiees DANS L'ORDRE pour chaque
-// marchand a sa toute premiere migration (parametres -> tableaudebord d'abord, PUIS tableaudebord ->
-// rapports juste apres, sur le tableau de roles deja mis a jour) : un employe qui n'a jamais eu que
-// "parametres" recoit donc bien "tableaudebord" ET "rapports" en une seule passe, meme si ce marchand n'a
-// jamais ete migre auparavant.
+// souvenir qu'elle a deja fait son travail une fois. Les quatre cles sont verifiees DANS L'ORDRE pour
+// chaque marchand a sa toute premiere migration (parametres -> tableaudebord d'abord, PUIS tableaudebord ->
+// rapports, PUIS rapports -> inventaire juste apres, sur le tableau de roles deja mis a jour a chaque
+// etape) : un employe qui n'a jamais eu que "parametres" recoit donc bien "tableaudebord", "rapports" ET
+// "inventaire" en une seule passe, meme si ce marchand n'a jamais ete migre auparavant.
 // Mute et persiste directement les marchands concernes (un seul insertMerchant meme si plusieurs cles
 // s'appliquent au meme marchand), puis retourne la liste (inchangee dans son contenu, sauf les roles et
 // roles_migres migres).
@@ -179,6 +182,18 @@ async function migrerRolesEmployes(marchands) {
         }
       }
       dejaAppliquees.add("rapports_depuis_tableaudebord");
+      modifie = true;
+    }
+
+    if (!dejaAppliquees.has("inventaire_depuis_rapports")) {
+      if (m.type === "catalogue" && Array.isArray(m.employes)) {
+        for (const emp of m.employes) {
+          if (Array.isArray(emp.roles) && emp.roles.indexOf("rapports") !== -1 && emp.roles.indexOf("inventaire") === -1) {
+            emp.roles.push("inventaire");
+          }
+        }
+      }
+      dejaAppliquees.add("inventaire_depuis_rapports");
       modifie = true;
     }
 

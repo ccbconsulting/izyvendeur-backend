@@ -441,42 +441,55 @@ créé directement avec seulement "Commandes" (sans "Conversations") accède bie
 un 403 sur `/conversations` — la séparation fonctionne dans les deux sens. La migration a aussi été vérifiée
 comme étant sans effet si elle tourne une deuxième fois (pas de doublon de rôle).
 
-**"Tableau de bord" séparé de "Paramètres", puis "Rapports & inventaire" séparé de "Tableau de bord"** :
-demandé juste après, le même principe est appliqué deux fois de suite. D'abord le Tableau de bord (commun
-aux marchands catalogue ET rendez-vous), qui était rattaché au droit "Paramètres", en devient indépendant.
-Puis, à votre confirmation, les onglets Rapports et Inventaire d'un marchand catalogue (qui suivaient
-jusque-là le Tableau de bord) en sont détachés à leur tour. Au final, trois droits bien distincts :
-"Paramètres" (l'onglet Paramètres + les champs de l'onglet Mon compte), "Tableau de bord" (juste les
-statistiques résumées), et "Rapports & inventaire" (l'onglet Rapports, qui affiche les deux ensemble).
+**"Tableau de bord" séparé de "Paramètres", puis "Rapports" et "Inventaire" séparés du Tableau de bord ET
+l'un de l'autre** : demandé juste après, en plusieurs temps. D'abord le Tableau de bord (commun aux
+marchands catalogue ET rendez-vous), qui était rattaché au droit "Paramètres", en devient indépendant.
+Ensuite, à votre confirmation, les onglets Rapports et Inventaire d'un marchand catalogue (qui suivaient
+jusque-là le Tableau de bord) en sont détachés à leur tour — dans un premier temps regroupés ensemble sous
+un seul droit "Rapports & inventaire". Puis, sur votre précision ("je voulais inventaire seul et rapport
+seul aussi"), ce droit est à son tour scindé en deux : "Rapports" (statistiques de commandes par période)
+et "Inventaire" (instantanés de stock) deviennent chacun un accès totalement indépendant. Au final, quatre
+droits bien distincts : "Paramètres" (l'onglet Paramètres + les champs de l'onglet Mon compte), "Tableau
+de bord" (statistiques résumées), "Rapports" (l'onglet Rapports seul) et "Inventaire" (l'onglet Inventaire
+seul) — un(e) employé(e) peut avoir n'importe laquelle de ces combinaisons.
 
-Concrètement dans l'onglet "Employés", la case "Paramètres & tableau de bord" est remplacée par trois
-cases séparées : "Paramètres", "Tableau de bord" et "Rapports & inventaire". Même principe de migration
-automatique et non-destructive que pour Commandes, en cascade : tout employé qui avait "Paramètres" reçoit
-"Tableau de bord" ; tout employé qui a "Tableau de bord" (qu'il vienne de le recevoir à l'instant ou qu'il
-l'avait déjà) reçoit "Rapports & inventaire" — en une seule passe au tout premier démarrage suivant ce
-changement, pour ne retirer l'accès à personne.
+Concrètement dans l'onglet "Employés", la case "Paramètres & tableau de bord" est remplacée par quatre
+cases séparées : "Paramètres", "Tableau de bord", "Rapports" et "Inventaire". Côté interface, l'onglet
+Rapports lui-même est également scindé en deux onglets indépendants dans `/admin` : "Rapports" (filtres de
+période/article + statistiques) et "Inventaire" (instantanés de stock, création/suppression) — chacun ne
+s'affiche que si l'employé a le droit correspondant, et chacun ne charge plus que ses propres données
+(avant cette scission, l'onglet Rapports chargeait les deux à la fois, ce qui aurait mal fonctionné pour un
+employé n'ayant que l'un des deux droits).
+
+Même principe de migration automatique et non-destructive que pour Commandes, en cascade, désormais en 4
+maillons : tout employé qui avait "Paramètres" reçoit "Tableau de bord" ; tout employé qui a "Tableau de
+bord" (qu'il vienne de le recevoir à l'instant ou qu'il l'avait déjà) reçoit "Rapports" ; tout employé qui a
+"Rapports" (idem) reçoit "Inventaire" — en une seule passe au tout premier démarrage suivant ce changement,
+pour ne retirer l'accès à personne, même si vous n'aviez jamais déployé de version intermédiaire entre ces
+étapes.
 
 **Point important de fiabilité, corrigé avant livraison** : en testant, j'ai trouvé un vrai défaut dans la
-première version de cette migration (commun aux 3 nouveaux droits, pas seulement Rapports) — elle se
+première version de cette migration (commun aux 4 nouveaux droits, pas seulement Rapports) — elle se
 basait uniquement sur les rôles ACTUELS d'un employé, sans se souvenir qu'elle avait déjà fait son travail.
-Résultat : si vous retiriez vous-même "Rapports & inventaire" à un employé qui a gardé "Tableau de bord"
-(pour lui laisser le tableau de bord sans les rapports), un redémarrage ultérieur du serveur le lui aurait
-rendu automatiquement, sans que vous l'ayez demandé — l'indépendance entre ces droits n'aurait alors servi
-à rien en pratique. Corrigé : chaque marchand garde désormais en base la liste des migrations déjà
-appliquées une fois pour toutes (nouvelle colonne `roles_migres`) ; passé ce premier démarrage, vous pouvez
-combiner ces droits comme vous le souhaitez pour chacun de vos employés, ils resteront exactement comme
-vous les avez réglés à tous les redémarrages suivants. Un nouveau marchand créé après cette mise à jour
-démarre directement "à jour" (rien à migrer pour lui).
+Résultat : si vous retiriez vous-même "Rapports" ou "Inventaire" à un employé qui a gardé "Tableau de bord"
+(pour lui laisser le tableau de bord sans les rapports, ou les rapports sans l'inventaire), un redémarrage
+ultérieur du serveur le lui aurait rendu automatiquement, sans que vous l'ayez demandé — l'indépendance
+entre ces droits n'aurait alors servi à rien en pratique. Corrigé : chaque marchand garde désormais en base
+la liste des migrations déjà appliquées une fois pour toutes (nouvelle colonne `roles_migres`) ; passé ce
+premier démarrage, vous pouvez combiner ces droits comme vous le souhaitez pour chacun de vos employés, ils
+resteront exactement comme vous les avez réglés à tous les redémarrages suivants. Un nouveau marchand créé
+après cette mise à jour démarre directement "à jour" (rien à migrer pour lui).
 
 Testé le 25 septembre 2026 par de vrais appels HTTP à deux marchands séparés : l'un représentant un
 marchand jamais migré avant ce démarrage (les employés qui avaient "Conversations" ou "Paramètres"
-récupèrent bien "Commandes"/"Tableau de bord"/"Rapports & inventaire" selon le cas, sans rien perdre),
-l'autre représentant un marchand déjà migré par le passé avec des droits ensuite reconfigurés
-indépendamment par vous (chaque combinaison isolée testée : "Commandes" seul, "Tableau de bord" seul,
-"Rapports & inventaire" seul — chacun donne accès à ce qu'il doit et refuse le reste) — **et surtout,
-répété sur 3 démarrages successifs du serveur pour vérifier qu'aucun droit retiré ne revient jamais tout
-seul**. Un marchand tout juste créé via l'API a aussi été vérifié comme démarrant directement sans rien à
-migrer.
+récupèrent bien "Commandes"/"Tableau de bord"/"Rapports"/"Inventaire" selon le cas, en une seule passe,
+sans rien perdre), l'autre représentant un marchand déjà migré par le passé avec des droits ensuite
+reconfigurés indépendamment par vous (chaque combinaison isolée testée : "Commandes" seul, "Tableau de
+bord" seul, "Rapports" seul sans Inventaire, "Inventaire" seul sans Rapports — chacun donne accès à ce
+qu'il doit et refuse le reste) — **et surtout, répété sur 3 démarrages successifs du serveur pour vérifier
+qu'aucun droit retiré ne revient jamais tout seul, y compris spécifiquement pour le dernier maillon
+Rapports→Inventaire**. Un marchand tout juste créé via l'API a aussi été vérifié comme démarrant
+directement sans rien à migrer (les 4 clés de migration).
 
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
@@ -530,8 +543,10 @@ migrer.
   boutons "Réponse ici" / "Être rappelé(e)" (Étape 16) + nouveau rôle employé "commandes", indépendant de
   "conversations", appliqué aux 2 routes `/api/:id/commandes` + nouveau rôle employé "tableaudebord",
   indépendant de "parametres", appliqué uniquement à `/api/:id/tableau-de-bord` + nouveau rôle employé
-  "rapports", indépendant de "tableaudebord", appliqué aux 5 routes Rapports/Inventaire + marchand tout
-  juste créé (`POST /api/marchands`) marqué directement "rien à migrer" pour ces 3 rôles (Étape 17)
+  "rapports", indépendant de "tableaudebord", appliqué uniquement à `/api/:id/rapports/commandes` +
+  nouveau rôle employé "inventaire", indépendant de "rapports", appliqué aux 4 routes `/api/:id/inventaire/*`
+  + marchand tout juste créé (`POST /api/marchands`) marqué directement "rien à migrer" pour ces 4 rôles
+  (Étape 17)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -544,8 +559,11 @@ migrer.
   bloc "Notifications de statut" (4 statuts activables indépendamment, texte bilingue par statut) dans
   l'onglet Paramètres, visible uniquement si l'option est débloquée + 3e case dans "Options payantes"
   (Étape 15) + case "Conversations & commandes" de l'onglet Employés remplacée par deux cases
-  indépendantes "Conversations" et "Commandes" + case "Paramètres & tableau de bord" remplacée par trois
-  cases indépendantes "Paramètres", "Tableau de bord" et "Rapports & inventaire" (Étape 17)
+  indépendantes "Conversations" et "Commandes" + case "Paramètres & tableau de bord" remplacée par quatre
+  cases indépendantes "Paramètres", "Tableau de bord", "Rapports" et "Inventaire" + l'onglet "Rapports" est
+  lui-même scindé en deux onglets indépendants "Rapports" (filtres + statistiques de commandes) et
+  "Inventaire" (instantanés de stock), chacun visible et chargé uniquement selon le droit correspondant de
+  l'employé connecté (Étape 17)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
@@ -554,12 +572,12 @@ migrer.
   `option_stock_illimite` et `option_lien_commande`, fausses par défaut pour tous les marchands existants
   (Étape 12) + nouvelle colonne `option_notifications_statut`, fausse par défaut (Étape 15) + migration
   automatique au démarrage qui ajoute le rôle "commandes" à tout employé ayant déjà "conversations", le
-  rôle "tableaudebord" à tout employé ayant déjà "parametres", et le rôle "rapports" à tout employé ayant
-  déjà "tableaudebord" (en cascade, en une seule passe si besoin) + nouvelle colonne `roles_migres`
-  (liste des migrations déjà appliquées à ce marchand) qui rend chacune de ces 3 migrations strictement
-  ponctuelle : une fois appliquée à un marchand, elle ne revient JAMAIS sur un rôle que vous auriez retiré
-  vous-même à un employé par la suite, même après redémarrage du serveur — correctif d'un vrai défaut
-  trouvé en testant avant livraison (Étape 17)
+  rôle "tableaudebord" à tout employé ayant déjà "parametres", le rôle "rapports" à tout employé ayant déjà
+  "tableaudebord", et le rôle "inventaire" à tout employé ayant déjà "rapports" (en cascade sur 4 maillons,
+  en une seule passe si besoin) + nouvelle colonne `roles_migres` (liste des migrations déjà appliquées à ce
+  marchand) qui rend chacune de ces 4 migrations strictement ponctuelle : une fois appliquée à un marchand,
+  elle ne revient JAMAIS sur un rôle que vous auriez retiré vous-même à un employé par la suite, même après
+  redémarrage du serveur — correctif d'un vrai défaut trouvé en testant avant livraison (Étape 17)
 
 ## Comment déployer
 
