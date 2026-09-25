@@ -142,6 +142,7 @@ const I18N = {
     roleConversationsService: "Conversations (service client)",
     roleParametres: "Paramètres",
     roleTableauDeBord: "Tableau de bord",
+    roleRapports: "Rapports & inventaire",
     roleCatalogue: "Catalogue & stock",
     roleCommandes: "Commandes",
 
@@ -484,6 +485,7 @@ const I18N = {
     roleConversationsService: "Conversations (customer service)",
     roleParametres: "Settings",
     roleTableauDeBord: "Dashboard",
+    roleRapports: "Reports & inventory",
     roleCatalogue: "Catalog & stock",
     roleCommandes: "Orders",
 
@@ -986,10 +988,11 @@ function choisirMarchand(id) {
 // ROLES_EMPLOYE_VALIDES). Utilise a la fois pour filtrer les onglets visibles (ci-dessous) et pour
 // construire les cases a cocher de l'onglet "Employés" (voir renderEmployes plus bas).
 function rolesDisponibles() {
-  // "tableaudebord" est desormais independant de "parametres" (depuis le 25 septembre 2026) : couvre le
-  // Tableau de bord (les deux types), plus Rapports et Inventaire pour un marchand catalogue - voir
-  // ROLES_EMPLOYE_VALIDES / construireOnglets() ci-dessous. "parametres" ne couvre plus que les vrais
-  // réglages (onglet Paramètres + Mon compte).
+  // "tableaudebord" est desormais independant de "parametres" (depuis le 25 septembre 2026) : couvre
+  // uniquement le Tableau de bord (les deux types) - voir ROLES_EMPLOYE_VALIDES / construireOnglets()
+  // ci-dessous. "parametres" ne couvre plus que les vrais réglages (onglet Paramètres + Mon compte).
+  // "rapports" (meme journee) detache a son tour Rapports + Inventaire de "tableaudebord", marchand
+  // catalogue uniquement (ces deux volets partagent un seul onglet "Rapports" dans /admin).
   if (marchandActif.type === "service") {
     return [
       ["rendezvous", t("roleRendezvous")],
@@ -1007,6 +1010,7 @@ function rolesDisponibles() {
     ["commandes", t("roleCommandes")],
     ["conversations", t("roleConversationsService")],
     ["tableaudebord", t("roleTableauDeBord")],
+    ["rapports", t("roleRapports")],
     ["parametres", t("roleParametres")]
   ];
 }
@@ -1034,7 +1038,7 @@ function construireOnglets() {
         ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue"],
         ["commandes", t("ongletCommandes"), renderCommandes, "commandes"],
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
-        ["rapports", t("ongletRapports"), renderRapports, "tableaudebord"],
+        ["rapports", t("ongletRapports"), renderRapports, "rapports"],
         ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
