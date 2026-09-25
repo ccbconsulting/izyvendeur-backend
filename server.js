@@ -196,12 +196,17 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 }
 
 // Roles assignables a un compte "employe" d'un marchand (voir /api/:id/employes plus bas) — un employe
-// peut cumuler plusieurs de ces roles. "catalogue" n'a de sens que pour un marchand de type catalogue,
-// "rendezvous" que pour un marchand de type service ; "conversations" et "parametres" s'appliquent aux
-// deux types. Le PROPRIETAIRE du marchand (role "marchand") et le super-administrateur ont eux toujours
-// acces a tout ce qui concerne LEUR marchand, quels que soient ces roles - la restriction ne s'applique
-// qu'aux employes.
-const ROLES_EMPLOYE_VALIDES = ["catalogue", "rendezvous", "conversations", "parametres"];
+// peut cumuler plusieurs de ces roles. "catalogue" et "commandes" n'ont de sens que pour un marchand de
+// type catalogue, "rendezvous" que pour un marchand de type service ; "conversations" et "parametres"
+// s'appliquent aux deux types. Le PROPRIETAIRE du marchand (role "marchand") et le super-administrateur
+// ont eux toujours acces a tout ce qui concerne LEUR marchand, quels que soient ces roles - la restriction
+// ne s'applique qu'aux employes.
+// "commandes" (demande le 25 septembre 2026) est un role a part entiere, distinct de "conversations" :
+// jusque-la, voir/traiter les commandes etait rattache au role "conversations" (voir commentaire retire
+// plus bas, pres des routes /api/:id/commandes) - desormais un employe peut avoir l'un sans l'autre. Une
+// migration au demarrage (voir db.js, initRegistry) ajoute automatiquement "commandes" a tout employe
+// existant qui avait deja "conversations", pour ne retirer d'acces a personne au moment du changement.
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres"];
 
 function protegerAcces(req, res, next) {
   const superUtilisateur = process.env.ADMIN_USER || "admin";
@@ -782,17 +787,17 @@ app.delete("/api/:id/catalogue/:productId/photos", protegerAcces, async (req, re
   res.json({ ok: true, produit });
 });
 
-// Permission "conversations", volontairement PAS "catalogue" : voir/traiter les commandes est rattache a
-// qui parle aux clients (service client), pas a qui gere le stock/prix - un(e) gestionnaire de stock n'a
-// pas besoin de voir les commandes, et quiconque a acces aux Conversations doit pouvoir les suivre.
+// Permission "commandes", role a part entiere depuis le 25 septembre 2026 (voir ROLES_EMPLOYE_VALIDES) :
+// voir/traiter les commandes ne depend plus du role "conversations" - un(e) employe(e) peut avoir l'un
+// sans l'autre (ex: quelqu'un qui prepare/expedie les commandes sans jamais echanger avec les clients).
 app.get("/api/:id/commandes", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getOrders());
 });
 
 app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { statut, raisonAnnulation } = req.body || {};
   // Le 4e argument decide si un message WhatsApp de notification part vers le CLIENT (voir

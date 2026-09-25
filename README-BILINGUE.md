@@ -414,6 +414,33 @@ préfixé, silence du bot pendant la pause, reprise automatique après 5 minutes
 ET poursuite exacte de la sélection en cours (couleur déjà choisie conservée), et absence du mot
 "undefined" pour un premier contact côté moteur rendez-vous.
 
+## Étape 17 — "Commandes" devient un droit d'accès employé à part entière (nouveau)
+
+Jusqu'ici, pour un marchand catalogue, un(e) employé(e) qui avait le droit "Conversations" (répondre aux
+clients / gérer les demandes de mise en relation avec un humain) voyait automatiquement aussi l'onglet
+"Commandes" — ces deux droits étaient regroupés ensemble. Vous avez demandé à ce que "Commandes" devienne
+un accès indépendant, comme l'est déjà "Paramètres" : un(e) employé(e) peut désormais avoir "Commandes"
+sans "Conversations" (ex: quelqu'un qui prépare/expédie les commandes sans jamais échanger avec les
+clients), ou "Conversations" sans "Commandes" (ex: quelqu'un qui répond aux clients mais ne doit pas voir
+le détail des commandes), les deux, ou aucun des deux.
+
+Concrètement dans l'onglet "Employés" de `/admin`, la case à cocher "Conversations & commandes (service
+client)" est remplacée par deux cases séparées : "Conversations (service client)" et "Commandes".
+
+Pour ne retirer d'accès à AUCUN employé existant au moment de ce changement, une migration automatique
+tourne une seule fois au démarrage du serveur : tout employé qui avait déjà "Conversations" reçoit
+"Commandes" en plus (il garde donc exactement le même accès qu'avant) — vous pourrez ensuite, si vous le
+souhaitez, retirer l'un ou l'autre droit individuellement depuis l'onglet Employés pour chaque employé
+concerné. Cette migration ne modifie rien pour un employé qui n'avait pas "Conversations", ni pour un
+marchand de type rendez-vous (le droit "Commandes" n'existe que pour les marchands catalogue).
+
+Testé le 25 septembre 2026 par un vrai appel HTTP au serveur (pas seulement en mémoire) : un employé seedé
+AVANT la migration avec seulement "Conversations" garde bien accès à `/commandes` après démarrage ; un
+employé qui n'a jamais eu ni "Conversations" ni "Commandes" reçoit un 403 sur `/commandes` ; un employé
+créé directement avec seulement "Commandes" (sans "Conversations") accède bien à `/commandes` mais reçoit
+un 403 sur `/conversations` — la séparation fonctionne dans les deux sens. La migration a aussi été vérifiée
+comme étant sans effet si elle tourne une deuxième fois (pas de doublon de rôle).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -423,6 +450,11 @@ ET poursuite exacte de la sélection en cours (couleur déjà choisie conservée
   (ex: "Robe wax imprimée"), il n'y a pas de traduction automatique du nom lui-même.
 - Les messages que le bot vous envoie à VOUS, marchand, pour vous notifier d'une nouvelle commande
   restent en français — c'est votre langue, pas celle du client, donc pas concerné.
+- **Facturation après confirmation de commande** (demandée par des marchands, décision de modèle actée le
+  15 septembre 2026 : option payante activable par marchand depuis le superadmin, même principe que Stock
+  illimité/Lien de commande/Notifications de statut) — le modèle économique est validé mais le
+  comportement exact reste à préciser avant de construire (facture PDF envoyée au client sur WhatsApp ?
+  simple numéro/référence affiché dans `/admin` ? autre chose ?). En attente de votre confirmation.
 
 ## Fichiers modifiés dans ce zip
 
@@ -458,7 +490,8 @@ ET poursuite exacte de la sélection en cours (couleur déjà choisie conservée
   filtrage serveur équivalent sur `PUT /api/:id/parametres` (bloc `notifStatut`) + branchement de
   l'envoi de notification client sur `PUT /api/:id/commandes/:orderId/statut` (Étape 15) +
   renommage "Parler à un conseiller" → "Contacter un conseiller" partout + nouveau menu tactile à 2
-  boutons "Réponse ici" / "Être rappelé(e)" (Étape 16)
+  boutons "Réponse ici" / "Être rappelé(e)" (Étape 16) + nouveau rôle employé "commandes", indépendant de
+  "conversations", appliqué aux 2 routes `/api/:id/commandes` (Étape 17)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -470,14 +503,17 @@ ET poursuite exacte de la sélection en cours (couleur déjà choisie conservée
   ne sont pas débloquées (Étape 12) + statut "Commandée" ajouté au menu déroulant des commandes + nouveau
   bloc "Notifications de statut" (4 statuts activables indépendamment, texte bilingue par statut) dans
   l'onglet Paramètres, visible uniquement si l'option est débloquée + 3e case dans "Options payantes"
-  (Étape 15)
+  (Étape 15) + case "Conversations & commandes" de l'onglet Employés remplacée par deux cases
+  indépendantes "Conversations" et "Commandes" (Étape 17)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
   migration automatique au démarrage) + correctif du bug employés décrit ci-dessus, étendu pour protéger
   également ces deux colonnes + nouvelle colonne `numero_whatsapp_public` (Étape 10) + nouvelles colonnes
   `option_stock_illimite` et `option_lien_commande`, fausses par défaut pour tous les marchands existants
-  (Étape 12) + nouvelle colonne `option_notifications_statut`, fausse par défaut (Étape 15)
+  (Étape 12) + nouvelle colonne `option_notifications_statut`, fausse par défaut (Étape 15) + migration
+  automatique au démarrage qui ajoute le rôle "commandes" à tout employé ayant déjà "conversations", pour
+  ne retirer d'accès à personne au moment du passage à un droit indépendant (Étape 17)
 
 ## Comment déployer
 

@@ -101,6 +101,31 @@ async function ensureMerchantsTable() {
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_notifications_statut BOOLEAN NOT NULL DEFAULT false");
 }
 
+// Migration ponctuelle (25 septembre 2026) : le role employe "commandes" devient independant du role
+// "conversations" (voir ROLES_EMPLOYE_VALIDES dans server.js - jusque-la, voir/traiter les commandes etait
+// rattache au role "conversations"). Pour qu'aucun employe existant ne perde silencieusement l'acces aux
+// commandes au moment du changement, tout employe d'un marchand catalogue qui avait deja "conversations"
+// recoit automatiquement "commandes" en plus, une seule fois (sans effet ensuite : n'ajoute rien a un
+// employe qui a deja explicitement "commandes", ni a un employe qui n'avait pas "conversations"). Mute et
+// persiste directement les marchands concernes, puis retourne la liste (inchangee dans son contenu, sauf
+// les roles migres).
+async function migrerRoleCommandesEmployes(marchands) {
+  for (const m of marchands) {
+    if (m.type !== "catalogue" || !Array.isArray(m.employes) || !m.employes.length) continue;
+    let modifie = false;
+    for (const emp of m.employes) {
+      if (Array.isArray(emp.roles) && emp.roles.indexOf("conversations") !== -1 && emp.roles.indexOf("commandes") === -1) {
+        emp.roles.push("commandes");
+        modifie = true;
+      }
+    }
+    if (modifie) {
+      await insertMerchant(m);
+    }
+  }
+  return marchands;
+}
+
 function defaultMerchantFromEnv() {
   // Migration automatique : recree le marchand historique "default" a partir des variables
   // d'environnement existantes, pour que les installations deja en production ne perdent rien.
@@ -130,7 +155,7 @@ async function initRegistry() {
     await ensureMerchantsTable();
     const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
-      return res.rows.map(rowToMerchant);
+      return migrerRoleCommandesEmployes(res.rows.map(rowToMerchant));
     }
     const initial = defaultMerchantFromEnv();
     await insertMerchant(initial);
@@ -141,7 +166,7 @@ async function initRegistry() {
   try {
     if (fs.existsSync(MERCHANTS_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8"));
-      if (Array.isArray(parsed) && parsed.length) return parsed;
+      if (Array.isArray(parsed) && parsed.length) return migrerRoleCommandesEmployes(parsed);
     }
   } catch (erreur) {
     console.error("Erreur de lecture de merchants.json, on repart du registre par defaut :", erreur);
