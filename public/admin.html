@@ -140,7 +140,8 @@ const I18N = {
 
     roleRendezvous: "Services & rendez-vous",
     roleConversationsService: "Conversations (service client)",
-    roleParametres: "Paramètres & tableau de bord",
+    roleParametres: "Paramètres",
+    roleTableauDeBord: "Tableau de bord",
     roleCatalogue: "Catalogue & stock",
     roleCommandes: "Commandes",
 
@@ -481,7 +482,8 @@ const I18N = {
 
     roleRendezvous: "Services & appointments",
     roleConversationsService: "Conversations (customer service)",
-    roleParametres: "Settings & dashboard",
+    roleParametres: "Settings",
+    roleTableauDeBord: "Dashboard",
     roleCatalogue: "Catalog & stock",
     roleCommandes: "Orders",
 
@@ -984,10 +986,15 @@ function choisirMarchand(id) {
 // ROLES_EMPLOYE_VALIDES). Utilise a la fois pour filtrer les onglets visibles (ci-dessous) et pour
 // construire les cases a cocher de l'onglet "Employés" (voir renderEmployes plus bas).
 function rolesDisponibles() {
+  // "tableaudebord" est desormais independant de "parametres" (depuis le 25 septembre 2026) : couvre le
+  // Tableau de bord (les deux types), plus Rapports et Inventaire pour un marchand catalogue - voir
+  // ROLES_EMPLOYE_VALIDES / construireOnglets() ci-dessous. "parametres" ne couvre plus que les vrais
+  // réglages (onglet Paramètres + Mon compte).
   if (marchandActif.type === "service") {
     return [
       ["rendezvous", t("roleRendezvous")],
       ["conversations", t("roleConversationsService")],
+      ["tableaudebord", t("roleTableauDeBord")],
       ["parametres", t("roleParametres")]
     ];
   }
@@ -999,6 +1006,7 @@ function rolesDisponibles() {
     ["catalogue", t("roleCatalogue")],
     ["commandes", t("roleCommandes")],
     ["conversations", t("roleConversationsService")],
+    ["tableaudebord", t("roleTableauDeBord")],
     ["parametres", t("roleParametres")]
   ];
 }
@@ -1012,7 +1020,7 @@ function construireOnglets() {
   //     propriétaire/super-administrateur (toujours), et pour un employe seulement s'il a ce role.
   let onglets = marchandActif.type === "service"
     ? [
-        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "parametres"],
+        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
         ["services", t("ongletServices"), renderServices, "rendezvous"],
         ["rendezvous", t("ongletRendezvous"), renderRendezvous, "rendezvous"],
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["rendezvous", "conversations"]],
@@ -1022,11 +1030,11 @@ function construireOnglets() {
         ["compte", t("ongletCompte"), renderCompte, null]
       ]
     : [
-        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "parametres"],
+        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
         ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue"],
         ["commandes", t("ongletCommandes"), renderCommandes, "commandes"],
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
-        ["rapports", t("ongletRapports"), renderRapports, "parametres"],
+        ["rapports", t("ongletRapports"), renderRapports, "tableaudebord"],
         ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
