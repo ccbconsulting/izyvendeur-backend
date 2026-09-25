@@ -353,6 +353,7 @@ const I18N = {
     theadLignes: "Lignes",
     suffixeVariantes: " variante(s)",
     confirmSupprimerInstantane: "Supprimer cet instantané ?",
+    labelSupprimeLePar: "Supprimé le {date} par {qui}",
     libelleCommandesPeriode: "Commandes sur la période",
     libelleCaHorsAnnulees: "Chiffre d'affaires (hors annulées)",
     h3RepartitionStatut: "Répartition par statut",
@@ -698,6 +699,7 @@ const I18N = {
     theadLignes: "Rows",
     suffixeVariantes: " variant(s)",
     confirmSupprimerInstantane: "Delete this snapshot?",
+    labelSupprimeLePar: "Deleted on {date} by {qui}",
     libelleCommandesPeriode: "Orders in this period",
     libelleCaHorsAnnulees: "Revenue (excluding cancelled)",
     h3RepartitionStatut: "Breakdown by status",
@@ -1919,13 +1921,25 @@ async function renderInventaire() {
     "<button id='btnNouvelInstantane'>" + t("btnNouvelInstantane") + "</button>" +
     "<div id='listeInstantanes' style='margin-top:14px;'>" + rendreListeInstantanes(instantanes) + "</div>";
 
+  // Bouton "Supprimer" reserve au propriétaire du marchand/super-administrateur (voir server.js) - un
+  // employé ayant le rôle "inventaire" voit toujours la liste complete (y compris les instantanés deja
+  // supprimés, avec leur mention "Supprimé le ... par ...") mais jamais le bouton lui-même.
+  const estGestionnaire = moi.role === "marchand" || moi.role === "superadmin";
+
   function rendreListeInstantanes(liste) {
     if (!liste.length) return "<p class='raison'>" + t("msgAucunInstantane") + "</p>";
     return "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadLignes") + "</th><th></th></tr>" +
-      liste.slice().reverse().map((s) =>
-        "<tr><td>" + esc(s.nom) + "</td><td>" + esc(new Date(s.dateISO).toLocaleString(localeCourante())) + "</td><td>" + s.lignes.length + t("suffixeVariantes") + "</td>" +
-          "<td><button data-voir-instantane='" + esc(s.id) + "'>" + t("voir") + "</button> <button data-suppr-instantane='" + esc(s.id) + "' class='danger'>" + t("supprimer") + "</button></td></tr>"
-      ).join("") + "</table><div id='detailInstantane'></div>";
+      liste.slice().reverse().map((s) => {
+        const supprime = !!s.supprimeLe;
+        let colonneAction = "<button data-voir-instantane='" + esc(s.id) + "'>" + t("voir") + "</button>";
+        if (supprime) {
+          colonneAction += " <span class='raison'>" + esc(t("labelSupprimeLePar", { date: new Date(s.supprimeLe).toLocaleString(localeCourante()), qui: s.supprimePar || "?" })) + "</span>";
+        } else if (estGestionnaire) {
+          colonneAction += " <button data-suppr-instantane='" + esc(s.id) + "' class='danger'>" + t("supprimer") + "</button>";
+        }
+        return "<tr" + (supprime ? " style='opacity:0.6;'" : "") + "><td>" + esc(s.nom) + "</td><td>" + esc(new Date(s.dateISO).toLocaleString(localeCourante())) + "</td><td>" + s.lignes.length + t("suffixeVariantes") + "</td>" +
+          "<td>" + colonneAction + "</td></tr>";
+      }).join("") + "</table><div id='detailInstantane'></div>";
   }
 
   function brancherActionsInstantanes(liste) {
