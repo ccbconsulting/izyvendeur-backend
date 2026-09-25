@@ -88,6 +88,13 @@
   <div id="contenuOnglet"><div class="chargement"></div></div>
 </main>
 
+<!-- jsPDF (25 septembre 2026) : utilisee uniquement pour les boutons "Télécharger en PDF" des onglets
+     Rapports et Inventaire (genereePdfStructure ci-dessous). Chargee depuis un CDN pour ne rien changer
+     cote serveur ni ajouter de dependance a installer sur Render - si elle ne peut pas se charger (pas de
+     connexion au moment du chargement de la page), les boutons PDF le detectent et previennent proprement
+     au lieu d'echouer silencieusement (voir pdfDisponible()). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
 <script>
 // ==================================================================================
 // Internationalisation (FR/EN) de l'interface /admin. Choix de langue memorise dans
@@ -200,6 +207,12 @@ const I18N = {
     optionTous: "Tous",
     optionPlusRecentes: "Plus récentes d'abord",
     optionPlusAnciennes: "Plus anciennes d'abord",
+    labelFiltrePeriodeCmd: "Période : ",
+    optionPeriodeToutes: "Toutes",
+    optionPeriodeJour: "Un jour précis",
+    optionPeriodePlage: "Une plage de dates",
+    labelDu: "Du",
+    labelAu: "Au",
     theadNumero: "N°",
     theadDateCourt: "Date",
     theadArticles: "Articles",
@@ -354,6 +367,26 @@ const I18N = {
     suffixeVariantes: " variante(s)",
     confirmSupprimerInstantane: "Supprimer cet instantané ?",
     labelSupprimeLePar: "Supprimé le {date} par {qui}",
+    btnTelechargerPdf: "Télécharger en PDF",
+    btnTelechargerStockActuelPdf: "Télécharger le stock actuel en PDF",
+    msgPdfIndisponible: "Le téléchargement PDF n'a pas pu démarrer (connexion internet nécessaire pour charger l'outil de génération). Vérifiez votre connexion et réessayez.",
+    pdfRapportTitre: "Rapport de commandes — {nom}",
+    pdfRapportSousTitrePeriode: "Période : {periode} — Date de référence : {date}",
+    pdfRapportSousTitreArticle: "Article : {article}",
+    pdfRapportSousTitreGenere: "Généré le {date}",
+    pdfSectionResume: "Résumé",
+    pdfLigneNbCommandes: "Commandes sur la période : {n}",
+    pdfLigneCa: "Chiffre d'affaires (hors annulées) : {ca} FCFA",
+    pdfSectionRepartition: "Répartition par statut",
+    pdfSectionQuantites: "Quantités vendues par article",
+    pdfTexteAucuneVente: "Aucune vente sur cette période.",
+    pdfInventaireTitre: "Instantané d'inventaire — {nom}",
+    pdfInventaireSousTitreEnregistre: "{marchand} — Enregistré le {date}",
+    pdfInventaireSousTitreSupprime: "Supprimé le {date} par {qui}",
+    pdfStockActuelTitre: "Stock actuel — {marchand}",
+    pdfSectionArticles: "Articles en stock",
+    pdfLigneArticle: "{produit} ({couleur}, {taille}) — Stock réel : {stock} — Prix : {prix} FCFA",
+    pdfTexteAucunArticle: "Aucun article dans le catalogue.",
     libelleCommandesPeriode: "Commandes sur la période",
     libelleCaHorsAnnulees: "Chiffre d'affaires (hors annulées)",
     h3RepartitionStatut: "Répartition par statut",
@@ -546,6 +579,12 @@ const I18N = {
     optionTous: "All",
     optionPlusRecentes: "Newest first",
     optionPlusAnciennes: "Oldest first",
+    labelFiltrePeriodeCmd: "Period: ",
+    optionPeriodeToutes: "All",
+    optionPeriodeJour: "A specific day",
+    optionPeriodePlage: "A date range",
+    labelDu: "From",
+    labelAu: "To",
     theadNumero: "No.",
     theadDateCourt: "Date",
     theadArticles: "Items",
@@ -700,6 +739,26 @@ const I18N = {
     suffixeVariantes: " variant(s)",
     confirmSupprimerInstantane: "Delete this snapshot?",
     labelSupprimeLePar: "Deleted on {date} by {qui}",
+    btnTelechargerPdf: "Download as PDF",
+    btnTelechargerStockActuelPdf: "Download current stock as PDF",
+    msgPdfIndisponible: "The PDF download couldn't start (an internet connection is needed to load the PDF generator). Check your connection and try again.",
+    pdfRapportTitre: "Order report — {nom}",
+    pdfRapportSousTitrePeriode: "Period: {periode} — Reference date: {date}",
+    pdfRapportSousTitreArticle: "Item: {article}",
+    pdfRapportSousTitreGenere: "Generated on {date}",
+    pdfSectionResume: "Summary",
+    pdfLigneNbCommandes: "Orders in this period: {n}",
+    pdfLigneCa: "Revenue (excluding cancelled): {ca} FCFA",
+    pdfSectionRepartition: "Breakdown by status",
+    pdfSectionQuantites: "Quantities sold by item",
+    pdfTexteAucuneVente: "No sales in this period.",
+    pdfInventaireTitre: "Inventory snapshot — {nom}",
+    pdfInventaireSousTitreEnregistre: "{marchand} — Saved on {date}",
+    pdfInventaireSousTitreSupprime: "Deleted on {date} by {qui}",
+    pdfStockActuelTitre: "Current stock — {marchand}",
+    pdfSectionArticles: "Items in stock",
+    pdfLigneArticle: "{produit} ({couleur}, {taille}) — Actual stock: {stock} — Price: {prix} FCFA",
+    pdfTexteAucunArticle: "No items in the catalog.",
     libelleCommandesPeriode: "Orders in this period",
     libelleCaHorsAnnulees: "Revenue (excluding cancelled)",
     h3RepartitionStatut: "Breakdown by status",
@@ -1243,6 +1302,12 @@ async function renderCatalogue() {
 let commandesFiltreStatut = "Tous";
 let commandesFiltreMode = "Tous";
 let commandesTriDate = "recent"; // "recent" (plus recentes d'abord) ou "ancien"
+// Filtre par periode (25 septembre 2026), independant du tri par date ci-dessus : "toutes" (aucun filtre),
+// "jour" (un jour calendaire precis) ou "plage" (une plage de dates inclusive, du/au).
+let commandesFiltrePeriodeType = "toutes";
+let commandesFiltreJour = new Date().toISOString().slice(0, 10);
+let commandesFiltrePlageDu = new Date().toISOString().slice(0, 10);
+let commandesFiltrePlageAu = new Date().toISOString().slice(0, 10);
 
 async function renderCommandes() {
   const zone = document.getElementById("contenuOnglet");
@@ -1254,6 +1319,14 @@ async function renderCommandes() {
   if (commandesFiltreStatut !== "Tous") visibles = visibles.filter((o) => o.statut === commandesFiltreStatut);
   if (commandesFiltreMode !== "Tous") {
     visibles = visibles.filter((o) => (o.modeLivraison === "retrait" ? "Retrait" : "Livraison") === commandesFiltreMode);
+  }
+  if (commandesFiltrePeriodeType === "jour" && commandesFiltreJour) {
+    visibles = visibles.filter((o) => new Date(o.dateISO).toISOString().slice(0, 10) === commandesFiltreJour);
+  } else if (commandesFiltrePeriodeType === "plage" && commandesFiltrePlageDu && commandesFiltrePlageAu) {
+    visibles = visibles.filter((o) => {
+      const jour = new Date(o.dateISO).toISOString().slice(0, 10);
+      return jour >= commandesFiltrePlageDu && jour <= commandesFiltrePlageAu;
+    });
   }
   visibles.sort((a, b) => {
     const diff = new Date(a.dateISO) - new Date(b.dateISO);
@@ -1277,6 +1350,18 @@ async function renderCommandes() {
         "<option value='recent'" + (commandesTriDate === "recent" ? " selected" : "") + ">" + t("optionPlusRecentes") + "</option>" +
         "<option value='ancien'" + (commandesTriDate === "ancien" ? " selected" : "") + ">" + t("optionPlusAnciennes") + "</option>" +
       "</select></label>" +
+      "<label>" + t("labelFiltrePeriodeCmd") + "<select id='commandesSelPeriodeType'>" +
+        "<option value='toutes'" + (commandesFiltrePeriodeType === "toutes" ? " selected" : "") + ">" + t("optionPeriodeToutes") + "</option>" +
+        "<option value='jour'" + (commandesFiltrePeriodeType === "jour" ? " selected" : "") + ">" + t("optionPeriodeJour") + "</option>" +
+        "<option value='plage'" + (commandesFiltrePeriodeType === "plage" ? " selected" : "") + ">" + t("optionPeriodePlage") + "</option>" +
+      "</select></label>" +
+      (commandesFiltrePeriodeType === "jour"
+        ? "<label>" + t("labelDate") + "<input type='date' id='commandesInputJour' value='" + esc(commandesFiltreJour) + "' /></label>"
+        : "") +
+      (commandesFiltrePeriodeType === "plage"
+        ? "<label>" + t("labelDu") + "<input type='date' id='commandesInputDu' value='" + esc(commandesFiltrePlageDu) + "' /></label>" +
+          "<label>" + t("labelAu") + "<input type='date' id='commandesInputAu' value='" + esc(commandesFiltrePlageAu) + "' /></label>"
+        : "") +
     "</div>" +
     "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadArticles") + "</th><th>" + t("theadNbArticles") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadModeCourt") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadAdresse") + "</th><th>" + t("theadStatut") + "</th></tr>" +
     (visibles.length ? visibles.map((o) =>
@@ -1301,6 +1386,13 @@ async function renderCommandes() {
   document.getElementById("commandesSelStatut").onchange = (e) => { commandesFiltreStatut = e.target.value; renderCommandes(); };
   document.getElementById("commandesSelMode").onchange = (e) => { commandesFiltreMode = e.target.value; renderCommandes(); };
   document.getElementById("commandesSelTri").onchange = (e) => { commandesTriDate = e.target.value; renderCommandes(); };
+  document.getElementById("commandesSelPeriodeType").onchange = (e) => { commandesFiltrePeriodeType = e.target.value; renderCommandes(); };
+  const inputJourCmd = document.getElementById("commandesInputJour");
+  if (inputJourCmd) inputJourCmd.onchange = (e) => { commandesFiltreJour = e.target.value; renderCommandes(); };
+  const inputDuCmd = document.getElementById("commandesInputDu");
+  if (inputDuCmd) inputDuCmd.onchange = (e) => { commandesFiltrePlageDu = e.target.value; renderCommandes(); };
+  const inputAuCmd = document.getElementById("commandesInputAu");
+  if (inputAuCmd) inputAuCmd.onchange = (e) => { commandesFiltrePlageAu = e.target.value; renderCommandes(); };
 
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-commande]"), (sel) => {
     sel.addEventListener("change", async () => {
@@ -1867,6 +1959,67 @@ async function renderSimulateur() {
 // Onglet "Rapports" (statistiques de commandes) : separe de l'onglet "Inventaire" depuis le 25 septembre
 // 2026 (voir renderInventaire ci-dessous) - les deux vivaient ensemble dans un seul onglet "Rapports" avant
 // ce jour, desormais deux onglets independants avec chacun leur propre droit employe.
+// ---------------- Export PDF (Rapports et Inventaire), 25 septembre 2026 ----------------
+// Genere un PDF cote NAVIGATEUR (bibliotheque jsPDF, voir <script src> plus haut) - aucun changement cote
+// serveur. Mise en page volontairement simple (titre + sous-titres + sections de lignes, avec retour a la
+// ligne et saut de page automatiques) plutot qu'un tableau a colonnes fixes, pour rester fiable quels que
+// soient la longueur des noms d'articles/instantanés et le nombre de lignes.
+function pdfDisponible() {
+  return typeof window.jspdf !== "undefined" && typeof window.jspdf.jsPDF === "function";
+}
+
+function ecrirePdfStructure(doc, options) {
+  const titre = options.titre;
+  const sousTitres = options.sousTitres || [];
+  const sections = options.sections || [];
+  const margeG = 14;
+  const margeBas = 280;
+  const largeurUtile = 210 - margeG - margeG;
+  let y = 18;
+
+  function sautDePageSiBesoin(hauteurNecessaire) {
+    if (y + hauteurNecessaire > margeBas) { doc.addPage(); y = 18; }
+  }
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(0);
+  doc.text(titre, margeG, y); y += 8;
+
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(90);
+  sousTitres.forEach((s) => {
+    doc.splitTextToSize(s, largeurUtile).forEach((l) => { sautDePageSiBesoin(6); doc.text(l, margeG, y); y += 5; });
+  });
+  doc.setTextColor(0);
+  y += 4;
+
+  sections.forEach((section) => {
+    sautDePageSiBesoin(10);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12);
+    doc.text(section.titre, margeG, y); y += 7;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+    if (!section.lignes || !section.lignes.length) {
+      sautDePageSiBesoin(6);
+      doc.setTextColor(120);
+      doc.text(section.texteVide || "-", margeG, y); y += 6;
+      doc.setTextColor(0);
+    } else {
+      section.lignes.forEach((ligneTexte) => {
+        doc.splitTextToSize("• " + ligneTexte, largeurUtile).forEach((l) => { sautDePageSiBesoin(6); doc.text(l, margeG, y); y += 5.5; });
+      });
+    }
+    y += 4;
+  });
+}
+
+// `nomFichier` : depose directement le PDF dans les telechargements du navigateur (doc.save). Renvoie
+// false (et previent l'utilisateur) si jsPDF n'a pas pu se charger, sans jamais planter le bouton.
+function genererEtTelechargerPdf(construireContenu, nomFichier) {
+  if (!pdfDisponible()) { alert(t("msgPdfIndisponible")); return false; }
+  const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+  ecrirePdfStructure(doc, construireContenu());
+  doc.save(nomFichier);
+  return true;
+}
+
 async function renderRapports() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -1882,17 +2035,28 @@ async function renderRapports() {
         catalogue.map((p) => "<option value=\"" + esc(p.id) + "\">" + esc(p.nom) + "</option>").join("") +
       "</select></div>" +
       "<div><button id='btnGenererRapport' class='principal'>" + t("btnGenerer") + "</button></div>" +
+      "<div><button id='btnRapportPdf'>" + t("btnTelechargerPdf") + "</button></div>" +
     "</div>" +
     "<div id='resultatRapport'></div>";
 
-  document.getElementById("btnGenererRapport").onclick = async () => {
+  const libellesPeriode = { jour: t("optionJour"), semaine: t("optionSemaine"), mois: t("optionMois"), trimestre: t("optionTrimestre"), annee: t("optionAnnee") };
+
+  // Reutilise par le bouton "Generer" (affichage a l'ecran) ET par le bouton PDF (telechargement) - chacun
+  // appelle lui-meme l'API avec les filtres actuellement selectionnes, sans dependre de l'autre.
+  async function chargerRapport() {
     const periode = document.getElementById("rapportPeriode").value;
     const date = document.getElementById("rapportDate").value;
     const articleId = document.getElementById("rapportArticle").value;
+    const r = await api("/api/" + marchandActif.id + "/rapports/commandes?periode=" + encodeURIComponent(periode) + "&date=" + encodeURIComponent(date) + "&articleId=" + encodeURIComponent(articleId));
+    const nomArticle = articleId === "tous" ? t("optionTousArticles") : ((catalogue.find((p) => p.id === articleId) || {}).nom || articleId);
+    return { r, periode, date, articleId, nomArticle };
+  }
+
+  document.getElementById("btnGenererRapport").onclick = async () => {
     const zoneResultat = document.getElementById("resultatRapport");
     zoneResultat.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
     try {
-      const r = await api("/api/" + marchandActif.id + "/rapports/commandes?periode=" + encodeURIComponent(periode) + "&date=" + encodeURIComponent(date) + "&articleId=" + encodeURIComponent(articleId));
+      const { r } = await chargerRapport();
       zoneResultat.innerHTML =
         "<div class='tuiles'>" +
           "<div class='tuile'><div class='valeur'>" + r.nbCommandes + "</div><div class='libelle'>" + t("libelleCommandesPeriode") + "</div></div>" +
@@ -1906,6 +2070,25 @@ async function renderRapports() {
           : "<p class='raison'>" + t("msgAucuneVentePeriode") + "</p>");
     } catch (e) { zoneResultat.innerHTML = "<div class='erreur'>" + t("erreurPrefixe") + esc(e.message) + "</div>"; }
   };
+
+  document.getElementById("btnRapportPdf").onclick = async () => {
+    try {
+      const { r, periode, date, nomArticle } = await chargerRapport();
+      genererEtTelechargerPdf(() => ({
+        titre: t("pdfRapportTitre", { nom: marchandActif.nom }),
+        sousTitres: [
+          t("pdfRapportSousTitrePeriode", { periode: libellesPeriode[periode] || periode, date: date }),
+          t("pdfRapportSousTitreArticle", { article: nomArticle }),
+          t("pdfRapportSousTitreGenere", { date: new Date().toLocaleString(localeCourante()) })
+        ],
+        sections: [
+          { titre: t("pdfSectionResume"), lignes: [t("pdfLigneNbCommandes", { n: r.nbCommandes }), t("pdfLigneCa", { ca: (r.chiffreAffaires || 0).toLocaleString(localeCourante()) })] },
+          { titre: t("pdfSectionRepartition"), lignes: Object.keys(r.parStatut).map((s) => libelleStatutCommande(s) + " : " + r.parStatut[s]) },
+          { titre: t("pdfSectionQuantites"), lignes: r.parArticle.map((a) => a.nom + " : " + a.quantite), texteVide: t("pdfTexteAucuneVente") }
+        ]
+      }), "rapport-commandes-" + marchandActif.id + "-" + date + ".pdf");
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
 }
 
 // Onglet "Inventaire" (instantanés de stock) : separe de l'onglet "Rapports" depuis le 25 septembre 2026
@@ -1915,23 +2098,42 @@ async function renderInventaire() {
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const instantanes = await api("/api/" + marchandActif.id + "/inventaire/instantanes");
 
+  // Bouton "Supprimer" reserve au propriétaire du marchand/super-administrateur (voir server.js) - un
+  // employé ayant le rôle "inventaire" voit toujours la liste complete (y compris les instantanés deja
+  // supprimés, avec leur mention "Supprimé le ... par ...") mais jamais le bouton lui-même. DOIT rester
+  // déclaré AVANT l'appel à rendreListeInstantanes(...) juste en dessous (qui l'utilise immédiatement) -
+  // une erreur de ce genre (variable const utilisée avant sa ligne de déclaration) plante tout l'onglet.
+  const estGestionnaire = moi.role === "marchand" || moi.role === "superadmin";
+
   zone.innerHTML =
     "<h2>" + t("h3InstantanesInventaire") + "</h2>" +
     "<p class='raison'>" + t("noteInstantanes") + "</p>" +
-    "<button id='btnNouvelInstantane'>" + t("btnNouvelInstantane") + "</button>" +
+    "<button id='btnNouvelInstantane'>" + t("btnNouvelInstantane") + "</button> " +
+    "<button id='btnStockActuelPdf'>" + t("btnTelechargerStockActuelPdf") + "</button>" +
     "<div id='listeInstantanes' style='margin-top:14px;'>" + rendreListeInstantanes(instantanes) + "</div>";
 
-  // Bouton "Supprimer" reserve au propriétaire du marchand/super-administrateur (voir server.js) - un
-  // employé ayant le rôle "inventaire" voit toujours la liste complete (y compris les instantanés deja
-  // supprimés, avec leur mention "Supprimé le ... par ...") mais jamais le bouton lui-même.
-  const estGestionnaire = moi.role === "marchand" || moi.role === "superadmin";
+  document.getElementById("btnStockActuelPdf").onclick = async () => {
+    try {
+      const lignes = await api("/api/" + marchandActif.id + "/inventaire/actuel");
+      genererEtTelechargerPdf(() => ({
+        titre: t("pdfStockActuelTitre", { marchand: marchandActif.nom }),
+        sousTitres: [t("pdfRapportSousTitreGenere", { date: new Date().toLocaleString(localeCourante()) })],
+        sections: [{
+          titre: t("pdfSectionArticles"),
+          lignes: lignes.map((l) => t("pdfLigneArticle", { produit: l.produit, couleur: l.couleur, taille: l.taille, stock: l.stockReel, prix: (l.prix || 0).toLocaleString(localeCourante()) })),
+          texteVide: t("pdfTexteAucunArticle")
+        }]
+      }), "stock-actuel-" + marchandActif.id + ".pdf");
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
 
   function rendreListeInstantanes(liste) {
     if (!liste.length) return "<p class='raison'>" + t("msgAucunInstantane") + "</p>";
     return "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadLignes") + "</th><th></th></tr>" +
       liste.slice().reverse().map((s) => {
         const supprime = !!s.supprimeLe;
-        let colonneAction = "<button data-voir-instantane='" + esc(s.id) + "'>" + t("voir") + "</button>";
+        let colonneAction = "<button data-voir-instantane='" + esc(s.id) + "'>" + t("voir") + "</button> " +
+          "<button data-pdf-instantane='" + esc(s.id) + "'>" + t("btnTelechargerPdf") + "</button>";
         if (supprime) {
           colonneAction += " <span class='raison'>" + esc(t("labelSupprimeLePar", { date: new Date(s.supprimeLe).toLocaleString(localeCourante()), qui: s.supprimePar || "?" })) + "</span>";
         } else if (estGestionnaire) {
@@ -1952,6 +2154,23 @@ async function renderInventaire() {
           "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadPrix") + "</th></tr>" +
           s.lignes.map((l) => "<tr><td>" + esc(l.produit) + "</td><td>" + esc(l.couleur) + "</td><td>" + esc(l.taille) + "</td><td>" + l.stockReel + "</td><td>" + (l.prix || 0).toLocaleString(localeCourante()) + " FCFA</td></tr>").join("") +
           "</table>";
+      };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-pdf-instantane]"), (btn) => {
+      btn.onclick = () => {
+        const s = liste.filter((x) => x.id === btn.dataset.pdfInstantane)[0];
+        if (!s) return;
+        const sousTitres = [t("pdfInventaireSousTitreEnregistre", { marchand: marchandActif.nom, date: new Date(s.dateISO).toLocaleString(localeCourante()) })];
+        if (s.supprimeLe) sousTitres.push(t("pdfInventaireSousTitreSupprime", { date: new Date(s.supprimeLe).toLocaleString(localeCourante()), qui: s.supprimePar || "?" }));
+        genererEtTelechargerPdf(() => ({
+          titre: t("pdfInventaireTitre", { nom: s.nom }),
+          sousTitres: sousTitres,
+          sections: [{
+            titre: t("pdfSectionArticles"),
+            lignes: s.lignes.map((l) => t("pdfLigneArticle", { produit: l.produit, couleur: l.couleur, taille: l.taille, stock: l.stockReel, prix: (l.prix || 0).toLocaleString(localeCourante()) })),
+            texteVide: t("pdfTexteAucunArticle")
+          }]
+        }), "instantane-" + s.id + ".pdf");
       };
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr-instantane]"), (btn) => {
