@@ -101,21 +101,29 @@ async function ensureMerchantsTable() {
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_notifications_statut BOOLEAN NOT NULL DEFAULT false");
 }
 
-// Migration ponctuelle (25 septembre 2026) : le role employe "commandes" devient independant du role
-// "conversations" (voir ROLES_EMPLOYE_VALIDES dans server.js - jusque-la, voir/traiter les commandes etait
-// rattache au role "conversations"). Pour qu'aucun employe existant ne perde silencieusement l'acces aux
-// commandes au moment du changement, tout employe d'un marchand catalogue qui avait deja "conversations"
-// recoit automatiquement "commandes" en plus, une seule fois (sans effet ensuite : n'ajoute rien a un
-// employe qui a deja explicitement "commandes", ni a un employe qui n'avait pas "conversations"). Mute et
-// persiste directement les marchands concernes, puis retourne la liste (inchangee dans son contenu, sauf
-// les roles migres).
-async function migrerRoleCommandesEmployes(marchands) {
+// Migrations ponctuelles (25 septembre 2026) sur les roles employe (voir ROLES_EMPLOYE_VALIDES dans
+// server.js) : deux roles autrefois regroupes avec un autre deviennent independants, et on ajoute
+// automatiquement le nouveau role a tout employe qui beneficiait deja de l'acces via l'ancien
+// regroupement, pour ne retirer d'acces a personne au moment du changement. Sans effet ensuite (idempotent
+// : n'ajoute rien a un employe qui a deja explicitement le nouveau role, ni a un employe qui n'avait pas
+// l'ancien).
+//   - "commandes" : jusque-la rattache au role "conversations" (marchands catalogue uniquement).
+//   - "tableaudebord" : jusque-la rattache au role "parametres" (Tableau de bord commun aux deux types de
+//     marchand ; Rapports et Inventaire, marchand catalogue uniquement, y etaient deja aussi rattaches).
+// Mute et persiste directement les marchands concernes (un seul insertMerchant meme si les deux migrations
+// s'appliquent), puis retourne la liste (inchangee dans son contenu, sauf les roles migres).
+async function migrerRolesEmployes(marchands) {
   for (const m of marchands) {
-    if (m.type !== "catalogue" || !Array.isArray(m.employes) || !m.employes.length) continue;
+    if (!Array.isArray(m.employes) || !m.employes.length) continue;
     let modifie = false;
     for (const emp of m.employes) {
-      if (Array.isArray(emp.roles) && emp.roles.indexOf("conversations") !== -1 && emp.roles.indexOf("commandes") === -1) {
+      if (!Array.isArray(emp.roles)) continue;
+      if (m.type === "catalogue" && emp.roles.indexOf("conversations") !== -1 && emp.roles.indexOf("commandes") === -1) {
         emp.roles.push("commandes");
+        modifie = true;
+      }
+      if (emp.roles.indexOf("parametres") !== -1 && emp.roles.indexOf("tableaudebord") === -1) {
+        emp.roles.push("tableaudebord");
         modifie = true;
       }
     }
@@ -155,7 +163,7 @@ async function initRegistry() {
     await ensureMerchantsTable();
     const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
-      return migrerRoleCommandesEmployes(res.rows.map(rowToMerchant));
+      return migrerRolesEmployes(res.rows.map(rowToMerchant));
     }
     const initial = defaultMerchantFromEnv();
     await insertMerchant(initial);
@@ -166,7 +174,7 @@ async function initRegistry() {
   try {
     if (fs.existsSync(MERCHANTS_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8"));
-      if (Array.isArray(parsed) && parsed.length) return migrerRoleCommandesEmployes(parsed);
+      if (Array.isArray(parsed) && parsed.length) return migrerRolesEmployes(parsed);
     }
   } catch (erreur) {
     console.error("Erreur de lecture de merchants.json, on repart du registre par defaut :", erreur);

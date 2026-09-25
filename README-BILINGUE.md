@@ -414,7 +414,7 @@ préfixé, silence du bot pendant la pause, reprise automatique après 5 minutes
 ET poursuite exacte de la sélection en cours (couleur déjà choisie conservée), et absence du mot
 "undefined" pour un premier contact côté moteur rendez-vous.
 
-## Étape 17 — "Commandes" devient un droit d'accès employé à part entière (nouveau)
+## Étape 17 — "Commandes" et "Tableau de bord" deviennent des droits d'accès employé à part entière (nouveau)
 
 Jusqu'ici, pour un marchand catalogue, un(e) employé(e) qui avait le droit "Conversations" (répondre aux
 clients / gérer les demandes de mise en relation avec un humain) voyait automatiquement aussi l'onglet
@@ -440,6 +440,26 @@ employé qui n'a jamais eu ni "Conversations" ni "Commandes" reçoit un 403 sur 
 créé directement avec seulement "Commandes" (sans "Conversations") accède bien à `/commandes` mais reçoit
 un 403 sur `/conversations` — la séparation fonctionne dans les deux sens. La migration a aussi été vérifiée
 comme étant sans effet si elle tourne une deuxième fois (pas de doublon de rôle).
+
+**"Tableau de bord" séparé de "Paramètres"** : demandé juste après, le même principe est appliqué au
+Tableau de bord (commun aux marchands catalogue ET rendez-vous), qui était lui aussi rattaché au droit
+"Paramètres" — avec, pour un marchand catalogue, les onglets Rapports et Inventaire qui suivaient déjà le
+même regroupement ("chiffres/analyses" dans le code d'origine). "Paramètres" ne couvre désormais plus que
+les vrais réglages (l'onglet Paramètres et les champs de l'onglet Mon compte) ; un nouveau droit
+**"Tableau de bord"** couvre le Tableau de bord, et pour un marchand catalogue, Rapports et Inventaire
+avec lui. Si vous souhaitez au contraire que Rapports/Inventaire restent un droit séparé de Tableau de
+bord, dites-le-moi et je les détache à leur tour.
+
+Concrètement dans l'onglet "Employés", la case "Paramètres & tableau de bord" est remplacée par deux
+cases séparées : "Paramètres" et "Tableau de bord". Même migration automatique et non-destructive que
+pour Commandes : tout employé qui avait déjà "Paramètres" reçoit "Tableau de bord" en plus au démarrage
+(pour les deux types de marchand), afin de ne retirer l'accès à personne.
+
+Testé le 25 septembre 2026 de la même façon (vrai appel HTTP) : un employé seedé avant la migration avec
+seulement "Paramètres" garde bien accès au Tableau de bord ET aux Rapports après démarrage ; un employé
+créé directement avec seulement "Tableau de bord" (sans "Paramètres") accède bien au Tableau de bord mais
+reçoit un 403 sur `/parametres` ; un employé qui n'a jamais eu ni l'un ni l'autre reçoit un 403 sur le
+Tableau de bord.
 
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
@@ -491,7 +511,9 @@ comme étant sans effet si elle tourne une deuxième fois (pas de doublon de rô
   l'envoi de notification client sur `PUT /api/:id/commandes/:orderId/statut` (Étape 15) +
   renommage "Parler à un conseiller" → "Contacter un conseiller" partout + nouveau menu tactile à 2
   boutons "Réponse ici" / "Être rappelé(e)" (Étape 16) + nouveau rôle employé "commandes", indépendant de
-  "conversations", appliqué aux 2 routes `/api/:id/commandes` (Étape 17)
+  "conversations", appliqué aux 2 routes `/api/:id/commandes` + nouveau rôle employé "tableaudebord",
+  indépendant de "parametres", appliqué à `/api/:id/tableau-de-bord` et aux 5 routes Rapports/Inventaire
+  (Étape 17)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -504,7 +526,8 @@ comme étant sans effet si elle tourne une deuxième fois (pas de doublon de rô
   bloc "Notifications de statut" (4 statuts activables indépendamment, texte bilingue par statut) dans
   l'onglet Paramètres, visible uniquement si l'option est débloquée + 3e case dans "Options payantes"
   (Étape 15) + case "Conversations & commandes" de l'onglet Employés remplacée par deux cases
-  indépendantes "Conversations" et "Commandes" (Étape 17)
+  indépendantes "Conversations" et "Commandes" + case "Paramètres & tableau de bord" remplacée par deux
+  cases indépendantes "Paramètres" et "Tableau de bord" (Étape 17)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
@@ -512,8 +535,9 @@ comme étant sans effet si elle tourne une deuxième fois (pas de doublon de rô
   également ces deux colonnes + nouvelle colonne `numero_whatsapp_public` (Étape 10) + nouvelles colonnes
   `option_stock_illimite` et `option_lien_commande`, fausses par défaut pour tous les marchands existants
   (Étape 12) + nouvelle colonne `option_notifications_statut`, fausse par défaut (Étape 15) + migration
-  automatique au démarrage qui ajoute le rôle "commandes" à tout employé ayant déjà "conversations", pour
-  ne retirer d'accès à personne au moment du passage à un droit indépendant (Étape 17)
+  automatique au démarrage qui ajoute le rôle "commandes" à tout employé ayant déjà "conversations", et le
+  rôle "tableaudebord" à tout employé ayant déjà "parametres", pour ne retirer d'accès à personne au
+  moment du passage à des droits indépendants (Étape 17)
 
 ## Comment déployer
 
