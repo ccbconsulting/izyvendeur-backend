@@ -425,9 +425,33 @@ function createCatalogEngine(merchantKey, options) {
       // Langue choisie par le client au moment de l'achat - conservee sur la commande (pas seulement sur
       // la session, qui peut etre remise a zero ou disparaitre) pour pouvoir notifier le client dans la
       // bonne langue lors d'un changement de statut fait bien plus tard depuis /admin.
-      langue: sess.langue === "en" ? "en" : "fr"
+      langue: sess.langue === "en" ? "en" : "fr",
+      // Pont IzyFacture (25 septembre 2026, voir izyfacture.js et server.js) : etat de la facturation de
+      // cette commande, jamais bloquant pour le client - uniquement consulte/affiche cote /admin.
+      //   izyfactureStatut : null (jamais tente), "en_attente" (echec reessayable, en attente d'un nouvel
+      //   essai), "facturee" (facture creee - voir izyfactureFactureId/izyfactureNumero), "erreur" (echec
+      //   definitif, non reessayable tel quel - voir izyfactureErreur), "avoir" (facture annulee par un
+      //   avoir suite a une commande passee a "Annulee").
+      izyfactureStatut: null,
+      izyfactureFactureId: null,
+      izyfactureNumero: null,
+      izyfactureErreur: null,
+      izyfactureAvoirNumero: null
     };
     state.orders.push(order);
+    saveState();
+    return order;
+  }
+
+  // Enregistre l'etat de facturation IzyFacture d'une commande (voir server.js, qui appelle izyfacture.js
+  // puis persiste le resultat ici) - jamais appele directement par une route API cote client, uniquement en
+  // interne par server.js apres un appel reussi ou echoue a l'API IzyFacture. Retourne la commande mise a
+  // jour, ou null si elle n'existe plus (ex: marchand supprime entre-temps).
+  function enregistrerEtatIzyFacture(orderId, patch) {
+    if (!state) return null;
+    const order = state.orders.find((o) => o.id === Number(orderId));
+    if (!order) return null;
+    Object.assign(order, patch);
     saveState();
     return order;
   }
@@ -1413,11 +1437,20 @@ function createCatalogEngine(merchantKey, options) {
     return order;
   }
 
+  // Lit une commande par id sans la modifier - utilise par server.js pour connaitre son statut AVANT un
+  // appel a updateOrderStatus (celui-ci ne renvoie que la commande APRES changement), afin de savoir si le
+  // statut vient reellement de basculer vers "Confirmee"/"Annulee" (voir le pont IzyFacture, izyfacture.js).
+  function getOrderById(orderId) {
+    if (!state) return null;
+    return state.orders.find((o) => o.id === Number(orderId)) || null;
+  }
+
   return {
     type: "catalogue",
     init,
     handleMessage,
     getOrders,
+    getOrderById,
     getCatalog,
     getSettings,
     updateSettings,
@@ -1425,6 +1458,7 @@ function createCatalogEngine(merchantKey, options) {
     ajouterPhotoProduit,
     supprimerPhotoProduit,
     updateOrderStatus,
+    enregistrerEtatIzyFacture,
     getConversationsEnAttente,
     repondreConversationHumain,
     getEtatSession,

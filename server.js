@@ -19,6 +19,8 @@ const storage = require("./storage");
 const sh = require("./shared");
 const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
+const izyfacture = require("./izyfacture");
+const cryptoUtil = require("./crypto-util");
 
 const app = express();
 app.use(express.json());
@@ -417,7 +419,12 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null,
     numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null,
     optionStockIllimite: e.merchant.optionStockIllimite === true, optionLienCommande: e.merchant.optionLienCommande === true,
-    optionNotificationsStatut: e.merchant.optionNotificationsStatut === true
+    optionNotificationsStatut: e.merchant.optionNotificationsStatut === true,
+    // Jamais la cle elle-meme ici (chiffree ou non) - seulement de quoi savoir, cote /admin, si le pont
+    // IzyFacture est configure pour ce marchand (voir /api/:id/izyfacture/parametres pour le detail,
+    // reserve au proprietaire/super-administrateur).
+    izyfactureConfiguree: !!e.merchant.izyfactureApiKey,
+    izyfactureAutoFacturation: e.merchant.izyfactureAutoFacturation === true
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -689,6 +696,96 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut });
 });
 
+// ---------------- Pont IzyFacture (facturation automatique des commandes confirmees) ----------------
+// Voir izyfacture.js (client HTTP) et crypto-util.js (chiffrement de la cle). Reserve au PROPRIETAIRE du
+// marchand ou au super-administrateur (estGestionnaireDuMarchand) — jamais a un employe, meme avec le role
+// "parametres" : la cle IzyFacture est une information financiere sensible, pas un reglage ordinaire.
+
+// Etat actuel (sans jamais renvoyer la cle en clair) : indique seulement si une cle est enregistree (et son
+// indice de fin, pour que le marchand reconnaisse SA cle) + la bascule d'auto-facturation.
+app.get("/api/:id/izyfacture/parametres", protegerAcces, (req, res) => {
+  const entry = engines[req.params.id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
+  if (!estGestionnaireDuMarchand(req, req.params.id)) {
+    return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  }
+  const cleClaire = entry.merchant.izyfactureApiKey ? cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey) : null;
+  res.json({
+    cleEnregistree: !!entry.merchant.izyfactureApiKey,
+    indiceCle: cleClaire ? cryptoUtil.indiceAffichable(cleClaire) : "",
+    autoFacturation: entry.merchant.izyfactureAutoFacturation === true
+  });
+});
+
+// Enregistre/efface la cle et/ou la bascule d'auto-facturation. `apiKey: ""` efface la cle ET desactive
+// automatiquement l'auto-facturation (une bascule active sans cle n'aurait aucun sens et resterait
+// silencieusement inoperante).
+app.put("/api/:id/izyfacture/parametres", protegerAcces, async (req, res) => {
+  const entry = engines[req.params.id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
+  if (!estGestionnaireDuMarchand(req, req.params.id)) {
+    return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  }
+  const { apiKey, autoFacturation } = req.body || {};
+  const patch = {};
+  if (apiKey !== undefined) {
+    const nettoyee = String(apiKey || "").trim();
+    patch.izyfactureApiKey = nettoyee ? cryptoUtil.chiffrer(nettoyee) : null;
+    if (!nettoyee) patch.izyfactureAutoFacturation = false; // voir commentaire ci-dessus
+  }
+  if (autoFacturation !== undefined) {
+    if (autoFacturation && !patch.hasOwnProperty("izyfactureAutoFacturation") && !entry.merchant.izyfactureApiKey && !(apiKey && String(apiKey).trim())) {
+      return res.status(400).json({ erreur: "Enregistrez d'abord une clé IzyFacture avant d'activer la facturation automatique." });
+    }
+    if (!patch.hasOwnProperty("izyfactureAutoFacturation")) patch.izyfactureAutoFacturation = !!autoFacturation;
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
+  const maj = await db.updateMerchantFields(req.params.id, patch);
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.izyfactureApiKey = maj.izyfactureApiKey;
+  entry.merchant.izyfactureAutoFacturation = maj.izyfactureAutoFacturation;
+  console.log(`[${req.params.id}] Paramètres IzyFacture mis à jour par ${req.auth.adminUser} : clé ${maj.izyfactureApiKey ? "enregistrée" : "effacée"}, auto-facturation=${maj.izyfactureAutoFacturation}.`);
+  const cleClaire = entry.merchant.izyfactureApiKey ? cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey) : null;
+  res.json({
+    cleEnregistree: !!entry.merchant.izyfactureApiKey,
+    indiceCle: cleClaire ? cryptoUtil.indiceAffichable(cleClaire) : "",
+    autoFacturation: entry.merchant.izyfactureAutoFacturation === true
+  });
+});
+
+// Bouton "Tester la connexion" : verifie une cle (celle deja enregistree, ou une nouvelle envoyee pour
+// verification AVANT de l'enregistrer) via GET /me. Ne modifie jamais rien en base.
+app.post("/api/:id/izyfacture/tester", protegerAcces, async (req, res) => {
+  const entry = engines[req.params.id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
+  if (!estGestionnaireDuMarchand(req, req.params.id)) {
+    return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  }
+  const cleFournie = req.body && req.body.apiKey ? String(req.body.apiKey).trim() : null;
+  const cle = cleFournie || (entry.merchant.izyfactureApiKey ? cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey) : null);
+  if (!cle) return res.status(400).json({ erreur: "Aucune clé à tester : enregistrez-en une ou saisissez-en une pour ce test." });
+  try {
+    const reponse = await izyfacture.verifierCle(cle);
+    res.json({ ok: true, entreprise: reponse.company ? reponse.company.name : null, devise: reponse.company ? reponse.company.currency : null });
+  } catch (erreur) {
+    res.status(erreur.status || 502).json({ ok: false, erreur: erreur.message || "Connexion à IzyFacture impossible.", code: erreur.code || null });
+  }
+});
+
+// Reessai manuel (bouton "Facturer"/"Réessayer" sur une commande, /admin onglet Commandes) - meme permission
+// que la gestion des commandes ("commandes"), pas besoin d'etre gestionnaire : quelqu'un qui traite les
+// commandes au quotidien doit pouvoir relancer une facturation en echec, sans jamais voir/gerer la cle
+// elle-meme (route separee ci-dessus, reservee au proprietaire).
+app.post("/api/:id/commandes/:orderId/izyfacture/facturer", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
+  const order = entry.engine.getOrderById(req.params.orderId);
+  if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
+  await tenterFacturationCommande(entry, order);
+  res.json(entry.engine.getOrderById(req.params.orderId));
+});
+
 // Corrige le nom affiche et/ou le phone_number_id WhatsApp d'un marchand DEJA CREE (ex: faute de frappe a
 // la creation). Reserve au super-administrateur. Volontairement PAS "id" ni "type" ici — voir le
 // commentaire de db.updateMerchantFields pour pourquoi ces deux champs-la ne sont jamais modifiables une
@@ -820,6 +917,11 @@ app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { statut, raisonAnnulation } = req.body || {};
+  // Statut AVANT changement - necessaire pour savoir, une fois la commande mise a jour, si elle vient
+  // REELLEMENT de basculer vers "Confirmée"/"Annulée" (voir le pont IzyFacture juste apres) plutot que d'y
+  // etre deja et d'etre simplement re-enregistree avec le meme statut.
+  const avant = entry.engine.getOrderById(req.params.orderId);
+  const statutAvant = avant ? avant.statut : null;
   // Le 4e argument decide si un message WhatsApp de notification part vers le CLIENT (voir
   // notifierChangementStatutCommande dans conversation.js) - reserve aux marchands debloques par le
   // super-administrateur (option payante "Notifications de statut", voir /options-payantes ci-dessus).
@@ -827,6 +929,21 @@ app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
   const order = entry.engine.updateOrderStatus(req.params.orderId, statut, raisonAnnulation, entry.merchant.optionNotificationsStatut === true);
   if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
   res.json(order);
+
+  // Pont IzyFacture - APRES avoir repondu (jamais bloquant pour la commande, voir doc API-IZYVENDEUR.md
+  // section 9, regle 1) : facturation automatique a la confirmation, avoir automatique a l'annulation d'une
+  // commande deja facturee. Rien ne se passe si la cle/l'auto-facturation ne sont pas configurees.
+  if (statutAvant !== order.statut && entry.merchant.izyfactureApiKey) {
+    if (order.statut === "Confirmée" && entry.merchant.izyfactureAutoFacturation) {
+      tenterFacturationCommande(entry, order).catch((erreur) =>
+        console.error(`[${req.params.id}] Echec inattendu de la facturation IzyFacture (commande #${order.id}) :`, erreur)
+      );
+    } else if (order.statut === "Annulée" && order.izyfactureFactureId && order.izyfactureStatut !== "avoir") {
+      tenterAvoirCommande(entry, order, order.raisonAnnulation).catch((erreur) =>
+        console.error(`[${req.params.id}] Echec inattendu de l'avoir IzyFacture (commande #${order.id}) :`, erreur)
+      );
+    }
+  }
 });
 
 // -- Marchand service (prise de rendez-vous) -- (permission employe requise : "rendezvous")
@@ -1815,7 +1932,98 @@ async function envoyerMessageWhatsAppDiag(destinataire, texte, phoneNumberId) {
   }
 }
 
+// ---------------- Pont IzyFacture : tentatives de facturation/avoir (voir izyfacture.js) ----------------
+// Regroupees ici (plutot qu'a cote de chaque route qui les appelle) car utilisees a la fois par le
+// declenchement automatique (PUT .../statut ci-dessus), le reessai manuel (POST .../izyfacture/facturer
+// ci-dessus) ET le passage periodique de reessai (voir plus bas) — une seule logique, jamais dupliquee.
+// Jamais d'exception qui remonte a l'appelant : toute erreur est journalisee et enregistree sur la commande
+// (izyfactureStatut/izyfactureErreur) plutot que de faire planter la requete ou le passage periodique.
+async function tenterFacturationCommande(entry, order) {
+  if (!entry.merchant.izyfactureApiKey) return;
+  const cle = cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey);
+  if (!cle) {
+    entry.engine.enregistrerEtatIzyFacture(order.id, {
+      izyfactureStatut: "erreur",
+      izyfactureErreur: "Clé IzyFacture illisible (échec de déchiffrement) — réenregistrez-la depuis Paramètres."
+    });
+    return;
+  }
+  try {
+    const reponse = await izyfacture.facturerCommande(cle, entry.merchant.id, order);
+    entry.engine.enregistrerEtatIzyFacture(order.id, {
+      izyfactureStatut: "facturee",
+      izyfactureFactureId: reponse.invoice.id,
+      izyfactureNumero: reponse.invoice.number,
+      izyfactureErreur: null
+    });
+    console.log(`[${entry.merchant.id}] Facture IzyFacture ${reponse.invoice.number} créée pour la commande #${order.id}${reponse.duplicate ? " (déjà existante, aucun doublon)" : ""}.`);
+  } catch (erreur) {
+    entry.engine.enregistrerEtatIzyFacture(order.id, {
+      izyfactureStatut: erreur.retryable ? "en_attente" : "erreur",
+      izyfactureErreur: erreur.message || "Erreur IzyFacture inconnue"
+    });
+    console.error(`[${entry.merchant.id}] Échec de facturation IzyFacture (commande #${order.id}, ${erreur.retryable ? "sera réessayé" : "non réessayable"}) :`, erreur.message, erreur.code || "");
+  }
+}
+
+async function tenterAvoirCommande(entry, order, raison) {
+  if (!entry.merchant.izyfactureApiKey || !order.izyfactureFactureId) return;
+  const cle = cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey);
+  if (!cle) return;
+  try {
+    const reponse = await izyfacture.creerAvoirAnnulation(cle, order.izyfactureFactureId, raison);
+    entry.engine.enregistrerEtatIzyFacture(order.id, {
+      izyfactureStatut: "avoir",
+      izyfactureAvoirNumero: reponse.creditNote.number,
+      izyfactureErreur: null
+    });
+    console.log(`[${entry.merchant.id}] Avoir IzyFacture ${reponse.creditNote.number} créé pour la commande annulée #${order.id}.`);
+  } catch (erreur) {
+    // Pas de changement de izyfactureStatut ici : la facture reste valide chez IzyFacture (une commande
+    // annulee dont l'avoir a echoue garde son statut "facturee" — le passage periodique ci-dessous la
+    // reessaiera, voir DOIT_REESSAYER_AVOIR plus bas) plutot que de faire disparaitre silencieusement
+    // l'echec ou de reintroduire un etat incoherent.
+    console.error(`[${entry.merchant.id}] Échec de création d'avoir IzyFacture (commande #${order.id}) :`, erreur.message, erreur.code || "");
+  }
+}
+
 const PORT = process.env.PORT || 3000;
+
+// ---------------- Reessai periodique des facturations IzyFacture en attente ----------------
+// Complete le reessai immediat (au changement de statut) et le reessai manuel (bouton /admin) : une panne
+// reseau ou une indisponibilite temporaire d'IzyFacture (5xx/429) marque la commande "en_attente" (voir
+// tenterFacturationCommande) — ce passage la reessaie automatiquement, sans action du marchand, jusqu'a
+// reussite. Volontairement un balayage periodique plutot que des minuteurs (5 s/30 s/5 min) par commande :
+// un dyno Render peut redemarrer a tout moment (deploiement, veille) et perdrait un minuteur en memoire,
+// alors qu'un balayage se represente de lui-meme au prochain demarrage — aucune tentative n'est jamais
+// perdue, seulement retardee de quelques minutes au pire, ce qui reste tres largement dans l'esprit de la
+// doc (section 9 : "réessayer plus tard", grace a externalRef jamais de risque de doublon).
+const INTERVALLE_REESSAIS_IZYFACTURE_MS = 5 * 60 * 1000;
+
+async function reessayerFacturationsIzyFactureEnAttente() {
+  for (const merchantId of Object.keys(engines)) {
+    const entry = engines[merchantId];
+    if (!entry || entry.engine.type !== "catalogue") continue;
+    if (entry.merchant.actif === false) continue;
+    if (!entry.merchant.izyfactureApiKey) continue;
+    let commandes;
+    try {
+      commandes = entry.engine.getOrders();
+    } catch (erreur) {
+      console.error(`[${merchantId}] Échec de lecture des commandes pour le réessai IzyFacture :`, erreur);
+      continue;
+    }
+    for (const order of commandes) {
+      if (order.izyfactureStatut === "en_attente") {
+        await tenterFacturationCommande(entry, order);
+      } else if (order.statut === "Annulée" && order.izyfactureFactureId && order.izyfactureStatut === "facturee") {
+        // Une commande deja facturee, annulee entre-temps, dont l'avoir avait echoue au premier essai (voir
+        // le commentaire dans tenterAvoirCommande) - reessaye ici plutot que de rester bloquee.
+        await tenterAvoirCommande(entry, order, order.raisonAnnulation);
+      }
+    }
+  }
+}
 
 // ---------------- Rappel automatique la veille des rendez-vous (volet service) ----------------
 // Toutes les 30 minutes (fenetre de declenchement de 4h cote conversationService.js - voir
@@ -1854,6 +2062,16 @@ async function demarrer() {
       console.error("Echec du passage periodique des rappels de rendez-vous :", erreur)
     );
   }, INTERVALLE_RAPPELS_MS);
+
+  // Meme principe pour le reessai des facturations IzyFacture en attente (voir plus haut).
+  reessayerFacturationsIzyFactureEnAttente().catch((erreur) =>
+    console.error("Echec du premier passage de reessai IzyFacture :", erreur)
+  );
+  setInterval(() => {
+    reessayerFacturationsIzyFactureEnAttente().catch((erreur) =>
+      console.error("Echec du passage periodique de reessai IzyFacture :", erreur)
+    );
+  }, INTERVALLE_REESSAIS_IZYFACTURE_MS);
 }
 
 demarrer().catch((erreur) => {

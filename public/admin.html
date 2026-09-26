@@ -387,6 +387,29 @@ const I18N = {
     pdfSectionArticles: "Articles en stock",
     pdfLigneArticle: "{produit} ({couleur}, {taille}) — Stock réel : {stock} — Prix : {prix} FCFA",
     pdfTexteAucunArticle: "Aucun article dans le catalogue.",
+    h3Izyfacture: "Facturation IzyFacture",
+    descIzyfacture: "Connectez IzyVendeur à votre compte IzyFacture pour créer automatiquement une facture officielle dès qu'une commande passe au statut « Confirmée ». La clé est chiffrée avant d'être enregistrée et n'est jamais réaffichée en clair.",
+    izyfactureCleActuelle: "Clé enregistrée (se terminant par {indice}).",
+    labelIzyfactureCle: "Clé d'API IzyFacture",
+    placeholderIzyfactureCle: "izf_…",
+    placeholderIzyfactureCleRemplacer: "Laisser vide pour garder la clé actuelle",
+    labelIzyfactureAuto: "Créer automatiquement les factures à la confirmation d'une commande",
+    btnIzyfactureTester: "Tester la connexion",
+    btnIzyfactureSauver: "Enregistrer",
+    btnIzyfactureEffacer: "Déconnecter IzyFacture",
+    confirmIzyfactureEffacer: "Déconnecter IzyFacture ? La facturation automatique sera désactivée (les factures déjà créées restent valables dans IzyFacture).",
+    izyfactureTestEnCours: "Test de connexion en cours…",
+    izyfactureTestReussi: "Connexion réussie — entreprise : {entreprise}",
+    theadFacture: "Facture",
+    badgeIzyfactureFacturee: "Facturée ({numero})",
+    badgeIzyfactureEnAttente: "En attente de réessai",
+    badgeIzyfactureErreur: "Échec (voir Paramètres)",
+    badgeIzyfactureAvoir: "Annulée — avoir {numero}",
+    badgeIzyfactureAucune: "—",
+    btnIzyfactureFacturer: "Facturer",
+    btnIzyfactureReessayer: "Réessayer",
+    alertIzyfactureFacturee: "Facture {numero} créée avec succès.",
+    alertIzyfactureEchec: "La facturation a échoué : {erreur}",
     libelleCommandesPeriode: "Commandes sur la période",
     libelleCaHorsAnnulees: "Chiffre d'affaires (hors annulées)",
     h3RepartitionStatut: "Répartition par statut",
@@ -759,6 +782,29 @@ const I18N = {
     pdfSectionArticles: "Items in stock",
     pdfLigneArticle: "{produit} ({couleur}, {taille}) — Actual stock: {stock} — Price: {prix} FCFA",
     pdfTexteAucunArticle: "No items in the catalog.",
+    h3Izyfacture: "IzyFacture invoicing",
+    descIzyfacture: "Connect IzyVendeur to your IzyFacture account to automatically create an official invoice as soon as an order reaches the \"Confirmée\" status. The key is encrypted before being stored and is never shown again in full.",
+    izyfactureCleActuelle: "Key on file (ending in {indice}).",
+    labelIzyfactureCle: "IzyFacture API key",
+    placeholderIzyfactureCle: "izf_…",
+    placeholderIzyfactureCleRemplacer: "Leave blank to keep the current key",
+    labelIzyfactureAuto: "Automatically create invoices when an order is confirmed",
+    btnIzyfactureTester: "Test connection",
+    btnIzyfactureSauver: "Save",
+    btnIzyfactureEffacer: "Disconnect IzyFacture",
+    confirmIzyfactureEffacer: "Disconnect IzyFacture? Automatic invoicing will be turned off (invoices already created remain valid in IzyFacture).",
+    izyfactureTestEnCours: "Testing connection…",
+    izyfactureTestReussi: "Connection successful — company: {entreprise}",
+    theadFacture: "Invoice",
+    badgeIzyfactureFacturee: "Invoiced ({numero})",
+    badgeIzyfactureEnAttente: "Waiting to retry",
+    badgeIzyfactureErreur: "Failed (see Settings)",
+    badgeIzyfactureAvoir: "Cancelled — credit note {numero}",
+    badgeIzyfactureAucune: "—",
+    btnIzyfactureFacturer: "Invoice",
+    btnIzyfactureReessayer: "Retry",
+    alertIzyfactureFacturee: "Invoice {numero} created successfully.",
+    alertIzyfactureEchec: "Invoicing failed: {erreur}",
     libelleCommandesPeriode: "Orders in this period",
     libelleCaHorsAnnulees: "Revenue (excluding cancelled)",
     h3RepartitionStatut: "Breakdown by status",
@@ -1309,6 +1355,29 @@ let commandesFiltreJour = new Date().toISOString().slice(0, 10);
 let commandesFiltrePlageDu = new Date().toISOString().slice(0, 10);
 let commandesFiltrePlageAu = new Date().toISOString().slice(0, 10);
 
+// Pont IzyFacture (voir izyfacture.js/server.js) : badge + bouton "Facturer"/"Réessayer" par commande, dans
+// l'onglet Commandes. Toujours affiche (meme si le marchand n'a pas encore connecte IzyFacture) - le bouton
+// renvoie alors une erreur claire ("Aucune clé IzyFacture enregistrée...") plutot que d'obliger a deviner
+// pourquoi la colonne est absente.
+function celluleIzyfacture(o) {
+  let badge, bouton = "";
+  if (o.izyfactureStatut === "facturee") {
+    badge = "<span style='background:#e6f7e6; color:#1e7a1e; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfactureFacturee", { numero: o.izyfactureNumero || "" })) + "</span>";
+  } else if (o.izyfactureStatut === "avoir") {
+    badge = "<span style='background:#f0e6ff; color:#5a2a9e; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfactureAvoir", { numero: o.izyfactureAvoirNumero || "" })) + "</span>";
+  } else if (o.izyfactureStatut === "en_attente") {
+    badge = "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfactureEnAttente")) + "</span>";
+    bouton = "<button data-izyfacturer='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnIzyfactureReessayer")) + "</button>";
+  } else if (o.izyfactureStatut === "erreur") {
+    badge = "<span style='background:#fde2e2; color:#a12b2b; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;' title=\"" + esc(o.izyfactureErreur || "") + "\">" + esc(t("badgeIzyfactureErreur")) + "</span>";
+    bouton = "<button data-izyfacturer='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnIzyfactureReessayer")) + "</button>";
+  } else {
+    badge = "<span style='color:#999;'>" + esc(t("badgeIzyfactureAucune")) + "</span>";
+    bouton = "<button data-izyfacturer='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnIzyfactureFacturer")) + "</button>";
+  }
+  return "<div>" + badge + "</div>" + (bouton ? "<div>" + bouton + "</div>" : "");
+}
+
 async function renderCommandes() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -1363,7 +1432,7 @@ async function renderCommandes() {
           "<label>" + t("labelAu") + "<input type='date' id='commandesInputAu' value='" + esc(commandesFiltrePlageAu) + "' /></label>"
         : "") +
     "</div>" +
-    "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadArticles") + "</th><th>" + t("theadNbArticles") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadModeCourt") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadAdresse") + "</th><th>" + t("theadStatut") + "</th></tr>" +
+    "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadArticles") + "</th><th>" + t("theadNbArticles") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadModeCourt") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadAdresse") + "</th><th>" + t("theadStatut") + "</th><th>" + t("theadFacture") + "</th></tr>" +
     (visibles.length ? visibles.map((o) =>
       "<tr>" +
         "<td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
@@ -1379,8 +1448,9 @@ async function renderCommandes() {
         "<td><select data-commande='" + o.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === o.statut ? " selected" : "") + ">" + esc(libelleStatutCommande(s)) + "</option>").join("") + "</select>" +
           (o.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
+        "<td>" + celluleIzyfacture(o) + "</td>" +
       "</tr>"
-    ).join("") : "<tr><td colspan='9'>" + (commandes.length ? t("aucuneCorrespondanceFiltre") : t("aucuneCommande")) + "</td></tr>") +
+    ).join("") : "<tr><td colspan='10'>" + (commandes.length ? t("aucuneCorrespondanceFiltre") : t("aucuneCommande")) + "</td></tr>") +
     "</table>";
 
   document.getElementById("commandesSelStatut").onchange = (e) => { commandesFiltreStatut = e.target.value; renderCommandes(); };
@@ -1402,6 +1472,21 @@ async function renderCommandes() {
         await api("/api/" + marchandActif.id + "/commandes/" + sel.dataset.commande + "/statut", { method: "PUT", body: JSON.stringify({ statut: sel.value, raisonAnnulation: raison }) });
         renderCommandes();
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    });
+  });
+
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-izyfacturer]"), (btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const order = await api("/api/" + marchandActif.id + "/commandes/" + btn.dataset.izyfacturer + "/izyfacture/facturer", { method: "POST" });
+        if (order.izyfactureStatut === "facturee") alert(t("alertIzyfactureFacturee", { numero: order.izyfactureNumero || "" }));
+        else if (order.izyfactureErreur) alert(t("alertIzyfactureEchec", { erreur: order.izyfactureErreur }));
+        renderCommandes();
+      } catch (e) {
+        alert(t("erreurPrefixe") + e.message);
+        btn.disabled = false;
+      }
     });
   });
 }
@@ -1442,10 +1527,73 @@ function lireNotifStatutFormulaire() {
   return out;
 }
 
+// Bloc "Facturation IzyFacture" (voir izyfacture.js/server.js) - reserve au proprietaire du marchand ou au
+// super-administrateur (meme regle que la route serveur /api/:id/izyfacture/parametres) : la cle IzyFacture
+// est une information financiere sensible, jamais accessible a un employe meme via le role "parametres".
+function blocIzyfactureHtml(etat) {
+  const e = etat || { cleEnregistree: false, indiceCle: "", autoFacturation: false };
+  return "<h3>" + t("h3Izyfacture") + "</h3>" +
+    "<p style='color:#666; font-size:0.9em;'>" + t("descIzyfacture") + "</p>" +
+    (e.cleEnregistree ? "<p style='color:#2a7a2a; font-size:0.9em;'>" + esc(t("izyfactureCleActuelle", { indice: e.indiceCle })) + "</p>" : "") +
+    "<label>" + t("labelIzyfactureCle") + "</label>" +
+    "<input id='izyfactureCle' type='password' autocomplete='off' placeholder=\"" + esc(e.cleEnregistree ? t("placeholderIzyfactureCleRemplacer") : t("placeholderIzyfactureCle")) + "\" />" +
+    "<label style='display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:normal;'>" +
+      "<input type='checkbox' id='izyfactureAuto'" + (e.autoFacturation ? " checked" : "") + " /> " + t("labelIzyfactureAuto") +
+    "</label>" +
+    "<div style='margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;'>" +
+      "<button id='btnIzyfactureTester' type='button'>" + t("btnIzyfactureTester") + "</button>" +
+      "<button id='btnIzyfactureSauver' type='button' class='principal'>" + t("btnIzyfactureSauver") + "</button>" +
+      (e.cleEnregistree ? "<button id='btnIzyfactureEffacer' type='button' class='danger'>" + t("btnIzyfactureEffacer") + "</button>" : "") +
+    "</div>" +
+    "<div id='izyfactureResultatTest' style='margin-top:8px; font-size:0.9em;'></div>";
+}
+function brancherBlocIzyfacture() {
+  const zoneResultat = document.getElementById("izyfactureResultatTest");
+  document.getElementById("btnIzyfactureTester").onclick = async () => {
+    const cleSaisie = document.getElementById("izyfactureCle").value.trim();
+    zoneResultat.style.color = "#666";
+    zoneResultat.textContent = t("izyfactureTestEnCours");
+    try {
+      const corps = cleSaisie ? { apiKey: cleSaisie } : {};
+      const res = await api("/api/" + marchandActif.id + "/izyfacture/tester", { method: "POST", body: JSON.stringify(corps) });
+      zoneResultat.style.color = "#2a7a2a";
+      zoneResultat.textContent = t("izyfactureTestReussi", { entreprise: res.entreprise || "" });
+    } catch (e) {
+      zoneResultat.style.color = "#a33";
+      zoneResultat.textContent = t("erreurPrefixe") + e.message;
+    }
+  };
+  document.getElementById("btnIzyfactureSauver").onclick = async () => {
+    const cleSaisie = document.getElementById("izyfactureCle").value.trim();
+    const auto = document.getElementById("izyfactureAuto").checked;
+    try {
+      const corps = { autoFacturation: auto };
+      if (cleSaisie) corps.apiKey = cleSaisie;
+      await api("/api/" + marchandActif.id + "/izyfacture/parametres", { method: "PUT", body: JSON.stringify(corps) });
+      alert(t("alertParametresEnregistres"));
+      renderParametresCatalogue();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  const btnEffacer = document.getElementById("btnIzyfactureEffacer");
+  if (btnEffacer) {
+    btnEffacer.onclick = async () => {
+      if (!confirm(t("confirmIzyfactureEffacer"))) return;
+      try {
+        await api("/api/" + marchandActif.id + "/izyfacture/parametres", { method: "PUT", body: JSON.stringify({ apiKey: "" }) });
+        renderParametresCatalogue();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+}
+
 async function renderParametresCatalogue() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
-  const parametres = await api("/api/" + marchandActif.id + "/parametres");
+  const estGestionnaire = moi.role === "marchand" || moi.role === "superadmin";
+  const [parametres, izyfactureEtat] = await Promise.all([
+    api("/api/" + marchandActif.id + "/parametres"),
+    estGestionnaire ? api("/api/" + marchandActif.id + "/izyfacture/parametres") : Promise.resolve(null)
+  ]);
   const retrait = parametres.retrait || {};
   zone.innerHTML =
     "<h2>" + t("paramTitre") + "</h2>" +
@@ -1466,7 +1614,8 @@ async function renderParametresCatalogue() {
     "<label>" + t("labelHorairesRetrait") + "</label>" +
     "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder=\"" + esc(t("placeholderHorairesRetrait")) + "\" />" +
     (marchandActif.optionNotificationsStatut ? blocNotifStatutHtml(parametres.notifStatut) : "") +
-    "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>";
+    "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>" +
+    (estGestionnaire ? blocIzyfactureHtml(izyfactureEtat) : "");
   document.getElementById("btnSauverParams").onclick = async () => {
     try {
       const corps = {
@@ -1484,6 +1633,7 @@ async function renderParametresCatalogue() {
       alert(t("alertParametresEnregistres"));
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
+  if (estGestionnaire) brancherBlocIzyfacture();
 }
 
 // ---------------- Marchand service (prise de rendez-vous) ----------------

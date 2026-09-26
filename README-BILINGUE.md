@@ -566,6 +566,76 @@ test), affichent bien un message clair au lieu de planter la page ; aucune erreu
 pendant tout le parcours (c'est ce test qui a révélé et permis de corriger le défaut de l'Étape 18
 mentionné ci-dessus).
 
+## Étape 20 — Pont vers IzyFacture : facturation automatique des commandes confirmées (nouveau)
+
+Vous avez demandé de connecter IzyVendeur à IzyFacture (votre autre application, qui dispose maintenant
+d'une vraie API documentée — `API-IZYVENDEUR.md`, que vous avez transmise). Ceci remplace le chantier de
+"Facturation après confirmation de commande" resté en attente depuis le 15 septembre (voir la section
+"Ce qui n'est PAS encore fait" des livraisons précédentes) : plutôt que de construire un moteur de
+facturation à l'intérieur d'IzyVendeur, IzyVendeur reste léger et pousse les commandes confirmées vers
+IzyFacture, qui s'occupe de tout ce qui est légal/comptable (numérotation officielle, TVA, avoirs...).
+
+**Comment ça marche, en résumé** : dans l'onglet Paramètres (visible uniquement par vous, le propriétaire
+du marchand, ou le super-administrateur — jamais par un employé, même avec le droit "Paramètres", car
+c'est une information financière sensible), un nouveau bloc "Facturation IzyFacture" vous permet de coller
+la clé d'API que vous créez vous-même dans IzyFacture (Paramètres → Intégrations → Créer une clé), de la
+tester avec le bouton "Tester la connexion" (vérifie la clé sans rien enregistrer), puis de l'enregistrer.
+Une case "Créer automatiquement les factures à la confirmation d'une commande" décide si la facturation se
+déclenche toute seule ou non.
+
+**Déclenchement automatique** : dès qu'une commande passe au statut **"Confirmée"** (question posée avant
+de construire, votre réponse), et si l'auto-facturation est activée, IzyVendeur envoie la commande à
+IzyFacture en tâche de fond — **jamais bloquant** : la commande est enregistrée et sa réponse envoyée
+immédiatement, la facturation se fait juste après, sans que vous ou votre client n'ayez à attendre. Si une
+commande déjà facturée est ensuite **annulée**, IzyVendeur demande automatiquement un **avoir** à
+IzyFacture (une facture validée ne se supprime jamais, c'est la règle légale — voir la doc) plutôt que de
+faire disparaître la facture.
+
+**Dans l'onglet Commandes**, une nouvelle colonne "Facture" montre l'état de chaque commande : Facturée
+(avec son numéro officiel, ex. `FAC-2026-0001`), En attente de réessai, Échec, Annulée — avoir (avec son
+numéro, ex. `AV-2026-0001`), ou rien si jamais tentée. Un bouton "Facturer"/"Réessayer" permet de
+déclencher/relancer manuellement à tout moment (utile si l'auto-facturation est désactivée, ou pour
+relancer un échec) — accessible à quiconque a le droit "Commandes", sans jamais avoir accès à la clé
+elle-même.
+
+**Résilience, sans jamais créer de doublon** : chaque facture porte la référence unique de la commande
+(`{marchand}-CMD-{numéro}`) — renvoyer la même commande à IzyFacture, une ou cent fois, ne crée jamais
+deux factures, IzyFacture renvoie simplement la facture déjà créée. En cas de panne réseau ou
+d'indisponibilité temporaire d'IzyFacture, la commande passe "En attente de réessai" et un passage
+automatique toutes les 5 minutes retente les commandes en attente jusqu'à réussite — sans aucune action de
+votre part. (La doc suggérait des délais fixes de 5 s/30 s/5 min par commande ; j'ai préféré un balayage
+périodique global, plus robuste face aux redémarrages du serveur sur Render, qui perdraient sinon un
+minuteur en mémoire — le résultat pratique reste le même : aucune tentative n'est jamais vraiment perdue.)
+Une erreur définitive (ex. donnée incorrecte) est, elle, marquée "Échec" et n'est jamais retentée
+automatiquement telle quelle, pour éviter de répéter indéfiniment une erreur qui ne se corrigera pas
+toute seule.
+
+**Sécurité** : la clé d'API est **chiffrée avant d'être enregistrée** en base (AES-256-GCM, via une
+nouvelle variable d'environnement `ENCRYPTION_KEY` à définir sur Render — n'importe quelle chaîne longue et
+aléatoire suffit) et n'est plus jamais réaffichée en clair ensuite, même à vous — seuls ses 4 derniers
+caractères sont montrés pour que vous reconnaissiez laquelle est enregistrée. **Important : pensez à définir
+`ENCRYPTION_KEY` sur Render avant d'enregistrer une clé IzyFacture** — sans elle, IzyVendeur fonctionne
+quand même (avec un avertissement dans les journaux) mais stocke la clé en clair, à éviter en production.
+
+**Nouvelles variables d'environnement** (à ajouter sur Render, aucune n'est obligatoire pour que le reste
+d'IzyVendeur continue de fonctionner normalement) :
+- `ENCRYPTION_KEY` — recommandée avant d'enregistrer une clé IzyFacture (voir ci-dessus).
+- `IZYFACTURE_API_URL` — optionnelle, par défaut `https://izyfacture.ccbconsulting.org/api/v1` (l'adresse
+  actuelle d'IzyFacture) ; à changer uniquement si cette adresse évolue un jour.
+
+Testé le 25 septembre 2026 par de vrais appels HTTP contre un faux serveur IzyFacture simulant l'API réelle
+documentée : clé enregistrée puis testée (bonne et mauvaise clé), accès refusé à un employé n'ayant que le
+droit "Commandes" pour la clé elle-même (mais autorisé pour le bouton Facturer manuel), facturation
+automatique déclenchée à la confirmation, anti-doublon vérifié (même commande facturée deux fois → même
+numéro, jamais de doublon), auto-facturation désactivable avec facturation manuelle toujours disponible,
+panne réseau simulée → statut "En attente de réessai" puis réussite au réessai une fois le service revenu,
+échec permanent (donnée refusée par IzyFacture) → statut "Échec" jamais retenté automatiquement, avoir
+créé automatiquement sur annulation d'une commande facturée, clé stockée bien chiffrée en base (jamais en
+clair, jamais visible telle quelle dans les réponses de l'API) — et avec un vrai navigateur piloté
+automatiquement (Chromium) pour le parcours complet depuis `/admin` : saisie de la clé, test de connexion,
+enregistrement, puis clic sur "Facturer" depuis l'onglet Commandes, avec vérification que le numéro de
+facture s'affiche bien dans le tableau après coup.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -575,11 +645,15 @@ mentionné ci-dessus).
   (ex: "Robe wax imprimée"), il n'y a pas de traduction automatique du nom lui-même.
 - Les messages que le bot vous envoie à VOUS, marchand, pour vous notifier d'une nouvelle commande
   restent en français — c'est votre langue, pas celle du client, donc pas concerné.
-- **Facturation après confirmation de commande** (demandée par des marchands, décision de modèle actée le
-  15 septembre 2026 : option payante activable par marchand depuis le superadmin, même principe que Stock
-  illimité/Lien de commande/Notifications de statut) — le modèle économique est validé mais le
-  comportement exact reste à préciser avant de construire (facture PDF envoyée au client sur WhatsApp ?
-  simple numéro/référence affiché dans `/admin` ? autre chose ?). En attente de votre confirmation.
+- **Facturation après confirmation de commande** — résolu à l'Étape 20 via le pont vers IzyFacture (voir
+  ci-dessus) plutôt que par un moteur de facturation propre à IzyVendeur.
+- **Message WhatsApp au client avec le numéro de facture** (mentionné dans la doc IzyFacture comme un
+  exemple possible, ex. « Votre facture n° FAC-2026-0001 de 26 500 FCFA a été établie ») — pas encore
+  construit à cette étape : IzyVendeur crée la facture et l'affiche dans `/admin`, mais ne notifie pas
+  encore automatiquement le client par WhatsApp. Dites-moi si vous le souhaitez.
+- **Paiement enregistré depuis IzyVendeur** (`POST /invoices/{id}/payments`, ex. un paiement Mobile Money
+  reçu à la livraison) — la brique existe déjà côté `izyfacture.js` mais n'est pas encore reliée à un
+  bouton dans `/admin` à cette étape.
 
 ## Fichiers modifiés dans ce zip
 
@@ -594,7 +668,18 @@ mentionné ci-dessus).
   question "réponse écrite ici / être rappelé(e)" à la demande d'un humain + délai de pause réduit
   à 5 minutes avec phrase de reprise explicite (Étape 16), et suppression d'un instantané d'inventaire
   transformée en suppression "en douceur" (marque `supprimeLe`/`supprimePar` au lieu d'effacer, ne peut
-  plus être re-supprimé une fois déjà marqué, Étape 18)
+  plus être re-supprimé une fois déjà marqué, Étape 18) + nouveaux champs de suivi IzyFacture sur chaque
+  commande (`izyfactureStatut`/`izyfactureFactureId`/`izyfactureNumero`/`izyfactureErreur`/
+  `izyfactureAvoirNumero`) + nouvelle fonction `enregistrerEtatIzyFacture` (persistance) et `getOrderById`
+  (lecture sans modification, utilisée par server.js pour détecter un vrai changement de statut) (Étape 20)
+- `izyfacture.js` (**nouveau fichier**) — client HTTP minimal (aucune dépendance, `fetch` natif) vers l'API
+  IzyFacture v1 : vérification de clé (`GET /me`), création/retrouvaille de facture (`POST /invoices`,
+  jamais de doublon grâce à la référence de commande), avoir sur annulation (`POST .../credit-notes`),
+  paiement ultérieur (`POST .../payments`, brique prête mais pas encore reliée à `/admin`) — délai de 15 s
+  par appel, distinction erreurs réessayables (réseau, 5xx, 429) / définitives (autres 4xx) (Étape 20)
+- `crypto-util.js` (**nouveau fichier**) — chiffrement/déchiffrement AES-256-GCM de la clé IzyFacture avant
+  stockage (voir `ENCRYPTION_KEY` ci-dessus), avec repli explicite (et journalisé) en clair si cette
+  variable n'est pas définie, jamais un échec silencieux (Étape 20)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue, ainsi que la même question
   "réponse écrite ici / être rappelé(e)" et la même reprise à 5 minutes que le moteur catalogue, en
@@ -625,7 +710,15 @@ mentionné ci-dessus).
   + marchand tout juste créé (`POST /api/marchands`) marqué directement "rien à migrer" pour ces 4 rôles
   (Étape 17) + route `DELETE /api/:id/inventaire/instantanes/:snapshotId` désormais réservée au propriétaire
   du marchand/super-administrateur (un employé ayant seulement le rôle "inventaire" reçoit une erreur 403),
-  confirmation par un vrai test qu'aucune route de suppression de commande n'existe (Étape 18)
+  confirmation par un vrai test qu'aucune route de suppression de commande n'existe (Étape 18) +
+  nouvelles routes `GET`/`PUT /api/:id/izyfacture/parametres` (clé + auto-facturation, réservées au
+  propriétaire/super-administrateur) + `POST /api/:id/izyfacture/tester` (bouton "Tester la connexion") +
+  `POST /api/:id/commandes/:orderId/izyfacture/facturer` (réessai manuel, droit "Commandes") +
+  déclenchement automatique dans `PUT /api/:id/commandes/:orderId/statut` (facturation à "Confirmée", avoir
+  à "Annulée" si déjà facturée) + nouveau passage périodique (toutes les 5 minutes) qui retente les
+  facturations restées "en attente" après une panne réseau, sur le même principe que le rappel de
+  rendez-vous déjà existant + `GET /api/marchands` expose désormais `izyfactureConfiguree`/
+  `izyfactureAutoFacturation` par marchand (jamais la clé elle-même) (Étape 20)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -650,6 +743,10 @@ mentionné ci-dessus).
   charger + nouveau filtre "Période" (Toutes / Un jour précis / Une plage de dates) dans l'onglet Commandes
   + **correctif d'un défaut de l'Étape 18 qui faisait planter tout l'onglet Inventaire** dès son ouverture
   (variable utilisée avant sa déclaration, détecté grâce à un test avec un vrai navigateur) (Étape 19)
+  + nouveau bloc "Facturation IzyFacture" dans l'onglet Paramètres (clé, "Tester la connexion", bascule
+  auto-facturation, "Déconnecter IzyFacture"), visible uniquement pour le propriétaire/super-administrateur
+  + nouvelle colonne "Facture" dans l'onglet Commandes avec badge d'état et bouton "Facturer"/"Réessayer"
+  (Étape 20)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
@@ -663,14 +760,23 @@ mentionné ci-dessus).
   en une seule passe si besoin) + nouvelle colonne `roles_migres` (liste des migrations déjà appliquées à ce
   marchand) qui rend chacune de ces 4 migrations strictement ponctuelle : une fois appliquée à un marchand,
   elle ne revient JAMAIS sur un rôle que vous auriez retiré vous-même à un employé par la suite, même après
-  redémarrage du serveur — correctif d'un vrai défaut trouvé en testant avant livraison (Étape 17)
+  redémarrage du serveur — correctif d'un vrai défaut trouvé en testant avant livraison (Étape 17) +
+  nouvelles colonnes `izyfacture_api_key` (clé chiffrée, voir `crypto-util.js`) et
+  `izyfacture_auto_facturation`, vides/fausses par défaut pour tous les marchands existants (Étape 20)
 
 ## Comment déployer
 
-1. Remplacez les 8 fichiers ci-dessus dans votre dépôt par ceux de ce zip (mêmes emplacements).
-2. `git add -A && git commit -m "Choix de langue FR/EN + sélecteur de période sur le Tableau de bord"`
-3. `git push`
-4. Render redéploie automatiquement (ou lancez un "Manual Deploy" depuis le tableau de bord Render
+1. Remplacez/ajoutez les fichiers ci-dessus dans votre dépôt (mêmes emplacements) : `conversation.js`,
+   `conversationService.js`, `server.js`, `public/admin.html`, `storage.js`, `db.js`, `shared.js`,
+   `catalog.js`, et les **2 nouveaux fichiers** `izyfacture.js` et `crypto-util.js` (racine du projet, à
+   côté de `server.js`).
+2. Sur Render, ajoutez la nouvelle variable d'environnement `ENCRYPTION_KEY` (n'importe quelle chaîne
+   longue et aléatoire, ex. générée avec `openssl rand -hex 32`) **avant** d'enregistrer une clé IzyFacture
+   depuis `/admin` — voir l'Étape 20 ci-dessus. `IZYFACTURE_API_URL` est optionnelle (valeur par défaut déjà
+   correcte).
+3. `git add -A && git commit -m "Pont IzyFacture : facturation automatique des commandes confirmées"`
+4. `git push`
+5. Render redéploie automatiquement (ou lancez un "Manual Deploy" depuis le tableau de bord Render
    si l'auto-deploy n'est pas activé).
 
 Testez ensuite en envoyant "hello" ou "hi" à votre numéro WhatsApp bot (message de bienvenue bilingue),
