@@ -420,6 +420,10 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null,
     optionStockIllimite: e.merchant.optionStockIllimite === true, optionLienCommande: e.merchant.optionLienCommande === true,
     optionNotificationsStatut: e.merchant.optionNotificationsStatut === true,
+    // "Facturation IzyFacture" (option payante, 26 septembre 2026 - meme principe que les 3 precedentes) :
+    // tant que le super-administrateur ne l'a pas debloquee ici, le bloc entier reste invisible cote
+    // marchand (voir admin.html) ET les routes /api/:id/izyfacture/* refusent toute action (voir plus bas).
+    optionFacturationIzyfacture: e.merchant.optionFacturationIzyfacture === true,
     // Jamais la cle elle-meme ici (chiffree ou non) - seulement de quoi savoir, cote /admin, si le pont
     // IzyFacture est configure pour ce marchand (voir /api/:id/izyfacture/parametres pour le detail,
     // reserve au proprietaire/super-administrateur).
@@ -681,19 +685,21 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture } = req.body || {};
   const patch = {};
   if (optionStockIllimite !== undefined) patch.optionStockIllimite = !!optionStockIllimite;
   if (optionLienCommande !== undefined) patch.optionLienCommande = !!optionLienCommande;
   if (optionNotificationsStatut !== undefined) patch.optionNotificationsStatut = !!optionNotificationsStatut;
+  if (optionFacturationIzyfacture !== undefined) patch.optionFacturationIzyfacture = !!optionFacturationIzyfacture;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
   const maj = await db.updateMerchantFields(req.params.id, patch);
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
   entry.merchant.optionStockIllimite = maj.optionStockIllimite;
   entry.merchant.optionLienCommande = maj.optionLienCommande;
   entry.merchant.optionNotificationsStatut = maj.optionNotificationsStatut;
-  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}.`);
-  res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut });
+  entry.merchant.optionFacturationIzyfacture = maj.optionFacturationIzyfacture;
+  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}.`);
+  res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture });
 });
 
 // ---------------- Pont IzyFacture (facturation automatique des commandes confirmees) ----------------
@@ -709,6 +715,7 @@ app.get("/api/:id/izyfacture/parametres", protegerAcces, (req, res) => {
   if (!estGestionnaireDuMarchand(req, req.params.id)) {
     return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   }
+  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
   const cleClaire = entry.merchant.izyfactureApiKey ? cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey) : null;
   res.json({
     cleEnregistree: !!entry.merchant.izyfactureApiKey,
@@ -726,6 +733,7 @@ app.put("/api/:id/izyfacture/parametres", protegerAcces, async (req, res) => {
   if (!estGestionnaireDuMarchand(req, req.params.id)) {
     return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   }
+  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
   const { apiKey, autoFacturation } = req.body || {};
   const patch = {};
   if (apiKey !== undefined) {
@@ -761,6 +769,7 @@ app.post("/api/:id/izyfacture/tester", protegerAcces, async (req, res) => {
   if (!estGestionnaireDuMarchand(req, req.params.id)) {
     return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   }
+  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
   const cleFournie = req.body && req.body.apiKey ? String(req.body.apiKey).trim() : null;
   const cle = cleFournie || (entry.merchant.izyfactureApiKey ? cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey) : null);
   if (!cle) return res.status(400).json({ erreur: "Aucune clé à tester : enregistrez-en une ou saisissez-en une pour ce test." });
@@ -779,6 +788,7 @@ app.post("/api/:id/izyfacture/tester", protegerAcces, async (req, res) => {
 app.post("/api/:id/commandes/:orderId/izyfacture/facturer", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
   if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
   const order = entry.engine.getOrderById(req.params.orderId);
   if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
@@ -933,7 +943,7 @@ app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
   // Pont IzyFacture - APRES avoir repondu (jamais bloquant pour la commande, voir doc API-IZYVENDEUR.md
   // section 9, regle 1) : facturation automatique a la confirmation, avoir automatique a l'annulation d'une
   // commande deja facturee. Rien ne se passe si la cle/l'auto-facturation ne sont pas configurees.
-  if (statutAvant !== order.statut && entry.merchant.izyfactureApiKey) {
+  if (statutAvant !== order.statut && entry.merchant.optionFacturationIzyfacture && entry.merchant.izyfactureApiKey) {
     if (order.statut === "Confirmée" && entry.merchant.izyfactureAutoFacturation) {
       tenterFacturationCommande(entry, order).catch((erreur) =>
         console.error(`[${req.params.id}] Echec inattendu de la facturation IzyFacture (commande #${order.id}) :`, erreur)
@@ -2005,7 +2015,7 @@ async function reessayerFacturationsIzyFactureEnAttente() {
     const entry = engines[merchantId];
     if (!entry || entry.engine.type !== "catalogue") continue;
     if (entry.merchant.actif === false) continue;
-    if (!entry.merchant.izyfactureApiKey) continue;
+    if (!entry.merchant.optionFacturationIzyfacture || !entry.merchant.izyfactureApiKey) continue;
     let commandes;
     try {
       commandes = entry.engine.getOrders();

@@ -636,6 +636,46 @@ automatiquement (Chromium) pour le parcours complet depuis `/admin` : saisie de 
 enregistrement, puis clic sur "Facturer" depuis l'onglet Commandes, avec vérification que le numéro de
 facture s'affiche bien dans le tableau après coup.
 
+## Étape 21 — "Facturation IzyFacture" devient une option payante réservée au super-administrateur (nouveau)
+
+Vous avez fait remarquer que le pont IzyFacture de l'Étape 20 était visible pour tout marchand dès sa
+mise en ligne, alors que les autres fonctionnalités avancées ("Stock illimité", "Lien de commande",
+"Notifications de statut") sont, elles, des options payantes que **vous seul, en tant que
+super-administrateur**, débloquez marchand par marchand. La "Facturation IzyFacture" suit maintenant
+exactement le même principe : tant que vous ne l'avez pas explicitement débloquée pour un marchand donné,
+le bloc "Facturation IzyFacture" (onglet Paramètres) et la colonne "Facture" (onglet Commandes)
+n'apparaissent tout simplement pas pour lui — pas juste masqués, réellement absents de la page.
+
+**Dans le bloc "Options payantes"** (Mon compte, visible uniquement par vous), une 4e case
+"Facturation IzyFacture (facturation automatique des commandes confirmées)" s'ajoute aux 3 déjà
+existantes. Elle est **décochée par défaut pour tous les marchands**, y compris ceux qui utilisaient déjà
+le pont IzyFacture depuis l'Étape 20 — il faudra donc la recocher une fois pour chacun d'eux après ce
+déploiement si vous souhaitez qu'ils continuent d'en bénéficier.
+
+**Protection à tous les niveaux, pas seulement l'affichage** : même si un marchand avait déjà une clé
+IzyFacture enregistrée et l'auto-facturation activée (par exemple débloqué puis reverrouillé par vous),
+verrouiller cette option coupe **immédiatement et complètement** toute activité IzyFacture pour lui, sans
+avoir besoin d'effacer sa clé au passage :
+- les 4 routes concernées (`GET`/`PUT /api/:id/izyfacture/parametres`, `POST /api/:id/izyfacture/tester`,
+  `POST /api/:id/commandes/:orderId/izyfacture/facturer`) refusent désormais l'accès (erreur 403) tant que
+  l'option n'est pas débloquée, même appelées directement (pas seulement via l'interface) ;
+- le déclenchement automatique à la confirmation d'une commande est ignoré si l'option n'est pas
+  débloquée, même si une clé et l'auto-facturation sont déjà enregistrées ;
+- le passage périodique de réessai (toutes les 5 minutes) ignore désormais aussi les marchands dont
+  l'option n'est pas débloquée.
+
+Testé le 26 septembre 2026 par de vrais appels HTTP : toutes les routes IzyFacture d'un marchand dont
+l'option n'est pas débloquée renvoient bien 403 (y compris pour le propriétaire lui-même), une commande
+confirmée pour ce même marchand reste bien `izyfactureStatut: null` malgré une clé et l'auto-facturation
+déjà enregistrées, puis, après déblocage par le super-administrateur, les mêmes routes fonctionnent de
+nouveau normalement (200) — et avec un vrai navigateur piloté automatiquement (Chromium), connecté cette
+fois en super-administrateur et basculant entre deux marchands via le sélecteur déroulant : pour le
+marchand débloqué, le parcours complet de l'Étape 20 (bloc Paramètres visible, test de connexion,
+enregistrement, colonne Facture, bouton "Facturer") continue de fonctionner sans changement ; pour le
+marchand verrouillé, le bloc "Facturation IzyFacture" est bien absent de l'onglet Paramètres (aucun titre
+"IzyFacture", champ de clé introuvable) et la colonne "Facture" est bien absente du tableau des commandes
+(ni en-tête, ni bouton "Facturer").
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -718,7 +758,11 @@ facture s'affiche bien dans le tableau après coup.
   à "Annulée" si déjà facturée) + nouveau passage périodique (toutes les 5 minutes) qui retente les
   facturations restées "en attente" après une panne réseau, sur le même principe que le rappel de
   rendez-vous déjà existant + `GET /api/marchands` expose désormais `izyfactureConfiguree`/
-  `izyfactureAutoFacturation` par marchand (jamais la clé elle-même) (Étape 20)
+  `izyfactureAutoFacturation` par marchand (jamais la clé elle-même) (Étape 20) + `PUT
+  /api/marchands/:id/options-payantes` étendue à une 4e option (`optionFacturationIzyfacture`) + les 4
+  routes IzyFacture ci-dessus, ainsi que le déclenchement automatique à la confirmation d'une commande et
+  le passage périodique de réessai, refusent désormais toute action tant que cette option n'est pas
+  débloquée pour le marchand concerné (Étape 21)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -746,7 +790,10 @@ facture s'affiche bien dans le tableau après coup.
   + nouveau bloc "Facturation IzyFacture" dans l'onglet Paramètres (clé, "Tester la connexion", bascule
   auto-facturation, "Déconnecter IzyFacture"), visible uniquement pour le propriétaire/super-administrateur
   + nouvelle colonne "Facture" dans l'onglet Commandes avec badge d'état et bouton "Facturer"/"Réessayer"
-  (Étape 20)
+  (Étape 20) + 4e case "Facturation IzyFacture" dans le bloc "Options payantes" (Mon compte, super-
+  administrateur) + le bloc "Facturation IzyFacture" (Paramètres) et la colonne "Facture" (Commandes) ne
+  sont désormais construits que si cette option est débloquée pour le marchand actif, sinon totalement
+  absents de la page plutôt que simplement masqués (Étape 21)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
@@ -762,7 +809,9 @@ facture s'affiche bien dans le tableau après coup.
   elle ne revient JAMAIS sur un rôle que vous auriez retiré vous-même à un employé par la suite, même après
   redémarrage du serveur — correctif d'un vrai défaut trouvé en testant avant livraison (Étape 17) +
   nouvelles colonnes `izyfacture_api_key` (clé chiffrée, voir `crypto-util.js`) et
-  `izyfacture_auto_facturation`, vides/fausses par défaut pour tous les marchands existants (Étape 20)
+  `izyfacture_auto_facturation`, vides/fausses par défaut pour tous les marchands existants (Étape 20) +
+  nouvelle colonne `option_facturation_izyfacture`, fausse par défaut pour tous les marchands existants,
+  y compris ceux qui avaient déjà une clé IzyFacture enregistrée (Étape 21)
 
 ## Comment déployer
 

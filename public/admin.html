@@ -474,6 +474,7 @@ const I18N = {
     labelOptionStockIllimite: "Stock illimité (case à cocher par article dans le Catalogue)",
     labelOptionLienCommande: "Lien de commande (numéro WhatsApp affiché + bouton « Copier le lien » par article)",
     labelOptionNotifStatut: "Notifications de statut (message WhatsApp automatique au client)",
+    labelOptionFacturationIzyfacture: "Facturation IzyFacture (facturation automatique des commandes confirmées)",
     alertOptionsEnregistrees: "Options enregistrées.",
 
     h3NotifStatut: "Notifications de statut (facultatif)",
@@ -869,6 +870,7 @@ const I18N = {
     labelOptionStockIllimite: "Unlimited stock (per-item checkbox in the Catalog tab)",
     labelOptionLienCommande: "Order link (displayed WhatsApp number + per-item \"Copy link\" button)",
     labelOptionNotifStatut: "Status notifications (automatic WhatsApp message to the customer)",
+    labelOptionFacturationIzyfacture: "IzyFacture invoicing (automatic invoicing of confirmed orders)",
     alertOptionsEnregistrees: "Options saved.",
 
     h3NotifStatut: "Status notifications (optional)",
@@ -1432,7 +1434,7 @@ async function renderCommandes() {
           "<label>" + t("labelAu") + "<input type='date' id='commandesInputAu' value='" + esc(commandesFiltrePlageAu) + "' /></label>"
         : "") +
     "</div>" +
-    "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadArticles") + "</th><th>" + t("theadNbArticles") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadModeCourt") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadAdresse") + "</th><th>" + t("theadStatut") + "</th><th>" + t("theadFacture") + "</th></tr>" +
+    "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadArticles") + "</th><th>" + t("theadNbArticles") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadModeCourt") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadAdresse") + "</th><th>" + t("theadStatut") + "</th>" + (marchandActif.optionFacturationIzyfacture ? "<th>" + t("theadFacture") + "</th>" : "") + "</tr>" +
     (visibles.length ? visibles.map((o) =>
       "<tr>" +
         "<td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
@@ -1448,9 +1450,9 @@ async function renderCommandes() {
         "<td><select data-commande='" + o.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === o.statut ? " selected" : "") + ">" + esc(libelleStatutCommande(s)) + "</option>").join("") + "</select>" +
           (o.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
-        "<td>" + celluleIzyfacture(o) + "</td>" +
+        (marchandActif.optionFacturationIzyfacture ? "<td>" + celluleIzyfacture(o) + "</td>" : "") +
       "</tr>"
-    ).join("") : "<tr><td colspan='10'>" + (commandes.length ? t("aucuneCorrespondanceFiltre") : t("aucuneCommande")) + "</td></tr>") +
+    ).join("") : "<tr><td colspan='" + (marchandActif.optionFacturationIzyfacture ? 10 : 9) + "'>" + (commandes.length ? t("aucuneCorrespondanceFiltre") : t("aucuneCommande")) + "</td></tr>") +
     "</table>";
 
   document.getElementById("commandesSelStatut").onchange = (e) => { commandesFiltreStatut = e.target.value; renderCommandes(); };
@@ -1590,9 +1592,13 @@ async function renderParametresCatalogue() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const estGestionnaire = moi.role === "marchand" || moi.role === "superadmin";
+  // "Facturation IzyFacture" est une option payante (voir blocOptionsPayantesHtml) : tant que le
+  // super-administrateur ne l'a pas debloquee pour ce marchand, la route /izyfacture/parametres refuse
+  // meme au proprietaire (403) - inutile de l'appeler, et le bloc entier reste invisible plus bas.
+  const izyfactureDebloquee = estGestionnaire && marchandActif.optionFacturationIzyfacture === true;
   const [parametres, izyfactureEtat] = await Promise.all([
     api("/api/" + marchandActif.id + "/parametres"),
-    estGestionnaire ? api("/api/" + marchandActif.id + "/izyfacture/parametres") : Promise.resolve(null)
+    izyfactureDebloquee ? api("/api/" + marchandActif.id + "/izyfacture/parametres") : Promise.resolve(null)
   ]);
   const retrait = parametres.retrait || {};
   zone.innerHTML =
@@ -1615,7 +1621,7 @@ async function renderParametresCatalogue() {
     "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder=\"" + esc(t("placeholderHorairesRetrait")) + "\" />" +
     (marchandActif.optionNotificationsStatut ? blocNotifStatutHtml(parametres.notifStatut) : "") +
     "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>" +
-    (estGestionnaire ? blocIzyfactureHtml(izyfactureEtat) : "");
+    (izyfactureDebloquee ? blocIzyfactureHtml(izyfactureEtat) : "");
   document.getElementById("btnSauverParams").onclick = async () => {
     try {
       const corps = {
@@ -1633,7 +1639,7 @@ async function renderParametresCatalogue() {
       alert(t("alertParametresEnregistres"));
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
-  if (estGestionnaire) brancherBlocIzyfacture();
+  if (izyfactureDebloquee) brancherBlocIzyfacture();
 }
 
 // ---------------- Marchand service (prise de rendez-vous) ----------------
@@ -2479,6 +2485,7 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionStockIllimite'" + (marchandActif.optionStockIllimite ? " checked" : "") + " /> " + t("labelOptionStockIllimite") + "</label>" +
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionLienCommande'" + (marchandActif.optionLienCommande ? " checked" : "") + " /> " + t("labelOptionLienCommande") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionNotifStatut'" + (marchandActif.optionNotificationsStatut ? " checked" : "") + " /> " + t("labelOptionNotifStatut") + "</label>" +
+    "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionFacturationIzyfacture'" + (marchandActif.optionFacturationIzyfacture ? " checked" : "") + " /> " + t("labelOptionFacturationIzyfacture") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>";
 }
 function brancherBlocOptionsPayantes() {
@@ -2489,7 +2496,8 @@ function brancherBlocOptionsPayantes() {
         body: JSON.stringify({
           optionStockIllimite: document.getElementById("champOptionStockIllimite").checked,
           optionLienCommande: document.getElementById("champOptionLienCommande").checked,
-          optionNotificationsStatut: document.getElementById("champOptionNotifStatut").checked
+          optionNotificationsStatut: document.getElementById("champOptionNotifStatut").checked,
+          optionFacturationIzyfacture: document.getElementById("champOptionFacturationIzyfacture").checked
         })
       });
       alert(t("alertOptionsEnregistrees"));
