@@ -776,6 +776,34 @@ catégorie et sa propre pagination, retour vers les catégories, catégorie "Aut
 index de catégorie invalide (repli propre sur l'écran des catégories, jamais un plantage), et confirmation
 qu'un catalogue à une seule catégorie garde bien l'ancien affichage plat.
 
+## Étape 25 — Le bouton "Tester l'alerte maintenant" détecte enfin les VRAIS échecs de livraison (nouveau)
+
+Vous avez signalé qu'une alerte de test s'affichait comme "Réussi", et qu'une vraie alerte (un client
+attendant un conseiller) n'arrivait pourtant pas non plus sur votre téléphone. En creusant, la cause était
+structurelle : "Réussi" confirme seulement que WhatsApp a **accepté** le message pour l'envoi — jamais qu'il
+est réellement arrivé sur le téléphone. WhatsApp signale la vraie livraison (ou son échec, avec la raison
+exacte) via un événement **séparé**, envoyé après coup sur le même webhook — et IzyVendeur l'ignorait
+purement et simplement jusqu'ici.
+
+Corrigé : le webhook capte désormais cet événement de statut de livraison. Quand WhatsApp signale un échec
+réel pour votre numéro de notification, IzyVendeur enregistre le détail exact (code d'erreur, titre et
+message envoyés par Meta) et l'affiche directement dans /admin (onglet Mon compte), juste au-dessus du
+bouton "Tester l'alerte maintenant", sous la forme d'un encadré "Dernier échec de LIVRAISON détecté" — visible
+dès l'ouverture de l'onglet, pas seulement après un clic sur le bouton de test (qui, par nature, ne peut
+jamais voir un échec survenant après son propre appel). Le message du bouton de test lui-même a aussi été
+reformulé pour ne plus laisser croire qu'un "Réussi" garantit une livraison réelle.
+
+Cet encadré ne s'efface jamais tout seul (même après un nouveau test "réussi", qui ne prouve pas plus la
+livraison) — la date affichée permet de juger si l'information est encore d'actualité. Rien de tout cela ne
+touche à l'envoi des messages aux clients eux-mêmes : c'est une capture d'information en plus, jamais un
+changement de comportement du bot.
+
+Testé le 27 septembre 2026 par de vrais appels HTTP simulant l'événement de statut envoyé par Meta (échec
+réel rapproché du numéro de notification malgré une différence de format "+237"/"237", échec ignoré pour un
+autre destinataire, statuts "envoyé"/"livré" sans effet, résilience à un numéro WhatsApp inconnu) et avec un
+vrai navigateur piloté (Playwright) confirmant l'affichage exact de l'encadré, et son absence totale pour un
+marchand sans échec connu.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -881,6 +909,13 @@ qu'un catalogue à une seule catégorie garde bien l'ancien affichage plat.
   retour vers les catégories, clic sur une catégorie, pagination à l'intérieur d'une catégorie), tous de la
   pure navigation d'affichage au même titre que la pagination du catalogue plat déjà existante (aucun effet
   sur l'état de la conversation, `conversation.js`/`conversationService.js` totalement inchangés) (Étape 24)
+  + traitement de l'événement de statut de livraison WhatsApp (`value.statuses`, séparé des messages
+  entrants) sur `POST /webhook` : un échec réel signalé par Meta pour le numéro de NOTIFICATION du marchand
+  (rapprochement tolérant au format "+237"/"237") est journalisé et enregistré (`derniereErreurAlerte` sur le
+  marchand) ; auparavant, cet événement était purement ignoré (Étape 25)
+- `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
+  d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
+  par défaut pour tous les marchands existants (Étape 25)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -912,7 +947,11 @@ qu'un catalogue à une seule catégorie garde bien l'ancien affichage plat.
   administrateur) + le bloc "Facturation IzyFacture" (Paramètres) et la colonne "Facture" (Commandes) ne
   sont désormais construits que si cette option est débloquée pour le marchand actif, sinon totalement
   absents de la page plutôt que simplement masqués (Étape 21) + nouveau bouton "Importer un fichier
-  catalogue (CSV)" dans l'onglet Catalogue, à côté de "+ Ajouter un article" (Étape 23)
+  catalogue (CSV)" dans l'onglet Catalogue, à côté de "+ Ajouter un article" (Étape 23) + nouvel encadré
+  "Dernier échec de LIVRAISON détecté" dans l'onglet Mon compte, juste au-dessus de "Tester l'alerte
+  maintenant" (visible dès l'ouverture de l'onglet dès qu'un échec réel est connu, jamais effacé
+  automatiquement) + message du bouton "Tester l'alerte maintenant" reformulé pour ne plus laisser croire
+  qu'un envoi accepté par WhatsApp garantit une livraison réelle (Étape 25)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec

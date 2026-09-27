@@ -119,6 +119,13 @@ async function ensureMerchantsTable() {
   // la colonne "Facture" (onglet Commandes) restent totalement invisibles cote marchand, et les routes
   // /api/:id/izyfacture/* refusent toute action meme par appel direct a l'API (voir server.js).
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_facturation_izyfacture BOOLEAN NOT NULL DEFAULT false");
+  // Dernier echec de LIVRAISON reel (pas d'envoi) d'une alerte au numero de notification du marchand,
+  // signale par Meta via l'evenement "statuses" du webhook (voir server.js, POST /webhook) - jamais via la
+  // reponse HTTP synchrone de l'envoi, qui ne confirme que l'acceptation du message par Meta, pas sa
+  // livraison reelle sur le telephone (Etape 25, 27 septembre 2026, suite a un souci de notification signale
+  // par un marchand ou "Tester l'alerte maintenant" affichait "Reussi" sans que rien n'arrive vraiment).
+  // NULL par defaut (aucun echec connu). Forme : {horodatage, destinataire, wamid, code, titre, message}.
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS derniere_erreur_alerte JSONB");
 }
 
 // Cles de migration connues pour les roles employe (voir migrerRolesEmployes ci-dessous). Un marchand cree
@@ -252,7 +259,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return migrerRolesEmployes(res.rows.map(rowToMerchant));
     }
@@ -295,7 +302,8 @@ function rowToMerchant(row) {
     rolesMigres: Array.isArray(row.roles_migres) ? row.roles_migres : [],
     izyfactureApiKey: row.izyfacture_api_key || null,
     izyfactureAutoFacturation: row.izyfacture_auto_facturation === true,
-    optionFacturationIzyfacture: row.option_facturation_izyfacture === true
+    optionFacturationIzyfacture: row.option_facturation_izyfacture === true,
+    derniereErreurAlerte: row.derniere_erreur_alerte || null
   };
 }
 
@@ -303,12 +311,12 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb, izyfacture_api_key=$17, izyfacture_auto_facturation=$18, option_facturation_izyfacture=$19",
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20::jsonb) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb, izyfacture_api_key=$17, izyfacture_auto_facturation=$18, option_facturation_izyfacture=$19, derniere_erreur_alerte=$20::jsonb",
       // rolesMigres absent (nouveau marchand cree via l'API, voir server.js POST /api/marchands) -> on
       // suppose qu'il n'a jamais connu l'ancien regroupement de roles, donc toutes les cles de migration
       // connues sont deja "appliquees" par defaut (rien a migrer pour un marchand qui vient de naitre).
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture]
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null)]
     );
     return;
   }
@@ -326,7 +334,7 @@ async function getMerchantRecord(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -358,7 +366,7 @@ async function updateMerchantFields(id, patch) {
     // cas pour "employes" avant ce correctif : changer par ex. le numero de notification d'un marchand
     // ayant des employes les supprimait tous sans le vouloir.
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -379,6 +387,9 @@ async function updateMerchantFields(id, patch) {
     if (patch.izyfactureApiKey !== undefined) m.izyfactureApiKey = patch.izyfactureApiKey || null;
     if (patch.izyfactureAutoFacturation !== undefined) m.izyfactureAutoFacturation = !!patch.izyfactureAutoFacturation;
     if (patch.optionFacturationIzyfacture !== undefined) m.optionFacturationIzyfacture = !!patch.optionFacturationIzyfacture;
+    // Dernier echec de livraison d'alerte signale par Meta (voir POST /webhook, Etape 25) - `null` explicite
+    // accepte (efface volontairement l'ancien echec affiche), jamais reecrit avec une valeur "vide" par erreur.
+    if (patch.derniereErreurAlerte !== undefined) m.derniereErreurAlerte = patch.derniereErreurAlerte || null;
     // NOUVEAU : nom affiche et phone_number_id WhatsApp corrigeables apres coup (ex: faute de frappe a la
     // creation). Volontairement PAS "id" ni "type" ici : "id" sert de cle a tout l'etat deja persiste
     // (app_state, journal des conversations) et de cle aux sessions/moteurs EN MEMOIRE — le changer
@@ -410,6 +421,7 @@ async function updateMerchantFields(id, patch) {
   if (patch.izyfactureApiKey !== undefined) liste[idx].izyfactureApiKey = patch.izyfactureApiKey || null;
   if (patch.izyfactureAutoFacturation !== undefined) liste[idx].izyfactureAutoFacturation = !!patch.izyfactureAutoFacturation;
   if (patch.optionFacturationIzyfacture !== undefined) liste[idx].optionFacturationIzyfacture = !!patch.optionFacturationIzyfacture;
+  if (patch.derniereErreurAlerte !== undefined) liste[idx].derniereErreurAlerte = patch.derniereErreurAlerte || null;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
 }

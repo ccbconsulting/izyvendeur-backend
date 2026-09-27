@@ -449,7 +449,11 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     // IzyFacture est configure pour ce marchand (voir /api/:id/izyfacture/parametres pour le detail,
     // reserve au proprietaire/super-administrateur).
     izyfactureConfiguree: !!e.merchant.izyfactureApiKey,
-    izyfactureAutoFacturation: e.merchant.izyfactureAutoFacturation === true
+    izyfactureAutoFacturation: e.merchant.izyfactureAutoFacturation === true,
+    // Dernier echec de LIVRAISON reel d'une alerte, signale par Meta apres coup (voir POST /webhook,
+    // traitement de "statuses", Etape 25) - distinct du resultat du bouton "Tester l'alerte maintenant"
+    // (qui ne voit qu'un echec immediat d'ENVOI, jamais un echec de livraison survenant juste apres).
+    derniereErreurAlerte: e.merchant.derniereErreurAlerte || null
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -1452,10 +1456,51 @@ app.post("/webhook", async (req, res) => {
     const changes = entry?.changes?.[0];
     const value = changes?.value;
     const messages = value?.messages;
+    const statuses = value?.statuses;
     const phoneNumberId = value?.metadata?.phone_number_id;
 
+    // Etape 25 (27 sept 2026) : Meta signale la livraison REELLE (ou l'echec) d'un message deja envoye via
+    // un evenement SEPARE "statuses" sur ce meme webhook - jamais via la reponse HTTP synchrone du POST
+    // d'envoi, qui ne confirme que l'ACCEPTATION du message par Meta (mise en file), pas son arrivee reelle
+    // sur le telephone. Avant cette etape, ces evenements etaient purement ignores (voir l'ancien
+    // commentaire ici, qui disait litteralement "rien a faire") - ce qui rendait un "Reussi" du bouton
+    // "Tester l'alerte maintenant" totalement aveugle a un echec de livraison survenant juste apres (cause
+    // reelle d'un souci de notification signale par un marchand malgre un test "reussi").
+    if (statuses && statuses.length) {
+      const merchantIdStatut = phoneNumberId && phoneNumberIndex[phoneNumberId];
+      const marchandStatut = merchantIdStatut && engines[merchantIdStatut];
+      for (const s of statuses) {
+        if (s.status !== "failed") continue; // "sent"/"delivered"/"read" : rien a signaler, seul l'echec importe ici
+        const erreur = (s.errors && s.errors[0]) || {};
+        const detail = {
+          horodatage: new Date().toISOString(),
+          destinataire: s.recipient_id || null,
+          wamid: s.id || null,
+          code: erreur.code != null ? erreur.code : null,
+          titre: erreur.title || null,
+          message: erreur.message || (erreur.error_data && erreur.error_data.details) || null
+        };
+        console.error(`[${merchantIdStatut || phoneNumberId || "?"}] Echec de livraison WhatsApp signale par Meta (statuses) :`, JSON.stringify(detail));
+        // Rapproche du numero de NOTIFICATION du marchand (celui qui recoit les alertes) - comparaison sur
+        // les seuls chiffres pour tolerer les differences de format ("+237..." vs "237..."). Si ca
+        // correspond, on enregistre ce detail pour l'afficher directement dans /admin a cote de "Tester
+        // l'alerte maintenant" (voir GET /api/marchands) - sans ca, un marchand n'a aucun moyen de savoir
+        // POURQUOI une VRAIE alerte echoue, contrairement au bouton de test qui lui montre deja le detail
+        // d'un echec immediat (mais jamais d'un echec survenant apres coup, cote livraison).
+        if (marchandStatut && marchandStatut.merchant.phoneNotification) {
+          const chiffres = (txt) => String(txt || "").replace(/\D/g, "");
+          if (chiffres(marchandStatut.merchant.phoneNotification) === chiffres(detail.destinataire)) {
+            db.updateMerchantFields(merchantIdStatut, { derniereErreurAlerte: detail })
+              .then((maj) => { if (maj) marchandStatut.merchant.derniereErreurAlerte = maj.derniereErreurAlerte; })
+              .catch((err) => console.error(`[${merchantIdStatut}] Echec d'enregistrement de la derniere erreur d'alerte :`, err));
+          }
+        }
+      }
+    }
+
     if (!messages || messages.length === 0) {
-      // Ce n'est pas un nouveau message (ex: juste une mise a jour de statut) -> rien a faire.
+      // Ce n'est pas un nouveau message entrant (ex: seulement une mise a jour de statut, deja traitee
+      // juste au-dessus) -> rien d'autre a faire.
       return;
     }
 

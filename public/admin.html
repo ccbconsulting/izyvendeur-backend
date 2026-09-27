@@ -464,11 +464,13 @@ const I18N = {
     noteTesterAlerte: "Envoie une vraie alerte de test à ce numéro et affiche ici le résultat exact renvoyé par WhatsApp (utile pour vérifier pourquoi une alerte n'arrive pas).",
     alertTesterAlerteSansNumero: "Enregistrez d'abord un numéro de notification ci-dessus.",
     testAlerteEnCours: "Envoi de l'alerte de test en cours…",
-    testAlerteSuccesTemplate: "Réussi — alerte envoyée via le template WhatsApp \"{nom}\" au {numero}. Si elle n'arrive toujours pas sur WhatsApp, le souci est probablement le numéro lui-même (mauvais numéro, ou WhatsApp désinstallé/désactivé sur cet appareil) plutôt que la configuration IzyVendeur.",
+    testAlerteSuccesTemplate: "Réussi — alerte ACCEPTÉE par WhatsApp pour envoi via le template \"{nom}\" au {numero}. Attention : ceci confirme seulement que WhatsApp a accepté d'envoyer le message, pas qu'il est réellement arrivé sur le téléphone — s'il ne l'est pas, regardez plutôt l'encadré \"Dernier échec de livraison détecté\" ci-dessous (même après un test réussi, WhatsApp peut signaler un échec juste après).",
     testAlertePartiel: "Le template WhatsApp \"{nom}\" a échoué, MAIS le message de repli en texte libre a bien été envoyé au {numero} — le numéro et le jeton fonctionnent, le souci vient précisément du template (nom, langue, ou approuvé sous un autre compte WhatsApp Business que celui réellement branché sur Render).",
     testAlerteEchec: "Échec complet : ni le template \"{nom}\" ni le repli en texte libre n'ont pu être envoyés au {numero}. L'échec du repli en texte libre est normal si ce numéro n'a jamais écrit au bot (WhatsApp l'exige dans les 24h) — regardez d'abord l'erreur du template ci-dessous.",
     labelDetailTemplate: "Détail du template :",
     labelDetailTexteLibre: "Détail du repli texte libre :",
+    labelDerniereErreurAlerte: "Dernier échec de LIVRAISON détecté",
+    texteDerniereErreurAlerte: "Signalé par WhatsApp pour une alerte envoyée au {destinataire} — ceci est un échec réel de livraison (pas juste un test), détecté même si l'envoi lui-même avait été accepté sur le moment.",
     h3NumeroPublic: "Numéro WhatsApp affiché (liens de commande)",
     noteNumeroPublic: "Le numéro WhatsApp que vos clients contactent réellement, au format international sans le + (ex : 237677123456). Sert uniquement à générer les liens de commande par article dans l'onglet Catalogue — n'affecte pas l'envoi/réception des messages.",
     labelNumeroPublic: "Numéro WhatsApp",
@@ -865,11 +867,13 @@ const I18N = {
     noteTesterAlerte: "Sends a real test alert to this number and shows the exact result WhatsApp returns here (useful to check why an alert isn't arriving).",
     alertTesterAlerteSansNumero: "Save a notification number above first.",
     testAlerteEnCours: "Sending the test alert…",
-    testAlerteSuccesTemplate: "Success — alert sent via the WhatsApp template \"{nom}\" to {numero}. If it still doesn't arrive on WhatsApp, the issue is likely the number itself (wrong number, or WhatsApp uninstalled/disabled on that device) rather than the IzyVendeur setup.",
+    testAlerteSuccesTemplate: "Success — alert ACCEPTED by WhatsApp for sending via the template \"{nom}\" to {numero}. Note: this only confirms WhatsApp accepted the message for sending, not that it actually reached the phone — if it hasn't, check the \"Last delivery failure detected\" box below instead (WhatsApp can report a failure even after a test send was accepted).",
     testAlertePartiel: "The WhatsApp template \"{nom}\" failed, BUT the free-text fallback message was sent successfully to {numero} — the number and token work, the issue is specifically the template (name, language, or approved under a different WhatsApp Business account than the one actually connected on Render).",
     testAlerteEchec: "Complete failure: neither the template \"{nom}\" nor the free-text fallback could be sent to {numero}. The free-text fallback failing is normal if this number never messaged the bot (WhatsApp requires it within 24h) — check the template error below first.",
     labelDetailTemplate: "Template detail:",
     labelDetailTexteLibre: "Free-text fallback detail:",
+    labelDerniereErreurAlerte: "Last delivery failure detected",
+    texteDerniereErreurAlerte: "Reported by WhatsApp for an alert sent to {destinataire} — this is a real delivery failure (not just a test), detected even if the send itself was accepted at the time.",
     h3NumeroPublic: "Displayed WhatsApp number (order links)",
     noteNumeroPublic: "The WhatsApp number your customers actually contact, in international format without the + (e.g. 237677123456). Used only to generate the per-item order links in the Catalog tab — doesn't affect sending/receiving messages.",
     labelNumeroPublic: "WhatsApp number",
@@ -2561,7 +2565,31 @@ function blocTesterAlerteHtml() {
   return "<div style='margin-top:10px;'>" +
     "<button id='btnTesterAlerte'>" + t("btnTesterAlerte") + "</button>" +
     "<p class='raison'>" + t("noteTesterAlerte") + "</p>" +
+    derniereErreurAlerteHtml() +
     "<div id='resultatTesterAlerte'></div>" +
+  "</div>";
+}
+
+// Echec de LIVRAISON reel d'une alerte (pas d'envoi), signale par Meta apres coup et enregistre cote
+// serveur (voir POST /webhook, traitement de "statuses", Etape 25) - affiche des l'ouverture de l'onglet,
+// pas seulement apres un clic sur "Tester l'alerte maintenant" (qui ne peut, par construction, jamais voir
+// un echec de livraison survenant apres son propre appel). Volontairement jamais efface automatiquement
+// (meme par un test reussi ensuite, qui ne prouve pas plus la livraison reelle) - seule une date visible
+// permet de juger si l'information est encore d'actualite.
+function derniereErreurAlerteHtml() {
+  const err = marchandActif.derniereErreurAlerte;
+  if (!err) return "";
+  // Ne reutilise volontairement PAS detailEchecHtml() ici : elle prefixe "HTTP" (pertinent pour le detail
+  // d'un ECHEC D'ENVOI HTTP, voir tester-alerte ci-dessus), alors qu'ici `err.code` est un code d'erreur
+  // WhatsApp (ex: 131026), pas un statut HTTP - un prefixe "HTTP" serait trompeur.
+  const morceaux = [];
+  if (err.code != null) morceaux.push("Code " + err.code);
+  if (err.titre) morceaux.push(esc(err.titre));
+  if (err.message) morceaux.push(esc(err.message));
+  return "<div class='tuile avertissement' style='padding:10px;border-radius:6px;margin:10px 0;'>" +
+    "<p><strong>" + t("labelDerniereErreurAlerte") + "</strong> — " + esc(formaterDateHeure(err.horodatage)) + "</p>" +
+    "<p>" + esc(t("texteDerniereErreurAlerte", { destinataire: err.destinataire || "?" })) + "</p>" +
+    (morceaux.length ? "<pre style='white-space:pre-wrap;background:#f5f6f8;border:1px solid #e1e5ea;border-radius:6px;padding:8px;font-size:0.85em;margin:4px 0 0;'>" + morceaux.join(" — ") + "</pre>" : "") +
   "</div>";
 }
 
