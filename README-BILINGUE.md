@@ -744,6 +744,38 @@ plusieurs lignes en variantes d'un même article, protection contre le double-im
 qui n'interrompt pas le reste de l'import) et avec un vrai navigateur piloté (Playwright) confirmant que le
 bouton fonctionne bien depuis l'interface elle-même, sans erreur JavaScript.
 
+## Étape 24 — Le chatbot présente d'abord les catégories, plutôt qu'une liste plate de tous les articles (nouveau)
+
+Vous avez remarqué qu'un catalogue avec beaucoup d'articles (Excelle Health en particulier, 71 articles/8
+catégories) affichait d'un coup la liste complète des articles au client sur WhatsApp — troublant pour
+quelqu'un qui découvre la boutique. Désormais, dès qu'un catalogue a **2 catégories distinctes ou plus**, le
+client voit d'abord la liste de ses **catégories** (ex. "Agriculture", "Élevage"...) ; ce n'est qu'en
+cliquant sur une catégorie que les articles qui lui correspondent s'affichent.
+
+- **Seuil de 2 catégories minimum** : un catalogue non catégorisé, ou qui n'a qu'une seule catégorie
+  renseignée, garde exactement le comportement d'avant (liste plate des articles directement) — jamais de
+  clic supplémentaire imposé inutilement à un petit marchand.
+- **Articles sans catégorie renseignée** : jamais perdus, regroupés sous une catégorie "Autres articles" /
+  "Other items" qui apparaît comme les autres dans la liste.
+- **Pagination à deux niveaux** : comme la limite technique de WhatsApp est de 10 lignes cliquables par
+  message, la liste des catégories elle-même se pagine (bouton "Voir plus ▸") si vous avez plus de 9
+  catégories, et la liste des articles À L'INTÉRIEUR d'une catégorie se pagine de la même façon si elle en
+  contient beaucoup (ex. "Ayurvédique - Santé" chez Excelle Health, 21 articles).
+- **Retour facile** : une ligne "◀ Toutes les catégories" est toujours présente en bas de la liste d'une
+  catégorie, pour ne jamais enfermer le client dedans — il peut à tout moment revenir en arrière et regarder
+  une autre catégorie.
+- **Rien ne change dans la façon de commander** : cliquer sur un article dans la liste d'une catégorie
+  fonctionne exactement comme avant (choix couleur/taille, panier...) — cette étape ne touche que
+  l'AFFICHAGE des articles, jamais la logique de commande elle-même (moteur de conversation inchangé). Le
+  client peut aussi toujours ignorer entièrement les listes tactiles et taper directement le nom de
+  l'article qu'il cherche, comme avant.
+
+Testé le 27 septembre 2026 par de vrais appels HTTP simulant des messages WhatsApp entrants (webhook) sur un
+catalogue à 11 catégories (dont une avec 12 articles) : écran des catégories et sa pagination, écran d'une
+catégorie et sa propre pagination, retour vers les catégories, catégorie "Autres articles", clic sur un
+index de catégorie invalide (repli propre sur l'écran des catégories, jamais un plantage), et confirmation
+qu'un catalogue à une seule catégorie garde bien l'ancien affichage plat.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -837,7 +869,18 @@ bouton fonctionne bien depuis l'interface elle-même, sans erreur JavaScript.
   avant, sans changement pour les modèles déjà approuvés à l'ancien format) puis, seulement en cas
   d'échec, 2e essai avec `parameter_name` (Étape 22) + nouvelle route `POST
   /api/:id/catalogue/importer` (import CSV en masse, fusion avec le catalogue existant, regroupement des
-  lignes en variantes par couple Catégorie+Nom, protection contre le double-import) (Étape 23)
+  lignes en variantes par couple Catégorie+Nom, protection contre le double-import) (Étape 23) + navigation
+  par catégorie dans le chatbot (menu déroulant "catégories" présenté avant les articles dès 2 catégories
+  distinctes ou plus) : nouvelle fonction `construireCategoriesCatalogue` + 2 nouvelles fonctions partagées
+  `envoyerEcranCategories`/`envoyerEcranArticlesCategorie` (construction et envoi des écrans catégories/
+  articles-d'une-catégorie, avec pagination et repli propre sur un index de catégorie invalide) +
+  `construireItemsListe` accepte désormais un filtre de catégorie optionnel + `construireLignesListe`
+  réserve désormais correctement une place par ligne de navigation supplémentaire passée (au lieu de
+  supposer toujours 0 ou déjà pré-tronqué par l'appelant), pour ne jamais risquer de dépasser la limite de
+  10 lignes WhatsApp + 4 nouveaux cas d'interception dans le webhook (pagination de la liste des catégories,
+  retour vers les catégories, clic sur une catégorie, pagination à l'intérieur d'une catégorie), tous de la
+  pure navigation d'affichage au même titre que la pagination du catalogue plat déjà existante (aucun effet
+  sur l'état de la conversation, `conversation.js`/`conversationService.js` totalement inchangés) (Étape 24)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image

@@ -1513,6 +1513,52 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
+    // Etape 24 - Navigation par categorie : ces 4 blocs sont, comme celui de PREFIXE_VOIR_PLUS ci-dessus,
+    // de la pure navigation/affichage interceptee AVANT engine.handleMessage() - aucun n'affecte l'etat de
+    // la conversation, ils ne font que rebatir et renvoyer un ecran different (categories, ou articles d'une
+    // categorie, avec leur propre pagination et retour).
+    const etatPourCategories = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
+
+    if (idInteractifClique.indexOf(PREFIXE_VOIR_PLUS_CATEGORIES) === 0) {
+      const offset = Number(idInteractifClique.slice(PREFIXE_VOIR_PLUS_CATEGORIES.length)) || 0;
+      const texteCorps = tW(etatPourCategories, "Voici la suite de nos catégories :", "Here are more of our categories:");
+      db.logConversationMessage(merchantId, from, "client", "Voir plus de catégories").catch(() => {});
+      const envoye = await envoyerEcranCategories(from, phoneNumberId, marchand, offset, texteCorps, etatPourCategories).catch(() => false);
+      if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
+      return;
+    }
+
+    if (idInteractifClique === ID_RETOUR_CATEGORIES) {
+      const texteCorps = tW(etatPourCategories, "Voici nos catégories :", "Here are our categories:");
+      db.logConversationMessage(merchantId, from, "client", "Retour aux catégories").catch(() => {});
+      const envoye = await envoyerEcranCategories(from, phoneNumberId, marchand, 0, texteCorps, etatPourCategories).catch(() => false);
+      if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
+      return;
+    }
+
+    if (idInteractifClique.indexOf(PREFIXE_CATEGORIE) === 0) {
+      const catIndex = Number(idInteractifClique.slice(PREFIXE_CATEGORIE.length));
+      const categories = construireCategoriesCatalogue(marchand);
+      const nomCategorie = categories[catIndex];
+      const texteCorps = tW(etatPourCategories, "Voici nos articles :", "Here are our items:");
+      db.logConversationMessage(merchantId, from, "client", "Catégorie : " + (nomCategorie || "?")).catch(() => {});
+      const envoye = await envoyerEcranArticlesCategorie(from, phoneNumberId, marchand, catIndex, 0, texteCorps, etatPourCategories).catch(() => false);
+      if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
+      return;
+    }
+
+    if (idInteractifClique.indexOf(PREFIXE_VOIR_PLUS_DANS_CAT) === 0) {
+      const reste = idInteractifClique.slice(PREFIXE_VOIR_PLUS_DANS_CAT.length);
+      const sep = reste.indexOf("_");
+      const catIndex = Number(sep === -1 ? reste : reste.slice(0, sep));
+      const offset = Number(sep === -1 ? 0 : reste.slice(sep + 1)) || 0;
+      const texteCorps = tW(etatPourCategories, "Voici la suite de nos articles :", "Here are more of our items:");
+      db.logConversationMessage(merchantId, from, "client", "Voir plus d'articles (catégorie)").catch(() => {});
+      const envoye = await envoyerEcranArticlesCategorie(from, phoneNumberId, marchand, catIndex, offset, texteCorps, etatPourCategories).catch(() => false);
+      if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
+      return;
+    }
+
     // Un clic sur une liste/un bouton (voir essayerEnvoyerMenuInteractif plus bas) arrive comme
     // message.type === "interactive" plutot que du texte libre - on le traduit en texte equivalent AVANT
     // de l'envoyer au moteur de conversation, qui n'a besoin de rien savoir de plus (meme logique de
@@ -1591,6 +1637,17 @@ const ID_PANIER_TERMINER = "IZY_PANIER_TERMINER";
 const ID_LANG_FR = "IZY_LANG_FR";
 const ID_LANG_EN = "IZY_LANG_EN";
 const PREFIXE_RETIRER_PANIER = "IZY_DELCART_";
+// Navigation par categorie (Etape 24, 27 sept 2026 - demandee des qu'un catalogue depasse une poignee
+// d'articles, ex. "Excelle Health by Vestige" et ses 71 produits sur 8 categories : une seule liste plate,
+// meme paginee par "Voir plus", restait confuse). Purement de la navigation d'affichage cote serveur,
+// exactement comme PREFIXE_VOIR_PLUS ci-dessus - AUCUN de ces clics ne passe par engine.handleMessage() ni
+// ne modifie l'etat de conversation, voir le webhook plus bas. PREFIXE_CATEGORIE encode l'INDEX de la
+// categorie (pas son nom, pour eviter tout souci d'encodage/de longueur) dans le tableau renvoye par
+// construireCategoriesCatalogue (ordre stable : 1ere apparition dans le catalogue).
+const PREFIXE_CATEGORIE = "IZY_CAT_";
+const PREFIXE_VOIR_PLUS_CATEGORIES = "IZY_PLUSCATS_"; // pagination de la LISTE DES CATEGORIES elle-meme (rare, >9 categories)
+const PREFIXE_VOIR_PLUS_DANS_CAT = "IZY_PLUSINCAT_"; // pagination DANS une categorie deja choisie : suffixe "<catIndex>_<offset>"
+const ID_RETOUR_CATEGORIES = "IZY_RETOUR_CATS"; // "◀ Toutes les categories" depuis la liste d'une categorie
 // Choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact, conversation.js /
 // conversationService.js) : 2 boutons proposes juste apres une demande d'humain.
 const ID_CONTACT_ECRIT = "IZY_CONTACT_ECRIT";
@@ -1601,17 +1658,36 @@ function tronquerTexte(texte, max) {
   return t.length > max ? t.slice(0, Math.max(0, max - 1)) + "…" : t;
 }
 
-// Construit la liste plate des articles (catalogue) ou services d'un marchand, sous une forme commune
-// {id, nom, description} - utilisee a la fois pour l'envoi de la 1ere page (essayerEnvoyerMenuInteractif)
-// et pour les pages suivantes ("Voir plus", voir le handler du webhook plus haut).
-function construireItemsListe(marchand) {
+// Construit la liste plate des articles (catalogue, filtree sur `categorieFiltre` si fourni) ou services
+// d'un marchand, sous une forme commune {id, nom, description} - utilisee a la fois pour l'envoi de la
+// 1ere page (essayerEnvoyerMenuInteractif) et pour les pages suivantes ("Voir plus", voir le handler du
+// webhook plus haut). `categorieFiltre` : chaine EXACTE renvoyee par construireCategoriesCatalogue (jamais
+// pertinent pour le moteur service, qui n'a pas de categories).
+function construireItemsListe(marchand, categorieFiltre) {
   const estCatalogue = marchand.engine.type === "catalogue";
-  return estCatalogue
-    ? marchand.engine.getCatalog().map((p) => {
-        const prixMin = (p.variantes || []).length ? Math.min(...p.variantes.map((v) => v.prix)) : null;
-        return { id: p.id, nom: p.nom, description: prixMin != null ? "À partir de " + sh.formatFcfa(prixMin) : "" };
-      })
-    : marchand.engine.getServices().map((s) => ({ id: s.id, nom: s.nom, description: s.dureeMinutes + " min — " + sh.formatFcfa(s.prix) }));
+  if (!estCatalogue) {
+    return marchand.engine.getServices().map((s) => ({ id: s.id, nom: s.nom, description: s.dureeMinutes + " min — " + sh.formatFcfa(s.prix) }));
+  }
+  let produits = marchand.engine.getCatalog();
+  if (categorieFiltre != null) produits = produits.filter((p) => String(p.cat || "").trim() === categorieFiltre);
+  return produits.map((p) => {
+    const prixMin = (p.variantes || []).length ? Math.min(...p.variantes.map((v) => v.prix)) : null;
+    return { id: p.id, nom: p.nom, description: prixMin != null ? "À partir de " + sh.formatFcfa(prixMin) : "" };
+  });
+}
+
+// Categories distinctes d'un catalogue (moteur catalogue uniquement), dans l'ordre de 1ere apparition -
+// une chaine vide "" designe les articles sans categorie renseignee (regroupes a part, jamais perdus).
+// Renvoie [] pour un moteur service ou un catalogue vide - dans les deux cas, pas de navigation par
+// categorie a proposer (voir essayerEnvoyerMenuInteractif, seuil de 2 categories minimum).
+function construireCategoriesCatalogue(marchand) {
+  if (marchand.engine.type !== "catalogue") return [];
+  const vues = [];
+  marchand.engine.getCatalog().forEach((p) => {
+    const cat = String(p.cat || "").trim();
+    if (vues.indexOf(cat) === -1) vues.push(cat);
+  });
+  return vues;
 }
 
 // Construit les lignes d'UNE page de liste WhatsApp a partir de `offset` (index de depart dans `items`) -
@@ -1620,12 +1696,22 @@ function construireItemsListe(marchand) {
 // place est prise par "Voir plus ▸" a la place d'un 9eme article, pour ne jamais depasser la limite tout
 // en gardant tout le catalogue/service atteignable par clics (pas seulement les 9 premiers).
 // `lignesSupplementaires` (optionnel) : lignes de navigation ajoutees avant "Contacter un conseiller" - ex.
-// "◀ Autres articles" sur les listes de couleur/taille/variante (voir essayerEnvoyerMenuInteractif), pour
-// permettre au client d'explorer le catalogue avant de se decider sans jamais y etre oblige.
-function construireLignesListe(items, offset, etat, lignesSupplementaires) {
+// "◀ Autres articles" sur les listes de couleur/taille/variante, ou "◀ Toutes les categories" sur la liste
+// d'une categorie (voir essayerEnvoyerMenuInteractif), pour permettre au client d'explorer le catalogue
+// avant de se decider sans jamais y etre oblige. IMPORTANT : ces lignes (et "Contacter un conseiller")
+// occupent chacune une des 10 places au meme titre qu'un article - le nombre d'articles affiches par page
+// (et le seuil de declenchement de "Voir plus") est donc REDUIT en consequence pour ne jamais depasser la
+// limite WhatsApp de 10 lignes au total, quel que soit le nombre de lignes supplementaires passees (0, 1...).
+// `prefixeVoirPlus` (optionnel, defaut PREFIXE_VOIR_PLUS) : quel prefixe d'id utiliser pour la ligne "Voir
+// plus ▸" - necessaire pour distinguer, cote webhook, la pagination du catalogue complet de celle d'une
+// categorie ou de la liste des categories elle-meme (chacune rebatit une page differente au clic).
+function construireLignesListe(items, offset, etat, lignesSupplementaires, prefixeVoirPlus) {
+  const supplementaires = lignesSupplementaires || [];
+  const placesReservees = 1 + supplementaires.length; // "Contacter un conseiller" + lignes supplementaires
+  const maxSansVoirPlus = 10 - placesReservees;
   const restant = items.length - offset;
-  const inclureVoirPlus = restant > 9;
-  const nbAffiches = inclureVoirPlus ? 8 : Math.max(0, Math.min(restant, 9));
+  const inclureVoirPlus = restant > maxSansVoirPlus;
+  const nbAffiches = inclureVoirPlus ? maxSansVoirPlus - 1 : Math.max(0, Math.min(restant, maxSansVoirPlus));
   const page = items.slice(offset, offset + nbAffiches);
   const rows = page.map((it) => ({
     id: it.id,
@@ -1633,11 +1719,52 @@ function construireLignesListe(items, offset, etat, lignesSupplementaires) {
     description: tronquerTexte(it.description, 72)
   }));
   if (inclureVoirPlus) {
-    rows.push({ id: PREFIXE_VOIR_PLUS + (offset + nbAffiches), title: tW(etat, "Voir plus ▸", "See more ▸") });
+    rows.push({ id: (prefixeVoirPlus || PREFIXE_VOIR_PLUS) + (offset + nbAffiches), title: tW(etat, "Voir plus ▸", "See more ▸") });
   }
-  (lignesSupplementaires || []).forEach((ligne) => rows.push(ligne));
+  supplementaires.forEach((ligne) => rows.push(ligne));
   rows.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
   return rows;
+}
+
+// Ecran "categories" (Etape 24) : liste des categories distinctes du catalogue, avec pagination si plus de
+// 9 categories (le prefixe PREFIXE_VOIR_PLUS_CATEGORIES permet au webhook de distinguer cette pagination-la
+// de celle d'une categorie individuelle ou de l'ancien catalogue plat). Reutilise pour l'ecran initial
+// (offset 0, depuis essayerEnvoyerMenuInteractif) et pour "Voir plus" sur cette meme liste.
+async function envoyerEcranCategories(destinataire, phoneNumberId, marchand, offset, texteCorps, etat) {
+  const categories = construireCategoriesCatalogue(marchand);
+  const itemsCategories = categories.map((cat, i) => ({
+    id: PREFIXE_CATEGORIE + i,
+    nom: cat || tW(etat, "Autres articles", "Other items"),
+    description: ""
+  }));
+  const rows = construireLignesListe(itemsCategories, offset, etat, [], PREFIXE_VOIR_PLUS_CATEGORIES);
+  return envoyerListeWhatsApp(
+    destinataire, phoneNumberId, texteCorps,
+    tW(etat, "Voir les catégories", "See categories"),
+    [{ title: tW(etat, "Nos catégories", "Our categories"), rows }]
+  );
+}
+
+// Ecran "articles d'une categorie" (Etape 24) : meme pagination que le catalogue plat historique (via
+// construireItemsListe(marchand, categorieFiltre)), plus une ligne de retour "◀ Toutes les categories"
+// (ID_RETOUR_CATEGORIES) inseree avant "Contacter un conseiller" pour ne jamais enfermer le client dans une
+// categorie. L'id de "Voir plus" encode "<catIndex>_<offset>" apres PREFIXE_VOIR_PLUS_DANS_CAT, pour que le
+// webhook sache a la fois de quelle categorie il s'agit et a quelle page reprendre au prochain clic.
+// Si l'index de categorie est invalide (catalogue modifie entre-temps) ou la categorie vide, on retombe
+// simplement sur l'ecran des categories plutot que d'echouer silencieusement.
+async function envoyerEcranArticlesCategorie(destinataire, phoneNumberId, marchand, catIndex, offset, texteCorps, etat) {
+  const categories = construireCategoriesCatalogue(marchand);
+  const nomCategorie = categories[catIndex];
+  if (nomCategorie === undefined) return envoyerEcranCategories(destinataire, phoneNumberId, marchand, 0, texteCorps, etat);
+  const items = construireItemsListe(marchand, nomCategorie);
+  if (!items.length) return envoyerEcranCategories(destinataire, phoneNumberId, marchand, 0, texteCorps, etat);
+  const ligneRetour = { id: ID_RETOUR_CATEGORIES, title: tW(etat, "◀ Toutes les catégories", "◀ All categories") };
+  const rows = construireLignesListe(items, offset, etat, [ligneRetour], PREFIXE_VOIR_PLUS_DANS_CAT + catIndex + "_");
+  return envoyerListeWhatsApp(
+    destinataire, phoneNumberId, texteCorps,
+    tW(etat, "Voir les articles", "See items"),
+    [{ title: tronquerTexte(nomCategorie || tW(etat, "Autres articles", "Other items"), 24), rows }]
+  );
 }
 
 // Traduit l'id d'une ligne de liste ou d'un bouton cliques par le client en texte equivalent - le moteur
@@ -1724,6 +1851,17 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
   if (etat.stage === "idle" && etat.pretPourChoix) {
     const estCatalogue = marchand.engine.type === "catalogue";
+
+    // Navigation par categorie (Etape 24) : seulement si ca a un vrai interet (2+ categories distinctes) -
+    // un catalogue non categorise, ou avec une seule categorie, garde le comportement direct d'avant (liste
+    // plate des articles) pour ne jamais imposer un clic supplementaire inutile a un petit marchand.
+    if (estCatalogue) {
+      const categories = construireCategoriesCatalogue(marchand);
+      if (categories.length >= 2) {
+        return envoyerEcranCategories(destinataire, phoneNumberId, marchand, 0, texte, etat);
+      }
+    }
+
     const items = construireItemsListe(marchand);
     if (!items.length) return false;
     const rows = construireLignesListe(items, 0, etat);
