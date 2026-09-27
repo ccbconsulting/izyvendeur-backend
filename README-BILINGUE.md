@@ -676,6 +676,47 @@ marchand verrouillé, le bloc "Facturation IzyFacture" est bien absent de l'ongl
 "IzyFacture", champ de clé introuvable) et la colonne "Facture" est bien absente du tableau des commandes
 (ni en-tête, ni bouton "Facturer").
 
+## Étape 22 — Envoi des templates WhatsApp compatible avec le nouveau format "variables nommées" de Meta (nouveau)
+
+En configurant un nouveau marchand ("Excelle Health by Vestige") le 27 septembre 2026, vous avez découvert
+que le formulaire de création de modèle de Meta (WhatsApp Manager) a changé : il refuse désormais l'ancien
+format de variable positionné (`{{1}}`, `{{2}}`, utilisé par tous les modèles créés jusqu'ici) et exige un
+format à variables **nommées** (`{{telephone_client}}`, `{{reference}}`, etc.), avec le message d'erreur
+« Ce modèle contient des paramètres de variables qui ne sont pas au bon format ».
+
+Ce changement a une conséquence directe côté code : un modèle créé avec ce nouveau format attend, au
+moment de l'envoi réel via l'API WhatsApp, que chaque paramètre du corps du message précise son
+`parameter_name` (le nom exact déclaré dans le modèle) — alors que le code envoyait jusqu'ici les valeurs
+par simple position, sans jamais préciser leur nom. Sans correction, l'alerte automatique (nouvelle
+commande, demande d'un humain, RDV confirmé) aurait tout simplement échoué à l'envoi pour tout marchand
+dont le modèle est approuvé sous ce nouveau format, même une fois Meta ayant validé le modèle.
+
+**Correction apportée, rétrocompatible avec tous vos marchands existants** : l'envoi d'un template tente
+maintenant, dans l'ordre :
+1. un 1er essai **sans** `parameter_name` (exactement comme avant ce correctif) — pour un marchand dont le
+   modèle est encore approuvé sous l'ancien format positionné, cet essai réussit directement, comme
+   aujourd'hui, sans aucun changement de comportement ni appel supplémentaire ;
+2. seulement si ce 1er essai est refusé par Meta, un 2e essai **avec** `parameter_name` (nom de chaque
+   variable déclaré une fois pour toutes dans `TEMPLATES_ALERTE_MARCHAND` côté serveur) — pour un marchand
+   dont le modèle est approuvé sous le nouveau format nommé, c'est cet essai qui réussit.
+
+Cette logique est appliquée à la fois à l'envoi réel des alertes (nouvelle commande, demande d'un humain,
+RDV confirmé) et au bouton "Tester l'alerte maintenant" de `/admin`, qui partagent désormais la même
+fonction de construction des paramètres — le test reproduit donc fidèlement ce qui se passerait pour une
+vraie alerte.
+
+**Aucune configuration à faire de votre côté par marchand** : le serveur ne sait pas à l'avance si le
+modèle approuvé d'un marchand donné utilise l'ancien ou le nouveau format, donc chaque envoi s'adapte
+automatiquement, marchand par marchand, sans que vous ayez à indiquer quoi que ce soit dans `/admin`.
+
+Testé le 27 septembre 2026 par de vrais appels HTTP contre le bouton "Tester l'alerte maintenant", avec
+trois marchands simulant les trois cas réels : un marchand dont le modèle exige le nouveau format nommé
+(le 1er essai est bien refusé, le 2e essai avec les noms réussit bien, exactement 2 appels), un marchand
+dont le modèle utilise encore l'ancien format positionné (réussite dès le 1er essai, **un seul** appel HTTP
+est fait — aucun envoi en double pour vos marchands déjà en place), et un marchand dont le modèle est
+réellement cassé côté Meta (les deux essais échouent, le repli "texte libre" est tenté puis échoue aussi,
+la route renvoie une erreur exploitable sans jamais planter).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -762,7 +803,12 @@ marchand verrouillé, le bloc "Facturation IzyFacture" est bien absent de l'ongl
   /api/marchands/:id/options-payantes` étendue à une 4e option (`optionFacturationIzyfacture`) + les 4
   routes IzyFacture ci-dessus, ainsi que le déclenchement automatique à la confirmation d'une commande et
   le passage périodique de réessai, refusent désormais toute action tant que cette option n'est pas
-  débloquée pour le marchand concerné (Étape 21)
+  débloquée pour le marchand concerné (Étape 21) + envoi des templates WhatsApp (alertes marchand ET
+  bouton "Tester l'alerte maintenant") désormais compatible avec le nouveau format Meta à variables
+  nommées : nouvelle fonction commune `construireParametresTemplate` + nouveaux noms de variable déclarés
+  par alerte dans `TEMPLATES_ALERTE_MARCHAND` (`parametresNoms`) + 1er essai sans `parameter_name` (comme
+  avant, sans changement pour les modèles déjà approuvés à l'ancien format) puis, seulement en cas
+  d'échec, 2e essai avec `parameter_name` (Étape 22)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image

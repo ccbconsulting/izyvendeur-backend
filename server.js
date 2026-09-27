@@ -51,11 +51,24 @@ const MESSAGE_SERVICE_SUSPENDU_EN =
 // le WhatsApp Manager de Meta — le nom et la langue doivent correspondre EXACTEMENT a ce qui a ete
 // approuve la-bas. `texteLibreRepli(params)` construit le message de secours (texte libre, donc soumis a
 // la fenetre de 24h) a partir des memes parametres que ceux envoyes au template.
+// `parametresNoms` (ajoute le 27 septembre 2026) : Meta a change son formulaire de creation de template
+// dans WhatsApp Manager pour n'accepter QUE des variables nommees ({{nom_variable}}, lettres
+// minuscules/underscores/chiffres) au lieu des anciennes variables numerotees ({{1}}, {{2}}...) - un
+// template cree APRES ce changement exige que l'appel a l'API envoie aussi `parameter_name` pour chaque
+// valeur (sinon Meta refuse l'envoi, meme template par ailleurs approuve). Les templates plus anciens
+// (crees avant ce changement, avec {{1}}/{{2}}) continuent eux de fonctionner SANS `parameter_name`. Comme
+// il n'y a aucun moyen de savoir a l'avance, pour un marchand donne, sous quelle forme SON template a ete
+// approuve, `envoyerTemplateWhatsApp` (voir plus bas) essaie d'abord SANS `parameter_name` (ancien format)
+// puis, seulement si ce premier essai echoue, ressaie UNE fois AVEC (nouveau format) - voir les tests
+// HTTP dedies a ce comportement. `parametresNoms` fournit les noms a utiliser pour ce 2e essai, dans le
+// meme ordre que les valeurs ci-dessous ; ordre et noms doivent correspondre EXACTEMENT a ce qui a ete
+// declare dans le modele cote Meta.
 const TEMPLATES_ALERTE_MARCHAND = {
   humain: {
     nom: "izyvendeur_alerte_humain",
     langue: "fr",
     // params: [telephoneClient, messageClient]
+    parametresNoms: ["telephone_client", "message_client"],
     texteLibreRepli: (params) =>
       "Un client (" + params[0] + ") souhaite parler à quelqu'un :\n« " + params[1] + " »\n\n" +
       "Répondez-lui depuis /admin, onglet Conversations."
@@ -64,6 +77,7 @@ const TEMPLATES_ALERTE_MARCHAND = {
     nom: "izyvendeur_alerte_commande",
     langue: "fr",
     // params: [reference, resumeArticles, total, telephoneClient, adresse]
+    parametresNoms: ["reference", "articles", "total", "telephone_client", "adresse"],
     texteLibreRepli: (params) =>
       "Nouvelle commande confirmée " + params[0] + " :\n" + params[1] + "\nTotal : " + params[2] +
       "\nTéléphone client : " + params[3] + "\nLivraison : " + params[4] +
@@ -78,6 +92,7 @@ const TEMPLATES_ALERTE_MARCHAND = {
     nom: "izyvendeur_alerte_rdv",
     langue: "fr",
     // params: [reference, serviceEtPraticien, creneauFormatte, prixFormatte, clientNom, telephoneClient]
+    parametresNoms: ["reference", "service", "creneau", "prix", "client_nom", "telephone_client"],
     texteLibreRepli: (params) =>
       "Nouveau rendez-vous confirmé " + params[0] + " :\n" + params[1] + "\nCréneau : " + params[2] +
       "\nPrix : " + params[3] + "\nClient : " + params[4] + "\nTéléphone : " + params[5] +
@@ -129,7 +144,8 @@ function creerOptionsEngine(merchantKey) {
         phoneNumberId,
         config.nom,
         config.langue,
-        parametresNettoyes
+        parametresNettoyes,
+        config.parametresNoms
       );
 
       if (!envoiTemplateReussi) {
@@ -1068,7 +1084,7 @@ app.post("/api/marchands/:id/tester-alerte", protegerAcces, async (req, res) => 
     "Ceci est une alerte de TEST envoyée depuis /admin (bouton \"Tester l'alerte\") — aucune action requise.",
   ];
 
-  const resultatTemplate = await envoyerTemplateWhatsAppDiag(destinataire, phoneNumberId, config.nom, config.langue, paramsTest);
+  const resultatTemplate = await envoyerTemplateWhatsAppDiag(destinataire, phoneNumberId, config.nom, config.langue, paramsTest, config.parametresNoms);
   if (resultatTemplate.ok) {
     return res.json({ ok: true, canal: "template", destinataire, nomTemplate: config.nom });
   }
@@ -1836,41 +1852,66 @@ async function envoyerImageWhatsApp(destinataire, urlImage, legende, phoneNumber
   }
 }
 
+// Construit les `parameters` du composant "body" d'un template WhatsApp. `avecNoms=false` (ancien
+// format, variables numerotees {{1}}/{{2}} cote Meta) omet `parameter_name` ; `avecNoms=true` (nouveau
+// format, variables nommees {{nom_variable}}) l'ajoute - voir le commentaire sur `parametresNoms` au
+// dessus de TEMPLATES_ALERTE_MARCHAND pour le contexte complet de ce changement cote Meta (27 sept 2026).
+function construireParametresTemplate(parametresTexte, nomsParametres, avecNoms) {
+  return parametresTexte.map((texte, i) => {
+    const p = { type: "text", text: texte };
+    if (avecNoms && nomsParametres && nomsParametres[i]) p.parameter_name = nomsParametres[i];
+    return p;
+  });
+}
+
+async function appelEnvoiTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte, nomsParametres, avecNoms) {
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+  const reponse = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: destinataire,
+      type: "template",
+      template: {
+        name: nomTemplate,
+        language: { code: langue },
+        components: [
+          { type: "body", parameters: construireParametresTemplate(parametresTexte, nomsParametres, avecNoms) },
+        ],
+      },
+    }),
+  });
+  return reponse;
+}
+
 // --- Fonction utilitaire : envoyer un template WhatsApp approuve via l'API Cloud ---
 // Retourne true si l'envoi a reussi, false sinon (permet a l'appelant de basculer sur un repli). Ne
 // leve jamais d'exception : toute erreur (reseau, template inexistant/non approuve, etc.) est capturee,
 // journalisee, et traduite en simple `false`.
-async function envoyerTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte) {
+//
+// `nomsParametres` (optionnel, voir TEMPLATES_ALERTE_MARCHAND) : premier essai TOUJOURS sans
+// `parameter_name` (ancien format, variables numerotees) ; si Meta le refuse ET que `nomsParametres` est
+// fourni, on ressaie UNE fois avec `parameter_name` (nouveau format, variables nommees). Ainsi le meme
+// code sert indifferemment les marchands dont le template a ete approuve avant ou apres le changement de
+// format Meta du 27 sept 2026, sans avoir besoin de savoir a l'avance lequel s'applique.
+async function envoyerTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte, nomsParametres) {
   if (!WHATSAPP_TOKEN || !phoneNumberId) {
     console.error("WHATSAPP_TOKEN ou phone_number_id manquant — impossible d'envoyer le template.");
     return false;
   }
 
-  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
-
   try {
-    const reponse = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: destinataire,
-        type: "template",
-        template: {
-          name: nomTemplate,
-          language: { code: langue },
-          components: [
-            {
-              type: "body",
-              parameters: parametresTexte.map((texte) => ({ type: "text", text: texte })),
-            },
-          ],
-        },
-      }),
-    });
+    let reponse = await appelEnvoiTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte, nomsParametres, false);
+
+    if (!reponse.ok && nomsParametres) {
+      const detailEssai1 = await reponse.text();
+      console.warn(`Envoi du template WhatsApp "${nomTemplate}" sans parameter_name refuse (${reponse.status}), nouvel essai avec noms :`, detailEssai1);
+      reponse = await appelEnvoiTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte, nomsParametres, true);
+    }
 
     if (!reponse.ok) {
       const detail = await reponse.text();
@@ -1891,29 +1932,45 @@ async function envoyerTemplateWhatsApp(destinataire, phoneNumberId, nomTemplate,
 // afficher l'erreur EXACTE renvoyee par Meta directement dans /admin, plutot que de forcer le marchand a
 // aller chercher dans les logs serveur (qu'il ne consulte de toute facon pas). Le chemin de production
 // (notifierMarchand ci-dessus) continue d'utiliser les fonctions d'origine, inchangees.
-async function envoyerTemplateWhatsAppDiag(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte) {
+async function appelEnvoiTemplateWhatsAppDiag(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte, nomsParametres, avecNoms) {
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
+  const reponse = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: destinataire,
+      type: "template",
+      template: {
+        name: nomTemplate,
+        language: { code: langue },
+        components: [
+          { type: "body", parameters: construireParametresTemplate(parametresTexte, nomsParametres, avecNoms) },
+        ],
+      },
+    }),
+  });
+  return reponse;
+}
+
+// nomsParametres est optionnel : passe par /api/marchands/:id/tester-alerte via TEMPLATES_ALERTE_MARCHAND.humain
+// .parametresNoms, il permet a ce diagnostic de reproduire EXACTEMENT le meme repli "sans nom puis avec
+// nom" que envoyerTemplateWhatsApp (voir plus haut) - sinon le bouton "Tester l'alerte" afficherait a tort
+// une erreur de format alors que le vrai envoi (notifierMarchand), lui, reussirait au 2e essai.
+async function envoyerTemplateWhatsAppDiag(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte, nomsParametres) {
   if (!WHATSAPP_TOKEN || !phoneNumberId) {
     return { ok: false, status: null, erreur: "WHATSAPP_TOKEN ou phone_number_id manquant sur le serveur." };
   }
-  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
   try {
-    const reponse = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: destinataire,
-        type: "template",
-        template: {
-          name: nomTemplate,
-          language: { code: langue },
-          components: [{ type: "body", parameters: parametresTexte.map((texte) => ({ type: "text", text: texte })) }],
-        },
-      }),
-    });
+    let reponse = await appelEnvoiTemplateWhatsAppDiag(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte, nomsParametres, false);
+    let detailEssai1 = null;
+    if (!reponse.ok && nomsParametres) {
+      detailEssai1 = await reponse.text();
+      reponse = await appelEnvoiTemplateWhatsAppDiag(destinataire, phoneNumberId, nomTemplate, langue, parametresTexte, nomsParametres, true);
+    }
     if (!reponse.ok) {
       const detail = await reponse.text();
-      return { ok: false, status: reponse.status, erreur: detail };
+      return { ok: false, status: reponse.status, erreur: detailEssai1 ? `${detail} (1er essai sans nom : ${detailEssai1})` : detail };
     }
     return { ok: true, status: reponse.status, erreur: null };
   } catch (erreur) {
