@@ -717,6 +717,33 @@ est fait — aucun envoi en double pour vos marchands déjà en place), et un ma
 réellement cassé côté Meta (les deux essais échouent, le repli "texte libre" est tenté puis échoue aussi,
 la route renvoie une erreur exploitable sans jamais planter).
 
+## Étape 23 — Import en masse du catalogue depuis un fichier (nouveau)
+
+En configurant le nouveau marchand "Excelle Health by Vestige" (71 articles à saisir), vous avez demandé à
+pouvoir insérer les produits directement plutôt que de les créer un par un dans l'onglet Catalogue. Je n'ai
+pas d'accès direct à votre `/admin` en production (aucun moyen pour moi de m'y connecter à votre place),
+donc plutôt qu'une saisie manuelle article par article, l'onglet Catalogue dispose maintenant d'un bouton
+**"Importer un fichier catalogue (CSV)"**, à côté de "+ Ajouter un article".
+
+**Format attendu** : un fichier CSV (séparateur virgule ou point-virgule, détecté automatiquement — le
+point-virgule est la convention d'Excel en français) avec des colonnes reconnues par leur en-tête, dans
+n'importe quel ordre : `Categorie`, `Nom` et `Prix` (ces deux derniers obligatoires), et en option `Stock
+initial`, `Seuil d'alerte`, `Couleur`, `Taille`. Deux lignes qui partagent exactement le même couple
+Catégorie+Nom deviennent automatiquement les variantes (couleur/taille) d'un seul et même article — utile
+si un vrai catalogue avec variantes doit être importé plus tard, pas seulement le cas le plus courant "un
+article = une ligne".
+
+**Sans danger pour un catalogue déjà en place** : l'import **fusionne toujours** avec les articles déjà
+enregistrés (jamais un remplacement complet, contrairement à l'enregistrement normal du catalogue) et
+ignore silencieusement toute ligne dont le nom existe déjà — vous pouvez donc renvoyer le même fichier par
+erreur sans dupliquer les articles. Le résumé (nombre ajouté, doublons ignorés, lignes en erreur) s'affiche
+dans une fenêtre après l'import.
+
+Testé le 27 septembre 2026 par de vrais appels HTTP (fusion avec un catalogue existant, regroupement de
+plusieurs lignes en variantes d'un même article, protection contre le double-import, ligne à prix invalide
+qui n'interrompt pas le reste de l'import) et avec un vrai navigateur piloté (Playwright) confirmant que le
+bouton fonctionne bien depuis l'interface elle-même, sans erreur JavaScript.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -808,7 +835,9 @@ la route renvoie une erreur exploitable sans jamais planter).
   nommées : nouvelle fonction commune `construireParametresTemplate` + nouveaux noms de variable déclarés
   par alerte dans `TEMPLATES_ALERTE_MARCHAND` (`parametresNoms`) + 1er essai sans `parameter_name` (comme
   avant, sans changement pour les modèles déjà approuvés à l'ancien format) puis, seulement en cas
-  d'échec, 2e essai avec `parameter_name` (Étape 22)
+  d'échec, 2e essai avec `parameter_name` (Étape 22) + nouvelle route `POST
+  /api/:id/catalogue/importer` (import CSV en masse, fusion avec le catalogue existant, regroupement des
+  lignes en variantes par couple Catégorie+Nom, protection contre le double-import) (Étape 23)
 - `public/admin.html` — interface /admin entièrement bilingue (bouton FR/EN) + sélecteur de période sur
   le Tableau de bord + Trimestre/Année ajoutés à l'onglet Rapports + nouveau champ "Message d'accueil
   personnalisé" dans l'onglet Paramètres + deux blocs indépendants "Logo (interface /admin)" et "Image
@@ -839,7 +868,8 @@ la route renvoie une erreur exploitable sans jamais planter).
   (Étape 20) + 4e case "Facturation IzyFacture" dans le bloc "Options payantes" (Mon compte, super-
   administrateur) + le bloc "Facturation IzyFacture" (Paramètres) et la colonne "Facture" (Commandes) ne
   sont désormais construits que si cette option est débloquée pour le marchand actif, sinon totalement
-  absents de la page plutôt que simplement masqués (Étape 21)
+  absents de la page plutôt que simplement masqués (Étape 21) + nouveau bouton "Importer un fichier
+  catalogue (CSV)" dans l'onglet Catalogue, à côté de "+ Ajouter un article" (Étape 23)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec

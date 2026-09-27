@@ -198,6 +198,11 @@ const I18N = {
     alertChoisirImage: "Choisissez d'abord une image.",
     confirmSupprimerPhoto: "Supprimer cette photo ?",
     nouvelArticle: "Nouvel article",
+    btnImporterCatalogue: "Importer un fichier catalogue (CSV)",
+    alertChoisirFichierImport: "Choisissez d'abord un fichier CSV.",
+    msgImportResultat: "Import terminé : {ajoutes} article(s) ajouté(s).",
+    msgImportDoublons: " {n} déjà présent(s), ignoré(s) : {noms}.",
+    msgImportErreurs: " {n} ligne(s) ignorée(s) (erreur) : {details}",
 
     commandesTitre: "Commandes ({n}{suffixe})",
     commandesSurTotal: " sur {total}",
@@ -594,6 +599,11 @@ const I18N = {
     alertChoisirImage: "Choose an image first.",
     confirmSupprimerPhoto: "Delete this photo?",
     nouvelArticle: "New item",
+    btnImporterCatalogue: "Import a catalog file (CSV)",
+    alertChoisirFichierImport: "Choose a CSV file first.",
+    msgImportResultat: "Import finished: {ajoutes} item(s) added.",
+    msgImportDoublons: " {n} already present, skipped: {noms}.",
+    msgImportErreurs: " {n} row(s) skipped (error): {details}",
 
     commandesTitre: "Orders ({n}{suffixe})",
     commandesSurTotal: " out of {total}",
@@ -1250,7 +1260,11 @@ async function renderCatalogue() {
         "</div>"
       ).join("") + (local.length ? "" : "<p>" + t("aucunArticle") + "</p>") + "</div>" +
       "<button id='btnAjouterProduit'>" + t("btnAjouterArticle") + "</button> " +
-      "<button id='btnSauverCatalogue' class='principal'>" + t("btnEnregistrerCatalogue") + "</button>";
+      "<button id='btnSauverCatalogue' class='principal'>" + t("btnEnregistrerCatalogue") + "</button>" +
+      "<div class='bloc-import-catalogue' style='margin-top:16px;'>" +
+        "<input type='file' accept='.csv,text/csv' id='champFichierImportCatalogue' /> " +
+        "<button id='btnImporterCatalogue'>" + t("btnImporterCatalogue") + "</button>" +
+      "</div>";
 
     Array.prototype.forEach.call(zone.querySelectorAll("[data-illimite]"), (chk) => {
       chk.addEventListener("change", () => {
@@ -1302,6 +1316,39 @@ async function renderCatalogue() {
     document.getElementById("btnAjouterProduit").onclick = () => {
       local.push({ id: "p" + Date.now(), nom: t("nouvelArticle"), cat: "", variantes: [{ couleur: "", taille: "", prix: 0, stockReel: 0, seuilAlerte: 0 }] });
       redraw();
+    };
+    // Import en masse (fichier CSV) : agit DIRECTEMENT sur le catalogue enregistre cote serveur (fusion,
+    // jamais d'ecrasement - voir POST .../catalogue/importer), independamment des editions locales pas
+    // encore enregistrees ci-dessus - d'ou le renderCatalogue() (rechargement complet) juste apres, sur le
+    // meme principe que l'ajout de photo qui, lui aussi, s'enregistre immediatement. Resume affiche via
+    // alert() PLUTOT que dans #resultatImportCatalogue : ce dernier est efface immediatement par le
+    // renderCatalogue() qui suit (il repart d'un DOM neuf), un message ecrit dedans juste avant ne serait
+    // jamais visible.
+    document.getElementById("btnImporterCatalogue").onclick = async () => {
+      const btn = document.getElementById("btnImporterCatalogue");
+      const fichierInput = document.getElementById("champFichierImportCatalogue");
+      const fichier = fichierInput.files[0];
+      if (!fichier) { alert(t("alertChoisirFichierImport")); return; }
+      const donnees = new FormData();
+      donnees.append("fichier", fichier);
+      btn.disabled = true;
+      try {
+        const reponse = await fetch("/api/" + marchandActif.id + "/catalogue/importer", { method: "POST", body: donnees });
+        const j = await reponse.json();
+        if (!reponse.ok) throw new Error(j.erreur || reponse.statusText);
+        let message = t("msgImportResultat", { ajoutes: j.ajoutes });
+        if (j.doublonsIgnores && j.doublonsIgnores.length) {
+          message += t("msgImportDoublons", { n: j.doublonsIgnores.length, noms: j.doublonsIgnores.join(", ") });
+        }
+        if (j.erreurs && j.erreurs.length) {
+          message += t("msgImportErreurs", { n: j.erreurs.length, details: j.erreurs.join(" / ") });
+        }
+        alert(message);
+        renderCatalogue();
+      } catch (e) {
+        alert(t("erreurPrefixe") + e.message);
+        btn.disabled = false;
+      }
     };
     Array.prototype.forEach.call(zone.querySelectorAll("[data-ajouter-photo]"), (btn) => {
       btn.onclick = async () => {

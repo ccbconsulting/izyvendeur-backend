@@ -31,6 +31,11 @@ app.use(express.json());
 // (format d'image) se fait dans storage.js.
 const uploadPhoto = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
+// Import en masse du catalogue (Etape 23, 27 sept 2026) : conserve le fichier CSV en memoire le temps de
+// le lire (jamais ecrit sur disque), plafonne a 2 Mo - largement suffisant pour un catalogue meme de
+// plusieurs centaines d'articles (voir POST /api/:id/catalogue/importer plus bas).
+const uploadFichierCatalogue = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GRAPH_API_VERSION = "v21.0";
@@ -891,6 +896,113 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   const nouveau = entry.engine.updateCatalog(corps);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
   res.json(nouveau);
+});
+
+// Analyse une ligne CSV en tenant compte des guillemets (un champ peut contenir le separateur ou des
+// guillemets echappes en double, comme le fait Excel a l'export) - jamais de simple split(separateur) qui
+// casserait sur un nom d'article contenant une virgule/un point-virgule.
+function parserLigneCsv(ligne, separateur) {
+  const champs = [];
+  let champ = "";
+  let dansGuillemets = false;
+  for (let i = 0; i < ligne.length; i++) {
+    const c = ligne[i];
+    if (dansGuillemets) {
+      if (c === '"') {
+        if (ligne[i + 1] === '"') { champ += '"'; i++; } else { dansGuillemets = false; }
+      } else champ += c;
+    } else if (c === '"') {
+      dansGuillemets = true;
+    } else if (c === separateur) {
+      champs.push(champ); champ = "";
+    } else champ += c;
+  }
+  champs.push(champ);
+  return champs.map((c) => c.trim());
+}
+
+// Accepte "17000", "17 000" (espace/espace insecable), "17,000" - jamais de valeur negative/non numerique.
+function parserPrixFcfa(texte) {
+  const nettoye = String(texte == null ? "" : texte).replace(/[^\d.,\-]/g, "").replace(/,/g, "");
+  const n = parseFloat(nettoye);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
+// Import en masse du catalogue depuis un fichier CSV (Etape 23, 27 sept 2026 - demande apres l'onboarding
+// d'un nouveau marchand avec plusieurs dizaines d'articles a saisir a la main). Colonnes attendues (l'ordre
+// n'importe pas, la casse/les accents non plus - detectees par en-tete) : "Categorie", "Nom", "Prix"
+// (obligatoires : Nom + Prix), et facultatives "Stock initial", "Seuil d'alerte", "Couleur", "Taille".
+// Separateur virgule OU point-virgule, detecte automatiquement sur la premiere ligne. Plusieurs lignes
+// partageant EXACTEMENT le meme couple Categorie+Nom deviennent les variantes d'un seul article (permet
+// d'importer un catalogue avec de vraies variantes couleur/taille, pas seulement le cas le plus courant
+// "un article = une ligne"). Fusionne TOUJOURS avec le catalogue deja enregistre (n'ecrase jamais les
+// articles existants, contrairement a PUT /api/:id/catalogue ci-dessus) et ignore silencieusement toute
+// ligne dont le nom existe deja (comparaison insensible a la casse/aux espaces) pour proteger contre un
+// double-import accidentel si le meme fichier est renvoye deux fois.
+app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.single("fichier"), (req, res) => {
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"fichier\" attendu)." });
+
+  const texte = req.file.buffer.toString("utf8").replace(/^﻿/, ""); // retire un BOM Excel eventuel
+  const lignes = texte.split(/\r\n|\n|\r/).filter((l) => l.trim() !== "");
+  if (!lignes.length) return res.status(400).json({ erreur: "Fichier vide." });
+
+  const separateur = lignes[0].indexOf(";") !== -1 ? ";" : ",";
+  const entetes = parserLigneCsv(lignes[0], separateur).map((h) => h.toLowerCase());
+  const idx = (motCle) => entetes.findIndex((h) => h.indexOf(motCle) !== -1);
+  const iCat = idx("categorie");
+  const iNom = idx("nom");
+  const iPrix = idx("prix");
+  const iStock = idx("stock");
+  const iSeuil = idx("seuil");
+  const iCouleur = idx("couleur");
+  const iTaille = idx("taille");
+  if (iNom === -1 || iPrix === -1) {
+    return res.status(400).json({ erreur: "Colonnes attendues introuvables (au minimum \"Nom\" et \"Prix\")." });
+  }
+
+  const catalogueActuel = entry.engine.getCatalog();
+  const nomsExistants = new Set(catalogueActuel.map((p) => String(p.nom || "").trim().toLowerCase()));
+
+  const groupes = new Map(); // "categorie||nom" -> { cat, nom, variantes: [] }
+  const doublons = [];
+  const erreurs = [];
+
+  for (let i = 1; i < lignes.length; i++) {
+    const champs = parserLigneCsv(lignes[i], separateur);
+    const nom = (champs[iNom] || "").trim();
+    if (!nom) continue;
+    const cat = iCat !== -1 ? (champs[iCat] || "").trim() : "";
+    const prix = parserPrixFcfa(champs[iPrix]);
+    if (prix == null) { erreurs.push("ligne " + (i + 1) + " (" + nom + ") : prix invalide"); continue; }
+    if (nomsExistants.has(nom.toLowerCase())) {
+      if (doublons.indexOf(nom) === -1) doublons.push(nom);
+      continue;
+    }
+    const stockReel = iStock !== -1 ? (parseInt(champs[iStock], 10) || 0) : 0;
+    const seuilAlerte = iSeuil !== -1 ? (parseInt(champs[iSeuil], 10) || 0) : 2;
+    const couleur = (iCouleur !== -1 && champs[iCouleur]) ? champs[iCouleur] : "-";
+    const taille = (iTaille !== -1 && champs[iTaille]) ? champs[iTaille] : "Unique";
+
+    const cle = cat.toLowerCase() + "||" + nom.toLowerCase();
+    if (!groupes.has(cle)) groupes.set(cle, { cat, nom, variantes: [] });
+    groupes.get(cle).variantes.push({ couleur, taille, prix, stockReel, seuilAlerte });
+  }
+
+  const nouveauxArticles = Array.from(groupes.values()).map((g, i) => ({
+    id: "imp" + Date.now() + "_" + i,
+    nom: g.nom,
+    cat: g.cat,
+    variantes: g.variantes
+  }));
+
+  if (!nouveauxArticles.length) {
+    return res.json({ ajoutes: 0, doublonsIgnores: doublons, erreurs });
+  }
+
+  const nouveau = entry.engine.updateCatalog(catalogueActuel.concat(nouveauxArticles));
+  res.json({ ajoutes: nouveauxArticles.length, doublonsIgnores: doublons, erreurs, catalogue: nouveau });
 });
 
 // Photo d'un article : uploadee vers Cloudflare R2 (voir storage.js), puis son URL publique est ajoutee
