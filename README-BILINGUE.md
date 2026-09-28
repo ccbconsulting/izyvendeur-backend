@@ -804,6 +804,37 @@ autre destinataire, statuts "envoyé"/"livré" sans effet, résilience à un num
 vrai navigateur piloté (Playwright) confirmant l'affichage exact de l'encadré, et son absence totale pour un
 marchand sans échec connu.
 
+## Étape 26 — Bouton "Enregistrer un paiement" IzyFacture, avec reçu envoyé au client (nouveau)
+
+IzyFacture a ajouté le 28 septembre 2026 un reçu de paiement numéroté (voir Étape 25 ci-dessus côté
+IzyFacture : disponible dans toutes les formules, A4 + ticket 80 mm) — l'API IzyVendeur↔IzyFacture expose
+désormais ce numéro de reçu dans sa réponse. Ça complète un point resté en suspens depuis l'Étape 20 :
+`POST /invoices/{id}/payments` existait déjà côté `izyfacture.js`, mais n'était relié à aucun bouton dans
+`/admin`.
+
+C'est maintenant fait. Dans l'onglet Commandes, une commande déjà facturée affiche sous son numéro de
+facture un badge de paiement ("Non payée" / "Acompte reçu — solde X FCFA" / "Payée") et un bouton
+"Enregistrer un paiement" (visible tant que la facture n'est pas entièrement soldée). Le clic demande le
+montant reçu, le moyen de paiement (espèces/Orange Money/MTN MoMo/banque/chèque — texte libre normalisé
+automatiquement, ex. "orange" → "om") et une référence optionnelle (n° de transaction, nom du livreur…),
+puis enregistre le paiement auprès d'IzyFacture. Utile par exemple pour un paiement Mobile Money reçu après
+coup, ou un règlement en espèces à la livraison.
+
+Dès l'enregistrement réussi, IzyVendeur envoie automatiquement un message WhatsApp au client (dans sa
+langue, français ou anglais) confirmant le montant reçu et le numéro de reçu — sauf pour une commande venue
+du Simulateur ou sans numéro WhatsApp réel, ignorée silencieusement comme pour les autres notifications
+client existantes. Un paiement qui dépasserait le solde restant est refusé avec un message clair (repris
+tel quel d'IzyFacture), sans jamais rien enregistrer d'incohérent. L'historique complet des paiements d'une
+commande est conservé (même principe de traçabilité que les instantanés d'inventaire non supprimables,
+Étape 18/19), même si seul le dernier reçu est affiché dans l'interface pour l'instant.
+
+Testé le 28 septembre 2026 par de vrais appels HTTP contre un faux serveur IzyFacture simulant la réponse
+réelle (paiement partiel puis complémentaire jusqu'au solde exact, dépassement du solde refusé, permissions
+par rôle employé, option non débloquée, commande pas encore facturée) et avec un vrai navigateur piloté
+(Playwright) confirmant le parcours complet à l'écran (3 questions successives, mise à jour des badges,
+numéro de reçu affiché, disparition du bouton une fois la facture soldée) + régression complète rejouée
+sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -817,11 +848,9 @@ marchand sans échec connu.
   ci-dessus) plutôt que par un moteur de facturation propre à IzyVendeur.
 - **Message WhatsApp au client avec le numéro de facture** (mentionné dans la doc IzyFacture comme un
   exemple possible, ex. « Votre facture n° FAC-2026-0001 de 26 500 FCFA a été établie ») — pas encore
-  construit à cette étape : IzyVendeur crée la facture et l'affiche dans `/admin`, mais ne notifie pas
-  encore automatiquement le client par WhatsApp. Dites-moi si vous le souhaitez.
-- **Paiement enregistré depuis IzyVendeur** (`POST /invoices/{id}/payments`, ex. un paiement Mobile Money
-  reçu à la livraison) — la brique existe déjà côté `izyfacture.js` mais n'est pas encore reliée à un
-  bouton dans `/admin` à cette étape.
+  construit : IzyVendeur crée la facture et l'affiche dans `/admin`, mais ne notifie pas encore
+  automatiquement le client par WhatsApp à la création (contrairement au paiement, résolu à l'Étape 26
+  ci-dessus). Dites-moi si vous le souhaitez.
 
 ## Fichiers modifiés dans ce zip
 
@@ -840,6 +869,9 @@ marchand sans échec connu.
   commande (`izyfactureStatut`/`izyfactureFactureId`/`izyfactureNumero`/`izyfactureErreur`/
   `izyfactureAvoirNumero`) + nouvelle fonction `enregistrerEtatIzyFacture` (persistance) et `getOrderById`
   (lecture sans modification, utilisée par server.js pour détecter un vrai changement de statut) (Étape 20)
+  + nouveaux champs de suivi des paiements (`izyfactureFactureStatut`/`izyfactureSolde`/
+  `izyfactureRecuNumero`/`izyfacturePaiements`), distincts des champs ci-dessus qui ne décrivent que le
+  cycle de vie de la facture elle-même (Étape 26)
 - `izyfacture.js` (**nouveau fichier**) — client HTTP minimal (aucune dépendance, `fetch` natif) vers l'API
   IzyFacture v1 : vérification de clé (`GET /me`), création/retrouvaille de facture (`POST /invoices`,
   jamais de doublon grâce à la référence de commande), avoir sur annulation (`POST .../credit-notes`),
@@ -912,7 +944,9 @@ marchand sans échec connu.
   + traitement de l'événement de statut de livraison WhatsApp (`value.statuses`, séparé des messages
   entrants) sur `POST /webhook` : un échec réel signalé par Meta pour le numéro de NOTIFICATION du marchand
   (rapprochement tolérant au format "+237"/"237") est journalisé et enregistré (`derniereErreurAlerte` sur le
-  marchand) ; auparavant, cet événement était purement ignoré (Étape 25)
+  marchand) ; auparavant, cet événement était purement ignoré (Étape 25) + nouvelle route
+  `POST /api/:id/commandes/:orderId/izyfacture/paiement` et fonctions `enregistrerPaiementCommande`/
+  `notifierClientPaiementRecu` (Étape 26)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)
@@ -951,7 +985,10 @@ marchand sans échec connu.
   "Dernier échec de LIVRAISON détecté" dans l'onglet Mon compte, juste au-dessus de "Tester l'alerte
   maintenant" (visible dès l'ouverture de l'onglet dès qu'un échec réel est connu, jamais effacé
   automatiquement) + message du bouton "Tester l'alerte maintenant" reformulé pour ne plus laisser croire
-  qu'un envoi accepté par WhatsApp garantit une livraison réelle (Étape 25)
+  qu'un envoi accepté par WhatsApp garantit une livraison réelle (Étape 25) + dans l'onglet Commandes, sous
+  le badge de facture, badge de paiement ("Non payée"/"Acompte reçu"/"Payée") + bouton "Enregistrer un
+  paiement" (3 questions successives : montant, moyen de paiement, référence) + numéro de reçu affiché
+  (Étape 26)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec

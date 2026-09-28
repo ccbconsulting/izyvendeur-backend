@@ -821,6 +821,31 @@ app.post("/api/:id/commandes/:orderId/izyfacture/facturer", protegerAcces, async
   res.json(entry.engine.getOrderById(req.params.orderId));
 });
 
+// Bouton "Enregistrer un paiement" (27-28 sept 2026, /admin onglet Commandes) - POST
+// /invoices/{id}/payments cote IzyFacture (voir izyfacture.js, doc API-IZYVENDEUR.md section 5). Meme
+// permission que le reessai de facturation ci-dessus ("commandes", pas besoin d'etre gestionnaire) : c'est
+// une action operationnelle du quotidien (encaisser un acompte, un paiement a la livraison...), pas un
+// reglage sensible comme la cle elle-meme.
+app.post("/api/:id/commandes/:orderId/izyfacture/paiement", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
+  const order = entry.engine.getOrderById(req.params.orderId);
+  if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
+  if (!order.izyfactureFactureId) return res.status(400).json({ erreur: "Cette commande n'a pas encore de facture IzyFacture — facturez-la d'abord." });
+  const montant = parseInt(req.body && req.body.montant, 10);
+  if (!montant || montant <= 0) return res.status(400).json({ erreur: "Montant invalide : indiquez un nombre de FCFA supérieur à zéro." });
+  const methode = (req.body && req.body.methode) ? String(req.body.methode).trim() : "especes";
+  const reference = (req.body && req.body.reference) ? String(req.body.reference).trim().slice(0, 80) : undefined;
+  try {
+    await enregistrerPaiementCommande(entry, order, { montant, methode, reference });
+    res.json(entry.engine.getOrderById(req.params.orderId));
+  } catch (erreur) {
+    res.status(erreur.status || 502).json({ erreur: erreur.message || "Échec de l'enregistrement du paiement auprès d'IzyFacture.", code: erreur.code || null });
+  }
+});
+
 // Corrige le nom affiche et/ou le phone_number_id WhatsApp d'un marchand DEJA CREE (ex: faute de frappe a
 // la creation). Reserve au super-administrateur. Volontairement PAS "id" ni "type" ici — voir le
 // commentaire de db.updateMerchantFields pour pourquoi ces deux champs-la ne sont jamais modifiables une
@@ -2347,6 +2372,72 @@ async function tenterAvoirCommande(entry, order, raison) {
     // l'echec ou de reintroduire un etat incoherent.
     console.error(`[${entry.merchant.id}] Échec de création d'avoir IzyFacture (commande #${order.id}) :`, erreur.message, erreur.code || "");
   }
+}
+
+// Enregistre un paiement reçu sur une commande déjà facturée (bouton "Enregistrer un paiement", /admin
+// onglet Commandes) - POST /invoices/{id}/payments côté IzyFacture (voir izyfacture.js, doc
+// API-IZYVENDEUR.md section 5). Contrairement à tenterFacturationCommande/tenterAvoirCommande ci-dessus,
+// les erreurs ne sont PAS avalées ici : c'est une action explicite du marchand qui attend un retour
+// immédiat (voir la route qui l'appelle), pas un mécanisme de réessai automatique en arrière-plan - la
+// route transforme l'exception en réponse HTTP claire.
+async function enregistrerPaiementCommande(entry, order, { montant, methode, reference }) {
+  const cle = cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey);
+  if (!cle) {
+    const erreur = new Error("Clé IzyFacture illisible (échec de déchiffrement) — réenregistrez-la depuis Paramètres.");
+    erreur.status = 400;
+    throw erreur;
+  }
+  const reponse = await izyfacture.enregistrerPaiement(cle, order.izyfactureFactureId, {
+    amount: montant,
+    method: methode,
+    ref: reference
+  });
+  // `receipt` (reçu numéroté créé pour ce paiement) documenté au niveau racine de la réponse depuis la mise
+  // à jour du 28 sept 2026 de l'API-IZYVENDEUR.md - on lit aussi reponse.payment.receipt en repli, au cas où
+  // une version antérieure d'IzyFacture le renverrait imbriqué (aucune des deux formes ne fait planter si
+  // absente : numéroRecu reste simplement null).
+  const recu = reponse.receipt || (reponse.payment && reponse.payment.receipt) || null;
+  const historique = (order.izyfacturePaiements || []).concat([{
+    montant,
+    methode,
+    reference: reference || null,
+    date: new Date().toISOString(),
+    recuNumero: recu ? recu.number : null
+  }]);
+  entry.engine.enregistrerEtatIzyFacture(order.id, {
+    izyfactureFactureStatut: reponse.invoice ? reponse.invoice.status : null,
+    izyfactureSolde: reponse.invoice ? reponse.invoice.balance : null,
+    izyfactureRecuNumero: recu ? recu.number : (order.izyfactureRecuNumero || null),
+    izyfacturePaiements: historique
+  });
+  console.log(`[${entry.merchant.id}] Paiement de ${montant} FCFA enregistré sur la facture ${order.izyfactureNumero || order.izyfactureFactureId} (commande #${order.id})${recu ? `, reçu ${recu.number}` : ""}.`);
+  // Notification client (voir doc, section 9 point 4) - à la différence des notifications de statut de
+  // commande (fire-and-forget dans conversation.js), on l'attend ici : c'est une action ponctuelle voulue
+  // par le marchand, mieux vaut qu'un échec soit visible dans les logs au bon moment plutôt que plus tard
+  // sans lien évident avec ce paiement précis. Ne fait jamais échouer l'enregistrement du paiement lui-même
+  // (déjà acquis côté IzyFacture à ce stade) si la notification échoue.
+  try {
+    await notifierClientPaiementRecu(entry, order, montant, recu ? recu.number : null);
+  } catch (erreur) {
+    console.error(`[${entry.merchant.id}] Échec de la notification client (paiement reçu, commande #${order.id}) :`, erreur.message || erreur);
+  }
+}
+
+// Message WhatsApp au client après un paiement enregistré. Mêmes garde-fous que
+// notifierChangementStatutCommande dans conversation.js : rien n'est envoyé à un numéro simulé/inconnu
+// (order.fromWhatsapp absent, ou commande venue du Simulateur plutôt que d'un vrai client WhatsApp) -
+// silencieusement, pas une erreur.
+async function notifierClientPaiementRecu(entry, order, montant, numeroRecu) {
+  if (!order.fromWhatsapp || order.source !== "whatsapp") return;
+  const langue = order.langue === "en" ? "en" : "fr";
+  const ref = "CMD-" + String(order.id).padStart(4, "0");
+  let texte = langue === "en"
+    ? `Payment of ${sh.formatFcfa(montant)} received for your order ${ref}. Thank you!`
+    : `Paiement de ${sh.formatFcfa(montant)} bien reçu pour votre commande ${ref}. Merci !`;
+  if (numeroRecu) {
+    texte += langue === "en" ? ` Receipt No. ${numeroRecu}.` : ` Reçu n° ${numeroRecu}.`;
+  }
+  await envoyerMessageWhatsApp(order.fromWhatsapp, texte, entry.merchant.phoneNumberId);
 }
 
 const PORT = process.env.PORT || 3000;

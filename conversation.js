@@ -436,7 +436,22 @@ function createCatalogEngine(merchantKey, options) {
       izyfactureFactureId: null,
       izyfactureNumero: null,
       izyfactureErreur: null,
-      izyfactureAvoirNumero: null
+      izyfactureAvoirNumero: null,
+      // Paiement recu sur la facture (27-28 sept 2026, voir POST /api/:id/commandes/:orderId/izyfacture/paiement
+      // dans server.js) - distinct de izyfactureStatut ci-dessus, qui ne decrit que le cycle de vie de la
+      // FACTURE elle-meme (creee/en erreur/annulee), jamais son etat de paiement.
+      //   izyfactureFactureStatut : reflet de invoice.status cote IzyFacture APRES le dernier paiement
+      //   enregistre ("unpaid"/"partially_paid"/"paid"...), null tant qu'aucun paiement n'a encore ete
+      //   enregistre depuis IzyVendeur (une commande facturee peut deja avoir un acompte, saisi directement
+      //   dans IzyFacture par le marchand - dans ce cas ce champ reste null jusqu'au premier paiement
+      //   enregistre ICI, IzyVendeur ne relit jamais l'etat de la facture de son propre chef).
+      izyfactureFactureStatut: null,
+      izyfactureSolde: null,
+      izyfactureRecuNumero: null,
+      // Historique complet des paiements enregistres depuis IzyVendeur (traçabilite, meme principe que les
+      // instantanes d'inventaire non supprimables - voir Etape 18/19) : jamais affiche en entier cote /admin
+      // pour l'instant (seul le dernier recu est montre), mais conserve pour ne rien perdre.
+      izyfacturePaiements: []
     };
     state.orders.push(order);
     saveState();

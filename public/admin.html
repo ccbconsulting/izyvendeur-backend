@@ -415,6 +415,18 @@ const I18N = {
     btnIzyfactureReessayer: "Réessayer",
     alertIzyfactureFacturee: "Facture {numero} créée avec succès.",
     alertIzyfactureEchec: "La facturation a échoué : {erreur}",
+    badgeIzyfacturePayee: "Payée",
+    badgeIzyfacturePartielle: "Acompte reçu — solde {solde} FCFA",
+    badgeIzyfactureNonPayee: "Non payée",
+    labelIzyfactureRecu: "Reçu {numero}",
+    btnIzyfacturePaiement: "Enregistrer un paiement",
+    promptMontantPaiement: "Montant reçu (FCFA) :",
+    promptMethodePaiement: "Moyen de paiement (espèces / om / momo / banque / cheque) :",
+    promptReferencePaiement: "Référence du paiement (optionnel, ex. n° transaction Orange Money/MoMo, ou nom du livreur) :",
+    alertMontantPaiementInvalide: "Montant invalide : indiquez un nombre de FCFA supérieur à zéro.",
+    alertIzyfacturePaiementEnregistre: "Paiement enregistré — reçu {numero}.",
+    alertIzyfacturePaiementEnregistreSansRecu: "Paiement enregistré.",
+    alertIzyfacturePaiementEchec: "Échec de l'enregistrement du paiement : {erreur}",
     libelleCommandesPeriode: "Commandes sur la période",
     libelleCaHorsAnnulees: "Chiffre d'affaires (hors annulées)",
     h3RepartitionStatut: "Répartition par statut",
@@ -818,6 +830,18 @@ const I18N = {
     btnIzyfactureReessayer: "Retry",
     alertIzyfactureFacturee: "Invoice {numero} created successfully.",
     alertIzyfactureEchec: "Invoicing failed: {erreur}",
+    badgeIzyfacturePayee: "Paid",
+    badgeIzyfacturePartielle: "Partly paid — balance {solde} FCFA",
+    badgeIzyfactureNonPayee: "Unpaid",
+    labelIzyfactureRecu: "Receipt {numero}",
+    btnIzyfacturePaiement: "Record a payment",
+    promptMontantPaiement: "Amount received (FCFA):",
+    promptMethodePaiement: "Payment method (especes / om / momo / banque / cheque):",
+    promptReferencePaiement: "Payment reference (optional, e.g. Orange Money/MoMo transaction no., or courier name):",
+    alertMontantPaiementInvalide: "Invalid amount: enter a number of FCFA greater than zero.",
+    alertIzyfacturePaiementEnregistre: "Payment recorded — receipt {numero}.",
+    alertIzyfacturePaiementEnregistreSansRecu: "Payment recorded.",
+    alertIzyfacturePaiementEchec: "Failed to record payment: {erreur}",
     libelleCommandesPeriode: "Orders in this period",
     libelleCaHorsAnnulees: "Revenue (excluding cancelled)",
     h3RepartitionStatut: "Breakdown by status",
@@ -1412,10 +1436,34 @@ let commandesFiltrePlageAu = new Date().toISOString().slice(0, 10);
 // l'onglet Commandes. Toujours affiche (meme si le marchand n'a pas encore connecte IzyFacture) - le bouton
 // renvoie alors une erreur claire ("Aucune clé IzyFacture enregistrée...") plutot que d'obliger a deviner
 // pourquoi la colonne est absente.
+// Sous-bloc "paiement" affiche SOUS le badge de facture, uniquement une fois la commande facturee (une
+// commande non facturee n'a pas encore de facture IzyFacture sur laquelle enregistrer un paiement - voir
+// la route /izyfacture/paiement, qui refuse explicitement dans ce cas). izyfactureFactureStatut/
+// izyfactureSolde/izyfactureRecuNumero sont ecrits par server.js (enregistrerPaiementCommande) a partir de
+// la reponse d'IzyFacture (invoice.status/invoice.balance/receipt.number), jamais devines cote client.
+function celluleFacturePaiement(o) {
+  let badge;
+  if (o.izyfactureFactureStatut === "paid") {
+    badge = "<span style='background:#e6f7e6; color:#1e7a1e; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfacturePayee")) + "</span>";
+  } else if (o.izyfactureFactureStatut === "partially_paid") {
+    badge = "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfacturePartielle", { solde: (o.izyfactureSolde != null ? o.izyfactureSolde : "?") })) + "</span>";
+  } else {
+    badge = "<span style='color:#999;'>" + esc(t("badgeIzyfactureNonPayee")) + "</span>";
+  }
+  const recu = o.izyfactureRecuNumero
+    ? "<div style='font-size:0.8em; color:#666;'>" + esc(t("labelIzyfactureRecu", { numero: o.izyfactureRecuNumero })) + "</div>"
+    : "";
+  const bouton = o.izyfactureFactureStatut === "paid"
+    ? ""
+    : "<div><button data-izyfacturepaiement='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnIzyfacturePaiement")) + "</button></div>";
+  return "<div style='margin-top:4px;'>" + badge + "</div>" + recu + bouton;
+}
+
 function celluleIzyfacture(o) {
   let badge, bouton = "";
   if (o.izyfactureStatut === "facturee") {
     badge = "<span style='background:#e6f7e6; color:#1e7a1e; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfactureFacturee", { numero: o.izyfactureNumero || "" })) + "</span>";
+    badge += celluleFacturePaiement(o);
   } else if (o.izyfactureStatut === "avoir") {
     badge = "<span style='background:#f0e6ff; color:#5a2a9e; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfactureAvoir", { numero: o.izyfactureAvoirNumero || "" })) + "</span>";
   } else if (o.izyfactureStatut === "en_attente") {
@@ -1542,6 +1590,53 @@ async function renderCommandes() {
       }
     });
   });
+
+  // Bouton "Enregistrer un paiement" (voir celluleFacturePaiement plus haut et POST
+  // /api/:id/commandes/:orderId/izyfacture/paiement cote serveur) : 3 prompt() successifs (montant obligatoire,
+  // methode, reference optionnelle), dans le meme esprit minimal que promptRaisonAnnulation ci-dessus - pas de
+  // vraie boite de dialogue dans cette interface. La methode saisie en texte libre est normalisee cote client
+  // vers les codes attendus par IzyFacture (voir NORMALISATION_METHODE_PAIEMENT) ; si elle ne correspond a
+  // rien de connu, on l'envoie telle quelle et on laisse le serveur (donc IzyFacture) la refuser clairement.
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-izyfacturepaiement]"), (btn) => {
+    btn.addEventListener("click", async () => {
+      const orderId = btn.dataset.izyfacturepaiement;
+      const saisieMontant = prompt(t("promptMontantPaiement"));
+      if (saisieMontant === null) return; // annule
+      const montant = parseInt(String(saisieMontant).replace(/[^0-9]/g, ""), 10);
+      if (!montant || montant <= 0) { alert(t("alertMontantPaiementInvalide")); return; }
+      const saisieMethode = prompt(t("promptMethodePaiement"), "especes");
+      if (saisieMethode === null) return; // annule
+      const methode = normaliserMethodePaiement(saisieMethode);
+      const reference = prompt(t("promptReferencePaiement")) || undefined;
+      btn.disabled = true;
+      try {
+        const resultat = await api(
+          "/api/" + marchandActif.id + "/commandes/" + orderId + "/izyfacture/paiement",
+          { method: "POST", body: JSON.stringify({ montant, methode, reference }) }
+        );
+        if (resultat.izyfactureRecuNumero) alert(t("alertIzyfacturePaiementEnregistre", { numero: resultat.izyfactureRecuNumero }));
+        else alert(t("alertIzyfacturePaiementEnregistreSansRecu"));
+        renderCommandes();
+      } catch (e) {
+        alert(t("alertIzyfacturePaiementEchec", { erreur: e.message }));
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+// Normalise une saisie libre de moyen de paiement vers les codes attendus par l'API IzyFacture (voir
+// API-IZYVENDEUR.md section 3, champ payment.method) - accepte le francais courant en plus des codes eux-memes,
+// pour que le marchand n'ait pas besoin de connaitre le vocabulaire exact de l'API.
+function normaliserMethodePaiement(saisie) {
+  const s = String(saisie || "").trim().toLowerCase();
+  if (!s) return "especes";
+  if (/^especes?$|^esp[eè]ces?$|cash/.test(s)) return "especes";
+  if (/^om$|orange/.test(s)) return "om";
+  if (/^momo$|mtn/.test(s)) return "momo";
+  if (/^banque$|virement|bank/.test(s)) return "banque";
+  if (/^ch[eè]que$|cheque/.test(s)) return "cheque";
+  return s; // valeur inconnue : envoyee telle quelle, le serveur/IzyFacture la refusera clairement si invalide
 }
 
 // Notifications de statut (option payante superadmin "optionNotificationsStatut", voir
