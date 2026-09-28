@@ -2341,9 +2341,24 @@ async function tenterFacturationCommande(entry, order) {
       izyfactureStatut: "facturee",
       izyfactureFactureId: reponse.invoice.id,
       izyfactureNumero: reponse.invoice.number,
+      // reponse.invoice.verifyUrl : ajoute a la doc API-IZYVENDEUR.md le 28 sept 2026 - null si le marchand
+      // n'a pas le volet "QR de verification" (formules Pro/Cabinet uniquement), jamais reconstruit ici.
+      izyfactureUrlVerification: reponse.invoice.verifyUrl || null,
       izyfactureErreur: null
     });
     console.log(`[${entry.merchant.id}] Facture IzyFacture ${reponse.invoice.number} créée pour la commande #${order.id}${reponse.duplicate ? " (déjà existante, aucun doublon)" : ""}.`);
+    // Notification client (doc, section 9 point 4) uniquement pour une facture NOUVELLEMENT creee
+    // (reponse.duplicate === false) - un reessai manuel (bouton /admin) ou automatique sur une commande deja
+    // facturee renvoie la meme facture (anti-doublon externalRef, voir izyfacture.js) et ne doit pas
+    // renvoyer une deuxieme fois le meme message au client. Jamais bloquant : une erreur d'envoi n'affecte
+    // pas la facturation elle-meme, deja acquise cote IzyFacture a ce stade.
+    if (!reponse.duplicate) {
+      try {
+        await notifierClientFactureCreee(entry, order, reponse.invoice);
+      } catch (erreurNotif) {
+        console.error(`[${entry.merchant.id}] Échec de la notification client (facture créée, commande #${order.id}) :`, erreurNotif.message || erreurNotif);
+      }
+    }
   } catch (erreur) {
     entry.engine.enregistrerEtatIzyFacture(order.id, {
       izyfactureStatut: erreur.retryable ? "en_attente" : "erreur",
@@ -2436,6 +2451,29 @@ async function notifierClientPaiementRecu(entry, order, montant, numeroRecu) {
     : `Paiement de ${sh.formatFcfa(montant)} bien reçu pour votre commande ${ref}. Merci !`;
   if (numeroRecu) {
     texte += langue === "en" ? ` Receipt No. ${numeroRecu}.` : ` Reçu n° ${numeroRecu}.`;
+  }
+  await envoyerMessageWhatsApp(order.fromWhatsapp, texte, entry.merchant.phoneNumberId);
+}
+
+// Message WhatsApp au client apres creation d'une facture IzyFacture (doc API-IZYVENDEUR.md, section 9
+// point 4 : "Votre facture n° FAC-2026-0001 de 26 500 FCFA a été établie.") - appele par
+// tenterFacturationCommande ci-dessus, uniquement pour une facture nouvellement creee (pas un retour
+// "duplicate"). Memes garde-fous que notifierClientPaiementRecu ci-dessus : rien n'est envoye a un numero
+// simule/inconnu (order.fromWhatsapp absent, ou commande venue du Simulateur plutot que d'un vrai client
+// WhatsApp) - silencieusement, pas une erreur. Le lien de verification (invoice.verifyUrl, ajoute a la doc
+// le 28 sept 2026) n'est ajoute au message que s'il est fourni par IzyFacture (reserve aux formules
+// Pro/Cabinet avec le volet "QR de verification" active) - sinon le message se limite au numero et au
+// montant, jamais de lien casse ou devine.
+async function notifierClientFactureCreee(entry, order, invoice) {
+  if (!order.fromWhatsapp || order.source !== "whatsapp") return;
+  const langue = order.langue === "en" ? "en" : "fr";
+  const montant = invoice && invoice.totals && typeof invoice.totals.ttc === "number" ? invoice.totals.ttc : null;
+  const numero = (invoice && invoice.number) || "";
+  let texte = langue === "en"
+    ? `Your invoice No. ${numero}${montant !== null ? ` (${sh.formatFcfa(montant)})` : ""} has been issued.`
+    : `Votre facture n° ${numero}${montant !== null ? ` de ${sh.formatFcfa(montant)}` : ""} a été établie.`;
+  if (invoice && invoice.verifyUrl) {
+    texte += langue === "en" ? ` Verify it here: ${invoice.verifyUrl}` : ` Vérifiez-la ici : ${invoice.verifyUrl}`;
   }
   await envoyerMessageWhatsApp(order.fromWhatsapp, texte, entry.merchant.phoneNumberId);
 }

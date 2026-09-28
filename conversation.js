@@ -435,6 +435,12 @@ function createCatalogEngine(merchantKey, options) {
       izyfactureStatut: null,
       izyfactureFactureId: null,
       izyfactureNumero: null,
+      // Lien public de verification de la facture (QR code imprime dessus) - reponse.invoice.verifyUrl,
+      // ajoute a la doc API-IZYVENDEUR.md le 28 sept 2026. Reste null si le marchand n'a pas le volet "QR de
+      // verification" (reserve aux formules Pro/Cabinet chez IzyFacture) : jamais devine, jamais reconstruit
+      // cote IzyVendeur, uniquement ce qu'IzyFacture renvoie tel quel (voir tenterFacturationCommande dans
+      // server.js).
+      izyfactureUrlVerification: null,
       izyfactureErreur: null,
       izyfactureAvoirNumero: null,
       // Paiement recu sur la facture (27-28 sept 2026, voir POST /api/:id/commandes/:orderId/izyfacture/paiement

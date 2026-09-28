@@ -419,6 +419,7 @@ const I18N = {
     badgeIzyfacturePartielle: "Acompte reçu — solde {solde} FCFA",
     badgeIzyfactureNonPayee: "Non payée",
     labelIzyfactureRecu: "Reçu {numero}",
+    labelIzyfactureVerification: "Vérifier la facture",
     btnIzyfacturePaiement: "Enregistrer un paiement",
     promptMontantPaiement: "Montant reçu (FCFA) :",
     promptMethodePaiement: "Moyen de paiement (espèces / om / momo / banque / cheque) :",
@@ -834,6 +835,7 @@ const I18N = {
     badgeIzyfacturePartielle: "Partly paid — balance {solde} FCFA",
     badgeIzyfactureNonPayee: "Unpaid",
     labelIzyfactureRecu: "Receipt {numero}",
+    labelIzyfactureVerification: "Verify invoice",
     btnIzyfacturePaiement: "Record a payment",
     promptMontantPaiement: "Amount received (FCFA):",
     promptMethodePaiement: "Payment method (especes / om / momo / banque / cheque):",
@@ -1463,6 +1465,11 @@ function celluleIzyfacture(o) {
   let badge, bouton = "";
   if (o.izyfactureStatut === "facturee") {
     badge = "<span style='background:#e6f7e6; color:#1e7a1e; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfactureFacturee", { numero: o.izyfactureNumero || "" })) + "</span>";
+    // Lien de verification public (invoice.verifyUrl) - n'existe que si le marchand a le volet "QR de
+    // verification" chez IzyFacture (formules Pro/Cabinet) ; absent sinon, pas de ligne affichee dans ce cas.
+    if (o.izyfactureUrlVerification) {
+      badge += "<div style='font-size:0.8em;'><a href='" + esc(o.izyfactureUrlVerification) + "' target='_blank' rel='noopener'>" + esc(t("labelIzyfactureVerification")) + "</a></div>";
+    }
     badge += celluleFacturePaiement(o);
   } else if (o.izyfactureStatut === "avoir") {
     badge = "<span style='background:#f0e6ff; color:#5a2a9e; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfactureAvoir", { numero: o.izyfactureAvoirNumero || "" })) + "</span>";

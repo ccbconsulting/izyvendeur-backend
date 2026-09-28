@@ -835,6 +835,31 @@ par rôle employé, option non débloquée, commande pas encore facturée) et av
 numéro de reçu affiché, disparition du bouton une fois la facture soldée) + régression complète rejouée
 sans casse.
 
+## Étape 27 — Lien de vérification de la facture envoyé au client par WhatsApp (nouveau)
+
+IzyFacture a ajouté le 28 septembre 2026 le champ `invoice.verifyUrl` dans la réponse de création de
+facture (`POST /invoices`) : le lien de la page publique de vérification de la facture, celui imprimé sous
+forme de QR code sur le document — réservé aux marchands en formule Pro/Cabinet ayant activé le volet « QR
+de vérification » chez IzyFacture, `null` sinon.
+
+Ça complète le point resté volontairement en suspens depuis l'Étape 20 (voir la doc IzyFacture, section 9,
+point 4) : dès qu'une facture est créée avec succès (pas sur un simple retour "déjà existante" lors d'un
+réessai), IzyVendeur envoie désormais automatiquement au client un message WhatsApp dans sa langue avec le
+numéro de facture et le montant, complété par le lien de vérification quand IzyFacture le fournit. Quand il
+n'est pas fourni, le message se limite au numéro et au montant — jamais de lien cassé ou deviné. Ce lien est
+aussi stocké sur la commande (`izyfactureUrlVerification`) et affiché dans `/admin`, onglet Commandes, sous
+le badge de facture, pour que le marchand puisse lui-même le consulter ou le renvoyer.
+
+Mêmes garde-fous que les autres notifications client du pont IzyFacture : rien n'est envoyé pour une
+commande venue du Simulateur ou sans numéro WhatsApp réel (silencieusement, pas une erreur), et un échec
+d'envoi n'affecte jamais la facturation elle-même, déjà acquise côté IzyFacture à ce stade.
+
+Testé le 28 septembre 2026 par de vrais appels HTTP contre un faux serveur IzyFacture (lien fourni, lien
+absent, re-facturation d'une commande déjà facturée qui ne doit renvoyer le message qu'une seule fois,
+commande Simulateur ignorée) et avec un vrai navigateur piloté (Playwright) confirmant l'affichage du lien
+dans `/admin` (bon `href`, ouverture dans un nouvel onglet, absence totale de lien quand IzyFacture n'en
+fournit pas) + régression complète rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -846,11 +871,8 @@ sans casse.
   restent en français — c'est votre langue, pas celle du client, donc pas concerné.
 - **Facturation après confirmation de commande** — résolu à l'Étape 20 via le pont vers IzyFacture (voir
   ci-dessus) plutôt que par un moteur de facturation propre à IzyVendeur.
-- **Message WhatsApp au client avec le numéro de facture** (mentionné dans la doc IzyFacture comme un
-  exemple possible, ex. « Votre facture n° FAC-2026-0001 de 26 500 FCFA a été établie ») — pas encore
-  construit : IzyVendeur crée la facture et l'affiche dans `/admin`, mais ne notifie pas encore
-  automatiquement le client par WhatsApp à la création (contrairement au paiement, résolu à l'Étape 26
-  ci-dessus). Dites-moi si vous le souhaitez.
+- **Message WhatsApp au client avec le numéro de facture** — résolu à l'Étape 27 ci-dessus (numéro, montant
+  et lien de vérification quand disponible).
 
 ## Fichiers modifiés dans ce zip
 
@@ -871,7 +893,8 @@ sans casse.
   (lecture sans modification, utilisée par server.js pour détecter un vrai changement de statut) (Étape 20)
   + nouveaux champs de suivi des paiements (`izyfactureFactureStatut`/`izyfactureSolde`/
   `izyfactureRecuNumero`/`izyfacturePaiements`), distincts des champs ci-dessus qui ne décrivent que le
-  cycle de vie de la facture elle-même (Étape 26)
+  cycle de vie de la facture elle-même (Étape 26) + nouveau champ `izyfactureUrlVerification` (lien public
+  de vérification de la facture, `null` si IzyFacture ne le fournit pas) (Étape 27)
 - `izyfacture.js` (**nouveau fichier**) — client HTTP minimal (aucune dépendance, `fetch` natif) vers l'API
   IzyFacture v1 : vérification de clé (`GET /me`), création/retrouvaille de facture (`POST /invoices`,
   jamais de doublon grâce à la référence de commande), avoir sur annulation (`POST .../credit-notes`),
@@ -946,7 +969,11 @@ sans casse.
   (rapprochement tolérant au format "+237"/"237") est journalisé et enregistré (`derniereErreurAlerte` sur le
   marchand) ; auparavant, cet événement était purement ignoré (Étape 25) + nouvelle route
   `POST /api/:id/commandes/:orderId/izyfacture/paiement` et fonctions `enregistrerPaiementCommande`/
-  `notifierClientPaiementRecu` (Étape 26)
+  `notifierClientPaiementRecu` (Étape 26) + `tenterFacturationCommande` enregistre désormais
+  `izyfactureUrlVerification` (`invoice.verifyUrl`) et appelle la nouvelle fonction
+  `notifierClientFactureCreee` (numéro, montant, lien de vérification si fourni) après une facturation
+  RÉUSSIE et NOUVELLEMENT créée (jamais sur un retour "déjà existante", pour ne pas notifier deux fois le
+  même client) (Étape 27)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)
@@ -988,7 +1015,9 @@ sans casse.
   qu'un envoi accepté par WhatsApp garantit une livraison réelle (Étape 25) + dans l'onglet Commandes, sous
   le badge de facture, badge de paiement ("Non payée"/"Acompte reçu"/"Payée") + bouton "Enregistrer un
   paiement" (3 questions successives : montant, moyen de paiement, référence) + numéro de reçu affiché
-  (Étape 26)
+  (Étape 26) + lien "Vérifier la facture" affiché sous le badge de facture quand IzyFacture fournit un lien
+  de vérification (`izyfactureUrlVerification`), ouvert dans un nouvel onglet, totalement absent sinon
+  (Étape 27)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
