@@ -34,7 +34,7 @@ const STATUT_LIST = ["Nouvelle", "Confirmée", "Commandée", "Expédiée", "Livr
 // Modes de paiement acceptes pour une vente Caisse POS (29 septembre 2026, voir creerVentePos plus bas) -
 // volontairement une liste fermee courte pour la V1 (espèces/Mobile Money/carte bancaire, demande
 // utilisateur), le reste (credit client, virement...) viendra au fur et a mesure si demande.
-const MODES_PAIEMENT_POS_VALIDES = ["especes", "momo", "carte"];
+const MODES_PAIEMENT_POS_VALIDES = ["especes", "om", "momo", "carte", "cheque"];
 
 // Notifications client automatiques sur changement de statut (ajoutees le 16 septembre 2026, option
 // payante superadmin - voir server.js option "optionNotificationsStatut" sur le marchand). Le marchand
@@ -1487,11 +1487,17 @@ function createCatalogEngine(merchantKey, options) {
   //
   // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
   // jamais un article decompte puis un autre refuse en cours de route.
-  function creerVentePos({ lignes, modePaiement, caissier }) {
+  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier }) {
     if (!state) return { erreur: "Marchand introuvable." };
     if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Aucun article dans la vente." };
     if (MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
       return { erreur: "Mode de paiement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
+    }
+    // La reference de paiement (ex. code de confirmation Orange Money/MTN MoMo reçu par le MARCHAND sur son
+    // propre telephone, numero de cheque, etc.) est obligatoire pour tout mode autre que "especes" (29 sept 2026).
+    const referenceNettoyee = (referencePaiement || "").toString().trim();
+    if (modePaiement !== "especes" && !referenceNettoyee) {
+      return { erreur: "La référence de paiement est obligatoire pour ce mode de paiement." };
     }
 
     const items = [];
@@ -1526,6 +1532,7 @@ function createCatalogEngine(merchantKey, options) {
       fromWhatsapp: null,
       langue: "fr",
       modePaiement,
+      referencePaiement: modePaiement === "especes" ? null : referenceNettoyee,
       caissier: caissier || null,
       izyfactureStatut: null,
       izyfactureFactureId: null,

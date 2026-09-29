@@ -512,6 +512,7 @@ const I18N = {
     placeholderRechercheCaisse: "Rechercher un article à vendre (nom, catégorie, couleur, taille…)",
     caisseAucunResultat: "Aucun article ne correspond à cette recherche.",
     caisseEpuise: "épuisé",
+    caisseEpuiseMessage: "Cet article est en rupture de stock et ne peut pas être ajouté à la vente.",
     caisseStockDisponible: "{n} disponible(s)",
     caisseStockInsuffisant: "Stock insuffisant : {n} disponible(s) seulement.",
     caissePanierTitre: "Vente en cours",
@@ -520,8 +521,16 @@ const I18N = {
     caisseTotalLabel: "Total :",
     caisseModePaiementLabel: "Mode de paiement",
     caisseMode_especes: "Espèces",
-    caisseMode_momo: "Mobile Money",
+    caisseMode_om: "Orange Money",
+    caisseMode_momo: "MTN Mobile Money",
     caisseMode_carte: "Carte de crédit",
+    caisseMode_cheque: "Chèque",
+    caisseReferencePaiementLabel: "Référence de paiement",
+    caisseReferencePaiementObligatoire: "La référence de paiement est obligatoire pour ce mode de paiement.",
+    caisseReferenceAide_om: "Référence reçue par SMS/notification sur le téléphone du marchand lors du paiement.",
+    caisseReferenceAide_momo: "Référence reçue par SMS/notification sur le téléphone du marchand lors du paiement.",
+    caisseReferenceAide_carte: "Référence ou numéro de transaction du paiement par carte.",
+    caisseReferenceAide_cheque: "Numéro du chèque reçu.",
     btnEncaisser: "Encaisser",
     caisseVenteReussieTitre: "Vente enregistrée",
     caisseRecuVendeur: "Vendu par",
@@ -956,6 +965,7 @@ const I18N = {
     placeholderRechercheCaisse: "Search for an item to sell (name, category, color, size…)",
     caisseAucunResultat: "No item matches this search.",
     caisseEpuise: "out of stock",
+    caisseEpuiseMessage: "This item is out of stock and cannot be added to the sale.",
     caisseStockDisponible: "{n} available",
     caisseStockInsuffisant: "Not enough stock: only {n} available.",
     caissePanierTitre: "Current sale",
@@ -964,8 +974,16 @@ const I18N = {
     caisseTotalLabel: "Total:",
     caisseModePaiementLabel: "Payment method",
     caisseMode_especes: "Cash",
-    caisseMode_momo: "Mobile Money",
+    caisseMode_om: "Orange Money",
+    caisseMode_momo: "MTN Mobile Money",
     caisseMode_carte: "Credit card",
+    caisseMode_cheque: "Cheque",
+    caisseReferencePaiementLabel: "Payment reference",
+    caisseReferencePaiementObligatoire: "A payment reference is required for this payment method.",
+    caisseReferenceAide_om: "Reference received by SMS/notification on the merchant's own phone when the payment arrives.",
+    caisseReferenceAide_momo: "Reference received by SMS/notification on the merchant's own phone when the payment arrives.",
+    caisseReferenceAide_carte: "Reference or transaction number for the card payment.",
+    caisseReferenceAide_cheque: "The cheque number received.",
     btnEncaisser: "Checkout",
     caisseVenteReussieTitre: "Sale recorded",
     caisseRecuVendeur: "Sold by",
@@ -1635,6 +1653,10 @@ let commandesFiltrePlageAu = new Date().toISOString().slice(0, 10);
 let caissePanier = []; // [{productId, produit, couleur, taille, prixUnitaire, quantite, stockVirtuel}]
 let caisseTexteRecherche = "";
 let caisseModePaiement = "especes";
+// Reference de paiement (ex. code de confirmation Orange Money/MTN MoMo reçu par le MARCHAND sur son propre
+// telephone, numero de cheque...) - obligatoire pour tout mode autre que "especes" (29 sept 2026). Remise a
+// zero uniquement apres un encaissement reussi, comme le reste de l'etat de la vente en cours.
+let caisseReferencePaiement = "";
 
 async function renderCaisse() {
   const zone = document.getElementById("contenuOnglet");
@@ -1647,7 +1669,7 @@ async function renderCaisse() {
   const toutesLesLignes = [];
   catalogue.forEach((p) => {
     (p.variantes || []).forEach((v) => {
-      toutesLesLignes.push({ productId: p.id, produit: p.nom, cat: p.cat || "", couleur: v.couleur, taille: v.taille, prix: v.prix, stockVirtuel: v.stockVirtuel });
+      toutesLesLignes.push({ productId: p.id, produit: p.nom, cat: p.cat || "", couleur: v.couleur, taille: v.taille, prix: v.prix, stockVirtuel: v.stockVirtuel, seuilAlerte: Number(v.seuilAlerte) || 0 });
     });
   });
 
@@ -1711,10 +1733,11 @@ async function renderCaisse() {
           "<div id='resultatsCaisse' style='max-height:440px; overflow:auto; border:1px solid #e1e5ea; border-radius:8px;'>" +
             (toutesLesLignes.length ? toutesLesLignes.map((l, idx) => {
               const epuise = l.stockVirtuel <= 0;
+              const stockFaible = !epuise && l.stockVirtuel <= l.seuilAlerte;
               const visible = ligneCorrespond(l, caisseTexteRecherche);
-              return "<button data-ligne-caisse='" + idx + "'" + (epuise ? " disabled" : "") + " style='display:" + (visible ? "" : "none") + "; width:100%; text-align:left; padding:10px 12px; border:none; border-bottom:1px solid #eee; background:" + (epuise ? "#f5f5f5" : "#fff") + "; cursor:" + (epuise ? "not-allowed" : "pointer") + ";'>" +
+              return "<button data-ligne-caisse='" + idx + "'" + (epuise ? " disabled" : "") + (epuise ? " title=\"" + esc(t("caisseEpuiseMessage")) + "\"" : "") + " class=\"" + (stockFaible ? "alerte-stock" : "") + "\" style='display:" + (visible ? "" : "none") + "; width:100%; text-align:left; padding:10px 12px; border:none; border-bottom:1px solid #eee; background:" + (epuise ? "#fdecec" : "#fff") + "; cursor:" + (epuise ? "not-allowed" : "pointer") + ";'>" +
                 "<strong>" + esc(l.produit) + "</strong> — " + esc(l.couleur) + " " + esc(l.taille) +
-                "<span style='float:right; color:#666;'>" + l.prix.toLocaleString(localeCourante()) + " FCFA · " + (epuise ? t("caisseEpuise") : t("caisseStockDisponible", { n: l.stockVirtuel })) + "</span>" +
+                "<span style='float:right; color:" + (epuise ? "#b3261e" : "#666") + ";'>" + l.prix.toLocaleString(localeCourante()) + " FCFA · " + (epuise ? t("caisseEpuise") : t("caisseStockDisponible", { n: l.stockVirtuel })) + "</span>" +
               "</button>";
             }).join("") : "") +
           "</div>" +
@@ -1737,13 +1760,20 @@ async function renderCaisse() {
           "<h3 style='margin-top:16px;'>" + t("caisseTotalLabel") + " " + totalPanier().toLocaleString(localeCourante()) + " FCFA</h3>" +
           "<label style='display:block; margin-top:10px;'>" + t("caisseModePaiementLabel") + "</label>" +
           "<div style='display:flex; gap:10px; margin:8px 0 16px; flex-wrap:wrap;'>" +
-            ["especes", "momo", "carte"].map((m) =>
+            ["especes", "om", "momo", "carte", "cheque"].map((m) =>
               "<label style='border:1px solid " + (caisseModePaiement === m ? "#1e6fd9" : "#ccc") + "; border-radius:8px; padding:8px 14px; cursor:pointer;'>" +
                 "<input type='radio' name='caisseModePaiement' value='" + m + "'" + (caisseModePaiement === m ? " checked" : "") + " style='margin-right:6px;' />" +
                 t("caisseMode_" + m) +
               "</label>"
             ).join("") +
           "</div>" +
+          (caisseModePaiement !== "especes"
+            ? "<div style='margin-bottom:16px;'>" +
+                "<label style='display:block; margin-bottom:4px;'>" + t("caisseReferencePaiementLabel") + "</label>" +
+                "<input id='champReferencePaiementCaisse' type='text' value=\"" + esc(caisseReferencePaiement) + "\" style='width:100%; box-sizing:border-box;' />" +
+                "<p class='raison' style='margin:4px 0 0;'>" + t("caisseReferenceAide_" + caisseModePaiement) + "</p>" +
+              "</div>"
+            : "") +
           "<button id='btnEncaisser' class='principal'" + (!caissePanier.length ? " disabled" : "") + ">" + t("btnEncaisser") + "</button>" +
         "</div>" +
       "</div>";
@@ -1763,6 +1793,10 @@ async function renderCaisse() {
     Array.prototype.forEach.call(zone.querySelectorAll("input[name='caisseModePaiement']"), (radio) => {
       radio.onchange = () => { caisseModePaiement = radio.value; redraw(); };
     });
+    const champReferencePaiement = document.getElementById("champReferencePaiementCaisse");
+    if (champReferencePaiement) {
+      champReferencePaiement.addEventListener("input", () => { caisseReferencePaiement = champReferencePaiement.value; });
+    }
     const champRecherche = document.getElementById("champRechercheCaisse");
     if (champRecherche) {
       champRecherche.addEventListener("input", () => {
@@ -1774,17 +1808,24 @@ async function renderCaisse() {
     if (btnEncaisser) {
       btnEncaisser.onclick = async () => {
         if (!caissePanier.length) return;
+        if (caisseModePaiement !== "especes" && !caisseReferencePaiement.trim()) {
+          alert(t("caisseReferencePaiementObligatoire"));
+          return;
+        }
         btnEncaisser.disabled = true;
         try {
           const commande = await api("/api/" + marchandActif.id + "/pos/vente", {
             method: "POST",
             body: JSON.stringify({
               lignes: caissePanier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite })),
-              modePaiement: caisseModePaiement
+              modePaiement: caisseModePaiement,
+              referencePaiement: caisseReferencePaiement.trim()
             })
           });
           caissePanier = [];
           caisseTexteRecherche = "";
+          caisseModePaiement = "especes";
+          caisseReferencePaiement = "";
           afficherRecuCaisse(commande);
         } catch (e) {
           alert(t("erreurPrefixe") + e.message);
@@ -1817,6 +1858,7 @@ function afficherRecuCaisse(commande) {
       "</table>" +
       "<h3>" + t("caisseTotalLabel") + " " + (commande.prix || 0).toLocaleString(localeCourante()) + " FCFA</h3>" +
       "<p>" + t("caisseModePaiementLabel") + " : " + t("caisseMode_" + commande.modePaiement) + "</p>" +
+      (commande.referencePaiement ? "<p>" + t("caisseReferencePaiementLabel") + " : " + esc(commande.referencePaiement) + "</p>" : "") +
     "</div>" +
     "<div style='margin-top:16px;'>" +
       "<button id='btnImprimerRecu'>" + t("btnImprimerRecu") + "</button> " +
@@ -1941,7 +1983,8 @@ async function renderCommandes() {
         "<td>" + (o.items || []).reduce((somme, it) => somme + (Number(it.quantite) || 0), 0) + "</td>" +
         "<td>" + (o.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
         "<td>" + (o.source === "pos"
-          ? "<span style='background:#ece3fb; color:#5a3a9a; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeCaisse") + "</span>"
+          ? "<span style='background:#ece3fb; color:#5a3a9a; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeCaisse") + "</span>" +
+            (o.referencePaiement ? "<div class='raison'>" + t("caisseReferencePaiementLabel") + " : " + esc(o.referencePaiement) + "</div>" : "")
           : o.modeLivraison === "retrait"
           ? "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeRetrait") + "</span>"
           : "<span style='background:#e2f0ff; color:#0a4a8f; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeLivraison") + "</span>") + "</td>" +

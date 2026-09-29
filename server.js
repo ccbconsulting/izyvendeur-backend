@@ -966,8 +966,8 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  const { lignes, modePaiement } = req.body || {};
-  const resultat = entry.engine.creerVentePos({ lignes, modePaiement, caissier: req.auth.adminUser });
+  const { lignes, modePaiement, referencePaiement } = req.body || {};
+  const resultat = entry.engine.creerVentePos({ lignes, modePaiement, referencePaiement, caissier: req.auth.adminUser });
   if (resultat.erreur) return res.status(400).json({ erreur: resultat.erreur });
   res.status(201).json(resultat.order);
 });

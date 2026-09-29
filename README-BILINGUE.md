@@ -1009,6 +1009,37 @@ quantité, choix du mode de paiement, encaissement, reçu affiché avec le bon t
 remis à zéro après "Nouvelle vente", stock réellement décrémenté vérifié en fin de parcours) + régression
 complète (27 fichiers de tests) rejouée sans casse.
 
+## Étape 33 — Caisse POS : Orange Money/MTN Mobile Money distincts, référence de paiement obligatoire, chèque, articles en rupture/stock faible mis en évidence (nouveau)
+
+Demandé le 29 septembre 2026, en discussion d'abord comme pour chaque nouveauté de cette ampleur, puis
+construit une fois les précisions obtenues :
+
+- **5 modes de paiement au lieu de 3** : Espèces / **Orange Money** / **MTN Mobile Money** (désormais
+  distincts l'un de l'autre, alors qu'un seul "Mobile Money" générique existait à l'Étape 32) / Carte de
+  crédit / **Chèque** (nouveau).
+- **Référence de paiement obligatoire pour tout mode autre qu'Espèces** : un champ apparaît dès qu'un mode
+  autre qu'Espèces est choisi, avec une aide contextuelle selon le mode — pour Orange Money/MTN Mobile
+  Money, il s'agit précisément de la référence/du code de confirmation que **le marchand lui-même** reçoit
+  par SMS ou notification sur **son propre téléphone** au moment où le paiement arrive (jamais le numéro du
+  client). Vérifiée aussi côté serveur (`creerVentePos`) : une vente sans référence sur un mode autre
+  qu'Espèces est refusée (400), rien n'est décompté du stock dans ce cas. La référence est affichée sur le
+  reçu imprimé et dans l'onglet Commandes (sous le badge "🧾 Vente en boutique").
+- **Articles en rupture de stock mis en évidence en rouge** dans la liste de recherche de la Caisse, restent
+  **désactivés** (toujours impossible de les ajouter au panier, même en cliquant dessus) — le message
+  d'explication apparaît désormais **au survol de la souris** (attribut `title` natif du navigateur) plutôt
+  qu'au clic, à la demande explicite du marchand.
+- **Articles en stock faible (pas encore en rupture) mis en évidence en ambre**, en réutilisant exactement
+  la même mise en forme (`.alerte-stock`) déjà utilisée dans le Catalogue et l'Inventaire — cohérence
+  visuelle avec le reste de l'interface plutôt qu'une nouvelle couleur inventée pour l'occasion.
+
+Testé le 29 septembre 2026 : côté serveur (vente Orange Money/MTN Mobile Money sans référence refusée avec
+rien décompté du stock, acceptée avec référence et référence bien enregistrée/retournée, vente en espèces
+toujours acceptée sans référence, paiement par chèque accepté avec sa référence, mode de paiement hors
+liste refusé) et avec un vrai navigateur piloté (article en rupture reste désactivé avec un attribut `title`
+non vide, fond rouge ; article en stock faible porte la classe `alerte-stock` et reste cliquable ;
+encaissement bloqué côté client tant que la référence de paiement obligatoire est vide ; reçu affichant
+bien la référence saisie) + régression complète (27 fichiers de tests) rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1050,7 +1081,11 @@ complète (27 fichiers de tests) rejouée sans casse.
   en ligne se disputent honnêtement le même stock), crée directement une commande au statut "Livrée"
   (`source:"pos"`, décrémente réellement le stock dès la création, pas une simple réservation) — une
   annulation ultérieure passe par le circuit `updateOrderStatus`/`applyStatusChange` déjà existant, qui
-  restaure alors le stock automatiquement (Étape 32)
+  restaure alors le stock automatiquement (Étape 32) + `MODES_PAIEMENT_POS_VALIDES` étendue de 3 à 5 modes
+  (`especes`/`om`/`momo`/`carte`/`cheque`, Orange Money et MTN Mobile Money désormais distincts) +
+  `creerVentePos` exige désormais une `referencePaiement` non vide pour tout mode autre que `especes`
+  (refuse la vente en 400 sinon, avant tout décompte de stock) et l'enregistre sur la commande créée
+  (Étape 33)
 - `izyfacture.js` (**nouveau fichier**) — client HTTP minimal (aucune dépendance, `fetch` natif) vers l'API
   IzyFacture v1 : vérification de clé (`GET /me`), création/retrouvaille de facture (`POST /invoices`,
   jamais de doublon grâce à la référence de commande), avoir sur annulation (`POST .../credit-notes`),
@@ -1141,7 +1176,9 @@ complète (27 fichiers de tests) rejouée sans casse.
   strictement réservé au rôle "Catalogue") + nouvelle route `POST /api/:id/pos/vente` (réservée au rôle
   "caisse" ET à l'option payante superadmin `optionCaissePos`, même défense en profondeur que Facturation
   IzyFacture) qui délègue à `creerVentePos` (voir `conversation.js`) + `GET /api/marchands` et `PUT
-  /api/marchands/:id/options-payantes` étendus à cette 5e option payante `optionCaissePos` (Étape 32)
+  /api/marchands/:id/options-payantes` étendus à cette 5e option payante `optionCaissePos` (Étape 32) +
+  `POST /api/:id/pos/vente` transmet désormais aussi `referencePaiement` au moteur (`creerVentePos`),
+  obligatoire pour tout mode autre que `especes` (Étape 33)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)
@@ -1202,14 +1239,21 @@ complète (27 fichiers de tests) rejouée sans casse.
   d'onglets (y compris pour le propriétaire du marchand) tant que l'option payante "Caisse POS" n'est pas
   débloquée pour ce marchand ; recherche d'article réutilisant le moteur de l'Étape 30 (insensible
   casse/accents, filtrage live sans perte de focus), chaque ligne couleur+taille directement cliquable pour
-  l'ajouter au panier, quantité ajustable (+/−), 3 modes de paiement (Espèces/Mobile Money/**Carte de
-  crédit**), bouton "Encaisser" qui appelle `POST /api/:id/pos/vente` puis affiche un reçu imprimable
-  (bouton "Imprimer" via `window.print()`, aucune dépendance externe) et repart sur un panier vide via
-  "Nouvelle vente" + nouveau rôle "Caisse" dans la liste des rôles attribuables (onglet Employés),
-  lui-même absent tant que l'option n'est pas débloquée + nouvelle case "Caisse POS" dans le bloc "Options
-  payantes" (Mon compte, réservé au super-administrateur, même principe que les 4 précédentes) + onglet
-  Commandes : nouveau badge "🧾 Vente en boutique" pour une commande `source:"pos"` (téléphone/adresse
-  affichés "—" au lieu d'un champ vide) (Étape 32)
+  l'ajouter au panier, quantité ajustable (+/−), bouton "Encaisser" qui appelle `POST /api/:id/pos/vente`
+  puis affiche un reçu imprimable (bouton "Imprimer" via `window.print()`, aucune dépendance externe) et
+  repart sur un panier vide via "Nouvelle vente" + nouveau rôle "Caisse" dans la liste des rôles
+  attribuables (onglet Employés), lui-même absent tant que l'option n'est pas débloquée + nouvelle case
+  "Caisse POS" dans le bloc "Options payantes" (Mon compte, réservé au super-administrateur, même principe
+  que les 4 précédentes) + onglet Commandes : nouveau badge "🧾 Vente en boutique" pour une commande
+  `source:"pos"` (téléphone/adresse affichés "—" au lieu d'un champ vide) (Étape 32) + 5 modes de paiement
+  au lieu de 3 (Espèces/**Orange Money**/**MTN Mobile Money**/Carte de crédit/**Chèque**, nouveau) + champ
+  "Référence de paiement" affiché et rendu obligatoire dès qu'un mode autre qu'Espèces est choisi (aide
+  contextuelle par mode — pour Orange Money/MTN Mobile Money, précise qu'il s'agit de la référence reçue
+  par SMS/notification sur le téléphone du MARCHAND), bloqué côté client si vide avant même l'appel API,
+  reference affichée sur le reçu imprimé (`afficherRecuCaisse`) et dans l'onglet Commandes sous le badge +
+  article en rupture désormais affiché en rouge avec un attribut `title` (message au survol de la souris,
+  plus au clic) tout en restant `disabled` + article en stock faible (pas en rupture) affiché en ambre via
+  la classe `.alerte-stock` déjà utilisée par le Catalogue/l'Inventaire (Étape 33)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
