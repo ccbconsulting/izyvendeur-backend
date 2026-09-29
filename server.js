@@ -927,6 +927,18 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   if (!entry.merchant.optionStockIllimite && Array.isArray(corps)) {
     corps = corps.map((p) => (p && p.stockIllimite ? Object.assign({}, p, { stockIllimite: false }) : p));
   }
+  // Filet de securite pour la suppression d'article, reservee au proprietaire du marchand/super-
+  // administrateur (29 sept 2026, meme principe que le filet Stock illimite ci-dessus) : /admin masque deja
+  // le bouton "Supprimer l'article" pour un(e) employe(e) ayant seulement le role "catalogue" (voir
+  // renderCatalogue), mais un appel direct a cette route (hors interface) pourrait sinon quand meme
+  // soumettre un catalogue plus court qu'avant - on reinjecte silencieusement les articles manquants
+  // plutot que de rejeter tout l'enregistrement (les autres modifications, elles, restent acceptees).
+  if (!estGestionnaireDuMarchand(req, req.params.id) && Array.isArray(corps)) {
+    const catalogueActuel = entry.engine.getCatalog();
+    const idsPresents = new Set(corps.filter((p) => p && p.id).map((p) => p.id));
+    const manquants = catalogueActuel.filter((p) => p && p.id && !idsPresents.has(p.id));
+    if (manquants.length) corps = corps.concat(manquants);
+  }
   const nouveau = entry.engine.updateCatalog(corps);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
   res.json(nouveau);

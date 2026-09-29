@@ -1313,6 +1313,13 @@ async function renderCatalogue() {
   const catalogue = await api("/api/" + marchandActif.id + "/catalogue");
   let local = JSON.parse(JSON.stringify(catalogue));
 
+  // Suppression d'article reservee au proprietaire du marchand/super-administrateur (29 sept 2026) - un(e)
+  // employe(e) avec le seul role "catalogue" peut voir/modifier/ajouter des articles (stock, prix, photos,
+  // variantes...) mais ne doit plus voir le bouton "Supprimer l'article", meme principe que estGestionnaire
+  // pour les instantanés d'inventaire plus bas dans ce fichier. Filet de securite cote serveur egalement
+  // (voir PUT /api/:id/catalogue) pour un appel direct hors interface.
+  const estGestionnaireCatalogue = moi.role === "marchand" || moi.role === "superadmin";
+
   // La photo, elle, s'enregistre immediatement (upload direct vers le serveur), contrairement au reste
   // du catalogue qui reste local tant que "Enregistrer le catalogue" n'est pas cliqué — d'où la nécessité
   // que l'article existe déjà côté serveur (dejaEnregistre) avant de pouvoir lui ajouter une photo.
@@ -1370,7 +1377,7 @@ async function renderCatalogue() {
           "<div class='ligne-produit'>" +
             "<input data-p='" + pi + "' data-champ='nom' value=\"" + esc(p.nom) + "\" placeholder=\"" + esc(t("placeholderNomArticle")) + "\" />" +
             "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder=\"" + esc(t("placeholderCategorie")) + "\" />" +
-            "<button data-suppr-produit='" + pi + "' class='danger'>" + t("btnSupprimerArticle") + "</button>" +
+            (estGestionnaireCatalogue ? "<button data-suppr-produit='" + pi + "' class='danger'>" + t("btnSupprimerArticle") + "</button>" : "") +
           "</div>" +
           (marchandActif.optionStockIllimite
             ? "<label style='display:inline-block;margin-bottom:8px;'>" +

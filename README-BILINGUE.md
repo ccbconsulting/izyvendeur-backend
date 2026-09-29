@@ -938,6 +938,27 @@ Testé le 29 septembre 2026 avec un vrai navigateur piloté : recherche par nom/
 "aucun résultat" + compteur, conservation du focus pendant la frappe, bouton "Effacer", persistance de la
 recherche après l'ajout d'un article — + régression complète (23 fichiers de tests) rejouée sans casse.
 
+## Étape 31 — Suppression d'un article du Catalogue réservée au propriétaire/super-administrateur (nouveau)
+
+Demandé le 29 septembre 2026, à la suite d'une question sur les droits d'accès : le bouton "Supprimer
+l'article" dans l'onglet Catalogue était jusqu'ici visible pour tout employé ayant le rôle "Catalogue"
+(gestion du stock/prix), pas seulement pour le propriétaire du marchand ou le super-administrateur.
+
+Le bouton est désormais masqué dans `/admin` pour un employé — il conserve tous ses autres droits sur cet
+onglet (modifier nom, catégorie, prix, stock, variantes, photos, ajouter un article, importer un CSV), mais
+ne voit plus l'option de suppression. Un filet de sécurité a aussi été ajouté côté serveur
+(`PUT /api/:id/catalogue`, même principe déjà en place pour "Stock illimité") : si un catalogue soumis par
+un employé (via un appel direct hors interface, par exemple) s'avère plus court qu'avant, l'article manquant
+est silencieusement réinjecté plutôt que de rejeter tout l'enregistrement — les autres modifications
+légitimes de l'employé, elles, restent bien acceptées. Le propriétaire du marchand et le super-administrateur
+ne sont pas concernés par ce filet et peuvent supprimer normalement.
+
+Testé le 29 septembre 2026 : côté serveur (un catalogue plus court soumis par un employé se voit réinjecter
+l'article manquant sans bloquer le reste de l'enregistrement, le propriétaire et le super-administrateur
+peuvent, eux, réellement supprimer) et avec un vrai navigateur piloté (bouton absent pour un employé avec
+le seul rôle Catalogue, présent et fonctionnel pour le propriétaire) + régression complète (25 fichiers de
+tests) rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1054,7 +1075,11 @@ recherche après l'ajout d'un article — + régression complète (23 fichiers d
   même client) (Étape 27) + `GET /api/marchands` expose désormais `filigraneLogoActif` par marchand (actif
   par défaut, `!== false` et non `=== true`) + nouvelle route `PUT /api/:id/filigrane-logo` (case à cocher
   "filigrane" dans Mon compte, mêmes règles de portée/permission — rôle "Paramètres" — que
-  `/notification` et `/numero-whatsapp-public`) (Étape 29)
+  `/notification` et `/numero-whatsapp-public`) (Étape 29) + filet de sécurité sur `PUT /api/:id/catalogue` :
+  si un catalogue soumis par un employé (rôle "Catalogue", pas propriétaire/super-administrateur) est plus
+  court qu'avant, l'article manquant est silencieusement réinjecté (même principe déjà en place pour
+  l'option "Stock illimité" sur cette même route) — le propriétaire/super-administrateur peuvent, eux,
+  réellement supprimer (Étape 31)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)
@@ -1108,7 +1133,10 @@ recherche après l'ajout d'un article — + régression complète (23 fichiers d
   bouton séparé (Étape 29) + nouveau champ de recherche en haut de l'onglet Catalogue, filtrage en temps
   réel par nom/catégorie/couleur/taille de variante (insensible casse et accents), compteur de résultats,
   message "aucun résultat", bouton "Effacer", sans perte de focus pendant la frappe et avec conservation
-  de la recherche après un rechargement complet de l'onglet déclenché par une autre action (Étape 30)
+  de la recherche après un rechargement complet de l'onglet déclenché par une autre action (Étape 30) +
+  bouton "Supprimer l'article" (onglet Catalogue) désormais masqué pour un employé n'ayant que le rôle
+  "Catalogue" (`estGestionnaireCatalogue`), toujours visible pour le propriétaire/super-administrateur
+  (Étape 31)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
