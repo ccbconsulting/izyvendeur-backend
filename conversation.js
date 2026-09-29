@@ -31,6 +31,11 @@ const STOCK_ILLIMITE_SENTINELLE = 999999;
 const RESERVING_STATUSES = ["Confirmée", "Commandée", "Expédiée"];
 const STATUT_LIST = ["Nouvelle", "Confirmée", "Commandée", "Expédiée", "Livrée", "Annulée"];
 
+// Modes de paiement acceptes pour une vente Caisse POS (29 septembre 2026, voir creerVentePos plus bas) -
+// volontairement une liste fermee courte pour la V1 (espèces/Mobile Money/carte bancaire, demande
+// utilisateur), le reste (credit client, virement...) viendra au fur et a mesure si demande.
+const MODES_PAIEMENT_POS_VALIDES = ["especes", "momo", "carte"];
+
 // Notifications client automatiques sur changement de statut (ajoutees le 16 septembre 2026, option
 // payante superadmin - voir server.js option "optionNotificationsStatut" sur le marchand). Le marchand
 // active/desactive independamment chacun de ces 4 statuts (pas "Nouvelle" - creation automatique, ni
@@ -1466,12 +1471,85 @@ function createCatalogEngine(merchantKey, options) {
     return state.orders.find((o) => o.id === Number(orderId)) || null;
   }
 
+  // ---------------- Caisse POS (29 septembre 2026) ----------------
+  // Encaissement en boutique physique depuis /admin (voir POST /api/:id/pos/vente dans server.js, reserve
+  // au role employe "caisse" + option payante superadmin "optionCaissePos") - decremente le MEME stock que
+  // le bot WhatsApp, PAS un stock separe : une vente comptoir et une commande WhatsApp se disputent
+  // honnetement les memes pieces (voir virtualStock ci-dessus, utilise ici pour verifier la disponibilite
+  // AVANT de vendre, en tenant compte des commandes WhatsApp deja engagees Confirmee/Commandee/Expediee).
+  //
+  // Contrairement a une commande WhatsApp (qui nait "Nouvelle" et suit un vrai cycle de statuts), une vente
+  // comptoir est immediate : le client paie et repart avec l'article sur-le-champ. Elle est donc creee
+  // DIRECTEMENT au statut "Livrée", ce qui decremente reellement stockReel des la creation (meme ligne que
+  // applyStatusChange plus haut pour la transition Livrée), pas seulement une reservation. Une annulation
+  // ulterieure (erreur de caisse) passe par le meme PUT .../commandes/:id/statut que toute autre commande -
+  // applyStatusChange restaure alors stockReel automatiquement (branche "oldStatus === Livrée" existante).
+  //
+  // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
+  // jamais un article decompte puis un autre refuse en cours de route.
+  function creerVentePos({ lignes, modePaiement, caissier }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Aucun article dans la vente." };
+    if (MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
+      return { erreur: "Mode de paiement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
+    }
+
+    const items = [];
+    for (const ligne of lignes) {
+      const p = state.catalog.filter((x) => x.id === (ligne && ligne.productId))[0];
+      const v = p ? p.variantes.filter((vv) => vv.couleur === ligne.couleur && vv.taille === ligne.taille)[0] : null;
+      if (!p || !v) return { erreur: "Article introuvable (" + ((ligne && ligne.productId) || "?") + ")." };
+      const quantite = Number(ligne.quantite) || 0;
+      if (quantite < 1) return { erreur: "Quantité invalide pour \"" + p.nom + "\"." };
+      const disponible = virtualStock(p.id, v);
+      if (quantite > disponible) {
+        return { erreur: "Stock insuffisant pour \"" + p.nom + "\" (" + v.couleur + " " + v.taille + ") : " + disponible + " disponible(s)." };
+      }
+      items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, prixUnitaire: v.prix, prix: v.prix * quantite, _variant: v });
+    }
+
+    // Decremente reellement le stock, seulement maintenant que TOUTES les lignes ci-dessus sont validees.
+    items.forEach((it) => { it._variant.stockReel = Math.max(0, it._variant.stockReel - it.quantite); });
+
+    const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, prixUnitaire: it.prixUnitaire, prix: it.prix }));
+    const order = {
+      id: state.nextId++,
+      dateISO: new Date().toISOString(),
+      items: itemsPublics,
+      prix: itemsTotal(itemsPublics),
+      telephone: null,
+      adresse: null,
+      modeLivraison: "sur_place",
+      statut: "Livrée",
+      raisonAnnulation: null,
+      source: "pos",
+      fromWhatsapp: null,
+      langue: "fr",
+      modePaiement,
+      caissier: caissier || null,
+      izyfactureStatut: null,
+      izyfactureFactureId: null,
+      izyfactureNumero: null,
+      izyfactureUrlVerification: null,
+      izyfactureErreur: null,
+      izyfactureAvoirNumero: null,
+      izyfactureFactureStatut: null,
+      izyfactureSolde: null,
+      izyfactureRecuNumero: null,
+      izyfacturePaiements: []
+    };
+    state.orders.push(order);
+    saveState();
+    return { order };
+  }
+
   return {
     type: "catalogue",
     init,
     handleMessage,
     getOrders,
     getOrderById,
+    creerVentePos,
     getCatalog,
     getSettings,
     updateSettings,

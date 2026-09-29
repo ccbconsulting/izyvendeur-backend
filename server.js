@@ -244,7 +244,11 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 // tout employe qui avait deja "tableaudebord", et "inventaire" a tout employe qui avait deja "rapports" -
 // que chaque etape soit de longue date ou tout juste migree a l'instant dans la meme passe - pour ne
 // retirer d'acces a personne au fil de ces changements successifs.
-const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire"];
+// "caisse" (29 septembre 2026) : encaissement en boutique physique (onglet Caisse, voir POST
+// /api/:id/pos/vente plus bas) - marchand catalogue uniquement, et l'onglet lui-meme reste invisible tant
+// que le super-administrateur n'a pas debloque l'option payante "optionCaissePos" pour ce marchand (voir
+// PUT /api/marchands/:id/options-payantes), meme si l'employe a deja ce role.
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse"];
 
 function protegerAcces(req, res, next) {
   const superUtilisateur = process.env.ADMIN_USER || "admin";
@@ -458,7 +462,11 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     // bas) - actif par defaut des qu'un logo existe (colonne DEFAULT true), desactivable au cas par cas par
     // le marchand. "!== false" et non "=== true" : un marchand qui ne l'a JAMAIS reglee doit rester actif
     // par defaut (contrairement aux options payantes ci-dessus, volontairement l'inverse).
-    filigraneLogoActif: e.merchant.filigraneLogoActif !== false
+    filigraneLogoActif: e.merchant.filigraneLogoActif !== false,
+    // "Caisse POS" (option payante, 29 septembre 2026 - meme principe que les 4 precedentes) : tant que le
+    // super-administrateur ne l'a pas debloquee ici, l'onglet Caisse reste invisible cote marchand (voir
+    // admin.html) ET POST /api/:id/pos/vente refuse toute action (voir plus bas).
+    optionCaissePos: e.merchant.optionCaissePos === true
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -715,12 +723,13 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos } = req.body || {};
   const patch = {};
   if (optionStockIllimite !== undefined) patch.optionStockIllimite = !!optionStockIllimite;
   if (optionLienCommande !== undefined) patch.optionLienCommande = !!optionLienCommande;
   if (optionNotificationsStatut !== undefined) patch.optionNotificationsStatut = !!optionNotificationsStatut;
   if (optionFacturationIzyfacture !== undefined) patch.optionFacturationIzyfacture = !!optionFacturationIzyfacture;
+  if (optionCaissePos !== undefined) patch.optionCaissePos = !!optionCaissePos;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
   const maj = await db.updateMerchantFields(req.params.id, patch);
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
@@ -728,8 +737,9 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionLienCommande = maj.optionLienCommande;
   entry.merchant.optionNotificationsStatut = maj.optionNotificationsStatut;
   entry.merchant.optionFacturationIzyfacture = maj.optionFacturationIzyfacture;
-  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}.`);
-  res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture });
+  entry.merchant.optionCaissePos = maj.optionCaissePos;
+  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}.`);
+  res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos });
 });
 
 // ---------------- Pont IzyFacture (facturation automatique des commandes confirmees) ----------------
@@ -910,8 +920,11 @@ app.delete("/api/marchands/:id", protegerAcces, async (req, res) => {
 
 // -- Marchand catalogue -- (permission employe requise : "catalogue")
 
+// Egalement accessible avec le seul role "caisse" (29 septembre 2026) : un(e) caissier(e) a la Caisse POS
+// doit pouvoir CONSULTER le catalogue (prix, stock disponible) pour chercher un article a vendre - jamais
+// le MODIFIER pour autant (voir PUT ci-dessous, resté strictement reservé au role "catalogue").
 app.get("/api/:id/catalogue", protegerAcces, (req, res) => {
-  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
+  const entry = getMarchandAutorise(req, res, ["catalogue", "caisse"]); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   res.json(entry.engine.getCatalog());
 });
@@ -942,6 +955,21 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   const nouveau = entry.engine.updateCatalog(corps);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
   res.json(nouveau);
+});
+
+// -- Caisse POS (29 septembre 2026) -- (permission employe requise : "caisse", ET option payante
+// superadmin "optionCaissePos" - voir PUT /api/marchands/:id/options-payantes) : encaissement en boutique
+// physique, decremente le MEME stock que le bot WhatsApp (voir creerVentePos dans conversation.js). Une
+// vente POS devient une commande normale (statut "Livrée" des la creation, source:"pos") - visible dans
+// l'onglet Commandes et comptee dans le Tableau de bord/Rapports existants, sans code de reporting séparé.
+app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const { lignes, modePaiement } = req.body || {};
+  const resultat = entry.engine.creerVentePos({ lignes, modePaiement, caissier: req.auth.adminUser });
+  if (resultat.erreur) return res.status(400).json({ erreur: resultat.erreur });
+  res.status(201).json(resultat.order);
 });
 
 // Analyse une ligne CSV en tenant compte des guillemets (un champ peut contenir le separateur ou des

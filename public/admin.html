@@ -156,6 +156,7 @@ const I18N = {
     roleInventaire: "Inventaire",
     roleCatalogue: "Catalogue & stock",
     roleCommandes: "Commandes",
+    roleCaisse: "Caisse",
 
     ongletTableauDeBord: "Tableau de bord",
     ongletServices: "Services",
@@ -170,6 +171,7 @@ const I18N = {
     ongletRapports: "Rapports",
     ongletInventaire: "Inventaire",
     ongletParametres: "Paramètres",
+    ongletCaisse: "Caisse",
     accesNonConfigure: "Aucun accès configuré pour ce compte — contactez le propriétaire du marchand.",
 
     catalogueEtStock: "Catalogue & stock",
@@ -236,6 +238,7 @@ const I18N = {
     theadStatut: "Statut",
     badgeRetrait: "🏪 Retrait boutique",
     badgeLivraison: "🚚 Livraison",
+    badgeCaisse: "🧾 Vente en boutique",
     optionLivraison: "Livraison",
     optionRetrait: "Retrait",
     raisonPrefixe: "Raison : ",
@@ -503,7 +506,27 @@ const I18N = {
     labelOptionLienCommande: "Lien de commande (numéro WhatsApp affiché + bouton « Copier le lien » par article)",
     labelOptionNotifStatut: "Notifications de statut (message WhatsApp automatique au client)",
     labelOptionFacturationIzyfacture: "Facturation IzyFacture (facturation automatique des commandes confirmées)",
+    labelOptionCaissePos: "Caisse POS (encaissement en boutique physique, onglet Caisse — utilise le même stock que la vente en ligne)",
     alertOptionsEnregistrees: "Options enregistrées.",
+
+    placeholderRechercheCaisse: "Rechercher un article à vendre (nom, catégorie, couleur, taille…)",
+    caisseAucunResultat: "Aucun article ne correspond à cette recherche.",
+    caisseEpuise: "épuisé",
+    caisseStockDisponible: "{n} disponible(s)",
+    caisseStockInsuffisant: "Stock insuffisant : {n} disponible(s) seulement.",
+    caissePanierTitre: "Vente en cours",
+    caissePanierVide: "Aucun article ajouté pour l'instant — cliquez sur un article à gauche pour l'ajouter.",
+    caisseQuantiteLabel: "Quantité",
+    caisseTotalLabel: "Total :",
+    caisseModePaiementLabel: "Mode de paiement",
+    caisseMode_especes: "Espèces",
+    caisseMode_momo: "Mobile Money",
+    caisseMode_carte: "Carte de crédit",
+    btnEncaisser: "Encaisser",
+    caisseVenteReussieTitre: "Vente enregistrée",
+    caisseRecuVendeur: "Vendu par",
+    btnImprimerRecu: "Imprimer le reçu",
+    btnNouvelleVente: "Nouvelle vente",
 
     h3NotifStatut: "Notifications de statut (facultatif)",
     descNotifStatut: "Envoyez automatiquement un message WhatsApp au client quand une de ses commandes change de statut. Activez uniquement les statuts qui vous intéressent — les autres restent silencieux. Laissez un texte vide pour utiliser un message par défaut correct. « {ref} » dans votre texte est remplacé par la référence de la commande (ex : CMD-0042).",
@@ -577,6 +600,7 @@ const I18N = {
     roleInventaire: "Inventory",
     roleCatalogue: "Catalog & stock",
     roleCommandes: "Orders",
+    roleCaisse: "Register",
 
     ongletTableauDeBord: "Dashboard",
     ongletServices: "Services",
@@ -591,6 +615,7 @@ const I18N = {
     ongletRapports: "Reports",
     ongletInventaire: "Inventory",
     ongletParametres: "Settings",
+    ongletCaisse: "Register",
     accesNonConfigure: "No access configured for this account — contact the merchant owner.",
 
     catalogueEtStock: "Catalog & stock",
@@ -657,6 +682,7 @@ const I18N = {
     theadStatut: "Status",
     badgeRetrait: "🏪 In-store pickup",
     badgeLivraison: "🚚 Delivery",
+    badgeCaisse: "🧾 In-store sale",
     optionLivraison: "Delivery",
     optionRetrait: "Pickup",
     raisonPrefixe: "Reason: ",
@@ -924,7 +950,27 @@ const I18N = {
     labelOptionLienCommande: "Order link (displayed WhatsApp number + per-item \"Copy link\" button)",
     labelOptionNotifStatut: "Status notifications (automatic WhatsApp message to the customer)",
     labelOptionFacturationIzyfacture: "IzyFacture invoicing (automatic invoicing of confirmed orders)",
+    labelOptionCaissePos: "POS Register (in-store checkout, Register tab — uses the same stock as online sales)",
     alertOptionsEnregistrees: "Options saved.",
+
+    placeholderRechercheCaisse: "Search for an item to sell (name, category, color, size…)",
+    caisseAucunResultat: "No item matches this search.",
+    caisseEpuise: "out of stock",
+    caisseStockDisponible: "{n} available",
+    caisseStockInsuffisant: "Not enough stock: only {n} available.",
+    caissePanierTitre: "Current sale",
+    caissePanierVide: "No items added yet — click an item on the left to add it.",
+    caisseQuantiteLabel: "Quantity",
+    caisseTotalLabel: "Total:",
+    caisseModePaiementLabel: "Payment method",
+    caisseMode_especes: "Cash",
+    caisseMode_momo: "Mobile Money",
+    caisseMode_carte: "Credit card",
+    btnEncaisser: "Checkout",
+    caisseVenteReussieTitre: "Sale recorded",
+    caisseRecuVendeur: "Sold by",
+    btnImprimerRecu: "Print receipt",
+    btnNouvelleVente: "New sale",
 
     h3NotifStatut: "Status notifications (optional)",
     descNotifStatut: "Automatically send a WhatsApp message to the customer when one of their orders changes status. Only enable the statuses you care about — the others stay silent. Leave a text empty to use a sensible default message. \"{ref}\" in your text is replaced with the order reference (e.g. CMD-0042).",
@@ -1205,6 +1251,10 @@ function rolesDisponibles() {
   // septembre 2026) : gérer le stock/prix (ex: un(e) gestionnaire de stock) n'implique pas de voir/traiter
   // les commandes clients, et inversement quelqu'un qui prépare/expédie les commandes n'a pas forcément
   // besoin d'échanger avec les clients (Conversations) - chacune s'attribue indépendamment.
+  // "caisse" (29 septembre 2026, option payante superadmin "Caisse POS" - voir blocOptionsPayantesHtml) :
+  // n'apparaît dans la liste des rôles attribuables que si l'option est débloquée pour ce marchand, sinon
+  // attribuer ce rôle à un employé ne servirait à rien (l'onglet Caisse lui-même reste invisible tant que
+  // l'option n'est pas active - voir construireOnglets() ci-dessous).
   return [
     ["catalogue", t("roleCatalogue")],
     ["commandes", t("roleCommandes")],
@@ -1213,7 +1263,7 @@ function rolesDisponibles() {
     ["rapports", t("roleRapports")],
     ["inventaire", t("roleInventaire")],
     ["parametres", t("roleParametres")]
-  ];
+  ].concat(marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : []);
 }
 
 function construireOnglets() {
@@ -1238,6 +1288,11 @@ function construireOnglets() {
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
         ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue"],
         ["commandes", t("ongletCommandes"), renderCommandes, "commandes"],
+        // "Caisse" (29 septembre 2026, option payante superadmin "optionCaissePos") : cet onglet entier
+        // n'existe meme pas dans le tableau (pas seulement filtre par role) tant que l'option n'est pas
+        // debloquee - invisible pour TOUT LE MONDE, y compris le proprietaire du marchand, contrairement
+        // aux autres onglets ci-dessous qui ne dependent que du role de l'utilisateur connecte.
+        marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse"] : null,
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", t("ongletRapports"), renderRapports, "rapports"],
         ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire"],
@@ -1245,7 +1300,7 @@ function construireOnglets() {
         ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
         ["compte", t("ongletCompte"), renderCompte, null]
-      ];
+      ].filter(Boolean);
 
   onglets = onglets.filter((o) => {
     const permission = o[3];
@@ -1571,6 +1626,206 @@ let commandesFiltreJour = new Date().toISOString().slice(0, 10);
 let commandesFiltrePlageDu = new Date().toISOString().slice(0, 10);
 let commandesFiltrePlageAu = new Date().toISOString().slice(0, 10);
 
+// ---------------- Caisse POS (29 septembre 2026) ----------------
+// Etat de la vente EN COURS a la caisse - hors fonction (meme principe que catalogueTexteRecherche/
+// commandesFiltreStatut ci-dessus) pour survivre a un redraw() complet de l'onglet (ajout d'un article au
+// panier, changement de quantite...). Remis a zero uniquement apres un encaissement reussi (voir
+// renderCaisse ci-dessous) - JAMAIS a un simple changement d'onglet, pour ne pas perdre une vente en cours
+// si le caissier consulte par erreur un autre onglet puis revient sur Caisse.
+let caissePanier = []; // [{productId, produit, couleur, taille, prixUnitaire, quantite, stockVirtuel}]
+let caisseTexteRecherche = "";
+let caisseModePaiement = "especes";
+
+async function renderCaisse() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const catalogue = await api("/api/" + marchandActif.id + "/catalogue");
+
+  // Aplati chaque variante en une ligne directement "vendable" (article + couleur + taille) : au comptoir,
+  // la vitesse prime - pas besoin du parcours en 2 temps (choisir l'article PUIS sa variante) utilise cote
+  // client WhatsApp, un seul clic suffit ici.
+  const toutesLesLignes = [];
+  catalogue.forEach((p) => {
+    (p.variantes || []).forEach((v) => {
+      toutesLesLignes.push({ productId: p.id, produit: p.nom, cat: p.cat || "", couleur: v.couleur, taille: v.taille, prix: v.prix, stockVirtuel: v.stockVirtuel });
+    });
+  });
+
+  function ligneCorrespond(l, texte) {
+    const cible = normaliserRecherche(texte);
+    if (!cible) return true;
+    return normaliserRecherche(l.produit).indexOf(cible) !== -1 ||
+      normaliserRecherche(l.cat).indexOf(cible) !== -1 ||
+      normaliserRecherche(l.couleur).indexOf(cible) !== -1 ||
+      normaliserRecherche(l.taille).indexOf(cible) !== -1;
+  }
+
+  function trouverLignePanier(productId, couleur, taille) {
+    return caissePanier.find((it) => it.productId === productId && it.couleur === couleur && it.taille === taille);
+  }
+
+  function ajouterAuPanier(l) {
+    const existante = trouverLignePanier(l.productId, l.couleur, l.taille);
+    const dejaAu = existante ? existante.quantite : 0;
+    if (dejaAu + 1 > l.stockVirtuel) { alert(t("caisseStockInsuffisant", { n: l.stockVirtuel })); return; }
+    if (existante) existante.quantite += 1;
+    else caissePanier.push({ productId: l.productId, produit: l.produit, couleur: l.couleur, taille: l.taille, prixUnitaire: l.prix, quantite: 1, stockVirtuel: l.stockVirtuel });
+    redraw();
+  }
+
+  function changerQuantite(idx, delta) {
+    const it = caissePanier[idx];
+    if (!it) return;
+    const nouvelle = it.quantite + delta;
+    if (nouvelle < 1) { caissePanier.splice(idx, 1); redraw(); return; }
+    if (nouvelle > it.stockVirtuel) { alert(t("caisseStockInsuffisant", { n: it.stockVirtuel })); return; }
+    it.quantite = nouvelle;
+    redraw();
+  }
+
+  function totalPanier() {
+    return caissePanier.reduce((s, it) => s + it.prixUnitaire * it.quantite, 0);
+  }
+
+  // Filtrage live SANS reconstruire tout le DOM (meme principe que la recherche du Catalogue, Etape 30) :
+  // seule la visibilite des lignes de resultats change ici, pour ne jamais faire perdre le focus au champ
+  // de recherche en pleine frappe. Ne touche jamais au panier, deja construit independamment.
+  function appliquerFiltreRechercheCaisse() {
+    let visibles = 0;
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-ligne-caisse]"), (btn) => {
+      const l = toutesLesLignes[Number(btn.dataset.ligneCaisse)];
+      const correspond = ligneCorrespond(l, caisseTexteRecherche);
+      btn.style.display = correspond ? "" : "none";
+      if (correspond) visibles++;
+    });
+    const msgVide = document.getElementById("caisseAucunResultatMsg");
+    if (msgVide) msgVide.style.display = visibles === 0 ? "" : "none";
+  }
+
+  function redraw() {
+    zone.innerHTML =
+      "<h2>" + t("ongletCaisse") + "</h2>" +
+      "<div style='display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;'>" +
+        "<div style='flex:1; min-width:280px;'>" +
+          "<input id='champRechercheCaisse' type='search' value=\"" + esc(caisseTexteRecherche) + "\" placeholder=\"" + esc(t("placeholderRechercheCaisse")) + "\" style='width:100%; margin-bottom:10px; box-sizing:border-box;' />" +
+          "<div id='resultatsCaisse' style='max-height:440px; overflow:auto; border:1px solid #e1e5ea; border-radius:8px;'>" +
+            (toutesLesLignes.length ? toutesLesLignes.map((l, idx) => {
+              const epuise = l.stockVirtuel <= 0;
+              const visible = ligneCorrespond(l, caisseTexteRecherche);
+              return "<button data-ligne-caisse='" + idx + "'" + (epuise ? " disabled" : "") + " style='display:" + (visible ? "" : "none") + "; width:100%; text-align:left; padding:10px 12px; border:none; border-bottom:1px solid #eee; background:" + (epuise ? "#f5f5f5" : "#fff") + "; cursor:" + (epuise ? "not-allowed" : "pointer") + ";'>" +
+                "<strong>" + esc(l.produit) + "</strong> — " + esc(l.couleur) + " " + esc(l.taille) +
+                "<span style='float:right; color:#666;'>" + l.prix.toLocaleString(localeCourante()) + " FCFA · " + (epuise ? t("caisseEpuise") : t("caisseStockDisponible", { n: l.stockVirtuel })) + "</span>" +
+              "</button>";
+            }).join("") : "") +
+          "</div>" +
+          "<p id='caisseAucunResultatMsg' class='raison' style='display:none; padding:10px 0;'>" + t("caisseAucunResultat") + "</p>" +
+        "</div>" +
+        "<div style='flex:1; min-width:280px;'>" +
+          "<h3>" + t("caissePanierTitre") + "</h3>" +
+          (caissePanier.length
+            ? "<table class='table-donnees'><tr><th>" + t("theadArticles") + "</th><th>" + t("caisseQuantiteLabel") + "</th><th>" + t("theadTotal") + "</th><th></th></tr>" +
+              caissePanier.map((it, i) =>
+                "<tr>" +
+                  "<td>" + esc(it.produit) + "<br/><span class='raison'>" + esc(it.couleur) + " " + esc(it.taille) + "</span></td>" +
+                  "<td style='white-space:nowrap;'><button data-caisse-moins='" + i + "'>−</button> " + it.quantite + " <button data-caisse-plus='" + i + "'>+</button></td>" +
+                  "<td>" + (it.prixUnitaire * it.quantite).toLocaleString(localeCourante()) + " FCFA</td>" +
+                  "<td><button data-caisse-retirer='" + i + "' class='danger'>×</button></td>" +
+                "</tr>"
+              ).join("") +
+              "</table>"
+            : "<p class='raison'>" + t("caissePanierVide") + "</p>") +
+          "<h3 style='margin-top:16px;'>" + t("caisseTotalLabel") + " " + totalPanier().toLocaleString(localeCourante()) + " FCFA</h3>" +
+          "<label style='display:block; margin-top:10px;'>" + t("caisseModePaiementLabel") + "</label>" +
+          "<div style='display:flex; gap:10px; margin:8px 0 16px; flex-wrap:wrap;'>" +
+            ["especes", "momo", "carte"].map((m) =>
+              "<label style='border:1px solid " + (caisseModePaiement === m ? "#1e6fd9" : "#ccc") + "; border-radius:8px; padding:8px 14px; cursor:pointer;'>" +
+                "<input type='radio' name='caisseModePaiement' value='" + m + "'" + (caisseModePaiement === m ? " checked" : "") + " style='margin-right:6px;' />" +
+                t("caisseMode_" + m) +
+              "</label>"
+            ).join("") +
+          "</div>" +
+          "<button id='btnEncaisser' class='principal'" + (!caissePanier.length ? " disabled" : "") + ">" + t("btnEncaisser") + "</button>" +
+        "</div>" +
+      "</div>";
+
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-ligne-caisse]"), (btn) => {
+      btn.onclick = () => ajouterAuPanier(toutesLesLignes[Number(btn.dataset.ligneCaisse)]);
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-plus]"), (btn) => {
+      btn.onclick = () => changerQuantite(Number(btn.dataset.caissePlus), 1);
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-moins]"), (btn) => {
+      btn.onclick = () => changerQuantite(Number(btn.dataset.caisseMoins), -1);
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-retirer]"), (btn) => {
+      btn.onclick = () => { caissePanier.splice(Number(btn.dataset.caisseRetirer), 1); redraw(); };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("input[name='caisseModePaiement']"), (radio) => {
+      radio.onchange = () => { caisseModePaiement = radio.value; redraw(); };
+    });
+    const champRecherche = document.getElementById("champRechercheCaisse");
+    if (champRecherche) {
+      champRecherche.addEventListener("input", () => {
+        caisseTexteRecherche = champRecherche.value;
+        appliquerFiltreRechercheCaisse();
+      });
+    }
+    const btnEncaisser = document.getElementById("btnEncaisser");
+    if (btnEncaisser) {
+      btnEncaisser.onclick = async () => {
+        if (!caissePanier.length) return;
+        btnEncaisser.disabled = true;
+        try {
+          const commande = await api("/api/" + marchandActif.id + "/pos/vente", {
+            method: "POST",
+            body: JSON.stringify({
+              lignes: caissePanier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite })),
+              modePaiement: caisseModePaiement
+            })
+          });
+          caissePanier = [];
+          caisseTexteRecherche = "";
+          afficherRecuCaisse(commande);
+        } catch (e) {
+          alert(t("erreurPrefixe") + e.message);
+          btnEncaisser.disabled = false;
+        }
+      };
+    }
+
+    appliquerFiltreRechercheCaisse();
+  }
+
+  redraw();
+}
+
+// Ecran de confirmation apres un encaissement reussi - remplace tout le contenu de l'onglet (rien d'autre
+// a l'ecran) pour que "Imprimer le reçu" (window.print(), aucune integration materielle ESC-POS/Bluetooth
+// necessaire pour cette V1) imprime bien UNIQUEMENT le reçu, pas le reste de l'interface /admin.
+function afficherRecuCaisse(commande) {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML =
+    "<div id='recuCaisse'>" +
+      "<h2>" + t("caisseVenteReussieTitre") + "</h2>" +
+      "<p><strong>" + t("theadNumero") + " :</strong> CMD-" + String(commande.id).padStart(4, "0") + "</p>" +
+      "<p><strong>" + t("theadDateCourt") + " :</strong> " + esc(new Date(commande.dateISO).toLocaleString(localeCourante())) + "</p>" +
+      "<p><strong>" + t("caisseRecuVendeur") + " :</strong> " + esc(commande.caissier || "") + "</p>" +
+      "<table class='table-donnees'><tr><th>" + t("theadArticles") + "</th><th>" + t("caisseQuantiteLabel") + "</th><th>" + t("theadTotal") + "</th></tr>" +
+        (commande.items || []).map((it) =>
+          "<tr><td>" + esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ")</td><td>" + it.quantite + "</td><td>" + (it.prix || 0).toLocaleString(localeCourante()) + " FCFA</td></tr>"
+        ).join("") +
+      "</table>" +
+      "<h3>" + t("caisseTotalLabel") + " " + (commande.prix || 0).toLocaleString(localeCourante()) + " FCFA</h3>" +
+      "<p>" + t("caisseModePaiementLabel") + " : " + t("caisseMode_" + commande.modePaiement) + "</p>" +
+    "</div>" +
+    "<div style='margin-top:16px;'>" +
+      "<button id='btnImprimerRecu'>" + t("btnImprimerRecu") + "</button> " +
+      "<button id='btnNouvelleVenteCaisse' class='principal'>" + t("btnNouvelleVente") + "</button>" +
+    "</div>";
+  document.getElementById("btnImprimerRecu").onclick = () => window.print();
+  document.getElementById("btnNouvelleVenteCaisse").onclick = () => renderCaisse();
+}
+
 // Pont IzyFacture (voir izyfacture.js/server.js) : badge + bouton "Facturer"/"Réessayer" par commande, dans
 // l'onglet Commandes. Toujours affiche (meme si le marchand n'a pas encore connecte IzyFacture) - le bouton
 // renvoie alors une erreur claire ("Aucune clé IzyFacture enregistrée...") plutot que d'obliger a deviner
@@ -1685,11 +1940,13 @@ async function renderCommandes() {
         "<td>" + (o.items || []).map((it) => esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ") ×" + it.quantite).join("<br/>") + "</td>" +
         "<td>" + (o.items || []).reduce((somme, it) => somme + (Number(it.quantite) || 0), 0) + "</td>" +
         "<td>" + (o.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
-        "<td>" + (o.modeLivraison === "retrait"
+        "<td>" + (o.source === "pos"
+          ? "<span style='background:#ece3fb; color:#5a3a9a; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeCaisse") + "</span>"
+          : o.modeLivraison === "retrait"
           ? "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeRetrait") + "</span>"
           : "<span style='background:#e2f0ff; color:#0a4a8f; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeLivraison") + "</span>") + "</td>" +
-        "<td>" + esc(o.telephone) + "</td>" +
-        "<td>" + esc(o.adresse) + "</td>" +
+        "<td>" + (o.source === "pos" ? "—" : esc(o.telephone)) + "</td>" +
+        "<td>" + (o.source === "pos" ? "—" : esc(o.adresse)) + "</td>" +
         "<td><select data-commande='" + o.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === o.statut ? " selected" : "") + ">" + esc(libelleStatutCommande(s)) + "</option>").join("") + "</select>" +
           (o.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
@@ -2821,6 +3078,7 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionLienCommande'" + (marchandActif.optionLienCommande ? " checked" : "") + " /> " + t("labelOptionLienCommande") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionNotifStatut'" + (marchandActif.optionNotificationsStatut ? " checked" : "") + " /> " + t("labelOptionNotifStatut") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionFacturationIzyfacture'" + (marchandActif.optionFacturationIzyfacture ? " checked" : "") + " /> " + t("labelOptionFacturationIzyfacture") + "</label>" +
+    "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaissePos'" + (marchandActif.optionCaissePos ? " checked" : "") + " /> " + t("labelOptionCaissePos") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>";
 }
 function brancherBlocOptionsPayantes() {
@@ -2832,7 +3090,8 @@ function brancherBlocOptionsPayantes() {
           optionStockIllimite: document.getElementById("champOptionStockIllimite").checked,
           optionLienCommande: document.getElementById("champOptionLienCommande").checked,
           optionNotificationsStatut: document.getElementById("champOptionNotifStatut").checked,
-          optionFacturationIzyfacture: document.getElementById("champOptionFacturationIzyfacture").checked
+          optionFacturationIzyfacture: document.getElementById("champOptionFacturationIzyfacture").checked,
+          optionCaissePos: document.getElementById("champOptionCaissePos").checked
         })
       });
       alert(t("alertOptionsEnregistrees"));

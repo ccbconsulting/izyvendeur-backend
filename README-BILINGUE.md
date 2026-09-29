@@ -959,6 +959,56 @@ peuvent, eux, réellement supprimer) et avec un vrai navigateur piloté (bouton 
 le seul rôle Catalogue, présent et fonctionnel pour le propriétaire) + régression complète (25 fichiers de
 tests) rejouée sans casse.
 
+## Étape 32 — IzyVendeur Caisse POS (encaissement en boutique physique, nouveau)
+
+Demandé le 29 septembre 2026 : donner aux marchands qui vendent aussi sur place (boutique physique, stand)
+un moyen d'encaisser directement depuis `/admin`, sans logiciel de caisse séparé ni double saisie. Discuté
+avant construction (comme pour chaque nouveauté de cette ampleur) : décision retenue = un nouvel onglet
+"Caisse" qui utilise le MÊME moteur catalogue que le bot WhatsApp, pas un système parallèle avec son propre
+stock. Une vente en boutique et une commande WhatsApp se disputent donc honnêtement les mêmes pièces : si un
+client WhatsApp a déjà une commande Confirmée/Commandée/Expédiée qui réserve un article, la Caisse ne peut
+pas vendre par-dessus cette réservation (même calcul de stock disponible que celui déjà utilisé par le bot).
+
+Fonctionnement : recherche d'un article par nom/catégorie/couleur/taille (même moteur de recherche que
+l'Étape 30, insensible casse/accents), clic direct sur la ligne couleur+taille voulue pour l'ajouter au
+panier (pas besoin de choisir l'article PUIS sa variante comme côté client WhatsApp — étape superflue au
+comptoir), quantité ajustable par + / −, choix du mode de paiement (Espèces / Mobile Money / **Carte de
+crédit**), puis "Encaisser". Contrairement à une commande WhatsApp (qui naît "Nouvelle" et suit un vrai
+cycle de statuts), une vente comptoir est immédiate : elle est créée directement au statut "Livrée", ce qui
+décrémente réellement le stock dès la vente (pas seulement une réservation) — une erreur de caisse se
+corrige ensuite comme n'importe quelle commande, en repassant son statut à "Annulée" depuis l'onglet
+Commandes (restaure alors le stock automatiquement, mécanisme déjà existant). Un reçu s'affiche après
+l'encaissement (numéro, date, vendeur, articles, total, mode de paiement) avec un bouton "Imprimer" —
+impression navigateur simple pour cette V1, aucune intégration matérielle ESC-POS/Bluetooth nécessaire.
+
+Grâce à la réutilisation du moteur existant, **aucun code de rapport séparé n'a été nécessaire** : une vente
+Caisse devient une commande normale (`source:"pos"`) immédiatement visible dans l'onglet Commandes (nouveau
+badge "🧾 Vente en boutique", téléphone/adresse affichés "—"), et comptée automatiquement dans le Tableau de
+bord et les Rapports déjà existants, aux côtés des commandes WhatsApp.
+
+Nouveau rôle employé "Caisse", indépendant des autres (un vendeur en boutique n'a besoin que de ce rôle,
+rien d'autre) — peut consulter le catalogue (prix/stock, pour chercher un article) mais jamais le modifier.
+Rendue **option payante réservée au super-administrateur** (bloc "Options payantes" de Mon compte, même
+principe que Stock illimité/Lien de commande/Notifications de statut/Facturation IzyFacture) : l'onglet
+Caisse et le rôle employé correspondant restent totalement invisibles — y compris pour le propriétaire du
+marchand — tant que l'option n'est pas explicitement débloquée ici ; la route `POST /api/:id/pos/vente`
+refuse aussi toute action par appel direct à l'API tant que l'option n'est pas débloquée (défense en
+profondeur, même principe que les options payantes précédentes). Hors-ligne volontairement écarté pour
+cette V1 (connexion supposée disponible, comme pour le reste de `/admin`) — pourra être reconsidéré plus
+tard si un marchand concret en a besoin. Le reste (crédit client, autres moyens de paiement, reçu WhatsApp
+au client...) viendra au fur et à mesure si demandé.
+
+Testé le 29 septembre 2026 : côté serveur (vente refusée tant que l'option n'est pas débloquée même au bon
+rôle, refusée à un employé sans le rôle "Caisse" même option débloquée, vente acceptée qui décrémente
+réellement le même stock que le bot WhatsApp, vente refusée EN ENTIER si le stock disponible est
+insuffisant — rien n'est décompté dans ce cas —, mode de paiement invalide refusé, vente bien visible dans
+`GET /api/:id/commandes`) et avec un vrai navigateur piloté (onglet absent tant que l'option n'est pas
+débloquée y compris pour le propriétaire, absent pour un employé sans le rôle "Caisse" même option
+débloquée, présent pour la caissière, recherche sans perte de focus, ajout au panier, ajustement de
+quantité, choix du mode de paiement, encaissement, reçu affiché avec le bon total et le bon vendeur, panier
+remis à zéro après "Nouvelle vente", stock réellement décrémenté vérifié en fin de parcours) + régression
+complète (27 fichiers de tests) rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -993,7 +1043,14 @@ tests) rejouée sans casse.
   + nouveaux champs de suivi des paiements (`izyfactureFactureStatut`/`izyfactureSolde`/
   `izyfactureRecuNumero`/`izyfacturePaiements`), distincts des champs ci-dessus qui ne décrivent que le
   cycle de vie de la facture elle-même (Étape 26) + nouveau champ `izyfactureUrlVerification` (lien public
-  de vérification de la facture, `null` si IzyFacture ne le fournit pas) (Étape 27)
+  de vérification de la facture, `null` si IzyFacture ne le fournit pas) (Étape 27) + nouvelle fonction
+  `creerVentePos` (Caisse POS) : valide TOUTES les lignes d'une vente AVANT de toucher au moindre stock
+  (atomique — jamais un article décompté puis un autre refusé en cours de route), vérifie la disponibilité
+  via `virtualStock` (donc en tenant compte des commandes WhatsApp déjà réservées — vente comptoir et vente
+  en ligne se disputent honnêtement le même stock), crée directement une commande au statut "Livrée"
+  (`source:"pos"`, décrémente réellement le stock dès la création, pas une simple réservation) — une
+  annulation ultérieure passe par le circuit `updateOrderStatus`/`applyStatusChange` déjà existant, qui
+  restaure alors le stock automatiquement (Étape 32)
 - `izyfacture.js` (**nouveau fichier**) — client HTTP minimal (aucune dépendance, `fetch` natif) vers l'API
   IzyFacture v1 : vérification de clé (`GET /me`), création/retrouvaille de facture (`POST /invoices`,
   jamais de doublon grâce à la référence de commande), avoir sur annulation (`POST .../credit-notes`),
@@ -1079,7 +1136,12 @@ tests) rejouée sans casse.
   si un catalogue soumis par un employé (rôle "Catalogue", pas propriétaire/super-administrateur) est plus
   court qu'avant, l'article manquant est silencieusement réinjecté (même principe déjà en place pour
   l'option "Stock illimité" sur cette même route) — le propriétaire/super-administrateur peuvent, eux,
-  réellement supprimer (Étape 31)
+  réellement supprimer (Étape 31) + nouveau rôle employé "caisse" (`ROLES_EMPLOYE_VALIDES`) + `GET
+  /api/:id/catalogue` désormais accessible aussi avec ce seul rôle (lecture seule — jamais `PUT`, resté
+  strictement réservé au rôle "Catalogue") + nouvelle route `POST /api/:id/pos/vente` (réservée au rôle
+  "caisse" ET à l'option payante superadmin `optionCaissePos`, même défense en profondeur que Facturation
+  IzyFacture) qui délègue à `creerVentePos` (voir `conversation.js`) + `GET /api/marchands` et `PUT
+  /api/marchands/:id/options-payantes` étendus à cette 5e option payante `optionCaissePos` (Étape 32)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)
@@ -1136,7 +1198,18 @@ tests) rejouée sans casse.
   de la recherche après un rechargement complet de l'onglet déclenché par une autre action (Étape 30) +
   bouton "Supprimer l'article" (onglet Catalogue) désormais masqué pour un employé n'ayant que le rôle
   "Catalogue" (`estGestionnaireCatalogue`), toujours visible pour le propriétaire/super-administrateur
-  (Étape 31)
+  (Étape 31) + nouvel onglet "Caisse" (`renderCaisse`/`afficherRecuCaisse`), entièrement absent de la barre
+  d'onglets (y compris pour le propriétaire du marchand) tant que l'option payante "Caisse POS" n'est pas
+  débloquée pour ce marchand ; recherche d'article réutilisant le moteur de l'Étape 30 (insensible
+  casse/accents, filtrage live sans perte de focus), chaque ligne couleur+taille directement cliquable pour
+  l'ajouter au panier, quantité ajustable (+/−), 3 modes de paiement (Espèces/Mobile Money/**Carte de
+  crédit**), bouton "Encaisser" qui appelle `POST /api/:id/pos/vente` puis affiche un reçu imprimable
+  (bouton "Imprimer" via `window.print()`, aucune dépendance externe) et repart sur un panier vide via
+  "Nouvelle vente" + nouveau rôle "Caisse" dans la liste des rôles attribuables (onglet Employés),
+  lui-même absent tant que l'option n'est pas débloquée + nouvelle case "Caisse POS" dans le bloc "Options
+  payantes" (Mon compte, réservé au super-administrateur, même principe que les 4 précédentes) + onglet
+  Commandes : nouveau badge "🧾 Vente en boutique" pour une commande `source:"pos"` (téléphone/adresse
+  affichés "—" au lieu d'un champ vide) (Étape 32)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
@@ -1157,7 +1230,8 @@ tests) rejouée sans casse.
   y compris ceux qui avaient déjà une clé IzyFacture enregistrée (Étape 21) + nouvelle colonne
   `filigrane_logo_actif`, VRAIE par défaut (`DEFAULT true`, donc tous les marchands existants la reçoivent
   automatiquement dès l'ajout de la colonne, contrairement aux options payantes ci-dessus qui démarrent
-  toutes à faux) (Étape 29)
+  toutes à faux) (Étape 29) + nouvelle colonne `option_caisse_pos`, fausse par défaut pour tous les
+  marchands existants, même principe que les options payantes précédentes (Étape 32)
 
 ## Comment déployer
 
