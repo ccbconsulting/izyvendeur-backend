@@ -452,6 +452,7 @@ const I18N = {
     descLogo: "Facultatif. Affiché en haut de l'écran /admin uniquement — votre identité de marque stable. N'est PAS envoyé aux clients sur WhatsApp (voir \"Image d'accueil WhatsApp\" ci-dessous pour ça). JPEG, PNG ou WEBP, 5 Mo maximum.",
     btnUploaderLogo: "Envoyer",
     confirmSupprimerLogo: "Supprimer ce logo ?",
+    labelFiligraneLogo: "Afficher ce logo en filigrane discret dans l'espace de travail (tableaux, tableau de bord, etc.)",
     h3ImageAccueilWhatsapp: "Image d'accueil WhatsApp",
     descImageAccueilWhatsapp: "Facultative, INDÉPENDANTE du logo ci-dessus. Envoyée par le bot en tout premier (avant le message de bienvenue) au tout premier message d'un nouveau contact — jamais répétée ensuite. Changez-la librement pour une promo, un flyer, une offre du moment, sans toucher à votre logo. JPEG, PNG ou WEBP, 5 Mo maximum.",
     btnUploaderImageAccueil: "Envoyer",
@@ -868,6 +869,7 @@ const I18N = {
     descLogo: "Optional. Shown at the top of the /admin screen only — your stable brand identity. NOT sent to customers on WhatsApp (see \"WhatsApp welcome image\" below for that). JPEG, PNG or WEBP, 5 MB max.",
     btnUploaderLogo: "Upload",
     confirmSupprimerLogo: "Delete this logo?",
+    labelFiligraneLogo: "Show this logo as a subtle watermark across the workspace (tables, dashboard, etc.)",
     h3ImageAccueilWhatsapp: "WhatsApp welcome image",
     descImageAccueilWhatsapp: "Optional, INDEPENDENT from the logo above. Sent by the bot first (before the welcome message) on a new contact's very first message — never repeated afterward. Change it freely for a promo, a flyer, a current offer, without touching your logo. JPEG, PNG or WEBP, 5 MB max.",
     btnUploaderImageAccueil: "Upload",
@@ -1119,6 +1121,37 @@ document.getElementById("btnNouveauMarchand").onclick = async () => {
   } catch (e) { alert(t("erreurPrefixe") + e.message); }
 };
 
+// Filigrane du logo /admin (29 septembre 2026) : reprend le logo du marchand actif en tres faible
+// opacite, en arriere-plan de la zone de contenu (#contenuOnglet) - donc visible sur TOUS les onglets sans
+// qu'aucune fonction renderXxx() n'ait besoin d'y penser individuellement (le CSS reste sur le conteneur
+// lui-meme, seul son innerHTML change a chaque onglet). Technique choisie : deux calques de
+// background-image sur le MEME element (un degrade blanc quasi opaque au-dessus du logo), plutot qu'un
+// simple "opacity" CSS sur #contenuOnglet - qui affaiblirait aussi tout le texte/les tableaux a
+// l'interieur, pas seulement le logo. Desactivable par le marchand (case a cocher dans Mon compte, voir
+// blocLogoHtml/brancherBlocLogo) - "!== false" et non "=== true" : un marchand qui n'a jamais touche ce
+// reglage doit le voir actif par defaut des qu'il a un logo.
+function appliquerFiligraneLogo() {
+  const zone = document.getElementById("contenuOnglet");
+  const actif = !!(marchandActif && marchandActif.logoUrl) && marchandActif.filigraneLogoActif !== false;
+  if (!actif) {
+    zone.style.backgroundImage = "";
+    zone.style.backgroundRepeat = "";
+    zone.style.backgroundPosition = "";
+    zone.style.backgroundSize = "";
+    return;
+  }
+  // Opacite et taille volontairement tres reduites : un premier essai a 6% sur un logo plein (grand cercle
+  // navy) restait nettement visible a l'ecran (contour net + grande surface = perception amplifiee, meme
+  // avec un delta de couleur mathematiquement faible) - verifie par capture d'ecran reelle avant ce reglage
+  // final. 3% + empreinte plus petite (220px max) donne un rendu vraiment discret, y compris pour un logo a
+  // fond plein (pas seulement un logo a fond transparent).
+  zone.style.backgroundImage =
+    "linear-gradient(rgba(255,255,255,0.97), rgba(255,255,255,0.97)), url(\"" + marchandActif.logoUrl + "\")";
+  zone.style.backgroundRepeat = "no-repeat, no-repeat";
+  zone.style.backgroundPosition = "center, center 90px";
+  zone.style.backgroundSize = "cover, min(220px, 42%) auto";
+}
+
 function choisirMarchand(id) {
   marchandActif = marchands.filter((m) => m.id === id)[0];
   document.getElementById("selecteurMarchand").value = id;
@@ -1130,6 +1163,7 @@ function choisirMarchand(id) {
     logoHeader.style.display = "none";
     logoHeader.removeAttribute("src");
   }
+  appliquerFiligraneLogo();
   if (moi.role === "superadmin") {
     const btnSuspendre = document.getElementById("btnSuspendreMarchand");
     const estActif = marchandActif.actif !== false;
@@ -2555,7 +2589,13 @@ function blocLogoHtml() {
         "<button id='btnUploaderLogo'>" + t("btnUploaderLogo") + "</button>" +
         (marchandActif.logoUrl ? " <button id='btnSupprimerLogo' class='danger'>" + t("supprimer") + "</button>" : "") +
       "</div>" +
-    "</div>";
+    "</div>" +
+    (marchandActif.logoUrl
+      ? "<label style='display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:10px;'>" +
+          "<input type='checkbox' id='champFiligraneLogo'" + (marchandActif.filigraneLogoActif !== false ? " checked" : "") + " /> " +
+          t("labelFiligraneLogo") +
+        "</label>"
+      : "");
 }
 
 function brancherBlocLogo() {
@@ -2577,6 +2617,22 @@ function brancherBlocLogo() {
       await api("/api/marchands/" + marchandActif.id + "/logo", { method: "DELETE" });
       await demarrer();
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  // Case "filigrane" (absente du HTML tant qu'il n'y a pas de logo, voir blocLogoHtml ci-dessus) -
+  // enregistrement immediat au changement, sans bouton "Enregistrer" separe : le filigrane apparaissant ou
+  // disparaissant tout de suite sous les yeux du marchand EST la confirmation, pas besoin d'une alerte en
+  // plus. Pas de rechargement complet (demarrer()) pour rester sur le marchand/l'onglet en cours.
+  const champFiligrane = document.getElementById("champFiligraneLogo");
+  if (champFiligrane) champFiligrane.onchange = async () => {
+    const valeur = champFiligrane.checked;
+    try {
+      await api("/api/" + marchandActif.id + "/filigrane-logo", { method: "PUT", body: JSON.stringify({ filigraneLogoActif: valeur }) });
+      marchandActif.filigraneLogoActif = valeur;
+      appliquerFiligraneLogo();
+    } catch (e) {
+      champFiligrane.checked = !valeur;
+      alert(t("erreurPrefixe") + e.message);
+    }
   };
 }
 

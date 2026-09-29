@@ -453,7 +453,12 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     // Dernier echec de LIVRAISON reel d'une alerte, signale par Meta apres coup (voir POST /webhook,
     // traitement de "statuses", Etape 25) - distinct du resultat du bouton "Tester l'alerte maintenant"
     // (qui ne voit qu'un echec immediat d'ENVOI, jamais un echec de livraison survenant juste apres).
-    derniereErreurAlerte: e.merchant.derniereErreurAlerte || null
+    derniereErreurAlerte: e.merchant.derniereErreurAlerte || null,
+    // Filigrane du logo en arriere-plan de /admin (29 septembre 2026, voir PUT /api/:id/filigrane-logo plus
+    // bas) - actif par defaut des qu'un logo existe (colonne DEFAULT true), desactivable au cas par cas par
+    // le marchand. "!== false" et non "=== true" : un marchand qui ne l'a JAMAIS reglee doit rester actif
+    // par defaut (contrairement aux options payantes ci-dessus, volontairement l'inverse).
+    filigraneLogoActif: e.merchant.filigraneLogoActif !== false
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -1195,6 +1200,21 @@ app.put("/api/:id/numero-whatsapp-public", protegerAcces, async (req, res) => {
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
   entry.merchant.numeroWhatsappPublic = maj.numeroWhatsappPublic;
   res.json({ id: req.params.id, numeroWhatsappPublic: maj.numeroWhatsappPublic });
+});
+
+// -- Filigrane du logo /admin (29 septembre 2026) : le marchand peut desactiver l'affichage de son logo en
+// filigrane dans la zone de contenu (voir appliquerFiligraneLogo() dans admin.html), par exemple si son
+// logo a un fond plein qui rend mal en transparence. Actif par defaut des qu'un logo existe (voir
+// filigrane_logo_actif dans db.js), donc cette route ne sert qu'a le DESACTIVER explicitement (ou le
+// reactiver ensuite) - jamais a fournir le logo lui-meme (voir POST/DELETE /api/marchands/:id/logo pour
+// ca). Memes regles de portee/permission que /notification et /numero-whatsapp-public ci-dessus. --
+app.put("/api/:id/filigrane-logo", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  const { filigraneLogoActif } = req.body || {};
+  const maj = await db.updateMerchantFields(req.params.id, { filigraneLogoActif: !!filigraneLogoActif });
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.filigraneLogoActif = maj.filigraneLogoActif;
+  res.json({ id: req.params.id, filigraneLogoActif: maj.filigraneLogoActif });
 });
 
 // -- Diagnostic "Tester l'alerte maintenant" -------------------------------------------------------

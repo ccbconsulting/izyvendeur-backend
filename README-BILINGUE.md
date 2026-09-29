@@ -881,6 +881,33 @@ catalogue, les 3 tuiles pour un marchand service (avec le bon repli de la tuile 
 navigation clavier, et le cas d'un employé sans le rôle "Conversations" qui ne voit pas cette tuile comme
 cliquable + régression complète rejouée sans casse.
 
+## Étape 29 — Filigrane du logo du marchand dans son espace de travail /admin (nouveau)
+
+Personnalisation demandée le 29 septembre 2026 : le logo /admin d'un marchand (déjà utilisé dans l'en-tête,
+voir Étape 7) s'affiche désormais aussi en très léger filigrane derrière tout le contenu de `/admin` —
+tableau de bord, commandes, catalogue, rapports, etc. — pour que chaque marchand reconnaisse son propre
+espace de travail au premier coup d'œil.
+
+Réglages retenus après discussion : le filigrane couvre TOUS les onglets (pas seulement le tableau de
+bord), et reste automatique dès qu'un marchand a un logo — mais une case à cocher dans Mon compte permet de
+le désactiver au cas par cas, pour un marchand dont le logo (fond plein, fort contraste) rendrait mal en
+filigrane.
+
+Un premier réglage à 6 % d'opacité, testé avec un vrai logo à fond plein (capture d'écran réelle, pas
+seulement le calcul), restait nettement visible — les grandes formes pleines se remarquent bien plus que
+prévu même à faible opacité. Réglage final retenu après vérification visuelle : 3 % d'opacité et une
+empreinte réduite (220 px maximum), obtenu par superposition de deux calques CSS sur le même élément (un
+dégradé blanc quasi opaque au-dessus du logo) plutôt qu'un simple `opacity`, qui aurait aussi affaibli le
+texte et les tableaux. Aucun impact serveur au-delà d'un nouveau réglage `filigraneLogoActif` par marchand
+(vrai par défaut) : aucune image n'est modifiée ni retraitée, c'est purement un effet d'affichage.
+
+Testé le 29 septembre 2026 : côté serveur (réglage par défaut actif sans jamais avoir été touché,
+activation/désactivation qui persiste, refusée à un employé sans le rôle "Paramètres") et avec un vrai
+navigateur piloté (filigrane présent pour un marchand avec logo y compris après changement d'onglet, absent
+pour un marchand sans logo — et pas de case à cocher inutile dans ce cas —, disparition immédiate au clic
+sur la case sans rechargement de page, persistance confirmée après un rechargement complet) + régression
+complète rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -994,7 +1021,10 @@ cliquable + régression complète rejouée sans casse.
   `izyfactureUrlVerification` (`invoice.verifyUrl`) et appelle la nouvelle fonction
   `notifierClientFactureCreee` (numéro, montant, lien de vérification si fourni) après une facturation
   RÉUSSIE et NOUVELLEMENT créée (jamais sur un retour "déjà existante", pour ne pas notifier deux fois le
-  même client) (Étape 27)
+  même client) (Étape 27) + `GET /api/marchands` expose désormais `filigraneLogoActif` par marchand (actif
+  par défaut, `!== false` et non `=== true`) + nouvelle route `PUT /api/:id/filigrane-logo` (case à cocher
+  "filigrane" dans Mon compte, mêmes règles de portée/permission — rôle "Paramètres" — que
+  `/notification` et `/numero-whatsapp-public`) (Étape 29)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)
@@ -1040,7 +1070,12 @@ cliquable + régression complète rejouée sans casse.
   de vérification (`izyfactureUrlVerification`), ouvert dans un nouvel onglet, totalement absent sinon
   (Étape 27) + les 5 tuiles du Tableau de bord deviennent cliquables (souris et clavier), chacune bascule
   vers l'onglet où sa donnée est détaillée, avec repli différent pour un marchand service et tuile non
-  cliquable si l'onglet cible n'est pas visible pour l'utilisateur connecté (Étape 28)
+  cliquable si l'onglet cible n'est pas visible pour l'utilisateur connecté (Étape 28) + le logo du
+  marchand s'affiche en filigrane très discret (3 % d'opacité) derrière tout le contenu de la zone
+  principale (`#contenuOnglet`), sur tous les onglets, via `appliquerFiligraneLogo()` appelée à chaque
+  changement de marchand + nouvelle case à cocher dans le bloc "Logo" de Mon compte (affichée uniquement
+  si un logo existe) pour le désactiver au cas par cas, enregistrement immédiat sans bouton séparé
+  (Étape 29)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
@@ -1058,7 +1093,10 @@ cliquable + régression complète rejouée sans casse.
   nouvelles colonnes `izyfacture_api_key` (clé chiffrée, voir `crypto-util.js`) et
   `izyfacture_auto_facturation`, vides/fausses par défaut pour tous les marchands existants (Étape 20) +
   nouvelle colonne `option_facturation_izyfacture`, fausse par défaut pour tous les marchands existants,
-  y compris ceux qui avaient déjà une clé IzyFacture enregistrée (Étape 21)
+  y compris ceux qui avaient déjà une clé IzyFacture enregistrée (Étape 21) + nouvelle colonne
+  `filigrane_logo_actif`, VRAIE par défaut (`DEFAULT true`, donc tous les marchands existants la reçoivent
+  automatiquement dès l'ajout de la colonne, contrairement aux options payantes ci-dessus qui démarrent
+  toutes à faux) (Étape 29)
 
 ## Comment déployer
 
