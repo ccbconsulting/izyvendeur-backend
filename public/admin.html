@@ -1140,16 +1140,17 @@ function appliquerFiligraneLogo() {
     zone.style.backgroundSize = "";
     return;
   }
-  // Opacite et taille volontairement tres reduites : un premier essai a 6% sur un logo plein (grand cercle
-  // navy) restait nettement visible a l'ecran (contour net + grande surface = perception amplifiee, meme
-  // avec un delta de couleur mathematiquement faible) - verifie par capture d'ecran reelle avant ce reglage
-  // final. 3% + empreinte plus petite (220px max) donne un rendu vraiment discret, y compris pour un logo a
-  // fond plein (pas seulement un logo a fond transparent).
+  // Reglage ajuste deux fois avant celui-ci (29 septembre 2026) : 6%/320px restait nettement visible sur un
+  // logo a fond plein (grande forme nette = perception amplifiee), mais 3%/220px s'est ensuite revele TROP
+  // discret en usage reel ("il faut forcer pour voir la silhouette", retour direct du marchand testeur) -
+  // l'oeil humain sur un vrai ecran ne juge pas comme un calcul de delta de couleur. Valeur retenue : 8%
+  // d'opacite avec une empreinte volontairement compacte (260px max, plus petite que le tout premier essai)
+  // - remonte la visibilite sans retomber dans l'effet "logo qui domine la page" du premier reglage.
   zone.style.backgroundImage =
-    "linear-gradient(rgba(255,255,255,0.97), rgba(255,255,255,0.97)), url(\"" + marchandActif.logoUrl + "\")";
+    "linear-gradient(rgba(255,255,255,0.92), rgba(255,255,255,0.92)), url(\"" + marchandActif.logoUrl + "\")";
   zone.style.backgroundRepeat = "no-repeat, no-repeat";
   zone.style.backgroundPosition = "center, center 90px";
-  zone.style.backgroundSize = "cover, min(220px, 42%) auto";
+  zone.style.backgroundSize = "cover, min(260px, 46%) auto";
 }
 
 function choisirMarchand(id) {

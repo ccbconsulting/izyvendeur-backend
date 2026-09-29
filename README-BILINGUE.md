@@ -893,13 +893,18 @@ bord), et reste automatique dès qu'un marchand a un logo — mais une case à c
 le désactiver au cas par cas, pour un marchand dont le logo (fond plein, fort contraste) rendrait mal en
 filigrane.
 
-Un premier réglage à 6 % d'opacité, testé avec un vrai logo à fond plein (capture d'écran réelle, pas
-seulement le calcul), restait nettement visible — les grandes formes pleines se remarquent bien plus que
-prévu même à faible opacité. Réglage final retenu après vérification visuelle : 3 % d'opacité et une
-empreinte réduite (220 px maximum), obtenu par superposition de deux calques CSS sur le même élément (un
-dégradé blanc quasi opaque au-dessus du logo) plutôt qu'un simple `opacity`, qui aurait aussi affaibli le
-texte et les tableaux. Aucun impact serveur au-delà d'un nouveau réglage `filigraneLogoActif` par marchand
-(vrai par défaut) : aucune image n'est modifiée ni retraitée, c'est purement un effet d'affichage.
+Réglage ajusté deux fois avant la version livrée, à chaque fois après vérification par une vraie capture
+d'écran (pas seulement le calcul d'opacité, qui ne reflète pas fidèlement la perception réelle à l'écran) :
+un premier essai à 6 % d'opacité / 320 px restait nettement visible sur un logo à fond plein (grande forme
+nette = perception amplifiée), un second essai à 3 % / 220 px s'est ensuite révélé trop discret en usage
+réel ("il faut forcer pour voir la silhouette du logo", retour direct après déploiement). Réglage final
+retenu : 8 % d'opacité avec une empreinte compacte (260 px maximum, plus petite que le tout premier essai)
+— un compromis qui remonte la visibilité sans retomber dans l'effet "logo qui domine la page". Technique :
+superposition de deux calques CSS sur le même élément (un dégradé blanc quasi opaque au-dessus du logo)
+plutôt qu'un simple `opacity`, qui aurait aussi affaibli le texte et les tableaux. Aucun impact serveur
+au-delà d'un nouveau réglage `filigraneLogoActif` par marchand (vrai par défaut) : aucune image n'est
+modifiée ni retraitée, c'est purement un effet d'affichage — donc réglable à nouveau sans redéploiement du
+schéma si un autre niveau s'avère mieux adapté après un usage plus long.
 
 Testé le 29 septembre 2026 : côté serveur (réglage par défaut actif sans jamais avoir été touché,
 activation/désactivation qui persiste, refusée à un employé sans le rôle "Paramètres") et avec un vrai
