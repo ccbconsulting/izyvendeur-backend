@@ -40,6 +40,9 @@
   .tuile .valeur { font-size: 1.6em; font-weight: 700; color: #14213d; }
   .tuile .libelle { font-size: 0.85em; color: #6b7685; margin-top: 2px; }
   .tuile.avertissement { border-color: #e3a008; background: #fff8e6; }
+  .tuile.cliquable { cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; }
+  .tuile.cliquable:hover { box-shadow: 0 2px 8px rgba(20,33,61,0.12); border-color: #9aa7b8; }
+  .tuile.cliquable:focus-visible { outline: 2px solid #14213d; outline-offset: 2px; }
   .sparkline { display: flex; align-items: flex-end; gap: 6px; height: 90px; margin: 8px 0 4px; }
   .sparkline .colonne { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
   .sparkline .barre { width: 100%; background: #14213d; border-radius: 3px 3px 0 0; min-height: 2px; }
@@ -1224,6 +1227,15 @@ function construireOnglets() {
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("accesNonConfigure") + "</div>";
 }
 
+// Bascule programmatique vers un onglet (ex: clic sur une tuile du Tableau de bord) - reutilise le
+// mecanisme de clic normal sur la barre d'onglets (construireOnglets ci-dessus) pour ne pas dupliquer la
+// logique d'affichage/permissions. Ne fait rien si l'onglet cible n'existe pas ou n'est pas visible pour
+// l'utilisateur courant (ex: employe sans le role requis) - evite un ecran blanc.
+function allerVersOnglet(idOnglet) {
+  const bouton = document.querySelector("#barreOnglets button[data-onglet='" + idOnglet + "']");
+  if (bouton) bouton.click();
+}
+
 // ---------------- Marchand catalogue ----------------
 
 async function renderCatalogue() {
@@ -2130,15 +2142,30 @@ async function renderTableauDeBord() {
       "<div class='raison'>" + esc(new Date(d.debutISO).toLocaleDateString(localeCourante())) + " – " + esc(new Date(new Date(d.finISO).getTime() - 1).toLocaleDateString(localeCourante())) + "</div>" +
     "</div>";
 
-  let tuiles =
-    "<div class='tuiles'>" +
-      "<div class='tuile'><div class='valeur'>" + d.commandesPeriode + "</div><div class='libelle'>" + (estCatalogue ? t("libelleCommandesPeriodeDash") : t("libelleRdvPeriodeDash")) + "</div></div>" +
-      "<div class='tuile'><div class='valeur'>" + (d.caPeriode || 0).toLocaleString(localeCourante()) + " FCFA</div><div class='libelle'>" + t("libelleCaPeriodeDash") + "</div></div>" +
-      "<div class='tuile" + (d.conversationsEnAttente ? " avertissement" : "") + "'><div class='valeur'>" + d.conversationsEnAttente + "</div><div class='libelle'>" + t("libelleConvEnAttente") + "</div></div>";
+  // Chaque tuile renvoie vers l'onglet ou est detaillee la donnee affichee - mais seulement si cet
+  // onglet existe reellement pour ce marchand/cet utilisateur (ex: pas de "rapports" pour un marchand de
+  // type service, pas de "conversations" pour un employe sans ce role) : sinon la tuile reste une simple
+  // tuile d'information, non cliquable, pour ne pas promettre une navigation qui ne mene nulle part.
+  function estOngletVisible(idOnglet) {
+    return !!document.querySelector("#barreOnglets button[data-onglet='" + idOnglet + "']");
+  }
+  function tuile(idOngletCible, valeurHtml, libelle, avertissement) {
+    const cliquable = idOngletCible && estOngletVisible(idOngletCible);
+    const classes = "tuile" + (avertissement ? " avertissement" : "") + (cliquable ? " cliquable" : "");
+    const attrs = cliquable
+      ? " data-tuile-onglet='" + idOngletCible + "' tabindex='0' role='button'"
+      : "";
+    return "<div class='" + classes + "'" + attrs + "><div class='valeur'>" + valeurHtml + "</div><div class='libelle'>" + libelle + "</div></div>";
+  }
+
+  let tuiles = "<div class='tuiles'>" +
+    tuile(estCatalogue ? "commandes" : "rendezvous", d.commandesPeriode, estCatalogue ? t("libelleCommandesPeriodeDash") : t("libelleRdvPeriodeDash")) +
+    tuile(estCatalogue ? "rapports" : "rendezvous", (d.caPeriode || 0).toLocaleString(localeCourante()) + " FCFA", t("libelleCaPeriodeDash")) +
+    tuile("conversations", d.conversationsEnAttente, t("libelleConvEnAttente"), d.conversationsEnAttente);
   if (estCatalogue) {
     tuiles +=
-      "<div class='tuile" + (d.alertesStock ? " avertissement" : "") + "'><div class='valeur'>" + d.alertesStock + "</div><div class='libelle'>" + t("libelleArticlesSurveiller") + "</div></div>" +
-      "<div class='tuile" + (d.ruptures ? " avertissement" : "") + "'><div class='valeur'>" + d.ruptures + "</div><div class='libelle'>" + t("libelleRuptures") + "</div></div>";
+      tuile("inventaire", d.alertesStock, t("libelleArticlesSurveiller"), d.alertesStock) +
+      tuile("inventaire", d.ruptures, t("libelleRuptures"), d.ruptures);
   }
   tuiles += "</div>";
 
@@ -2181,6 +2208,14 @@ async function renderTableauDeBord() {
   }
 
   zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode + tuiles + sparkline + top + bas;
+
+  Array.prototype.forEach.call(zone.querySelectorAll(".tuile.cliquable"), (el) => {
+    const cible = el.dataset.tuileOnglet;
+    el.addEventListener("click", () => allerVersOnglet(cible));
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); allerVersOnglet(cible); }
+    });
+  });
 
   const selectPeriode = document.getElementById("dashPeriode");
   selectPeriode.value = dashboardPeriodeActuelle;

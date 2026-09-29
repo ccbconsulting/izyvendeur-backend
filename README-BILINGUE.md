@@ -860,6 +860,27 @@ commande Simulateur ignorée) et avec un vrai navigateur piloté (Playwright) co
 dans `/admin` (bon `href`, ouverture dans un nouvel onglet, absence totale de lien quand IzyFacture n'en
 fournit pas) + régression complète rejouée sans casse.
 
+## Étape 28 — Tuiles du Tableau de bord cliquables, vers l'onglet correspondant (nouveau)
+
+Les 5 tuiles du Tableau de bord (Commandes/Rendez-vous, Chiffre d'affaires, Conversations en attente d'un
+humain, Articles à surveiller, Ruptures de stock) sont désormais cliquables (et utilisables au clavier —
+`Tab` puis `Entrée`/`Espace`) : un clic bascule directement vers l'onglet où la donnée est détaillée,
+plutôt que d'obliger le marchand à cliquer lui-même sur l'onglet dans la barre.
+
+Correspondance : Commandes → onglet Commandes (Rendez-vous → onglet Rendez-vous pour un marchand de type
+service), Chiffre d'affaires → onglet Rapports (→ onglet Rendez-vous pour un marchand service, qui n'a pas
+d'onglet Rapports), Conversations en attente → onglet Conversations, Articles à surveiller et Ruptures de
+stock → onglet Inventaire.
+
+Une tuile n'est rendue cliquable (curseur, léger effet au survol) que si l'onglet cible existe réellement
+pour l'utilisateur connecté — un employé qui n'a pas le rôle "Conversations", par exemple, voit la tuile
+correspondante comme une simple tuile d'information, pas un lien mort.
+
+Testé le 29 septembre 2026 avec un vrai navigateur piloté (Playwright) : les 5 tuiles pour un marchand
+catalogue, les 3 tuiles pour un marchand service (avec le bon repli de la tuile Chiffre d'affaires),
+navigation clavier, et le cas d'un employé sans le rôle "Conversations" qui ne voit pas cette tuile comme
+cliquable + régression complète rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1017,7 +1038,9 @@ fournit pas) + régression complète rejouée sans casse.
   paiement" (3 questions successives : montant, moyen de paiement, référence) + numéro de reçu affiché
   (Étape 26) + lien "Vérifier la facture" affiché sous le badge de facture quand IzyFacture fournit un lien
   de vérification (`izyfactureUrlVerification`), ouvert dans un nouvel onglet, totalement absent sinon
-  (Étape 27)
+  (Étape 27) + les 5 tuiles du Tableau de bord deviennent cliquables (souris et clavier), chacune bascule
+  vers l'onglet où sa donnée est détaillée, avec repli différent pour un marchand service et tuile non
+  cliquable si l'onglet cible n'est pas visible pour l'utilisateur connecté (Étape 28)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
