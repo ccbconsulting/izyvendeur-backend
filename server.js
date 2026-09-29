@@ -972,6 +972,51 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   res.status(201).json(resultat.order);
 });
 
+// -- Session de caisse : ouverture/fermeture + billetage (29 septembre 2026) -- (meme garde que
+// POST /api/:id/pos/vente ci-dessus : role employe "caisse" ET option payante "optionCaissePos"). Chaque
+// marchand definit ses propres reglages (coupures/seuil de tolerance/un seul tiroir ou plusieurs) via
+// PUT /api/:id/parametres (cle "caisse") - voir plus bas.
+app.get("/api/:id/caisse/config", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  res.json(entry.engine.getConfigCaisse());
+});
+
+app.get("/api/:id/caisse/session/active", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  res.json(entry.engine.getSessionCaisseActive(req.auth.adminUser));
+});
+
+app.get("/api/:id/caisse/sessions", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  res.json(entry.engine.getSessionsCaisse());
+});
+
+app.post("/api/:id/caisse/session/ouvrir", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const { billetage } = req.body || {};
+  const resultat = entry.engine.ouvrirSessionCaisse({ billetage, caissier: req.auth.adminUser });
+  if (resultat.erreur) return res.status(400).json({ erreur: resultat.erreur });
+  res.status(201).json(resultat.session);
+});
+
+app.post("/api/:id/caisse/session/fermer", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const { sessionId, billetageFermeture, raisonEcart } = req.body || {};
+  const resultat = entry.engine.fermerSessionCaisse({ sessionId, billetageFermeture, raisonEcart, caissier: req.auth.adminUser });
+  if (resultat.erreur) return res.status(400).json({ erreur: resultat.erreur });
+  res.json(resultat.session);
+});
+
 // Analyse une ligne CSV en tenant compte des guillemets (un champ peut contenir le separateur ou des
 // guillemets echappes en double, comme le fait Excel a l'export) - jamais de simple split(separateur) qui
 // casserait sur un nom d'article contenant une virgule/un point-virgule.
@@ -1207,6 +1252,13 @@ app.put("/api/:id/parametres", protegerAcces, (req, res) => {
   if (!entry.merchant.optionNotificationsStatut && corps.notifStatut !== undefined) {
     corps = Object.assign({}, corps);
     delete corps.notifStatut;
+  }
+  // Meme principe de filtrage : les reglages de caisse (seuil d'ecart/coupures/mode session) ne peuvent
+  // pas etre modifies par appel API direct tant que le super-administrateur n'a pas debloque l'option
+  // "Caisse POS" pour ce marchand, meme si l'interface /admin ne montre jamais ce bloc dans ce cas.
+  if (!entry.merchant.optionCaissePos && corps.caisse !== undefined) {
+    corps = Object.assign({}, corps);
+    delete corps.caisse;
   }
   res.json(entry.engine.updateSettings(corps));
 });

@@ -36,6 +36,15 @@ const STATUT_LIST = ["Nouvelle", "Confirmée", "Commandée", "Expédiée", "Livr
 // utilisateur), le reste (credit client, virement...) viendra au fur et a mesure si demande.
 const MODES_PAIEMENT_POS_VALIDES = ["especes", "om", "momo", "carte", "cheque"];
 
+// Session de caisse (ouverture/fermeture + billetage, 29 sept 2026) : chaque marchand peut definir SES
+// propres reglages (coupures manipulees, seuil de tolerance sur l'ecart, un seul tiroir a la fois ou
+// plusieurs simultanes) - voir configCaisse() plus bas. Valeurs de depart raisonnables pour un marchand qui
+// n'a encore rien configure, PAS des valeurs figees : coupures FCFA les plus courantes (billets et pieces),
+// seuil de tolerance 500 FCFA en dessous duquel aucune justification n'est demandee a la fermeture, et un
+// seul tiroir actif a la fois par defaut (le cas le plus frequent : une boutique = un tiroir physique).
+const COUPURES_CAISSE_PAR_DEFAUT = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 25];
+const CONFIG_CAISSE_PAR_DEFAUT = { seuilEcart: 500, coupures: COUPURES_CAISSE_PAR_DEFAUT.slice(), sessionUnique: true };
+
 // Notifications client automatiques sur changement de statut (ajoutees le 16 septembre 2026, option
 // payante superadmin - voir server.js option "optionNotificationsStatut" sur le marchand). Le marchand
 // active/desactive independamment chacun de ces 4 statuts (pas "Nouvelle" - creation automatique, ni
@@ -100,8 +109,14 @@ function seedState() {
     catalog: JSON.parse(JSON.stringify(SEED_CATALOG)),
     orders: [],
     nextId: 1,
-    settings: { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE, autoConfirmMessageEn: "" },
-    inventorySnapshots: [] // instantanés d'inventaire enregistrés depuis l'onglet Rapports (voir plus bas)
+    settings: {
+      autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE,
+      autoConfirmMessageEn: "",
+      caisse: Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() })
+    },
+    inventorySnapshots: [], // instantanés d'inventaire enregistrés depuis l'onglet Rapports (voir plus bas)
+    caisseSessions: [], // sessions d'ouverture/fermeture de caisse (Caisse POS, voir plus bas)
+    nextCaisseSessionId: 1
   };
 }
 
@@ -149,6 +164,11 @@ function createCatalogEngine(merchantKey, options) {
     state = await db.initMerchantState(merchantKey, seedState);
     if (!state.settings) state.settings = { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE };
     if (!state.inventorySnapshots) state.inventorySnapshots = [];
+    // Retro-compatibilite (29 sept 2026) pour un marchand deja existant avant l'ajout des sessions de
+    // caisse : jamais de migration forcee de son etat, juste des valeurs de depart s'il ne les a pas encore.
+    if (!state.settings.caisse) state.settings.caisse = Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
+    if (!state.caisseSessions) state.caisseSessions = [];
+    if (!state.nextCaisseSessionId) state.nextCaisseSessionId = 1;
   }
 
   function saveState() {
@@ -1485,6 +1505,121 @@ function createCatalogEngine(merchantKey, options) {
   // ulterieure (erreur de caisse) passe par le meme PUT .../commandes/:id/statut que toute autre commande -
   // applyStatusChange restaure alors stockReel automatiquement (branche "oldStatus === Livrée" existante).
   //
+  // ---------------- Session de caisse : ouverture/fermeture + billetage (29 septembre 2026) ----------------
+  // Chaque marchand definit SES propres reglages (coupures manipulees, seuil de tolerance sur l'ecart, un
+  // seul tiroir a la fois ou plusieurs simultanes) plutot que des valeurs imposees - voir configCaisse().
+  // Jamais mute directement : toujours passer par updateSettings({ caisse: {...} }) cote appelant (server.js).
+  function configCaisse() {
+    if (!state) return Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
+    if (!state.settings.caisse) state.settings.caisse = Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
+    return state.settings.caisse;
+  }
+
+  // Additionne un billetage ({ "10000": 2, "500": 3, ... } - cle = coupure FCFA en chaine, valeur = quantite
+  // comptee) en un montant total. Renvoie null si le billetage est invalide (quantite non entiere/negative),
+  // pour distinguer explicitement "0 FCFA compte" (billetage vide, valide) d'un billetage malformé.
+  function totalBilletage(billetage) {
+    if (!billetage || typeof billetage !== "object") return null;
+    let total = 0;
+    for (const cle in billetage) {
+      const coupure = Number(cle);
+      const quantite = Number(billetage[cle]);
+      if (!Number.isFinite(coupure) || coupure <= 0) continue;
+      if (!Number.isInteger(quantite) || quantite < 0) return null;
+      total += coupure * quantite;
+    }
+    return total;
+  }
+
+  // Session de caisse actuellement ouverte et utilisable par CE caissier : en mode "un seul tiroir a la
+  // fois" (sessionUnique), n'importe quelle session ouverte compte (peu importe qui l'a ouverte) - en mode
+  // multi-tiroirs, seule la propre session de ce caissier compte (deux caissiers peuvent vendre en meme
+  // temps, chacun sur son propre tiroir).
+  function sessionCaisseOuverte(caissier) {
+    if (!state) return null;
+    const cfg = configCaisse();
+    return state.caisseSessions.find((s) => s.statut === "ouverte" && (cfg.sessionUnique || s.caissier === caissier)) || null;
+  }
+
+  function ouvrirSessionCaisse({ caissier, billetage }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const fondInitial = totalBilletage(billetage);
+    if (fondInitial === null) return { erreur: "Billetage invalide (quantités attendues : nombres entiers positifs ou nuls par coupure)." };
+    const dejaOuverte = sessionCaisseOuverte(caissier);
+    if (dejaOuverte) {
+      const cfg = configCaisse();
+      return { erreur: cfg.sessionUnique
+        ? "Une session de caisse est déjà ouverte (par " + (dejaOuverte.caissier || "un autre caissier") + "). Elle doit être fermée avant d'en ouvrir une nouvelle."
+        : "Vous avez déjà une session de caisse ouverte." };
+    }
+    const session = {
+      id: state.nextCaisseSessionId++,
+      caissier: caissier || null,
+      dateOuverture: new Date().toISOString(),
+      billetageOuverture: billetage,
+      fondInitial,
+      statut: "ouverte",
+      dateFermeture: null,
+      fermePar: null,
+      billetageFermeture: null,
+      montantCompte: null,
+      totalVentesEspeces: null,
+      montantTheorique: null,
+      ecart: null,
+      raisonEcart: null
+    };
+    state.caisseSessions.push(session);
+    saveState();
+    return { session };
+  }
+
+  function fermerSessionCaisse({ sessionId, caissier, billetageFermeture, raisonEcart }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const session = state.caisseSessions.find((s) => s.id === Number(sessionId) && s.statut === "ouverte");
+    if (!session) return { erreur: "Session de caisse introuvable ou déjà fermée." };
+    const montantCompte = totalBilletage(billetageFermeture);
+    if (montantCompte === null) return { erreur: "Billetage invalide (quantités attendues : nombres entiers positifs ou nuls par coupure)." };
+
+    // Le total theorique ne compte QUE les ventes especes rattachees a CETTE session precise
+    // (sessionCaisseId, tague par creerVentePos ci-dessous) - jamais une simple fenetre de dates, pour
+    // rester juste meme si plusieurs sessions se chevauchent (mode multi-tiroirs).
+    const totalVentesEspeces = state.orders
+      .filter((o) => o.sessionCaisseId === session.id && o.modePaiement === "especes")
+      .reduce((s, o) => s + (o.prix || 0), 0);
+    const montantTheorique = session.fondInitial + totalVentesEspeces;
+    const ecart = montantCompte - montantTheorique;
+    const cfg = configCaisse();
+    const raisonNettoyee = (raisonEcart || "").toString().trim();
+    if (Math.abs(ecart) > cfg.seuilEcart && !raisonNettoyee) {
+      return { erreur: "Cet écart de caisse (" + ecart + " FCFA) dépasse le seuil autorisé (" + cfg.seuilEcart + " FCFA) : une raison est requise pour clôturer." };
+    }
+
+    session.statut = "fermee";
+    session.dateFermeture = new Date().toISOString();
+    session.fermePar = caissier || null;
+    session.billetageFermeture = billetageFermeture;
+    session.montantCompte = montantCompte;
+    session.totalVentesEspeces = totalVentesEspeces;
+    session.montantTheorique = montantTheorique;
+    session.ecart = ecart;
+    session.raisonEcart = raisonNettoyee || null;
+    saveState();
+    return { session };
+  }
+
+  function getSessionsCaisse() {
+    if (!state) return [];
+    return state.caisseSessions.slice().sort((a, b) => new Date(b.dateOuverture) - new Date(a.dateOuverture));
+  }
+
+  function getSessionCaisseActive(caissier) {
+    return sessionCaisseOuverte(caissier);
+  }
+
+  function getConfigCaisse() {
+    return configCaisse();
+  }
+
   // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
   // jamais un article decompte puis un autre refuse en cours de route.
   function creerVentePos({ lignes, modePaiement, referencePaiement, caissier }) {
@@ -1492,6 +1627,14 @@ function createCatalogEngine(merchantKey, options) {
     if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Aucun article dans la vente." };
     if (MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
       return { erreur: "Mode de paiement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
+    }
+    // Aucune vente sans caisse ouverte (29 sept 2026) : force la discipline du billetage avant d'encaisser -
+    // voir ouvrirSessionCaisse ci-dessus. La commande cree ci-dessous est rattachee a CETTE session precise
+    // (sessionCaisseId), pour que la fermeture puisse calculer un total theorique juste meme si plusieurs
+    // sessions se chevauchent (mode multi-tiroirs).
+    const sessionActive = sessionCaisseOuverte(caissier);
+    if (!sessionActive) {
+      return { erreur: "Aucune session de caisse ouverte. Merci d'ouvrir la caisse (billetage) avant d'encaisser." };
     }
     // La reference de paiement (ex. code de confirmation Orange Money/MTN MoMo reçu par le MARCHAND sur son
     // propre telephone, numero de cheque, etc.) est obligatoire pour tout mode autre que "especes" (29 sept 2026).
@@ -1529,6 +1672,7 @@ function createCatalogEngine(merchantKey, options) {
       statut: "Livrée",
       raisonAnnulation: null,
       source: "pos",
+      sessionCaisseId: sessionActive.id,
       fromWhatsapp: null,
       langue: "fr",
       modePaiement,
@@ -1557,6 +1701,11 @@ function createCatalogEngine(merchantKey, options) {
     getOrders,
     getOrderById,
     creerVentePos,
+    ouvrirSessionCaisse,
+    fermerSessionCaisse,
+    getSessionsCaisse,
+    getSessionCaisseActive,
+    getConfigCaisse,
     getCatalog,
     getSettings,
     updateSettings,

@@ -1040,6 +1040,53 @@ non vide, fond rouge ; article en stock faible porte la classe `alerte-stock` et
 encaissement bloqué côté client tant que la référence de paiement obligatoire est vide ; reçu affichant
 bien la référence saisie) + régression complète (27 fichiers de tests) rejouée sans casse.
 
+## Étape 34 — Session de caisse : ouverture/fermeture avec billetage, écart configurable, filtre "Vente en boutique" (nouveau)
+
+Demandé le 29 septembre 2026, discuté en profondeur avant construction (périmètre d'une session, blocage de
+l'encaissement, seuil d'écart, coupures, un seul tiroir ou plusieurs) : la Caisse POS impose désormais une
+vraie discipline de caisse physique, sans imposer de valeurs figées — **chaque marchand définit lui-même**
+ses propres réglages plutôt que de subir des choix décidés à sa place.
+
+Fonctionnement : impossible d'encaisser (bouton "Encaisser" totalement inaccessible, écran de vente
+remplacé par un écran d'ouverture) tant que la caisse n'a pas été ouverte — le caissier compte l'argent déjà
+présent dans le tiroir, coupure par coupure (billetage), le total calculé devient le fond de départ. Un
+bandeau reste affiché en haut de l'onglet Caisse tant que la session est ouverte ("Caisse ouverte depuis...
+par... — fond de départ : ..."), avec un bouton "Fermer la caisse" qui déclenche un nouveau billetage
+(recomptage du tiroir) : le système compare alors le montant réellement compté au montant théorique (fond
+de départ + UNIQUEMENT les ventes en espèces de cette session précise — Orange Money/MTN Mobile
+Money/Carte/Chèque ne touchent jamais le tiroir physique, ils n'entrent jamais dans ce calcul) et affiche
+l'écart. Si cet écart dépasse le seuil de tolérance que CE marchand a choisi, une raison devient obligatoire
+pour clôturer (même principe que la raison d'annulation d'une commande) ; en dessous, aucune justification
+n'est demandée. Un historique des sessions (caissier, dates, fond de départ, montant compté, écart, raison)
+reste consultable depuis l'écran d'ouverture.
+
+Trois réglages configurables par le marchand lui-même (bloc "Paramètres de caisse", visible uniquement une
+fois l'option "Caisse POS" débloquée, réservé au rôle "Paramètres") : le seuil de tolérance en FCFA, la
+liste des coupures (billets et pièces) réellement manipulées — la valeur de départ proposée inclut désormais
+la pièce de 200 FCFA — et si un seul tiroir peut être ouvert à la fois (le cas le plus courant, une boutique
+= un tiroir physique unique) ou si plusieurs caissiers peuvent avoir chacun leur propre session ouverte en
+parallèle (plusieurs points de vente/tiroirs distincts dans une même boutique). En mode "un seul tiroir", le
+caissier suivant doit d'abord fermer la session en cours avant de pouvoir ouvrir la sienne.
+
+Chaque vente comptoir est désormais rattachée à la session de caisse active au moment de l'encaissement
+(`sessionCaisseId`), ce qui rend le calcul de l'écart exact même si plusieurs sessions se chevauchent en
+mode multi-tiroirs — jamais une simple fenêtre de dates, qui aurait pu mélanger les ventes de deux
+caissiers différents. Enfin, l'onglet Commandes gagne une nouvelle option "Vente en boutique" dans son
+filtre "Mode" (aux côtés de Livraison/Retrait), pour isoler d'un clic toutes les ventes comptoir.
+
+Testé le 29 septembre 2026 : côté serveur (réglages par défaut corrects, vente refusée tant qu'aucune
+session n'est ouverte, employé sans le rôle "Caisse" ne peut pas non plus ouvrir de session, fond de départ
+calculé correctement depuis le billetage, impossible de rouvrir une session tant que la précédente reste
+ouverte en mode "un seul tiroir", fermeture avec montant exact → écart nul sans raison demandée, impossible
+de refermer une session déjà fermée, vente de nouveau bloquée après fermeture, écart au-delà du seuil
+refusé sans raison puis accepté avec raison fournie, historique correct, mise à jour des paramètres de
+caisse par le propriétaire bien prise en compte, mode "plusieurs tiroirs" permettant à deux caissiers
+différents d'avoir chacun leur session ouverte en parallèle tout en empêchant un même caissier d'en ouvrir
+deux) et avec un vrai navigateur piloté (écran de vente inaccessible tant que la caisse n'est pas ouverte,
+billetage d'ouverture avec total recalculé en direct, bandeau de session affiché avec le bon caissier et le
+bon fond de départ, fermeture avec billetage de fin et récapitulatif affiché, retour à l'écran d'ouverture
+après fermeture) + régression complète (27 fichiers de tests) rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1085,7 +1132,17 @@ bien la référence saisie) + régression complète (27 fichiers de tests) rejou
   (`especes`/`om`/`momo`/`carte`/`cheque`, Orange Money et MTN Mobile Money désormais distincts) +
   `creerVentePos` exige désormais une `referencePaiement` non vide pour tout mode autre que `especes`
   (refuse la vente en 400 sinon, avant tout décompte de stock) et l'enregistre sur la commande créée
-  (Étape 33)
+  (Étape 33) + session de caisse (ouverture/fermeture + billetage) : `state.settings.caisse`
+  (`seuilEcart`/`coupures`/`sessionUnique`, réglable par CHAQUE marchand, jamais de valeur imposée) et
+  `state.caisseSessions` (nouveau tableau, aucune nouvelle table SQL — stocké dans le même blob JSON que le
+  catalogue/les commandes) + nouvelles fonctions `configCaisse`/`totalBilletage`/`sessionCaisseOuverte`/
+  `ouvrirSessionCaisse`/`fermerSessionCaisse`/`getSessionsCaisse`/`getSessionCaisseActive`/`getConfigCaisse` :
+  le fond de départ et le montant compté à la fermeture sont calculés à partir d'un billetage coupure par
+  coupure, l'écart (compté − théorique) exige une raison au-delà du seuil propre à ce marchand, un seul
+  tiroir peut être ouvert à la fois par défaut (configurable en plusieurs tiroirs simultanés) +
+  `creerVentePos` refuse désormais toute vente tant qu'aucune session de caisse n'est ouverte et rattache
+  chaque commande créée à la session active (`sessionCaisseId`, pour un calcul d'écart exact même si
+  plusieurs sessions se chevauchent) (Étape 34)
 - `izyfacture.js` (**nouveau fichier**) — client HTTP minimal (aucune dépendance, `fetch` natif) vers l'API
   IzyFacture v1 : vérification de clé (`GET /me`), création/retrouvaille de facture (`POST /invoices`,
   jamais de doublon grâce à la référence de commande), avoir sur annulation (`POST .../credit-notes`),
@@ -1178,7 +1235,12 @@ bien la référence saisie) + régression complète (27 fichiers de tests) rejou
   IzyFacture) qui délègue à `creerVentePos` (voir `conversation.js`) + `GET /api/marchands` et `PUT
   /api/marchands/:id/options-payantes` étendus à cette 5e option payante `optionCaissePos` (Étape 32) +
   `POST /api/:id/pos/vente` transmet désormais aussi `referencePaiement` au moteur (`creerVentePos`),
-  obligatoire pour tout mode autre que `especes` (Étape 33)
+  obligatoire pour tout mode autre que `especes` (Étape 33) + nouvelles routes (même garde "caisse" +
+  `optionCaissePos` que `POST /api/:id/pos/vente`) : `GET /api/:id/caisse/config` (réglages de caisse de ce
+  marchand), `GET /api/:id/caisse/session/active`, `GET /api/:id/caisse/sessions` (historique),
+  `POST /api/:id/caisse/session/ouvrir` et `POST /api/:id/caisse/session/fermer` + `PUT /api/:id/parametres`
+  filtre désormais aussi la clé `caisse` (seuil/coupures/mode session) tant que l'option "Caisse POS" n'est
+  pas débloquée, même principe que le filtrage déjà en place pour `notifStatut` (Étape 34)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)
@@ -1253,7 +1315,15 @@ bien la référence saisie) + régression complète (27 fichiers de tests) rejou
   reference affichée sur le reçu imprimé (`afficherRecuCaisse`) et dans l'onglet Commandes sous le badge +
   article en rupture désormais affiché en rouge avec un attribut `title` (message au survol de la souris,
   plus au clic) tout en restant `disabled` + article en stock faible (pas en rupture) affiché en ambre via
-  la classe `.alerte-stock` déjà utilisée par le Catalogue/l'Inventaire (Étape 33)
+  la classe `.alerte-stock` déjà utilisée par le Catalogue/l'Inventaire (Étape 33) + onglet Caisse : écran
+  d'ouverture (`afficherOuvertureCaisse`) et de fermeture (`afficherFermetureCaisse`) avec billetage coupure
+  par coupure (total recalculé en direct, jamais de perte de focus), bandeau de session ouverte avec bouton
+  "Fermer la caisse" injecté dans l'écran de vente existant, récapitulatif de fermeture
+  (`afficherRecapFermetureCaisse`) et historique des sessions (`afficherHistoriqueCaisse`) accessible depuis
+  l'écran d'ouverture + nouveau bloc "Paramètres de caisse" dans l'onglet Paramètres (visible uniquement une
+  fois l'option débloquée) où CHAQUE marchand règle son propre seuil de tolérance, ses propres coupures et
+  son propre mode de session (un seul tiroir ou plusieurs simultanés) + onglet Commandes : nouvelle option
+  "Vente en boutique" dans le filtre "Mode", aux côtés de Livraison/Retrait (Étape 34)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec

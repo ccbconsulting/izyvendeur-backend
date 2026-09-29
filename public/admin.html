@@ -241,6 +241,7 @@ const I18N = {
     badgeCaisse: "🧾 Vente en boutique",
     optionLivraison: "Livraison",
     optionRetrait: "Retrait",
+    optionVenteBoutique: "Vente en boutique",
     raisonPrefixe: "Raison : ",
     aucuneCorrespondanceFiltre: "Aucune commande ne correspond à ce filtre.",
     aucuneCommande: "Aucune commande pour l'instant.",
@@ -536,7 +537,43 @@ const I18N = {
     caisseRecuVendeur: "Vendu par",
     btnImprimerRecu: "Imprimer le reçu",
     btnNouvelleVente: "Nouvelle vente",
+    btnAnnuler: "Annuler",
 
+    caisseSessionOuverteDepuis: "Caisse ouverte depuis {heure} par {caissier} — fond de départ : {fond} FCFA",
+    btnFermerCaisse: "Fermer la caisse",
+    caisseOuvertureTitre: "Ouverture de caisse",
+    caisseOuvertureDesc: "Comptez l'argent déjà présent dans le tiroir avant de commencer à vendre (billetage, coupure par coupure). Ce montant devient votre fond de départ.",
+    caisseBilletageCoupure: "Coupure",
+    caisseBilletageSousTotal: "Sous-total",
+    caisseBilletageTotal: "Total compté :",
+    btnOuvrirCaisse: "Ouvrir la caisse",
+    caisseFermetureTitre: "Fermeture de caisse",
+    caisseFermetureDesc: "Recomptez le contenu du tiroir, coupure par coupure (même principe qu'à l'ouverture).",
+    caisseRaisonEcartLabel: "Raison de l'écart (si nécessaire)",
+    caisseRaisonEcartAide: "Obligatoire uniquement si l'écart dépasse le seuil de tolérance défini par ce marchand ({seuil} FCFA).",
+    btnConfirmerFermeture: "Confirmer la fermeture",
+    caisseSessionFermeeTitre: "Session de caisse fermée",
+    caisseFondInitialLabel: "Fond de départ",
+    caisseVentesEspecesLabel: "Ventes en espèces de la session",
+    caisseMontantTheoriqueLabel: "Montant théorique",
+    caisseMontantCompteLabel: "Montant compté",
+    caisseEcartLabel: "Écart",
+    btnRetourCaisse: "Retour à la caisse",
+    caisseHistoriqueTitre: "Historique des sessions",
+    btnVoirHistorique: "Voir l'historique des sessions",
+    btnMasquerHistorique: "Masquer l'historique",
+    caisseHistoriqueAucune: "Aucune session enregistrée pour l'instant.",
+    caisseSessionEnCours: "En cours",
+    theadCaissier: "Caissier",
+    theadOuverture: "Ouverture",
+    theadFermeture: "Fermeture",
+
+    h3CaisseParametres: "Paramètres de caisse",
+    descCaisseParametres: "Réglez ces paramètres selon votre propre activité : le seuil en dessous duquel un écart de caisse n'a pas besoin d'être justifié, les coupures (billets/pièces) que vous manipulez réellement, et si un seul tiroir peut être ouvert à la fois ou plusieurs en parallèle.",
+    labelCaisseSeuilEcart: "Seuil de tolérance sur l'écart de caisse (FCFA)",
+    labelCaisseCoupures: "Coupures (billets et pièces, séparées par une virgule)",
+    placeholderCaisseCoupures: "Ex : 10000, 5000, 2000, 1000, 500, 200, 100, 50, 25",
+    labelCaisseSessionUnique: "N'autoriser qu'une seule caisse ouverte à la fois (un seul tiroir physique)",
     h3NotifStatut: "Notifications de statut (facultatif)",
     descNotifStatut: "Envoyez automatiquement un message WhatsApp au client quand une de ses commandes change de statut. Activez uniquement les statuts qui vous intéressent — les autres restent silencieux. Laissez un texte vide pour utiliser un message par défaut correct. « {ref} » dans votre texte est remplacé par la référence de la commande (ex : CMD-0042).",
     labelNotifCommandeeActive: "Notifier à « Commandée » (article commandé auprès du fournisseur)",
@@ -694,6 +731,7 @@ const I18N = {
     badgeCaisse: "🧾 In-store sale",
     optionLivraison: "Delivery",
     optionRetrait: "Pickup",
+    optionVenteBoutique: "In-store sale",
     raisonPrefixe: "Reason: ",
     aucuneCorrespondanceFiltre: "No orders match this filter.",
     aucuneCommande: "No orders yet.",
@@ -989,7 +1027,43 @@ const I18N = {
     caisseRecuVendeur: "Sold by",
     btnImprimerRecu: "Print receipt",
     btnNouvelleVente: "New sale",
+    btnAnnuler: "Cancel",
 
+    caisseSessionOuverteDepuis: "Register open since {heure}, by {caissier} — starting float: {fond} FCFA",
+    btnFermerCaisse: "Close register",
+    caisseOuvertureTitre: "Opening the register",
+    caisseOuvertureDesc: "Count the cash already in the drawer before you start selling (cash count, denomination by denomination). This amount becomes your starting float.",
+    caisseBilletageCoupure: "Denomination",
+    caisseBilletageSousTotal: "Subtotal",
+    caisseBilletageTotal: "Total counted:",
+    btnOuvrirCaisse: "Open the register",
+    caisseFermetureTitre: "Closing the register",
+    caisseFermetureDesc: "Recount the contents of the drawer, denomination by denomination (same method as at opening).",
+    caisseRaisonEcartLabel: "Reason for the discrepancy (if any)",
+    caisseRaisonEcartAide: "Required only if the discrepancy exceeds the tolerance threshold this merchant set ({seuil} FCFA).",
+    btnConfirmerFermeture: "Confirm closing",
+    caisseSessionFermeeTitre: "Register session closed",
+    caisseFondInitialLabel: "Starting float",
+    caisseVentesEspecesLabel: "Cash sales for this session",
+    caisseMontantTheoriqueLabel: "Expected amount",
+    caisseMontantCompteLabel: "Amount counted",
+    caisseEcartLabel: "Discrepancy",
+    btnRetourCaisse: "Back to the register",
+    caisseHistoriqueTitre: "Session history",
+    btnVoirHistorique: "View session history",
+    btnMasquerHistorique: "Hide history",
+    caisseHistoriqueAucune: "No session recorded yet.",
+    caisseSessionEnCours: "Ongoing",
+    theadCaissier: "Cashier",
+    theadOuverture: "Opened",
+    theadFermeture: "Closed",
+
+    h3CaisseParametres: "Register settings",
+    descCaisseParametres: "Set these to match your own business: the threshold below which a cash discrepancy doesn't need to be justified, the denominations (bills/coins) you actually handle, and whether only one drawer can be open at a time or several in parallel.",
+    labelCaisseSeuilEcart: "Cash discrepancy tolerance threshold (FCFA)",
+    labelCaisseCoupures: "Denominations (bills and coins, comma-separated)",
+    placeholderCaisseCoupures: "E.g.: 10000, 5000, 2000, 1000, 500, 200, 100, 50, 25",
+    labelCaisseSessionUnique: "Only allow one open register at a time (one physical drawer)",
     h3NotifStatut: "Status notifications (optional)",
     descNotifStatut: "Automatically send a WhatsApp message to the customer when one of their orders changes status. Only enable the statuses you care about — the others stay silent. Leave a text empty to use a sensible default message. \"{ref}\" in your text is replaced with the order reference (e.g. CMD-0042).",
     labelNotifCommandeeActive: "Notify on \"Ordered\" (item placed with the supplier)",
@@ -1661,7 +1735,19 @@ let caisseReferencePaiement = "";
 async function renderCaisse() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
-  const catalogue = await api("/api/" + marchandActif.id + "/catalogue");
+  const [catalogue, configCaisse, sessionActive] = await Promise.all([
+    api("/api/" + marchandActif.id + "/catalogue"),
+    api("/api/" + marchandActif.id + "/caisse/config"),
+    api("/api/" + marchandActif.id + "/caisse/session/active")
+  ]);
+
+  // Aucune session de caisse ouverte : impossible de vendre tant que le billetage de depart n'a pas ete
+  // fait (29 sept 2026, meme regle appliquee cote serveur dans creerVentePos - defense en profondeur). On
+  // affiche directement l'ecran d'ouverture, jamais l'ecran de vente.
+  if (!sessionActive) {
+    afficherOuvertureCaisse(configCaisse);
+    return;
+  }
 
   // Aplati chaque variante en une ligne directement "vendable" (article + couleur + taille) : au comptoir,
   // la vitesse prime - pas besoin du parcours en 2 temps (choisir l'article PUIS sa variante) utilise cote
@@ -1726,6 +1812,10 @@ async function renderCaisse() {
 
   function redraw() {
     zone.innerHTML =
+      "<div style='background:#eef7ee; border:1px solid #bfe3bf; border-radius:8px; padding:10px 14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;'>" +
+        "<span>" + t("caisseSessionOuverteDepuis", { heure: esc(new Date(sessionActive.dateOuverture).toLocaleString(localeCourante())), caissier: esc(sessionActive.caissier || ""), fond: sessionActive.fondInitial.toLocaleString(localeCourante()) }) + "</span>" +
+        "<button id='btnFermerCaisse' class='danger'>" + t("btnFermerCaisse") + "</button>" +
+      "</div>" +
       "<h2>" + t("ongletCaisse") + "</h2>" +
       "<div style='display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;'>" +
         "<div style='flex:1; min-width:280px;'>" +
@@ -1797,6 +1887,7 @@ async function renderCaisse() {
     if (champReferencePaiement) {
       champReferencePaiement.addEventListener("input", () => { caisseReferencePaiement = champReferencePaiement.value; });
     }
+    document.getElementById("btnFermerCaisse").onclick = () => afficherFermetureCaisse(configCaisse, sessionActive);
     const champRecherche = document.getElementById("champRechercheCaisse");
     if (champRecherche) {
       champRecherche.addEventListener("input", () => {
@@ -1868,6 +1959,167 @@ function afficherRecuCaisse(commande) {
   document.getElementById("btnNouvelleVenteCaisse").onclick = () => renderCaisse();
 }
 
+// Session de caisse : ouverture/fermeture + billetage (29 sept 2026). Construit UNE table de billetage
+// (une ligne par coupure definie par CE marchand dans ses Parametres de caisse) avec un total qui se
+// recalcule en direct, sans jamais reconstruire le DOM (meme principe que la recherche Caisse/Catalogue -
+// on ne touche que le texte des cellules concernees, pour ne jamais faire perdre le focus a un champ en
+// pleine saisie). `prefixe` distingue le billetage d'ouverture ("ouv") de celui de fermeture ("fer") pour
+// que les deux puissent, en theorie, coexister dans le futur sans collision d'identifiants.
+function construireTableBilletage(coupures, prefixe) {
+  return "<table class='table-donnees'><tr><th>" + t("caisseBilletageCoupure") + "</th><th>" + t("caisseQuantiteLabel") + "</th><th>" + t("caisseBilletageSousTotal") + "</th></tr>" +
+    (coupures || []).map((c, i) =>
+      "<tr>" +
+        "<td>" + Number(c).toLocaleString(localeCourante()) + " FCFA</td>" +
+        "<td><input type='number' min='0' step='1' value='0' data-billetage-qte='" + prefixe + "-" + i + "' data-coupure='" + c + "' style='width:90px;' /></td>" +
+        "<td class='raison' data-billetage-soustotal='" + prefixe + "-" + i + "'>0 FCFA</td>" +
+      "</tr>"
+    ).join("") +
+    "</table>";
+}
+
+// Branche le recalcul en direct + lit le billetage saisi. `zone`: conteneur DOM ; `prefixe`: "ouv"/"fer" ;
+// `idSpanTotal`: id du <span> affichant le total.
+function brancherBilletage(zone, prefixe, idSpanTotal) {
+  function recalculer() {
+    let total = 0;
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-billetage-qte^='" + prefixe + "-']"), (input) => {
+      const coupure = Number(input.dataset.coupure);
+      const quantite = Math.max(0, Math.floor(Number(input.value) || 0));
+      const soustotal = coupure * quantite;
+      const cellule = zone.querySelector("[data-billetage-soustotal='" + input.dataset.billetageQte + "']");
+      if (cellule) cellule.textContent = soustotal.toLocaleString(localeCourante()) + " FCFA";
+      total += soustotal;
+    });
+    const spanTotal = document.getElementById(idSpanTotal);
+    if (spanTotal) spanTotal.textContent = total.toLocaleString(localeCourante());
+  }
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-billetage-qte^='" + prefixe + "-']"), (input) => {
+    input.addEventListener("input", recalculer);
+  });
+}
+
+function lireBilletageSaisi(zone, prefixe) {
+  const billetage = {};
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-billetage-qte^='" + prefixe + "-']"), (input) => {
+    const quantite = Math.max(0, Math.floor(Number(input.value) || 0));
+    if (quantite > 0) billetage[input.dataset.coupure] = (billetage[input.dataset.coupure] || 0) + quantite;
+  });
+  return billetage;
+}
+
+// Ecran affiche quand AUCUNE session de caisse n'est ouverte : impossible de vendre avant d'avoir compte
+// et valide le fond de caisse de depart (billetage), coupure par coupure, definies par ce marchand dans
+// ses Parametres de caisse (voir renderParametresCatalogue).
+function afficherOuvertureCaisse(config) {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML =
+    "<h2>" + t("caisseOuvertureTitre") + "</h2>" +
+    "<p class='raison'>" + t("caisseOuvertureDesc") + "</p>" +
+    construireTableBilletage(config && config.coupures, "ouv") +
+    "<h3 style='margin-top:12px;'>" + t("caisseBilletageTotal") + " <span id='totalBilletageOuv'>0</span> FCFA</h3>" +
+    "<button id='btnOuvrirCaisse' class='principal'>" + t("btnOuvrirCaisse") + "</button> " +
+    "<button id='btnVoirHistoriqueCaisse'>" + t("btnVoirHistorique") + "</button>" +
+    "<div id='zoneHistoriqueCaisse' style='margin-top:20px;'></div>";
+
+  brancherBilletage(zone, "ouv", "totalBilletageOuv");
+
+  document.getElementById("btnOuvrirCaisse").onclick = async () => {
+    const billetage = lireBilletageSaisi(zone, "ouv");
+    try {
+      await api("/api/" + marchandActif.id + "/caisse/session/ouvrir", { method: "POST", body: JSON.stringify({ billetage }) });
+      renderCaisse();
+    } catch (e) {
+      alert(t("erreurPrefixe") + e.message);
+    }
+  };
+
+  let historiqueVisible = false;
+  document.getElementById("btnVoirHistoriqueCaisse").onclick = async (e) => {
+    historiqueVisible = !historiqueVisible;
+    e.target.textContent = historiqueVisible ? t("btnMasquerHistorique") : t("btnVoirHistorique");
+    if (historiqueVisible) await afficherHistoriqueCaisse();
+    else document.getElementById("zoneHistoriqueCaisse").innerHTML = "";
+  };
+}
+
+// Ecran de fermeture : nouveau billetage (recompte du tiroir), l'ecart (compte - theorique) n'est connu
+// qu'une fois le serveur repondu (c'est lui qui connait le total des ventes especes de cette session) - le
+// champ "raison" reste toujours visible et facultatif ici, le serveur refuse la fermeture (et redemande) si
+// l'ecart depasse le seuil que CE marchand a choisi et qu'aucune raison n'a ete fournie.
+function afficherFermetureCaisse(config, session) {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML =
+    "<h2>" + t("caisseFermetureTitre") + "</h2>" +
+    "<p class='raison'>" + t("caisseFermetureDesc") + "</p>" +
+    construireTableBilletage(config && config.coupures, "fer") +
+    "<h3 style='margin-top:12px;'>" + t("caisseBilletageTotal") + " <span id='totalBilletageFer'>0</span> FCFA</h3>" +
+    "<label style='display:block; margin-top:10px;'>" + t("caisseRaisonEcartLabel") + "</label>" +
+    "<textarea id='champRaisonEcart' rows='2' style='width:100%; box-sizing:border-box;'></textarea>" +
+    "<p class='raison' style='margin:4px 0 12px;'>" + t("caisseRaisonEcartAide", { seuil: ((config && config.seuilEcart) || 0).toLocaleString(localeCourante()) }) + "</p>" +
+    "<button id='btnConfirmerFermeture' class='principal'>" + t("btnConfirmerFermeture") + "</button> " +
+    "<button id='btnAnnulerFermeture'>" + t("btnAnnuler") + "</button>";
+
+  brancherBilletage(zone, "fer", "totalBilletageFer");
+
+  document.getElementById("btnAnnulerFermeture").onclick = () => renderCaisse();
+
+  document.getElementById("btnConfirmerFermeture").onclick = async () => {
+    const billetageFermeture = lireBilletageSaisi(zone, "fer");
+    const raisonEcart = document.getElementById("champRaisonEcart").value;
+    try {
+      const sessionFermee = await api("/api/" + marchandActif.id + "/caisse/session/fermer", {
+        method: "POST",
+        body: JSON.stringify({ sessionId: session.id, billetageFermeture, raisonEcart })
+      });
+      afficherRecapFermetureCaisse(sessionFermee);
+    } catch (e) {
+      alert(t("erreurPrefixe") + e.message);
+    }
+  };
+}
+
+// Recapitulatif affiche juste apres une fermeture reussie (fond de depart, ventes especes de la session,
+// montant theorique, montant reellement compte, ecart et raison eventuelle) - avant de revenir sur l'ecran
+// d'ouverture pour le prochain caissier.
+function afficherRecapFermetureCaisse(session) {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML =
+    "<h2>" + t("caisseSessionFermeeTitre") + "</h2>" +
+    "<p><strong>" + t("caisseFondInitialLabel") + " :</strong> " + session.fondInitial.toLocaleString(localeCourante()) + " FCFA</p>" +
+    "<p><strong>" + t("caisseVentesEspecesLabel") + " :</strong> " + session.totalVentesEspeces.toLocaleString(localeCourante()) + " FCFA</p>" +
+    "<p><strong>" + t("caisseMontantTheoriqueLabel") + " :</strong> " + session.montantTheorique.toLocaleString(localeCourante()) + " FCFA</p>" +
+    "<p><strong>" + t("caisseMontantCompteLabel") + " :</strong> " + session.montantCompte.toLocaleString(localeCourante()) + " FCFA</p>" +
+    "<p><strong>" + t("caisseEcartLabel") + " :</strong> " + session.ecart.toLocaleString(localeCourante()) + " FCFA</p>" +
+    (session.raisonEcart ? "<p><strong>" + t("caisseRaisonEcartLabel") + " :</strong> " + esc(session.raisonEcart) + "</p>" : "") +
+    "<button id='btnRetourCaisseApresFermeture' class='principal' style='margin-top:12px;'>" + t("btnRetourCaisse") + "</button>";
+  document.getElementById("btnRetourCaisseApresFermeture").onclick = () => renderCaisse();
+}
+
+// Historique des sessions (ouvertes ET fermees), plus recentes d'abord - accessible depuis l'ecran
+// d'ouverture (bouton "Voir l'historique").
+async function afficherHistoriqueCaisse() {
+  const zoneHisto = document.getElementById("zoneHistoriqueCaisse");
+  if (!zoneHisto) return;
+  zoneHisto.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const sessions = await api("/api/" + marchandActif.id + "/caisse/sessions");
+  zoneHisto.innerHTML =
+    "<h3>" + t("caisseHistoriqueTitre") + "</h3>" +
+    (sessions.length
+      ? "<table class='table-donnees'><tr><th>" + t("theadCaissier") + "</th><th>" + t("theadOuverture") + "</th><th>" + t("theadFermeture") + "</th><th>" + t("caisseFondInitialLabel") + "</th><th>" + t("caisseMontantCompteLabel") + "</th><th>" + t("caisseEcartLabel") + "</th></tr>" +
+        sessions.map((s) =>
+          "<tr>" +
+            "<td>" + esc(s.caissier || "") + "</td>" +
+            "<td>" + esc(new Date(s.dateOuverture).toLocaleString(localeCourante())) + "</td>" +
+            "<td>" + (s.dateFermeture ? esc(new Date(s.dateFermeture).toLocaleString(localeCourante())) : "<em>" + t("caisseSessionEnCours") + "</em>") + "</td>" +
+            "<td>" + s.fondInitial.toLocaleString(localeCourante()) + " FCFA</td>" +
+            "<td>" + (s.montantCompte != null ? s.montantCompte.toLocaleString(localeCourante()) + " FCFA" : "—") + "</td>" +
+            "<td>" + (s.ecart != null ? s.ecart.toLocaleString(localeCourante()) + " FCFA" : "—") + (s.raisonEcart ? "<div class='raison'>" + esc(s.raisonEcart) + "</div>" : "") + "</td>" +
+          "</tr>"
+        ).join("") +
+      "</table>"
+      : "<p class='raison'>" + t("caisseHistoriqueAucune") + "</p>");
+}
+
 // Pont IzyFacture (voir izyfacture.js/server.js) : badge + bouton "Facturer"/"Réessayer" par commande, dans
 // l'onglet Commandes. Toujours affiche (meme si le marchand n'a pas encore connecte IzyFacture) - le bouton
 // renvoie alors une erreur claire ("Aucune clé IzyFacture enregistrée...") plutot que d'obliger a deviner
@@ -1929,7 +2181,12 @@ async function renderCommandes() {
   let visibles = commandes.slice();
   if (commandesFiltreStatut !== "Tous") visibles = visibles.filter((o) => o.statut === commandesFiltreStatut);
   if (commandesFiltreMode !== "Tous") {
-    visibles = visibles.filter((o) => (o.modeLivraison === "retrait" ? "Retrait" : "Livraison") === commandesFiltreMode);
+    // "Boutique" (vente comptoir, source:"pos") est un mode a part - jamais confondu avec Livraison/Retrait,
+    // qui ne concernent que les commandes venues du bot WhatsApp (29 sept 2026).
+    visibles = visibles.filter((o) => {
+      const mode = o.source === "pos" ? "Boutique" : (o.modeLivraison === "retrait" ? "Retrait" : "Livraison");
+      return mode === commandesFiltreMode;
+    });
   }
   if (commandesFiltrePeriodeType === "jour" && commandesFiltreJour) {
     visibles = visibles.filter((o) => new Date(o.dateISO).toISOString().slice(0, 10) === commandesFiltreJour);
@@ -1948,7 +2205,7 @@ async function renderCommandes() {
     valeurs.map((v) => "<option value='" + esc(v) + "'" + (v === valeurActuelle ? " selected" : "") + ">" + esc(v === "Tous" ? t("optionTous") : libelleStatutCommande(v)) + "</option>").join("");
   const optionsFiltreMode = (valeurs, valeurActuelle) =>
     valeurs.map((v) => {
-      const libelle = v === "Tous" ? t("optionTous") : (v === "Livraison" ? t("optionLivraison") : t("optionRetrait"));
+      const libelle = v === "Tous" ? t("optionTous") : (v === "Livraison" ? t("optionLivraison") : v === "Retrait" ? t("optionRetrait") : t("optionVenteBoutique"));
       return "<option value='" + esc(v) + "'" + (v === valeurActuelle ? " selected" : "") + ">" + esc(libelle) + "</option>";
     }).join("");
 
@@ -1956,7 +2213,7 @@ async function renderCommandes() {
     "<h2>" + t("commandesTitre", { n: visibles.length, suffixe: visibles.length !== commandes.length ? t("commandesSurTotal", { total: commandes.length }) : "" }) + "</h2>" +
     "<div style='display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin-bottom:14px;'>" +
       "<label>" + t("labelStatut") + "<select id='commandesSelStatut'>" + optionsFiltreStatut(["Tous"].concat(statuts), commandesFiltreStatut) + "</select></label>" +
-      "<label>" + t("labelMode") + "<select id='commandesSelMode'>" + optionsFiltreMode(["Tous", "Livraison", "Retrait"], commandesFiltreMode) + "</select></label>" +
+      "<label>" + t("labelMode") + "<select id='commandesSelMode'>" + optionsFiltreMode(["Tous", "Livraison", "Retrait", "Boutique"], commandesFiltreMode) + "</select></label>" +
       "<label>" + t("labelDate") + "<select id='commandesSelTri'>" +
         "<option value='recent'" + (commandesTriDate === "recent" ? " selected" : "") + ">" + t("optionPlusRecentes") + "</option>" +
         "<option value='ancien'" + (commandesTriDate === "ancien" ? " selected" : "") + ">" + t("optionPlusAnciennes") + "</option>" +
@@ -2119,6 +2376,38 @@ function lireNotifStatutFormulaire() {
   return out;
 }
 
+// Bloc "Parametres de caisse" (option payante superadmin "optionCaissePos", voir blocOptionsPayantesHtml
+// plus bas) : le marchand definit LUI-MEME le seuil de tolerance sur l'ecart de caisse, la liste des
+// coupures qu'il manipule reellement, et si un seul tiroir peut etre ouvert a la fois ou plusieurs en
+// parallele - voir configCaisse()/ouvrirSessionCaisse()/fermerSessionCaisse() dans conversation.js. Les
+// coupures sont saisies comme une liste separee par des virgules plutot qu'un editeur ligne par ligne :
+// plus rapide a corriger pour le marchand, et le resultat est le meme (un tableau de nombres).
+function blocCaisseParametresHtml(caisse) {
+  const c = caisse || {};
+  const coupures = Array.isArray(c.coupures) ? c.coupures : [];
+  return "<h3>" + t("h3CaisseParametres") + "</h3>" +
+    "<p style='color:#666; font-size:0.9em;'>" + t("descCaisseParametres") + "</p>" +
+    "<label>" + t("labelCaisseSeuilEcart") + "</label>" +
+    "<input id='caisseSeuilEcart' type='number' min='0' step='1' value=\"" + (Number(c.seuilEcart) || 0) + "\" />" +
+    "<label>" + t("labelCaisseCoupures") + "</label>" +
+    "<input id='caisseCoupures' value=\"" + esc(coupures.join(", ")) + "\" placeholder=\"" + esc(t("placeholderCaisseCoupures")) + "\" />" +
+    "<label style='display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:normal;'>" +
+      "<input type='checkbox' id='caisseSessionUnique'" + (c.sessionUnique !== false ? " checked" : "") + " /> " + t("labelCaisseSessionUnique") +
+    "</label>";
+}
+function lireCaisseParametresFormulaire() {
+  const coupures = document.getElementById("caisseCoupures").value
+    .split(",")
+    .map((v) => Math.round(Number(v.trim())))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const coupuresUniques = Array.from(new Set(coupures)).sort((a, b) => b - a);
+  return {
+    seuilEcart: Math.max(0, Math.round(Number(document.getElementById("caisseSeuilEcart").value) || 0)),
+    coupures: coupuresUniques,
+    sessionUnique: document.getElementById("caisseSessionUnique").checked
+  };
+}
+
 // Bloc "Facturation IzyFacture" (voir izyfacture.js/server.js) - reserve au proprietaire du marchand ou au
 // super-administrateur (meme regle que la route serveur /api/:id/izyfacture/parametres) : la cle IzyFacture
 // est une information financiere sensible, jamais accessible a un employe meme via le role "parametres".
@@ -2210,6 +2499,7 @@ async function renderParametresCatalogue() {
     "<label>" + t("labelHorairesRetrait") + "</label>" +
     "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder=\"" + esc(t("placeholderHorairesRetrait")) + "\" />" +
     (marchandActif.optionNotificationsStatut ? blocNotifStatutHtml(parametres.notifStatut) : "") +
+    (marchandActif.optionCaissePos ? blocCaisseParametresHtml(parametres.caisse) : "") +
     "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>" +
     (izyfactureDebloquee ? blocIzyfactureHtml(izyfactureEtat) : "");
   document.getElementById("btnSauverParams").onclick = async () => {
@@ -2225,6 +2515,7 @@ async function renderParametresCatalogue() {
         }
       };
       if (marchandActif.optionNotificationsStatut) corps.notifStatut = lireNotifStatutFormulaire();
+      if (marchandActif.optionCaissePos) corps.caisse = lireCaisseParametresFormulaire();
       await api("/api/" + marchandActif.id + "/parametres", { method: "PUT", body: JSON.stringify(corps) });
       alert(t("alertParametresEnregistres"));
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
