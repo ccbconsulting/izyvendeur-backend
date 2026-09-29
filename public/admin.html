@@ -191,6 +191,10 @@ const I18N = {
     stockIllimiteSymbole: "Illimité",
     btnAjouterVariante: "+ Variante",
     aucunArticle: "Aucun article. Ajoutez-en un.",
+    placeholderRechercheArticle: "Rechercher un article (nom, catégorie, couleur, taille…)",
+    rechercheCompteurArticles: "{n} sur {total} article(s) affiché(s)",
+    rechercheAucunResultat: "Aucun article ne correspond à cette recherche.",
+    btnEffacerRecherche: "Effacer",
     btnAjouterArticle: "+ Ajouter un article",
     btnEnregistrerCatalogue: "Enregistrer le catalogue",
     alertCatalogueEnregistre: "Catalogue enregistré.",
@@ -608,6 +612,10 @@ const I18N = {
     stockIllimiteSymbole: "Unlimited",
     btnAjouterVariante: "+ Variant",
     aucunArticle: "No items yet. Add one.",
+    placeholderRechercheArticle: "Search for an item (name, category, color, size…)",
+    rechercheCompteurArticles: "{n} of {total} item(s) shown",
+    rechercheAucunResultat: "No item matches this search.",
+    btnEffacerRecherche: "Clear",
     btnAjouterArticle: "+ Add an item",
     btnEnregistrerCatalogue: "Save the catalog",
     alertCatalogueEnregistre: "Catalog saved.",
@@ -1273,6 +1281,32 @@ function allerVersOnglet(idOnglet) {
 
 // ---------------- Marchand catalogue ----------------
 
+// Recherche d'article dans le Catalogue (29 septembre 2026, demandee pour ne plus avoir a faire defiler
+// manuellement toute la liste pour retrouver un article a modifier) - variable hors fonction, sur le meme
+// principe que commandesFiltreStatut/commandesFiltreMode plus bas : survit a un renderCatalogue() complet
+// (apres l'ajout d'une photo, un import CSV, "Enregistrer le catalogue"...) au lieu de se reinitialiser a
+// chaque fois.
+let catalogueTexteRecherche = "";
+
+// Normalise pour une comparaison insensible a la casse ET aux accents (ex: "imprimee" doit retrouver
+// "Robe wax imprimée") - simple mais suffisant pour une recherche cote client sur une liste deja chargee.
+function normaliserRecherche(s) {
+  return (s || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+}
+
+// Un article correspond a la recherche s'il matche par son nom, sa categorie, OU la couleur/taille d'une
+// de ses variantes (permet par ex. de retrouver tous les articles ayant une variante "Rouge").
+function articleCorrespond(p, texte) {
+  const cible = normaliserRecherche(texte);
+  if (!cible) return true;
+  if (normaliserRecherche(p.nom).indexOf(cible) !== -1) return true;
+  if (normaliserRecherche(p.cat || "").indexOf(cible) !== -1) return true;
+  return (p.variantes || []).some((v) =>
+    normaliserRecherche(v.couleur || "").indexOf(cible) !== -1 ||
+    normaliserRecherche(v.taille || "").indexOf(cible) !== -1
+  );
+}
+
 async function renderCatalogue() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -1296,11 +1330,43 @@ async function renderCatalogue() {
       "</div>";
   }
 
+  // Applique le filtre de recherche SANS reconstruire le DOM (juste afficher/masquer les cartes deja
+  // rendues) - contrairement aux autres actions du catalogue (ajouter/supprimer/basculer...) qui appellent
+  // toutes redraw() au complet. Une frappe dans le champ de recherche appelle UNIQUEMENT cette fonction :
+  // un redraw() complet a chaque caractere tape recreerait le champ lui-meme et lui ferait perdre le focus/
+  // curseur en plein milieu de la saisie.
+  function appliquerFiltreRecherche() {
+    let visibles = 0;
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-carte-produit]"), (carte) => {
+      const correspond = articleCorrespond(local[Number(carte.dataset.carteProduit)], catalogueTexteRecherche);
+      carte.style.display = correspond ? "" : "none";
+      if (correspond) visibles++;
+    });
+    const compteur = document.getElementById("rechercheCompteur");
+    if (compteur) compteur.textContent = catalogueTexteRecherche ? t("rechercheCompteurArticles", { n: visibles, total: local.length }) : "";
+    const msgVide = document.getElementById("rechercheAucunResultat");
+    if (msgVide) msgVide.style.display = (catalogueTexteRecherche && visibles === 0) ? "" : "none";
+    // Le bouton reste TOUJOURS dans le DOM (jamais recree par un simple appliquerFiltreRecherche(), qui ne
+    // touche pas au HTML) - seule sa visibilite change ici. Le construire conditionnellement dans le HTML de
+    // redraw() serait fige a l'etat de catalogueTexteRecherche au moment du DERNIER redraw complet, jamais
+    // mis a jour par la frappe elle-meme (qui n'appelle volontairement que cette fonction, pas redraw()).
+    const btnEffacer = document.getElementById("btnEffacerRecherche");
+    if (btnEffacer) btnEffacer.style.display = catalogueTexteRecherche ? "" : "none";
+  }
+
   function redraw() {
     zone.innerHTML =
       "<h2>" + t("catalogueEtStock") + "</h2>" +
+      (local.length
+        ? "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;'>" +
+            "<input id='champRechercheArticle' type='search' value=\"" + esc(catalogueTexteRecherche) + "\" placeholder=\"" + esc(t("placeholderRechercheArticle")) + "\" style='flex:1;min-width:220px;max-width:380px;' />" +
+            "<button id='btnEffacerRecherche' style='display:" + (catalogueTexteRecherche ? "" : "none") + ";'>" + t("btnEffacerRecherche") + "</button>" +
+            "<span id='rechercheCompteur' class='raison'></span>" +
+          "</div>" +
+          "<p id='rechercheAucunResultat' class='raison' style='display:none;'>" + t("rechercheAucunResultat") + "</p>"
+        : "") +
       "<div id='listeProduits'>" + local.map((p, pi) =>
-        "<div class='carte-produit'>" +
+        "<div class='carte-produit' data-carte-produit='" + pi + "'>" +
           "<div class='ligne-produit'>" +
             "<input data-p='" + pi + "' data-champ='nom' value=\"" + esc(p.nom) + "\" placeholder=\"" + esc(t("placeholderNomArticle")) + "\" />" +
             "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder=\"" + esc(t("placeholderCategorie")) + "\" />" +
@@ -1342,6 +1408,23 @@ async function renderCatalogue() {
         "<input type='file' accept='.csv,text/csv' id='champFichierImportCatalogue' /> " +
         "<button id='btnImporterCatalogue'>" + t("btnImporterCatalogue") + "</button>" +
       "</div>";
+
+    const champRecherche = document.getElementById("champRechercheArticle");
+    if (champRecherche) {
+      champRecherche.addEventListener("input", () => {
+        catalogueTexteRecherche = champRecherche.value;
+        appliquerFiltreRecherche();
+      });
+    }
+    const btnEffacerRecherche = document.getElementById("btnEffacerRecherche");
+    if (btnEffacerRecherche) {
+      btnEffacerRecherche.onclick = () => { catalogueTexteRecherche = ""; redraw(); };
+    }
+    // Reapplique le filtre courant apres CE redraw (qu'il vienne d'une frappe geree plus haut sans passer
+    // par ici, ou d'une autre action - ajout/suppression d'article, bascule "Stock illimite"...) : sans
+    // cet appel, un redraw declenche par une autre action reafficherait TOUTES les cartes en ignorant la
+    // recherche en cours.
+    appliquerFiltreRecherche();
 
     Array.prototype.forEach.call(zone.querySelectorAll("[data-illimite]"), (chk) => {
       chk.addEventListener("change", () => {

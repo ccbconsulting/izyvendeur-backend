@@ -913,6 +913,31 @@ pour un marchand sans logo — et pas de case à cocher inutile dans ce cas —,
 sur la case sans rechargement de page, persistance confirmée après un rechargement complet) + régression
 complète rejouée sans casse.
 
+## Étape 30 — Recherche d'article dans le Catalogue (nouveau)
+
+Demandé le 29 septembre 2026 : retrouver un article précis dans un grand catalogue obligeait à faire défiler
+manuellement toute la liste pour lui ajouter du stock ou le modifier. Un champ de recherche apparaît
+désormais en haut de l'onglet Catalogue (uniquement s'il y a au moins un article) et filtre la liste en
+temps réel, à chaque frappe.
+
+La recherche porte sur le nom de l'article, sa catégorie, et la couleur/taille de n'importe laquelle de ses
+variantes — utile par exemple pour retrouver tous les articles ayant une variante "Rouge". Elle est
+insensible à la casse ET aux accents ("imprimee" sans accent retrouve bien "Robe wax imprimée"). Un compteur
+("X sur Y article(s) affiché(s)") apparaît dès qu'une recherche est en cours, un message clair s'affiche
+si aucun article ne correspond, et un bouton "Effacer" réapparaît la liste complète en un clic.
+
+Détail technique volontaire : taper dans le champ ne déclenche PAS un rechargement complet de l'onglet
+(contrairement aux autres actions du Catalogue) — seul l'affichage/masquage des articles déjà à l'écran est
+mis à jour, pour ne pas faire perdre le focus/curseur en plein milieu de la saisie. Le texte recherché est
+conservé dans une variable qui survit, elle, à un rechargement complet déclenché par une autre action
+(ajout d'article, import CSV, enregistrement du catalogue...) : la recherche reste donc active même après
+ce genre d'opération. Fonctionnalité entièrement côté navigateur — aucun changement serveur ni base de
+données.
+
+Testé le 29 septembre 2026 avec un vrai navigateur piloté : recherche par nom/catégorie/couleur, message
+"aucun résultat" + compteur, conservation du focus pendant la frappe, bouton "Effacer", persistance de la
+recherche après l'ajout d'un article — + régression complète (23 fichiers de tests) rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1076,11 +1101,14 @@ complète rejouée sans casse.
   (Étape 27) + les 5 tuiles du Tableau de bord deviennent cliquables (souris et clavier), chacune bascule
   vers l'onglet où sa donnée est détaillée, avec repli différent pour un marchand service et tuile non
   cliquable si l'onglet cible n'est pas visible pour l'utilisateur connecté (Étape 28) + le logo du
-  marchand s'affiche en filigrane très discret (3 % d'opacité) derrière tout le contenu de la zone
-  principale (`#contenuOnglet`), sur tous les onglets, via `appliquerFiligraneLogo()` appelée à chaque
-  changement de marchand + nouvelle case à cocher dans le bloc "Logo" de Mon compte (affichée uniquement
-  si un logo existe) pour le désactiver au cas par cas, enregistrement immédiat sans bouton séparé
-  (Étape 29)
+  marchand s'affiche en filigrane discret (8 % d'opacité, empreinte compacte 260 px max) derrière tout le
+  contenu de la zone principale (`#contenuOnglet`), sur tous les onglets, via `appliquerFiligraneLogo()`
+  appelée à chaque changement de marchand + nouvelle case à cocher dans le bloc "Logo" de Mon compte
+  (affichée uniquement si un logo existe) pour le désactiver au cas par cas, enregistrement immédiat sans
+  bouton séparé (Étape 29) + nouveau champ de recherche en haut de l'onglet Catalogue, filtrage en temps
+  réel par nom/catégorie/couleur/taille de variante (insensible casse et accents), compteur de résultats,
+  message "aucun résultat", bouton "Effacer", sans perte de focus pendant la frappe et avec conservation
+  de la recherche après un rechargement complet de l'onglet déclenché par une autre action (Étape 30)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
