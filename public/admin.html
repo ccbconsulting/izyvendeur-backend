@@ -1279,6 +1279,38 @@ let moi = null; // { role: "superadmin" | "marchand", merchantId, adminUser }
 let dashboardPeriodeActuelle = "jour";
 
 async function demarrer() {
+  const sel = document.getElementById("selecteurMarchand");
+  const nomSeul = document.getElementById("nomMarchandSeul");
+  const btnNouveau = document.getElementById("btnNouveauMarchand");
+  const btnModifier = document.getElementById("btnModifierMarchand");
+  const btnSuspendre = document.getElementById("btnSuspendreMarchand");
+  const btnSupprimer = document.getElementById("btnSupprimerMarchand");
+  // Repli de securite (2 octobre 2026) : ces boutons sont reserves au super-administrateur et vivent dans le
+  // <header>, donc PERSISTENT d'un appel a demarrer() a l'autre (contrairement a #contenuOnglet, entierement
+  // recree a chaque rendu). Avant l'introduction d'une vraie session de connexion (Étape 35), demarrer()
+  // n'etait jamais rappele pour une IDENTITE DIFFERENTE sans recharger toute la page (l'authentification
+  // Basic n'offrait aucun moyen de changer de compte sans rouvrir le navigateur) - masquer ces boutons
+  // UNIQUEMENT dans la branche superadmin suffisait donc en pratique. Ce n'est plus vrai maintenant qu'on
+  // peut se deconnecter puis se reconnecter avec une IDENTITE DIFFERENTE dans la MEME page (exactement le
+  // scenario signale : identifiants marchand puis superadministrateur). IMPORTANT : ce repli doit s'executer
+  // ICI, de façon SYNCHRONE, AVANT le moindre `await` ci-dessous (donc avant meme de savoir qui vient de se
+  // connecter) - un premier correctif qui le placait apres les deux appels `api()` laissait une fenetre
+  // reelle (le temps de ces deux allers-retours reseau) pendant laquelle les boutons de l'IDENTITE
+  // PRECEDENTE restaient visibles ET cliquables a l'ecran, trouve en testant precisement ce scenario.
+  sel.style.display = "none";
+  nomSeul.style.display = "none";
+  btnNouveau.style.display = "none";
+  btnModifier.style.display = "none";
+  btnSuspendre.style.display = "none";
+  btnSupprimer.style.display = "none";
+  // Par la meme occasion, on detache aussi les gestionnaires de clic poses lors d'un appel precedent de
+  // demarrer() (eux aussi, sinon, survivraient a un changement d'identite) - purement redondant tant que les
+  // boutons restent caches ci-dessus, mais rien ne doit dependre de CSS seul pour une protection de securite.
+  sel.onchange = null;
+  btnSuspendre.onclick = null;
+  btnModifier.onclick = null;
+  btnSupprimer.onclick = null;
+
   document.getElementById("titreHeader").textContent = "IzyVendeur — " + t("admin");
   document.getElementById("btnModifierMarchand").textContent = t("btnModifier");
   document.getElementById("btnSupprimerMarchand").textContent = t("supprimer");
@@ -1293,12 +1325,6 @@ async function demarrer() {
     document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("erreurChargerMarchands") + esc(e.message) + "</div>";
     return;
   }
-  const sel = document.getElementById("selecteurMarchand");
-  const nomSeul = document.getElementById("nomMarchandSeul");
-  const btnNouveau = document.getElementById("btnNouveauMarchand");
-  const btnModifier = document.getElementById("btnModifierMarchand");
-  const btnSuspendre = document.getElementById("btnSuspendreMarchand");
-  const btnSupprimer = document.getElementById("btnSupprimerMarchand");
   if (moi.role === "superadmin") {
     sel.style.display = "";
     nomSeul.style.display = "none";
@@ -1361,6 +1387,11 @@ async function demarrer() {
   }
   if (marchands.length) choisirMarchand(marchands[0].id);
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("aucunMarchandConfigure") + "</div>";
+  // Marqueur de fin de rendu (2 octobre 2026) : permet aux tests automatises (et a tout code appelant) de
+  // savoir avec certitude QUAND demarrer() a fini de s'executer POUR TEL ROLE precis, plutot que de deviner
+  // via la simple presence d'elements qui peuvent deja exister dans le DOM depuis le rendu PRECEDENT (ex:
+  // les boutons d'onglets d'une identite anterieure) - voir test_securite_session_connexion_playwright.js.
+  document.body.dataset.demarrePourRole = moi.role;
 }
 
 document.getElementById("btnNouveauMarchand").onclick = async () => {

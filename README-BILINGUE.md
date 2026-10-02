@@ -1130,6 +1130,24 @@ clair sur de mauvais identifiants, retour à l'écran de connexion dès qu'une s
 action, bouton "Se déconnecter" fonctionnel) + régression complète (28 fichiers de tests, dont les 27
 préexistants intégralement adaptés au nouveau système de connexion) rejouée sans casse.
 
+**Correctif du même jour (2 octobre 2026), trouvé en testant la mise en ligne réelle** : après connexion
+super-administrateur puis déconnexion/reconnexion avec des identifiants de marchand, dans le même
+navigateur et sans recharger la page, le bouton "Suspendre ce marchand" restait visible dans l'en-tête
+alors que l'utilisateur connecté était bien un marchand. Cause : ce bouton (comme "+ Nouveau marchand",
+"Modifier", "Supprimer" et le sélecteur de marchands) vit dans l'en-tête de la page, en dehors de la zone
+reconstruite à chaque changement d'onglet — `demarrer()` le rendait visible pour le super-administrateur,
+mais ne pensait pas toujours à le masquer explicitement en redevenant marchand. Avec l'ancienne
+authentification Basic, changer d'identité sans recharger la page entière n'était simplement pas possible,
+donc ce bug ne pouvait jamais se produire ; avec un vrai bouton de déconnexion/reconnexion DANS la page, si.
+Important à préciser : le serveur, lui, a TOUJOURS refusé ces actions à un marchand (403, vérifié dès la
+première livraison) — seul l'AFFICHAGE du bouton était en cause, jamais un accès réellement obtenu.
+Corrigé : ces boutons sont désormais masqués de façon systématique, de manière synchrone, dès le tout début
+de `demarrer()` — avant même de savoir qui vient de se connecter — puis réaffichés seulement une fois
+l'identité confirmée super-administrateur. Un nouveau fichier de test navigateur dédié
+(`test_securite_session_connexion_playwright.js`) rejoue précisément ce scénario (connexion
+super-administrateur → déconnexion → connexion marchand, dans la même page) et vérifie qu'aucun bouton
+réservé ne reste visible ni cliquable.
+
 **Important : pensez à définir `SESSION_SECRET` sur Render** (Environment > Add Environment Variable,
 n'importe quelle chaîne longue et aléatoire suffit, même principe que `ENCRYPTION_KEY` ci-dessus) —
 sans elle, IzyVendeur fonctionne quand même (un secret temporaire est généré au démarrage, avec un
@@ -1398,7 +1416,12 @@ scénario d'usage normal de /admin.
   d'échec, et un nouveau bouton "Se déconnecter" toujours visible dans l'en-tête + la fonction `api()`
   redirige désormais automatiquement vers cet écran dès qu'une requête reçoit un 401 (session expirée ou
   compte modifié entre-temps), sans que chaque onglet ait besoin de gérer ce cas individuellement
-  (Étape 35)
+  (Étape 35) + **correctif du même jour** : `demarrer()` masque désormais TOUJOURS, de façon synchrone et
+  avant tout appel réseau, les boutons de l'en-tête réservés au super-administrateur (Suspendre, Modifier,
+  Supprimer, + Nouveau marchand, sélecteur de marchands) plutôt que de compter sur chaque branche de rôle
+  pour y penser elle-même — corrige un cas où ces boutons pouvaient rester visibles (jamais fonctionnels,
+  le serveur refusait toujours l'action en 403) après une déconnexion/reconnexion avec une identité
+  différente dans la même page (Étape 35)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
