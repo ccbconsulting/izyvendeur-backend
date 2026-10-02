@@ -1161,6 +1161,62 @@ jeton copié resterait valable jusqu'à son expiration naturelle (24h maximum). 
 quelqu'un a eu un accès technique direct au cookie lui-même (pas seulement à l'écran), ce qui n'est pas le
 scénario d'usage normal de /admin.
 
+## Étape 36 — Migration derrière Cloudflare (blocage du réseau Orange Cameroun sur Render, nouveau)
+
+Demandé le 2 octobre 2026, en urgence : le réseau Orange Cameroun bloque l'accès direct aux adresses
+`*.onrender.com`, ce qui touchait IzyVendeur (et IzyFacture, déjà adapté séparément). La solution mise en
+place par vous : le domaine `ccbconsulting.org` est entré dans Cloudflare, `izyvendeur.ccbconsulting.org`
+pointe en mode "Proxied" vers le service Render d'IzyVendeur — tout le trafic passe désormais par
+Cloudflare avant d'arriver sur Render. Ce chantier adapte IzyVendeur pour fonctionner correctement derrière
+ce nouvel intermédiaire, sur les 4 points techniques que cela soulève.
+
+**1) Adresse IP réelle du client.** Derrière Cloudflare, le serveur ne voit plus l'adresse du client final,
+mais celle de Cloudflare — ce qui aurait regroupé tous vos clients sous une poignée d'adresses dans les
+journaux. Nouveau fichier `clientip.js` : l'en-tête `CF-Connecting-IP` (qui contient la vraie adresse du
+client, ajouté par Cloudflare) n'est repris **que si la requête provient effectivement d'une adresse IP
+Cloudflare connue** (liste officielle des plages Cloudflare, plus une variable d'environnement
+`CLOUDFLARE_IPS` pour en ajouter si Cloudflare en publie de nouvelles) — sinon, n'importe qui pourrait
+inventer cet en-tête en appelant directement l'adresse `.onrender.com` et usurper une autre adresse IP.
+`app.set('trust proxy', 1)` (un seul niveau de proxy fait confiance — celui de Render lui-même) a aussi été
+ajouté, condition nécessaire pour qu'Express accepte de regarder `req.ip` correctement dans ce contexte.
+
+**2) Adresses publiques.** `server.js` redirige désormais automatiquement (301) toute page ouverte par un
+utilisateur (`/`, `/admin`, etc., en `GET`) depuis une adresse `.onrender.com` vers
+`https://izyvendeur.ccbconsulting.org` (nouvelle variable `DOMAINE_PUBLIC`) — **sans jamais rediriger** le
+webhook WhatsApp (`/webhook`) ni aucune route d'API (`/api/*`), qui doivent continuer à répondre directement
+quelle que soit l'adresse appelée. Vérification faite dans le code : IzyVendeur n'avait aucune URL
+`.onrender.com` codée en dur, aucune configuration CORS, et aucun lien envoyé au client/marchand
+(catalogue, paiement, rendez-vous) ne contient d'adresse — ces liens sont tous relatifs ou construits à
+partir de l'en-tête `Host` de la requête reçue, qui sera déjà `izyvendeur.ccbconsulting.org` une fois les
+serveurs de noms basculés chez Cloudflare. Aucun changement nécessaire à cet endroit.
+
+**3) Webhook WhatsApp (Meta) derrière Cloudflare.** Le corps brut de la requête est désormais conservé
+(`express.json({ verify })`) pour permettre une vraie vérification de signature. **Nouvelle protection**
+(absente jusqu'ici, ajoutée après votre accord explicite) : toute requête `POST /webhook` est désormais
+rejetée (403) si son en-tête `X-Hub-Signature-256` ne correspond pas à la signature HMAC-SHA256 calculée
+avec votre "App Secret" Meta (variable `WHATSAPP_APP_SECRET`, distincte du jeton `WHATSAPP_TOKEN` déjà
+utilisé) — tant que cette variable n'est pas définie sur Render, le comportement actuel est conservé à
+l'identique (aucune vérification, juste un avertissement dans les journaux), pour ne jamais casser le
+webhook existant tant que vous n'avez pas ajouté l'App Secret.
+
+**4) Appels vers IzyFacture.** Déjà en place avant ce chantier : `izyfacture.js` utilise
+`https://izyfacture.ccbconsulting.org/api/v1` par défaut (variable `IZYFACTURE_API_URL`), jamais une
+adresse `.onrender.com`. Rien à changer ici.
+
+Testé le 2 octobre 2026 (nouveau fichier `test_cloudflare_proxy.js`, 14 vérifications) : reconnaissance
+d'une vraie plage Cloudflare / rejet d'une adresse hors Cloudflare / prise en compte de `CLOUDFLARE_IPS`,
+redirection 301 de `.onrender.com` vers le domaine public pour `/` et `/admin`, absence de redirection une
+fois déjà sur le bon domaine, absence de redirection (quel que soit le domaine appelé) pour `/api/*` et
+`/webhook`, acceptation d'une signature Meta valide, rejet (403) d'une signature invalide ou absente une
+fois `WHATSAPP_APP_SECRET` définie. Régression complète rejouée sans casse (29 fichiers de tests, les 28
+préexistants intégralement inchangés et toujours verts).
+
+**À vérifier aussi, profite de ce chantier de sécurité** : la variable `NODE_ENV=production` doit être
+définie sur Render (si elle ne l'est pas déjà) pour que le cookie de session (Étape 35) soit marqué
+"Secure" — c'est-à-dire envoyé uniquement en HTTPS, jamais interceptable en clair. Avec le mode SSL/TLS
+"Full" de Cloudflare et le trafic qui passera entièrement par HTTPS après la bascule des serveurs de noms,
+c'est le moment logique pour vérifier ce réglage si ce n'est pas déjà fait.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1327,7 +1383,20 @@ scénario d'usage normal de /admin.
   `statutReponseExterne` : un 401 renvoyé par un service EXTERNE (IzyFacture, clé invalide) est
   systématiquement requalifié en 502 avant d'atteindre le navigateur, pour ne jamais entrer en collision
   avec le sens désormais réservé du 401 ("votre session a expiré") sur `/api/:id/izyfacture/tester` et
-  `/api/:id/commandes/:orderId/izyfacture/paiement` (Étape 35)
+  `/api/:id/commandes/:orderId/izyfacture/paiement` (Étape 35) + **migration derrière Cloudflare** :
+  `app.set('trust proxy', 1)` + nouveau middleware `clientIp` (voir `clientip.js` ci-dessous), posé avant
+  toute route, pour que `req.ip` reflète la vraie adresse du client WhatsApp/navigateur et non celle de
+  Cloudflare + nouveau middleware de redirection 301 `.onrender.com` → `DOMAINE_PUBLIC` pour les pages
+  utilisateurs (`GET`, hors `/webhook` et `/api/*`) + `express.json()` capture désormais le corps brut de
+  chaque requête (`req.rawBody`) pour permettre la vérification de signature ci-dessous + nouvelle
+  fonction `verifierSignatureWebhook` (HMAC-SHA256, `X-Hub-Signature-256`, comparaison en temps constant) :
+  `POST /webhook` répond désormais 403 si la signature Meta est absente ou invalide, mais UNIQUEMENT si
+  `WHATSAPP_APP_SECRET` est définie (sinon comportement inchangé, avertissement journalisé) (Étape 36)
+- `clientip.js` (**nouveau fichier**) — reconnaît si une requête provient réellement d'une adresse IP
+  Cloudflare (plages officielles + `CLOUDFLARE_IPS`) et, si oui seulement, remplace `req.ip` par la vraie
+  adresse du client transmise dans l'en-tête `CF-Connecting-IP` ; sinon laisse `req.ip` inchangé, pour
+  qu'un appel direct à l'adresse `.onrender.com` ne puisse jamais usurper une adresse IP via cet en-tête
+  (Étape 36)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)

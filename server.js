@@ -11,6 +11,7 @@
 
 require("dotenv").config();
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const multer = require("multer");
@@ -21,9 +22,48 @@ const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
 const izyfacture = require("./izyfacture");
 const cryptoUtil = require("./crypto-util");
+const { clientIp } = require("./clientip");
 
 const app = express();
-app.use(express.json());
+
+// ---------------- Derriere Cloudflare (2 octobre 2026) ----------------
+// IzyVendeur (et IzyFacture) sont desormais accedes via un domaine propre (izyvendeur.ccbconsulting.org)
+// proxifie par Cloudflare, lui-meme devant Render - necessaire car l'operateur Orange Cameroun bloque les
+// adresses *.onrender.com directement. Deux consequences cote serveur :
+//   1) Sans ceci, TOUTE adresse IP vue par l'application serait celle de Cloudflare (quelques adresses
+//      partagees par des millions de visiteurs), jamais celle du vrai client - `trust proxy` (un seul saut :
+//      le propre proxy de Render, qui ajoute SON PROPRE en-tete X-Forwarded-For) + clientIp (ci-dessous,
+//      voir clientip.js) restaurent l'adresse reelle via l'en-tete CF-Connecting-IP, mais UNIQUEMENT quand
+//      la requete provient reellement d'une adresse Cloudflare connue - sinon n'importe qui pourrait
+//      pretendre etre n'importe quelle adresse en appelant directement l'URL .onrender.com avec cet en-tete
+//      invente. Rien n'utilise encore req.ip aujourd'hui (pas de limiteur de requetes), mais c'est desormais
+//      fiable pour tout ce qui en aura besoin plus tard (journalisation, anti-abus).
+//   2) Les pages ouvertes par un navigateur (jamais le webhook ni l'API - voir plus bas) redirigent
+//      automatiquement une visite directe sur l'ancienne adresse .onrender.com vers le nouveau domaine, pour
+//      que personne ne reste coince sur une adresse qui ne fonctionne plus depuis le reseau Orange.
+app.set("trust proxy", 1);
+app.use(clientIp);
+
+const DOMAINE_PUBLIC = process.env.DOMAINE_PUBLIC || null; // ex: "izyvendeur.ccbconsulting.org" (optionnelle)
+app.use((req, res, next) => {
+  if (
+    DOMAINE_PUBLIC &&
+    req.method === "GET" &&
+    /\.onrender\.com$/i.test(req.hostname || "") &&
+    req.path !== "/webhook" &&
+    !req.path.startsWith("/api/")
+  ) {
+    return res.redirect(301, "https://" + DOMAINE_PUBLIC + req.originalUrl);
+  }
+  next();
+});
+
+// `verify` : conserve le corps BRUT (avant parsing JSON) dans req.rawBody - necessaire pour recalculer la
+// signature HMAC X-Hub-Signature-256 de Meta (voir verifierSignatureWebhook plus bas), qui porte sur les
+// octets exacts envoyes, pas sur une version re-serialisee de req.body (qui pourrait legerement differer :
+// ordre des cles, espacement...). N'affecte aucune route existante - simple capture en plus du parsing JSON
+// habituel, qui continue de fonctionner exactement comme avant pour tout le reste (y compris /api/...).
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 // Upload de photos d'articles : conserve le fichier en memoire (jamais sur disque, Render l'efface de
 // toute facon a chaque redemarrage) le temps de le transferer vers R2 - voir storage.js. Une seule photo
@@ -39,6 +79,43 @@ const uploadFichierCatalogue = multer({ storage: multer.memoryStorage(), limits:
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GRAPH_API_VERSION = "v21.0";
+
+// ---------------- Signature du webhook WhatsApp (2 octobre 2026) ----------------
+// VERIFY_TOKEN (ci-dessus) ne protege qu'UNE SEULE requete : la verification GET faite une fois par Meta au
+// moment de l'abonnement du webhook. Il ne protege PAS les requetes POST envoyees ensuite a chaque message -
+// n'importe qui connaissant l'URL du webhook (publique par nature) pouvait jusqu'ici poster un faux message
+// WhatsApp qui aurait ete traite comme authentique. Meta signe en realite CHAQUE requete POST avec un HMAC-
+// SHA256 du corps exact (en-tete X-Hub-Signature-256), calcule avec le "App Secret" de l'app Meta (Settings
+// > Basic du portefeuille, PAS le jeton WHATSAPP_TOKEN ni VERIFY_TOKEN) - jusqu'ici jamais verifie. Repli
+// DELIBERE (meme principe que ENCRYPTION_KEY/SESSION_SECRET dans crypto-util.js) si WHATSAPP_APP_SECRET
+// n'est pas definie : on accepte quand meme les requetes (comportement inchange par rapport a avant), mais
+// avec un avertissement explicite au demarrage, pour qu'une absence en production ne passe jamais inapercue.
+const WHATSAPP_APP_SECRET = process.env.WHATSAPP_APP_SECRET || null;
+if (!WHATSAPP_APP_SECRET) {
+  console.warn(
+    "[securite webhook] WHATSAPP_APP_SECRET non definie : les requetes POST /webhook sont acceptees SANS " +
+    "verifier leur signature Meta (X-Hub-Signature-256). Definissez WHATSAPP_APP_SECRET sur Render (App " +
+    "Secret de l'app Meta, Settings > Basic) pour activer cette protection."
+  );
+}
+
+// Verifie la signature HMAC-SHA256 d'une requete POST /webhook contre WHATSAPP_APP_SECRET. Retourne true si
+// la signature est valide OU si WHATSAPP_APP_SECRET n'est pas configuree (voir avertissement ci-dessus) -
+// false uniquement quand une cle EST configuree et que la signature presentee ne correspond pas (requete
+// forgee, ou corps altere en route). Comparaison a temps constant (timingSafeEqual), comme pour les jetons
+// de session (voir crypto-util.js) - evite qu'une difference de temps de reponse ne permette de deviner la
+// signature attendue octet par octet.
+function verifierSignatureWebhook(req) {
+  if (!WHATSAPP_APP_SECRET) return true;
+  const entete = String(req.get("x-hub-signature-256") || "");
+  if (!entete.startsWith("sha256=")) return false;
+  const attendue =
+    "sha256=" + crypto.createHmac("sha256", WHATSAPP_APP_SECRET).update(req.rawBody || Buffer.alloc(0)).digest("hex");
+  const bufRecu = Buffer.from(entete);
+  const bufAttendu = Buffer.from(attendue);
+  if (bufRecu.length !== bufAttendu.length) return false;
+  return crypto.timingSafeEqual(bufRecu, bufAttendu);
+}
 
 // Message envoye a la place du bot quand un marchand est suspendu (ex: facture impayee) — volontairement
 // neutre et poli : la cause reelle (interne, cote marchand) ne regarde pas le client, qui n'y est pour
@@ -1699,6 +1776,15 @@ app.get("/webhook", (req, res) => {
 
 // --- ETAPE 2 : Reception des messages entrants ---
 app.post("/webhook", async (req, res) => {
+  // Rejette AVANT tout traitement (et avant meme l'accuse de reception habituel ci-dessous) une requete dont
+  // la signature Meta ne correspond pas - voir verifierSignatureWebhook() plus haut. Si WHATSAPP_APP_SECRET
+  // n'est pas configuree, cette fonction renvoie toujours true (comportement inchange).
+  if (!verifierSignatureWebhook(req)) {
+    console.warn("[securite webhook] Signature X-Hub-Signature-256 invalide ou absente - requete rejetee.");
+    res.sendStatus(403);
+    return;
+  }
+
   // On repond tout de suite 200 a Meta pour accuser reception (sinon Meta reessaie / se plaint).
   res.sendStatus(200);
 
