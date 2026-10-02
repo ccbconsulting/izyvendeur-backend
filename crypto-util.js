@@ -81,4 +81,75 @@ function indiceAffichable(texteClair) {
   return texteClair.slice(-4);
 }
 
-module.exports = { chiffrer, dechiffrer, indiceAffichable };
+// ---------------- Jeton de session /admin (29 septembre 2026) ----------------
+//
+// Remplace l'authentification HTTP Basic (popup native du navigateur, sans notion de "session" ni de
+// deconnexion fiable - voir server.js/protegerAcces) par un vrai ecran de connexion + un jeton de session
+// SIGNE (jamais chiffre : le jeton ne contient aucune donnee secrete, seulement role/identifiant/expiration
+// - il doit juste etre infalsifiable, pas confidentiel). Format : "<payload_base64url>.<signature_base64url>",
+// signature HMAC-SHA256. Aucune session n'est stockee cote serveur (rien a nettoyer, rien qui ne survit pas
+// a un redemarrage autrement que via le secret lui-meme) : toute l'information necessaire est dans le jeton,
+// et protegerAcces revalide a CHAQUE requete que le compte designe existe toujours (voir server.js) - un
+// jeton encore valide ne suffit donc jamais a lui seul si le compte a ete supprime/suspendu entre-temps.
+const SESSION_ALGORITHME = "sha256";
+
+// Secret de signature : SESSION_SECRET (Render, a definir une fois pour que les sessions survivent aux
+// redemarrages du serveur) - repli DELIBERE sur un secret aleatoire genere une seule fois au demarrage du
+// processus si absent (developpement local), avec avertissement explicite (meme principe que ENCRYPTION_KEY
+// ci-dessus) : sans ca, tout le monde serait deconnecte a chaque redemarrage en production, ce qui doit se
+// remarquer immediatement dans les journaux plutot que de surprendre silencieusement plus tard.
+let secretSessionEphemere = null;
+function secretSession() {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (!secretSessionEphemere) {
+    secretSessionEphemere = crypto.randomBytes(32).toString("hex");
+    console.warn(
+      "[crypto-util] SESSION_SECRET non definie : un secret temporaire a ete genere au demarrage. " +
+      "Tout le monde sera deconnecte au prochain redemarrage du serveur. Definissez SESSION_SECRET sur " +
+      "Render (une chaine aleatoire suffisamment longue) pour des sessions qui survivent aux redemarrages."
+    );
+  }
+  return secretSessionEphemere;
+}
+
+function base64urlEncode(texte) {
+  return Buffer.from(texte, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function base64urlDecode(texte) {
+  const normalise = texte.replace(/-/g, "+").replace(/_/g, "/");
+  const complete = normalise + "=".repeat((4 - (normalise.length % 4)) % 4);
+  return Buffer.from(complete, "base64").toString("utf8");
+}
+function signerBase64url(texte) {
+  return crypto.createHmac(SESSION_ALGORITHME, secretSession()).update(texte).digest("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// `payload` : objet simple (role/merchantId/employeId/adminUser...), jamais de donnee sensible (mot de
+// passe, cle...). `dureeMs` : duree de validite ABSOLUE depuis maintenant (server.js la reemet a chaque
+// requete authentifiee pour obtenir une session "glissante" - voir protegerAcces).
+function genererJetonSession(payload, dureeMs) {
+  const corps = base64urlEncode(JSON.stringify(Object.assign({}, payload, { exp: Date.now() + dureeMs })));
+  return corps + "." + signerBase64url(corps);
+}
+
+// Verifie la signature (comparaison a temps constant - evite qu'une attaque par mesure de temps de reponse
+// puisse deviner la signature attendue octet par octet) ET l'expiration. Renvoie le payload si valide, sinon
+// null (jeton absent, malforme, signature invalide, ou expire) - jamais d'exception.
+function verifierJetonSession(jeton) {
+  if (!jeton || typeof jeton !== "string") return null;
+  const separateur = jeton.lastIndexOf(".");
+  if (separateur === -1) return null;
+  const corps = jeton.slice(0, separateur);
+  const signatureRecue = jeton.slice(separateur + 1);
+  const signatureAttendue = signerBase64url(corps);
+  const bufRecue = Buffer.from(signatureRecue);
+  const bufAttendue = Buffer.from(signatureAttendue);
+  if (bufRecue.length !== bufAttendue.length || !crypto.timingSafeEqual(bufRecue, bufAttendue)) return null;
+  let payload;
+  try { payload = JSON.parse(base64urlDecode(corps)); } catch (erreur) { return null; }
+  if (!payload || typeof payload.exp !== "number" || Date.now() > payload.exp) return null;
+  return payload;
+}
+
+module.exports = { chiffrer, dechiffrer, indiceAffichable, genererJetonSession, verifierJetonSession };

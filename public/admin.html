@@ -69,6 +69,16 @@
   #logoMarchandHeader { height: 34px; width: 34px; object-fit: cover; border-radius: 6px; display: none; background: #fff; }
   .bloc-logo { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .bloc-logo img { height: 72px; width: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #e3e7ec; background: #fff; }
+  /* Ecran de connexion (29 septembre 2026) : recouvre toute la page (header + main) tant qu'aucune session
+     valide n'existe - voir afficherEcranConnexion(). Fixe plutot qu'a l'interieur de <main> pour ne jamais
+     laisser apparaitre, meme un instant, le contenu d'un marchand avant authentification. */
+  #ecranConnexion { position: fixed; inset: 0; background: #f6f7f9; z-index: 1000; display: none; align-items: center; justify-content: center; padding: 16px; }
+  #ecranConnexion .carte-connexion { background: #fff; border-radius: 10px; padding: 32px 28px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 360px; }
+  #ecranConnexion h2 { margin: 0 0 18px; font-size: 1.2em; color: #14213d; }
+  #ecranConnexion label { margin: 12px 0 6px; }
+  #ecranConnexion input { width: 100%; }
+  #ecranConnexion button.principal { width: 100%; }
+  #ecranConnexion .erreur { padding: 0; margin-top: 12px; min-height: 1.2em; }
 </style>
 </head>
 <body>
@@ -81,6 +91,7 @@
   <button id="btnSuspendreMarchand" style="display:none;background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;"></button>
   <button id="btnSupprimerMarchand" style="display:none;background:transparent;color:#ffb3b3;border:1px solid rgba(255,179,179,0.5);border-radius:6px;padding:6px 12px;"></button>
   <button id="btnNouveauMarchand" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;"></button>
+  <button id="btnDeconnexion" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;"></button>
   <span class="selecteur-langue">
     <button id="btnLangueFr">FR</button>
     <button id="btnLangueEn">EN</button>
@@ -90,6 +101,21 @@
   <div id="barreOnglets"></div>
   <div id="contenuOnglet"><div class="chargement"></div></div>
 </main>
+
+<!-- Ecran de connexion (29 septembre 2026, remplace l'authentification HTTP Basic - voir
+     afficherEcranConnexion()/soumettreConnexion() et POST /api/connexion cote serveur). Masque par defaut
+     (CSS display:none) - affiche des que GET /api/moi (ou tout autre appel via api()) recoit un 401. -->
+<div id="ecranConnexion">
+  <form class="carte-connexion" id="formConnexion" autocomplete="on">
+    <h2 id="connexionTitreTexte"></h2>
+    <label id="connexionIdentifiantLabel" for="connexionIdentifiantInput"></label>
+    <input id="connexionIdentifiantInput" name="identifiant" type="text" autocomplete="username" required />
+    <label id="connexionMotDePasseLabel" for="connexionMotDePasseInput"></label>
+    <input id="connexionMotDePasseInput" name="motDePasse" type="password" autocomplete="current-password" required />
+    <button type="submit" class="principal" id="btnConnexionSoumettre"></button>
+    <div class="erreur" id="connexionErreur"></div>
+  </form>
+</div>
 
 <!-- jsPDF (25 septembre 2026) : utilisee uniquement pour les boutons "Télécharger en PDF" des onglets
      Rapports et Inventaire (genereePdfStructure ci-dessous). Chargee depuis un CDN pour ne rien changer
@@ -122,6 +148,17 @@ const I18N = {
     supprimer: "Supprimer",
     voir: "Voir",
     aucun: "aucun",
+
+    // Ecran de connexion (29 septembre 2026, remplace l'authentification HTTP Basic) et deconnexion -
+    // voir afficherEcranConnexion()/soumettreConnexion() plus bas.
+    connexionTitre: "Connexion",
+    connexionIdentifiant: "Identifiant",
+    connexionMotDePasse: "Mot de passe",
+    connexionSeConnecter: "Se connecter",
+    connexionErreurIdentifiants: "Identifiant ou mot de passe incorrect.",
+    connexionErreurGenerique: "Impossible de se connecter. Vérifiez votre connexion et réessayez.",
+    btnDeconnexion: "Se déconnecter",
+    sessionExpiree: "Votre session a expiré. Veuillez vous reconnecter.",
 
     btnModifier: "Modifier",
     btnNouveauMarchand: "+ Nouveau marchand",
@@ -612,6 +649,15 @@ const I18N = {
     supprimer: "Delete",
     voir: "View",
     aucun: "none",
+
+    connexionTitre: "Log in",
+    connexionIdentifiant: "Username",
+    connexionMotDePasse: "Password",
+    connexionSeConnecter: "Log in",
+    connexionErreurIdentifiants: "Incorrect username or password.",
+    connexionErreurGenerique: "Couldn't log in. Check your connection and try again.",
+    btnDeconnexion: "Log out",
+    sessionExpiree: "Your session has expired. Please log in again.",
 
     btnModifier: "Edit",
     btnNouveauMarchand: "+ New merchant",
@@ -1152,6 +1198,14 @@ function esc(v) {
 async function api(chemin, opts) {
   const options = Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {});
   const res = await fetch(chemin, options);
+  // Session absente/expiree/invalidee (compte modifie ou supprime depuis l'emission du cookie - voir
+  // protegerAcces cote serveur) : plutot que de laisser chaque appelant gerer ce cas individuellement,
+  // on affiche directement l'ecran de connexion ici, une bonne fois pour toutes (voir demarrer() et les
+  // dizaines de renderXxx() qui appellent api() sans savoir que ce cas existe).
+  if (res.status === 401) {
+    afficherEcranConnexion();
+    throw new Error(t("sessionExpiree"));
+  }
   if (!res.ok) {
     let message = res.statusText;
     try { const j = await res.json(); if (j && j.erreur) message = j.erreur; } catch (e) {}
@@ -1159,6 +1213,63 @@ async function api(chemin, opts) {
   }
   return res.json();
 }
+
+// Affiche l'ecran de connexion (recouvre toute la page - voir CSS #ecranConnexion). Idempotent : si deja
+// affiche (ex: deux appels api() echouent en 401 presque en meme temps), ne reinitialise pas un formulaire
+// en cours de frappe par l'utilisateur.
+function afficherEcranConnexion() {
+  const ecran = document.getElementById("ecranConnexion");
+  if (ecran.style.display === "flex") return;
+  ecran.style.display = "flex";
+  document.getElementById("connexionTitreTexte").textContent = t("connexionTitre");
+  document.getElementById("connexionIdentifiantLabel").textContent = t("connexionIdentifiant");
+  document.getElementById("connexionMotDePasseLabel").textContent = t("connexionMotDePasse");
+  document.getElementById("btnConnexionSoumettre").textContent = t("connexionSeConnecter");
+  document.getElementById("connexionErreur").textContent = "";
+  document.getElementById("connexionIdentifiantInput").focus();
+}
+
+// Soumission du formulaire de connexion. Utilise fetch() DIRECTEMENT plutot que api() : un identifiant/mot
+// de passe errone renvoie lui aussi un 401, qui ferait sinon reafficher l'ecran de connexion (deja affiche)
+// au lieu de montrer le message d'erreur sous le formulaire.
+async function soumettreConnexion(ev) {
+  ev.preventDefault();
+  const identifiant = document.getElementById("connexionIdentifiantInput").value.trim();
+  const motDePasse = document.getElementById("connexionMotDePasseInput").value;
+  const erreurEl = document.getElementById("connexionErreur");
+  const bouton = document.getElementById("btnConnexionSoumettre");
+  erreurEl.textContent = "";
+  bouton.disabled = true;
+  try {
+    const res = await fetch("/api/connexion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifiant, motDePasse })
+    });
+    if (!res.ok) {
+      erreurEl.textContent = t("connexionErreurIdentifiants");
+      return;
+    }
+    document.getElementById("connexionMotDePasseInput").value = "";
+    document.getElementById("ecranConnexion").style.display = "none";
+    await demarrer();
+  } catch (e) {
+    erreurEl.textContent = t("connexionErreurGenerique");
+  } finally {
+    bouton.disabled = false;
+  }
+}
+document.getElementById("formConnexion").addEventListener("submit", soumettreConnexion);
+
+// Deconnexion : efface le cookie de session cote serveur puis reaffiche l'ecran de connexion. Volontairement
+// SANS passer par api() (une deconnexion ne doit jamais echouer visiblement, meme si la requete reseau rate).
+document.getElementById("btnDeconnexion").onclick = async () => {
+  try { await fetch("/api/deconnexion", { method: "POST" }); } catch (e) {}
+  moi = null;
+  marchands = [];
+  marchandActif = null;
+  afficherEcranConnexion();
+};
 
 let marchands = [];
 let marchandActif = null;
@@ -1172,6 +1283,7 @@ async function demarrer() {
   document.getElementById("btnModifierMarchand").textContent = t("btnModifier");
   document.getElementById("btnSupprimerMarchand").textContent = t("supprimer");
   document.getElementById("btnNouveauMarchand").textContent = t("btnNouveauMarchand");
+  document.getElementById("btnDeconnexion").textContent = t("btnDeconnexion");
   brancherSelecteurLangue();
   document.getElementById("contenuOnglet").innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   try {

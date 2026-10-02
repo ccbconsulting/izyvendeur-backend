@@ -250,10 +250,71 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 // PUT /api/marchands/:id/options-payantes), meme si l'employe a deja ce role.
 const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse"];
 
-function protegerAcces(req, res, next) {
+// ---------------- Session de connexion /admin (29 septembre 2026) ----------------
+// Remplace l'authentification HTTP Basic (popup native du navigateur - aucune notion de "session" ni de
+// deconnexion fiable, voir l'ancienne version de protegerAcces ci-dessous dans l'historique) par un vrai
+// ecran de connexion (POST /api/connexion) + un cookie contenant un jeton SIGNE (crypto-util.js). Aucune
+// session n'est stockee cote serveur : protegerAcces revalide a CHAQUE requete contre les donnees EN DIRECT
+// (engines), jamais contre le contenu du jeton seul - un marchand supprime/suspendu ou un employe dont le
+// role a change perd donc l'acces immediatement, meme avec un jeton encore cryptographiquement valide.
+const NOM_COOKIE_SESSION = "izy_session";
+const DUREE_SESSION_MS = 24 * 60 * 60 * 1000; // 24h, glissante : reemise a chaque requete authentifiee reussie
+
+function lireCookie(req, nom) {
+  const enTete = req.headers.cookie || "";
+  for (const morceau of enTete.split(";")) {
+    const i = morceau.indexOf("=");
+    if (i === -1) continue;
+    if (morceau.slice(0, i).trim() === nom) {
+      try { return decodeURIComponent(morceau.slice(i + 1).trim()); } catch (erreur) { return null; }
+    }
+  }
+  return null;
+}
+
+function ecrireCookieSession(res, payload) {
+  const jeton = cryptoUtil.genererJetonSession(payload, DUREE_SESSION_MS);
+  const attributs = [
+    NOM_COOKIE_SESSION + "=" + encodeURIComponent(jeton),
+    "Path=/", "HttpOnly", "SameSite=Lax",
+    "Max-Age=" + Math.floor(DUREE_SESSION_MS / 1000)
+  ];
+  if (process.env.NODE_ENV === "production") attributs.push("Secure");
+  res.set("Set-Cookie", attributs.join("; "));
+}
+
+function effacerCookieSession(res) {
+  const attributs = [NOM_COOKIE_SESSION + "=", "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (process.env.NODE_ENV === "production") attributs.push("Secure");
+  res.set("Set-Cookie", attributs.join("; "));
+}
+
+// Verifie un identifiant/mot de passe fournis contre les 3 sources possibles (superadmin / marchand /
+// employe), dans cet ordre - EXACTEMENT la meme logique que l'ancienne authentification Basic Auth,
+// reutilisee ici par POST /api/connexion. Retourne l'objet req.auth correspondant, ou null si aucune
+// correspondance (identifiant inconnu ou mot de passe errone).
+function identifierCompte(utilisateur, motDePasse) {
   const superUtilisateur = process.env.ADMIN_USER || "admin";
   const superMotDePasse = process.env.ADMIN_PASSWORD;
+  if (superMotDePasse && utilisateur === superUtilisateur && motDePasse === superMotDePasse) {
+    return { role: "superadmin", merchantId: null, adminUser: utilisateur };
+  }
+  for (const id of Object.keys(engines)) {
+    const m = engines[id].merchant;
+    if (m.adminUser && utilisateur === m.adminUser && motDePasseCorrespond(motDePasse, m.adminPassword)) {
+      return { role: "marchand", merchantId: id, adminUser: utilisateur };
+    }
+    for (const emp of (m.employes || [])) {
+      if (emp.identifiant && utilisateur === emp.identifiant && motDePasseCorrespond(motDePasse, emp.motDePasseHash)) {
+        return { role: "employe", merchantId: id, adminUser: utilisateur, employeId: emp.id, roles: emp.roles || [] };
+      }
+    }
+  }
+  return null;
+}
 
+function protegerAcces(req, res, next) {
+  const superMotDePasse = process.env.ADMIN_PASSWORD;
   if (!superMotDePasse) {
     res.status(503).send(
       "Tableau de bord protege : la variable d'environnement ADMIN_PASSWORD n'est pas configuree sur " +
@@ -262,39 +323,44 @@ function protegerAcces(req, res, next) {
     return;
   }
 
-  const enTete = req.headers.authorization || "";
-  const [schema, encode] = enTete.split(" ");
-  if (schema === "Basic" && encode) {
-    const decode = Buffer.from(encode, "base64").toString("utf8");
-    const separateur = decode.indexOf(":");
-    const utilisateur = decode.slice(0, separateur);
-    const motDePasse = decode.slice(separateur + 1);
+  const payload = cryptoUtil.verifierJetonSession(lireCookie(req, NOM_COOKIE_SESSION));
+  if (!payload) {
+    res.status(401).json({ erreur: "Authentification requise." });
+    return;
+  }
 
-    if (utilisateur === superUtilisateur && motDePasse === superMotDePasse) {
-      req.auth = { role: "superadmin", merchantId: null, adminUser: utilisateur };
-      next();
-      return;
+  // Le jeton n'est qu'une PRETENTION signee par une session passee - on revalide ici contre les donnees EN
+  // DIRECT (engines), jamais contre son seul contenu : les roles d'un employe en particulier sont toujours
+  // relus depuis engines, jamais fait confiance au payload du jeton, pour qu'un retrait de role ou une
+  // suppression de compte prenne effet immediatement, sans attendre l'expiration de la session en cours.
+  let auth = null;
+  if (payload.role === "superadmin") {
+    const superUtilisateur = process.env.ADMIN_USER || "admin";
+    if (payload.adminUser === superUtilisateur) auth = { role: "superadmin", merchantId: null, adminUser: superUtilisateur };
+  } else if (payload.role === "marchand") {
+    const entry = engines[payload.merchantId];
+    if (entry && entry.merchant.adminUser && entry.merchant.adminUser === payload.adminUser) {
+      auth = { role: "marchand", merchantId: payload.merchantId, adminUser: payload.adminUser };
     }
-
-    for (const id of Object.keys(engines)) {
-      const m = engines[id].merchant;
-      if (m.adminUser && utilisateur === m.adminUser && motDePasseCorrespond(motDePasse, m.adminPassword)) {
-        req.auth = { role: "marchand", merchantId: id, adminUser: utilisateur };
-        next();
-        return;
-      }
-      for (const emp of (m.employes || [])) {
-        if (emp.identifiant && utilisateur === emp.identifiant && motDePasseCorrespond(motDePasse, emp.motDePasseHash)) {
-          req.auth = { role: "employe", merchantId: id, adminUser: utilisateur, employeId: emp.id, roles: emp.roles || [] };
-          next();
-          return;
-        }
-      }
+  } else if (payload.role === "employe") {
+    const entry = engines[payload.merchantId];
+    const emp = entry && (entry.merchant.employes || []).find((e) => e.id === payload.employeId);
+    if (emp && emp.identifiant === payload.adminUser) {
+      auth = { role: "employe", merchantId: payload.merchantId, adminUser: payload.adminUser, employeId: emp.id, roles: emp.roles || [] };
     }
   }
 
-  res.set("WWW-Authenticate", 'Basic realm="IzyVendeur"');
-  res.status(401).send("Authentification requise pour consulter cette page.");
+  if (!auth) {
+    effacerCookieSession(res);
+    res.status(401).json({ erreur: "Session invalide (compte modifie ou supprime) - veuillez vous reconnecter." });
+    return;
+  }
+
+  req.auth = auth;
+  // Session glissante : chaque requete authentifiee reussie reemet un cookie avec une nouvelle expiration a
+  // 24h, pour qu'une utilisation active ne se fasse jamais deconnecter en plein travail.
+  ecrireCookieSession(res, { role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, employeId: auth.employeId || null });
+  next();
 }
 
 // Verifie que l'utilisateur authentifie (req.auth) a le droit d'agir sur le marchand `id` : le
@@ -305,6 +371,19 @@ function verifierPortee(req, res, id) {
   if (req.auth.role === "superadmin" || req.auth.merchantId === id) return true;
   res.status(403).json({ erreur: "Accès non autorisé à ce marchand." });
   return false;
+}
+
+// Un service EXTERNE (IzyFacture) peut repondre 401 pour sa PROPRE raison (cle API invalide) - jamais a
+// transmettre tel quel au navigateur /admin : depuis le 29 septembre 2026, l'interface traite TOUT 401 venu
+// de NOTRE serveur comme "votre session a expire" (voir api() dans admin.html et protegerAcces plus haut),
+// ce qui ferait a tort revenir a l'ecran de connexion alors que le probleme n'a rien a voir avec la session
+// de la personne qui utilise /admin. Le message reste informatif (erreur.message/erreur.code cote client) -
+// seul le code HTTP transmis au navigateur est requalifie pour ne jamais entrer en collision avec ce sens
+// reserve. Utilise par les deux routes qui relaient une erreur IzyFacture (tester la cle, enregistrer un
+// paiement) ci-dessous.
+function statutReponseExterne(erreur) {
+  const statut = erreur.status || 502;
+  return statut === 401 ? 502 : statut;
 }
 
 function getMarchandOu404(req, res) {
@@ -429,11 +508,46 @@ Email : info@ccbconsulting.org</p>
 app.get("/commandes", (req, res) => res.redirect("/admin"));
 
 // --- Interface d'administration connectee ---
-app.get("/admin", protegerAcces, (req, res) => {
+// Jamais protegerAcces ici (29 septembre 2026, remplacement de l'authentification HTTP Basic) : la page
+// elle-meme ne contient aucune donnee - elle affiche un ecran de connexion cote client des que
+// GET /api/moi renvoie 401 (voir admin.html/afficherEcranConnexion). C'est la SEULE facon coherente de
+// proceder avec un vrai formulaire de connexion : le navigateur ne doit jamais voir de popup native avant
+// meme d'avoir pu charger la page qui contient ce formulaire.
+app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
 // ---------------- API d'administration (protegee) ----------------
+
+// Connexion (29 septembre 2026, remplace l'authentification HTTP Basic) : verifie les identifiants fournis
+// et, si valides, pose un cookie de session (voir ecrireCookieSession plus haut). VOLONTAIREMENT SANS
+// protegerAcces sur cette route - c'est justement elle qui etablit l'identite, il n'y a encore rien a
+// verifier au moment ou elle est appelee.
+app.post("/api/connexion", (req, res) => {
+  if (!process.env.ADMIN_PASSWORD) {
+    res.status(503).json({ erreur: "ADMIN_PASSWORD n'est pas configuree sur le serveur." });
+    return;
+  }
+  const { identifiant, motDePasse } = req.body || {};
+  if (!identifiant || !motDePasse) {
+    res.status(400).json({ erreur: "Identifiant et mot de passe requis." });
+    return;
+  }
+  const auth = identifierCompte(String(identifiant), String(motDePasse));
+  if (!auth) {
+    res.status(401).json({ erreur: "Identifiant ou mot de passe incorrect." });
+    return;
+  }
+  ecrireCookieSession(res, { role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, employeId: auth.employeId || null });
+  res.json({ role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, roles: auth.roles || null });
+});
+
+// Deconnexion : efface le cookie de session. Reussit toujours, meme sans cookie present ou deja expire -
+// du point de vue du client, se deconnecter ne doit jamais echouer.
+app.post("/api/deconnexion", (req, res) => {
+  effacerCookieSession(res);
+  res.json({ ok: true });
+});
 
 // Le super-administrateur voit tous les marchands ; un marchand ne voit que lui-meme (l'interface
 // n'affiche donc jamais a un marchand la liste des autres marchands, meme leur nom).
@@ -817,7 +931,7 @@ app.post("/api/:id/izyfacture/tester", protegerAcces, async (req, res) => {
     const reponse = await izyfacture.verifierCle(cle);
     res.json({ ok: true, entreprise: reponse.company ? reponse.company.name : null, devise: reponse.company ? reponse.company.currency : null });
   } catch (erreur) {
-    res.status(erreur.status || 502).json({ ok: false, erreur: erreur.message || "Connexion à IzyFacture impossible.", code: erreur.code || null });
+    res.status(statutReponseExterne(erreur)).json({ ok: false, erreur: erreur.message || "Connexion à IzyFacture impossible.", code: erreur.code || null });
   }
 });
 
@@ -857,7 +971,7 @@ app.post("/api/:id/commandes/:orderId/izyfacture/paiement", protegerAcces, async
     await enregistrerPaiementCommande(entry, order, { montant, methode, reference });
     res.json(entry.engine.getOrderById(req.params.orderId));
   } catch (erreur) {
-    res.status(erreur.status || 502).json({ erreur: erreur.message || "Échec de l'enregistrement du paiement auprès d'IzyFacture.", code: erreur.code || null });
+    res.status(statutReponseExterne(erreur)).json({ erreur: erreur.message || "Échec de l'enregistrement du paiement auprès d'IzyFacture.", code: erreur.code || null });
   }
 });
 

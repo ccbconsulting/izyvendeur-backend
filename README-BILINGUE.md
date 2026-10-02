@@ -622,6 +622,8 @@ d'IzyVendeur continue de fonctionner normalement) :
 - `ENCRYPTION_KEY` — recommandée avant d'enregistrer une clé IzyFacture (voir ci-dessus).
 - `IZYFACTURE_API_URL` — optionnelle, par défaut `https://izyfacture.ccbconsulting.org/api/v1` (l'adresse
   actuelle d'IzyFacture) ; à changer uniquement si cette adresse évolue un jour.
+- `SESSION_SECRET` — recommandée pour que les connexions à /admin survivent aux redémarrages du serveur
+  (voir Étape 35 ci-dessous).
 
 Testé le 25 septembre 2026 par de vrais appels HTTP contre un faux serveur IzyFacture simulant l'API réelle
 documentée : clé enregistrée puis testée (bonne et mauvaise clé), accès refusé à un employé n'ayant que le
@@ -1087,6 +1089,60 @@ billetage d'ouverture avec total recalculé en direct, bandeau de session affich
 bon fond de départ, fermeture avec billetage de fin et récapitulatif affiché, retour à l'écran d'ouverture
 après fermeture) + régression complète (27 fichiers de tests) rejouée sans casse.
 
+## Étape 35 — Vraie connexion/déconnexion /admin, remplace l'authentification par popup du navigateur (nouveau)
+
+Demandé le 29 septembre 2026, après un signalement direct : en naviguant dans /admin (d'abord avec les
+identifiants d'un marchand, puis avec les identifiants super-administrateur, dans le même navigateur), il
+n'existait **aucun bouton pour se déconnecter**. Ce n'était pas un bouton oublié : l'authentification
+utilisée jusque-là (HTTP Basic, la fenêtre native que le navigateur affiche lui-même) n'a tout simplement
+aucune notion de "session" ni de déconnexion fiable — le navigateur mémorise les identifiants à sa façon,
+sans qu'IzyVendeur puisse les lui faire oublier à la demande, ni garantir que changer d'identité dans le
+même navigateur ne crée pas de confusion.
+
+IzyVendeur dispose désormais d'un vrai écran de connexion (identifiant + mot de passe, saisis dans la page
+elle-même) et d'un bouton "Se déconnecter" toujours visible en haut de l'écran. Techniquement : la connexion
+pose un cookie contenant un jeton signé (jamais de mot de passe ni d'information sensible dans ce jeton — il
+sert uniquement à prouver l'identité, pas à la stocker), valable 24h et renouvelé automatiquement à chaque
+action pendant que vous travaillez (une session active ne vous déconnecte jamais en plein travail) ; la
+déconnexion efface ce cookie. Aucune "session" n'est stockée sur le serveur : à chaque action, le serveur
+revérifie EN DIRECT que le compte désigné par le jeton existe toujours et n'a pas changé — si un employé est
+supprimé ou qu'un marchand est retiré pendant qu'il est connecté, l'accès est coupé immédiatement, sans
+attendre que le jeton expire de lui-même.
+
+Point de sécurité vérifié explicitement (c'était la préoccupation exacte derrière la demande) : se connecter
+avec des identifiants de marchand puis, dans le même navigateur, avec les identifiants super-administrateur
+(ou l'inverse) ne mélange jamais les deux identités — chaque connexion pose son propre cookie, strictement
+indépendant, et rien de ce qu'un marchand peut voir ou faire ne change selon qu'un super-administrateur s'est
+connecté entre-temps ou pas. Un marchand (ou un de ses employés) reste strictement incapable de créer un
+marchand, de débloquer ses propres options payantes, de se suspendre/réactiver lui-même, ou d'accéder aux
+données d'un autre marchand — seul vous, en tant que super-administrateur, pouvez accorder ou débloquer quoi
+que ce soit pour un marchand. Ces vérifications existaient déjà avant ce chantier (elles n'ont pas changé),
+mais un nouveau fichier de test dédié (`test_securite_session_connexion.js`, 18 vérifications) les rejoue
+désormais explicitement avec le nouveau système de connexion, y compris le scénario précis qui a motivé la
+demande.
+
+Testé le 2 octobre 2026 : côté serveur (connexion refusée pour de mauvais identifiants ou un compte inconnu,
+jeton falsifié ou altéré toujours rejeté, déconnexion efface bien le cookie et ne peut jamais échouer, un
+marchand/employé supprimé ou modifié perd l'accès à la requête suivante même avec un jeton non expiré, le 401
+d'un service externe — IzyFacture avec une clé invalide — n'est plus jamais confondu avec une session expirée
+côté /admin) et avec un vrai navigateur piloté (écran de connexion affiché automatiquement, message d'erreur
+clair sur de mauvais identifiants, retour à l'écran de connexion dès qu'une session expire au milieu d'une
+action, bouton "Se déconnecter" fonctionnel) + régression complète (28 fichiers de tests, dont les 27
+préexistants intégralement adaptés au nouveau système de connexion) rejouée sans casse.
+
+**Important : pensez à définir `SESSION_SECRET` sur Render** (Environment > Add Environment Variable,
+n'importe quelle chaîne longue et aléatoire suffit, même principe que `ENCRYPTION_KEY` ci-dessus) —
+sans elle, IzyVendeur fonctionne quand même (un secret temporaire est généré au démarrage, avec un
+avertissement dans les journaux), mais **tout le monde serait déconnecté à chaque redémarrage du serveur**
+sur Render, ce qui arrive régulièrement (mise à jour, veille automatique). Avec `SESSION_SECRET` définie une
+fois, les sessions survivent normalement aux redémarrages.
+
+À noter aussi : se déconnecter efface le cookie dans le navigateur, mais (comme pour la plupart des systèmes
+de ce type) ne "révoque" pas activement un jeton qui aurait été copié ailleurs avant la déconnexion — un tel
+jeton copié resterait valable jusqu'à son expiration naturelle (24h maximum). Ce n'est un risque réel que si
+quelqu'un a eu un accès technique direct au cookie lui-même (pas seulement à l'écran), ce qui n'est pas le
+scénario d'usage normal de /admin.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1150,7 +1206,10 @@ après fermeture) + régression complète (27 fichiers de tests) rejouée sans c
   par appel, distinction erreurs réessayables (réseau, 5xx, 429) / définitives (autres 4xx) (Étape 20)
 - `crypto-util.js` (**nouveau fichier**) — chiffrement/déchiffrement AES-256-GCM de la clé IzyFacture avant
   stockage (voir `ENCRYPTION_KEY` ci-dessus), avec repli explicite (et journalisé) en clair si cette
-  variable n'est pas définie, jamais un échec silencieux (Étape 20)
+  variable n'est pas définie, jamais un échec silencieux (Étape 20) + nouvelles fonctions
+  `genererJetonSession`/`verifierJetonSession` : jeton de session SIGNÉ (HMAC-SHA256, jamais chiffré — il
+  ne contient aucune donnée secrète) pour le nouvel écran de connexion /admin, avec repli explicite (et
+  journalisé) sur un secret aléatoire si `SESSION_SECRET` n'est pas définie (Étape 35)
 - `conversationService.js` — moteur rendez-vous : reste en français (voir plus bas), mais reçoit la même
   logique de calcul du Tableau de bord par période que le moteur catalogue, ainsi que la même question
   "réponse écrite ici / être rappelé(e)" et la même reprise à 5 minutes que le moteur catalogue, en
@@ -1240,7 +1299,17 @@ après fermeture) + régression complète (27 fichiers de tests) rejouée sans c
   marchand), `GET /api/:id/caisse/session/active`, `GET /api/:id/caisse/sessions` (historique),
   `POST /api/:id/caisse/session/ouvrir` et `POST /api/:id/caisse/session/fermer` + `PUT /api/:id/parametres`
   filtre désormais aussi la clé `caisse` (seuil/coupures/mode session) tant que l'option "Caisse POS" n'est
-  pas débloquée, même principe que le filtrage déjà en place pour `notifStatut` (Étape 34)
+  pas débloquée, même principe que le filtrage déjà en place pour `notifStatut` (Étape 34) +
+  **remplacement complet de l'authentification HTTP Basic par une vraie session de connexion** (voir
+  Étape 35 ci-dessous) : nouvelles routes `POST /api/connexion` et `POST /api/deconnexion`, nouvelle
+  fonction `protegerAcces` qui lit un cookie de session signé au lieu de l'en-tête `Authorization`, et
+  revalide EN DIRECT (contre `engines`, jamais contre le seul contenu du jeton) à chaque requête que le
+  compte désigné existe toujours — un marchand supprimé ou un employé dont le rôle a changé perd l'accès
+  immédiatement, même avec un jeton encore valide et non expiré + nouvelle fonction
+  `statutReponseExterne` : un 401 renvoyé par un service EXTERNE (IzyFacture, clé invalide) est
+  systématiquement requalifié en 502 avant d'atteindre le navigateur, pour ne jamais entrer en collision
+  avec le sens désormais réservé du 401 ("votre session a expiré") sur `/api/:id/izyfacture/tester` et
+  `/api/:id/commandes/:orderId/izyfacture/paiement` (Étape 35)
 - `db.js` — nouvelle colonne `derniere_erreur_alerte` (JSONB, marchand) : dernier échec de livraison réel
   d'une alerte signalé par Meta après coup, `{horodatage, destinataire, wamid, code, titre, message}`, `NULL`
   par défaut pour tous les marchands existants (Étape 25)
@@ -1323,7 +1392,13 @@ après fermeture) + régression complète (27 fichiers de tests) rejouée sans c
   l'écran d'ouverture + nouveau bloc "Paramètres de caisse" dans l'onglet Paramètres (visible uniquement une
   fois l'option débloquée) où CHAQUE marchand règle son propre seuil de tolérance, ses propres coupures et
   son propre mode de session (un seul tiroir ou plusieurs simultanés) + onglet Commandes : nouvelle option
-  "Vente en boutique" dans le filtre "Mode", aux côtés de Livraison/Retrait (Étape 34)
+  "Vente en boutique" dans le filtre "Mode", aux côtés de Livraison/Retrait (Étape 34) + **nouvel écran de
+  connexion** (`#ecranConnexion`, recouvre toute la page tant qu'aucune session valide n'existe) qui
+  remplace la fenêtre native du navigateur : identifiant/mot de passe, message d'erreur clair en cas
+  d'échec, et un nouveau bouton "Se déconnecter" toujours visible dans l'en-tête + la fonction `api()`
+  redirige désormais automatiquement vers cet écran dès qu'une requête reçoit un 401 (session expirée ou
+  compte modifié entre-temps), sans que chaque onglet ait besoin de gérer ce cas individuellement
+  (Étape 35)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
