@@ -1217,6 +1217,14 @@ définie sur Render (si elle ne l'est pas déjà) pour que le cookie de session 
 "Full" de Cloudflare et le trafic qui passera entièrement par HTTPS après la bascule des serveurs de noms,
 c'est le moment logique pour vérifier ce réglage si ce n'est pas déjà fait.
 
+## Étape 37 — Logo IzyVendeur sur l'écran de connexion /admin (nouveau)
+
+Demandé le 2 octobre 2026 : affichage du logo IzyVendeur (fourni par vous) centré au-dessus du formulaire
+de connexion (`#ecranConnexion`). Intégré directement dans `public/admin.html` sous forme d'image encodée
+(aucun nouveau fichier à héberger, aucune route serveur supplémentaire — le logo fait partie de la page
+elle-même, comme jsPDF). Vérifié par une capture d'écran réelle (navigateur piloté) et par le test
+`test_securite_session_connexion_playwright.js` existant, toujours vert après cet ajout.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1490,7 +1498,8 @@ c'est le moment logique pour vérifier ce réglage si ce n'est pas déjà fait.
   Supprimer, + Nouveau marchand, sélecteur de marchands) plutôt que de compter sur chaque branche de rôle
   pour y penser elle-même — corrige un cas où ces boutons pouvaient rester visibles (jamais fonctionnels,
   le serveur refusait toujours l'action en 403) après une déconnexion/reconnexion avec une identité
-  différente dans la même page (Étape 35)
+  différente dans la même page (Étape 35) + logo IzyVendeur affiché en haut du formulaire de connexion
+  (`#ecranConnexion .logoConnexion`), image encodée directement dans la page (Étape 37)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
