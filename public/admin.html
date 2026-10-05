@@ -62,6 +62,13 @@
   .miniature { position: relative; width: 80px; height: 80px; }
   .miniature img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
   .miniature button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; line-height: 18px; border-radius: 50%; font-size: 0.85em; }
+  .bloc-import-photos { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e3e7ec; }
+  .bloc-import-photos h3 { margin: 0 0 6px; font-size: 1em; }
+  .table-import-photos img.apercu-import-photo { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
+  .table-import-photos select { max-width: 280px; }
+  .statut-photo-ok { color: #1b7f3b; font-weight: 600; }
+  .statut-photo-ko { color: #b3261e; }
+  .statut-photo-approx { color: #9a6700; }
   .bulle.bot img { max-width: 220px; border-radius: 8px; display: block; margin-bottom: 6px; }
   .selecteur-langue { margin-left: auto; display: flex; gap: 4px; }
   .selecteur-langue button { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; padding: 6px 10px; font-size: 0.85em; opacity: 0.75; }
@@ -251,6 +258,26 @@ const I18N = {
     msgImportResultat: "Import terminé : {ajoutes} article(s) ajouté(s).",
     msgImportDoublons: " {n} déjà présent(s), ignoré(s) : {noms}.",
     msgImportErreurs: " {n} ligne(s) ignorée(s) (erreur) : {details}",
+    titreImportPhotos: "Importer des photos en masse",
+    noteImportPhotos: "Sélectionnez plusieurs photos d'un coup. Nommez chaque fichier comme l'article (ex. « Ayusante Toxclean.jpg ») : l'association est automatique et vous pouvez la corriger avant l'envoi. Plusieurs photos pour un même article : ajoutez -2, -3… à la fin du nom (ex. « Ayusante Toxclean-2.jpg »). JPEG, PNG ou WEBP, 5 Mo maximum par photo.",
+    theadPhotoApercu: "Aperçu",
+    theadPhotoFichier: "Fichier",
+    theadPhotoArticle: "Article",
+    theadPhotoStatut: "Statut",
+    optIgnorerPhoto: "— Ne pas envoyer cette photo —",
+    statutPhotoExact: "Association automatique",
+    statutPhotoApprox: "Association probable — à vérifier",
+    statutPhotoManuel: "Article choisi",
+    statutPhotoAChoisir: "Aucun article choisi — cette photo ne sera pas envoyée",
+    statutPhotoInvalide: "Fichier refusé (JPEG, PNG ou WEBP, 5 Mo maximum)",
+    statutPhotoDejaN: "Cet article a déjà {n} photo(s) : celle-ci sera ajoutée à la suite.",
+    statutPhotoEnCours: "Envoi en cours…",
+    statutPhotoOk: "✓ Envoyée",
+    statutPhotoErreur: "✗ Échec : {msg}",
+    btnEnvoyerPhotos: "Envoyer {n} photo(s)",
+    btnEnvoyerPhotosAucune: "Aucune photo à envoyer",
+    msgImportPhotosOk: "{ok} photo(s) envoyée(s) avec succès.",
+    msgImportPhotosEchecs: " {n} photo(s) en échec (visible dans le tableau, vous pouvez réessayer) : {noms}",
 
     commandesTitre: "Commandes ({n}{suffixe})",
     commandesSurTotal: " sur {total}",
@@ -750,6 +777,26 @@ const I18N = {
     msgImportResultat: "Import finished: {ajoutes} item(s) added.",
     msgImportDoublons: " {n} already present, skipped: {noms}.",
     msgImportErreurs: " {n} row(s) skipped (error): {details}",
+    titreImportPhotos: "Bulk photo import",
+    noteImportPhotos: "Select several photos at once. Name each file after the item (e.g. “Ayusante Toxclean.jpg”): matching is automatic and you can correct it before sending. Several photos for the same item: add -2, -3… at the end of the name (e.g. “Ayusante Toxclean-2.jpg”). JPEG, PNG or WEBP, 5 MB maximum per photo.",
+    theadPhotoApercu: "Preview",
+    theadPhotoFichier: "File",
+    theadPhotoArticle: "Item",
+    theadPhotoStatut: "Status",
+    optIgnorerPhoto: "— Do not send this photo —",
+    statutPhotoExact: "Matched automatically",
+    statutPhotoApprox: "Probable match — please check",
+    statutPhotoManuel: "Item selected",
+    statutPhotoAChoisir: "No item selected — this photo will not be sent",
+    statutPhotoInvalide: "File rejected (JPEG, PNG or WEBP, 5 MB maximum)",
+    statutPhotoDejaN: "This item already has {n} photo(s): this one will be added after them.",
+    statutPhotoEnCours: "Uploading…",
+    statutPhotoOk: "✓ Uploaded",
+    statutPhotoErreur: "✗ Failed: {msg}",
+    btnEnvoyerPhotos: "Upload {n} photo(s)",
+    btnEnvoyerPhotosAucune: "No photo to upload",
+    msgImportPhotosOk: "{ok} photo(s) uploaded successfully.",
+    msgImportPhotosEchecs: " {n} photo(s) failed (shown in the table, you can retry): {noms}",
 
     commandesTitre: "Orders ({n}{suffixe})",
     commandesSurTotal: " out of {total}",
@@ -1599,6 +1646,171 @@ function articleCorrespond(p, texte) {
   );
 }
 
+// ---------------- Import de photos en masse (5 octobre 2026) ----------------
+// Demande : mettre d'un seul geste une vingtaine de photos de produits sur les articles d'un marchand
+// (ex. Excelle Health) sans repasser par le bouton photo de CHAQUE article. Principe : le marchand choisit
+// plusieurs fichiers ; chacun est rattache a un article d'apres son NOM DE FICHIER (insensible a la casse,
+// aux accents et a la ponctuation) ; il peut corriger chaque association dans un menu deroulant avant
+// l'envoi ; l'envoi reutilise tel quel la route existante POST /api/:id/catalogue/:productId/photos (une
+// requete par photo, une a la fois) - aucune nouvelle route serveur, donc memes droits (role "catalogue"),
+// memes controles (format, 5 Mo) et meme stockage R2 que l'ajout photo par photo. Plusieurs photos pour un
+// meme article : "Nom.jpg" (envoyee en premier = celle que le bot montre au client) puis "Nom-2.jpg",
+// "Nom (3).jpg"... (rang croissant).
+const PHOTO_TYPES_AUTORISES = ["image/jpeg", "image/png", "image/webp"];
+const PHOTO_TAILLE_MAX = 5 * 1024 * 1024;
+const SUFFIXES_COPIE_PHOTO = [/\s*\((\d{1,2})\)$/, /\s*[-_](\d{1,2})$/, /\s+(\d{1,2})$/];
+
+function normaliserNomPhoto(s) {
+  return normaliserRecherche(s).replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+// Cherche l'article correspondant a un nom de fichier. 1) correspondance exacte (nom complet, puis nom sans
+// suffixe de copie "-2" / "(2)" / " 2" - le nom complet est TOUJOURS essaye en premier, car un vrai nom
+// d'article peut se terminer par un nombre, ex. "Prime Krill Oil 500 mg 30") ; 2) a defaut, correspondance
+// "probable" par inclusion, seulement s'il n'y a qu'UN seul candidat (sinon aucune, le marchand choisira).
+function associerPhotoAArticle(nomFichier, articles) {
+  const sansExt = String(nomFichier).replace(/\.[^.\\/]+$/, "");
+  const variantes = [{ base: normaliserNomPhoto(sansExt), rang: 0 }];
+  SUFFIXES_COPIE_PHOTO.forEach((re) => {
+    const m = sansExt.match(re);
+    if (m) variantes.push({ base: normaliserNomPhoto(sansExt.replace(re, "")), rang: Number(m[1]) });
+  });
+  const noms = articles.map((a) => ({ a: a, n: normaliserNomPhoto(a.nom) }));
+  for (let i = 0; i < variantes.length; i++) {
+    if (!variantes[i].base) continue;
+    const trouve = noms.find((x) => x.n === variantes[i].base);
+    if (trouve) return { article: trouve.a, rang: variantes[i].rang, source: "auto" };
+  }
+  for (let i = 0; i < variantes.length; i++) {
+    const b = variantes[i].base;
+    if (b.length < 4) continue;
+    const candidats = noms.filter((x) => x.n.length >= 4 && (x.n.indexOf(b) !== -1 || b.indexOf(x.n) !== -1));
+    if (candidats.length === 1) return { article: candidats[0].a, rang: variantes[i].rang, source: "approx" };
+  }
+  return { article: null, rang: 0, source: "aucun" };
+}
+
+function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine) {
+  const articles = catalogueServeur.slice().sort((a, b) => String(a.nom).localeCompare(String(b.nom), undefined, { sensitivity: "base" }));
+  const parId = {};
+  articles.forEach((a) => { parId[a.id] = a; });
+  let lignes = [];
+  let envoiEnCours = false;
+
+  function libelleStatut(l) {
+    if (l.etat === "ok") return "<span class='statut-photo-ok'>" + esc(t("statutPhotoOk")) + "</span>";
+    if (l.etat === "envoi") return esc(t("statutPhotoEnCours"));
+    if (l.etat === "erreur") return "<span class='statut-photo-ko'>" + esc(t("statutPhotoErreur", { msg: l.message })) + "</span>";
+    if (l.invalide) return "<span class='statut-photo-ko'>" + esc(t("statutPhotoInvalide")) + "</span>";
+    if (!l.articleId) return "<span class='statut-photo-ko'>" + esc(t("statutPhotoAChoisir")) + "</span>";
+    let s = l.source === "approx" ? "<span class='statut-photo-approx'>" + esc(t("statutPhotoApprox")) + "</span>"
+      : l.source === "manuel" ? esc(t("statutPhotoManuel")) : esc(t("statutPhotoExact"));
+    const a = parId[l.articleId];
+    if (a && a.photos && a.photos.length) s += "<div class='raison'>" + esc(t("statutPhotoDejaN", { n: a.photos.length })) + "</div>";
+    return s;
+  }
+  function aEnvoyer() { return lignes.filter((l) => !l.invalide && l.articleId && l.etat !== "ok"); }
+  function majBouton() {
+    const btn = document.getElementById("btnEnvoyerPhotos");
+    if (!btn) return;
+    const n = aEnvoyer().length;
+    btn.disabled = envoiEnCours || n === 0;
+    btn.textContent = n ? t("btnEnvoyerPhotos", { n: n }) : t("btnEnvoyerPhotosAucune");
+  }
+  function majStatut(l) {
+    const td = document.getElementById("statutPhoto" + lignes.indexOf(l));
+    if (td) td.innerHTML = libelleStatut(l);
+  }
+
+  function dessiner() {
+    if (!lignes.length) { zoneEl.innerHTML = ""; return; }
+    zoneEl.innerHTML =
+      "<table class='table-donnees table-import-photos'><tr><th>" + t("theadPhotoApercu") + "</th><th>" + t("theadPhotoFichier") + "</th><th>" + t("theadPhotoArticle") + "</th><th>" + t("theadPhotoStatut") + "</th></tr>" +
+      lignes.map((l, i) =>
+        "<tr>" +
+          "<td>" + (l.urlApercu ? "<img class='apercu-import-photo' src=\"" + esc(l.urlApercu) + "\" alt='' />" : "") + "</td>" +
+          "<td>" + esc(l.fichier.name) + "</td>" +
+          "<td><select data-choix-article-photo='" + i + "'" + ((l.invalide || l.etat === "ok" || envoiEnCours) ? " disabled" : "") + ">" +
+            "<option value=''>" + esc(t("optIgnorerPhoto")) + "</option>" +
+            articles.map((a) => "<option value=\"" + esc(a.id) + "\"" + (a.id === l.articleId ? " selected" : "") + ">" + esc(a.nom) + "</option>").join("") +
+          "</select></td>" +
+          "<td id='statutPhoto" + i + "'>" + libelleStatut(l) + "</td>" +
+        "</tr>"
+      ).join("") + "</table>" +
+      "<button id='btnEnvoyerPhotos' class='principal'></button>";
+    Array.prototype.forEach.call(zoneEl.querySelectorAll("[data-choix-article-photo]"), (sel) => {
+      sel.addEventListener("change", () => {
+        const l = lignes[Number(sel.dataset.choixArticlePhoto)];
+        l.articleId = sel.value;
+        l.source = "manuel";
+        l.rang = 0;
+        l.etat = "attente";
+        majStatut(l);
+        majBouton();
+      });
+    });
+    document.getElementById("btnEnvoyerPhotos").onclick = envoyer;
+    majBouton();
+  }
+
+  async function envoyer() {
+    // Ordre d'envoi : article par article, puis par rang (la photo sans suffixe d'abord - c'est la 1re photo
+    // de l'article, celle que le bot envoie au client), puis par nom de fichier.
+    const liste = aEnvoyer().sort((x, y) =>
+      x.articleId < y.articleId ? -1 : x.articleId > y.articleId ? 1 :
+      (x.rang - y.rang) || x.fichier.name.localeCompare(y.fichier.name, undefined, { numeric: true }));
+    if (!liste.length) return;
+    envoiEnCours = true;
+    dessiner();
+    let ok = 0;
+    const echecs = [];
+    for (let i = 0; i < liste.length; i++) {
+      const l = liste[i];
+      l.etat = "envoi";
+      majStatut(l);
+      try {
+        const donnees = new FormData();
+        donnees.append("photo", l.fichier);
+        const r = await fetch("/api/" + marchandActif.id + "/catalogue/" + encodeURIComponent(l.articleId) + "/photos", { method: "POST", body: donnees });
+        if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erreur || r.statusText || String(r.status)); }
+        l.etat = "ok";
+        ok++;
+      } catch (e) {
+        l.etat = "erreur";
+        l.message = e.message;
+        echecs.push(l.fichier.name);
+      }
+      majStatut(l);
+    }
+    envoiEnCours = false;
+    dessiner();
+    let message = t("msgImportPhotosOk", { ok: ok });
+    if (echecs.length) message += t("msgImportPhotosEchecs", { n: echecs.length, noms: echecs.join(", ") });
+    alert(message);
+    // Tout est passe : on recharge le catalogue (les nouvelles miniatures apparaissent) - le tableau, lui,
+    // disparait avec le rechargement. En cas d'echec partiel on le GARDE : seules les photos non envoyees
+    // sont reessayees au prochain clic (celles marquees "Envoyee" sont ignorees).
+    if (!echecs.length) onTermine();
+  }
+
+  inputEl.addEventListener("change", () => {
+    lignes.forEach((l) => { if (l.urlApercu) URL.revokeObjectURL(l.urlApercu); });
+    const fichiers = Array.prototype.slice.call(inputEl.files || [])
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    lignes = fichiers.map((f) => {
+      const invalide = PHOTO_TYPES_AUTORISES.indexOf(f.type) === -1 || f.size > PHOTO_TAILLE_MAX;
+      const assoc = invalide ? { article: null, rang: 0, source: "aucun" } : associerPhotoAArticle(f.name, articles);
+      return {
+        fichier: f, invalide: invalide,
+        articleId: assoc.article ? assoc.article.id : "", rang: assoc.rang, source: assoc.source,
+        etat: "attente", message: "",
+        urlApercu: PHOTO_TYPES_AUTORISES.indexOf(f.type) !== -1 ? URL.createObjectURL(f) : ""
+      };
+    });
+    dessiner();
+  });
+}
+
 async function renderCatalogue() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -1706,7 +1918,15 @@ async function renderCatalogue() {
       "<div class='bloc-import-catalogue' style='margin-top:16px;'>" +
         "<input type='file' accept='.csv,text/csv' id='champFichierImportCatalogue' /> " +
         "<button id='btnImporterCatalogue'>" + t("btnImporterCatalogue") + "</button>" +
-      "</div>";
+      "</div>" +
+      (catalogue.length
+        ? "<div class='bloc-import-photos'>" +
+            "<h3>" + t("titreImportPhotos") + "</h3>" +
+            "<p class='raison'>" + t("noteImportPhotos") + "</p>" +
+            "<input type='file' id='champFichiersImportPhotos' accept='image/png,image/jpeg,image/webp' multiple />" +
+            "<div id='zoneImportPhotos' style='margin-top:10px;'></div>" +
+          "</div>"
+        : "");
 
     const champRecherche = document.getElementById("champRechercheArticle");
     if (champRecherche) {
@@ -1809,6 +2029,10 @@ async function renderCatalogue() {
         btn.disabled = false;
       }
     };
+    const champFichiersPhotos = document.getElementById("champFichiersImportPhotos");
+    if (champFichiersPhotos) {
+      monterImportPhotos(catalogue, champFichiersPhotos, document.getElementById("zoneImportPhotos"), () => renderCatalogue());
+    }
     Array.prototype.forEach.call(zone.querySelectorAll("[data-ajouter-photo]"), (btn) => {
       btn.onclick = async () => {
         const pi = Number(btn.dataset.ajouterPhoto);

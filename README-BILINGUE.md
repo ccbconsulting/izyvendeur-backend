@@ -1225,6 +1225,35 @@ de connexion (`#ecranConnexion`). Intégré directement dans `public/admin.html`
 elle-même, comme jsPDF). Vérifié par une capture d'écran réelle (navigateur piloté) et par le test
 `test_securite_session_connexion_playwright.js` existant, toujours vert après cet ajout.
 
+## Étape 38 — Import de photos en masse dans le Catalogue (nouveau)
+
+Demandé le 5 octobre 2026 pour le marchand Excelle Health : mettre une vingtaine de photos de produits sur
+leurs articles d'un seul geste, plutôt que d'ouvrir chaque article un par un. Dans l'onglet **Catalogue**,
+sous le bouton d'import CSV, un nouveau bloc **« Importer des photos en masse »** : on sélectionne
+plusieurs photos à la fois ; chacune est rattachée à un article d'après **son nom de fichier** (insensible à
+la casse, aux accents et à la ponctuation : « ayusante toxclean.JPG » retrouve « Ayusante Toxclean »). Un
+tableau de contrôle s'affiche avant tout envoi (aperçu, fichier, article choisi, statut) : « Association
+automatique » (nom exact), « Association probable — à vérifier » (le nom du fichier est contenu dans le nom
+d'un seul article, ex. « noni.png » → « NONI 500mg »), ou « Aucun article choisi » (rien n'est envoyé tant
+qu'on n'a pas choisi l'article dans le menu déroulant). Plusieurs photos pour un même article : « Nom.jpg »
+part en premier (c'est la photo que le bot montre au client), puis « Nom-2.jpg », « Nom (3).jpg »… Un article
+qui a déjà des photos est signalé (« déjà N photo(s) : celle-ci sera ajoutée à la suite »). Les fichiers
+qui ne sont pas du JPEG/PNG/WEBP ou dépassent 5 Mo sont refusés dès la sélection.
+
+Techniquement : **aucune nouvelle route serveur** — l'envoi réutilise la route existante `POST
+/api/:id/catalogue/:productId/photos` (une requête par photo, l'une après l'autre), donc les mêmes droits
+(rôle « Catalogue »), les mêmes contrôles et le même stockage Cloudflare R2 que l'ajout photo par photo. En
+cas d'échec partiel (ex. une coupure réseau), le tableau reste affiché et un nouveau clic ne renvoie QUE les
+photos en échec, jamais celles déjà envoyées. Si tout réussit, le catalogue se recharge et les miniatures
+apparaissent.
+
+Testé le 5 octobre 2026 avec un vrai navigateur (nouveau fichier `test_import_photos_playwright.js`,
+28 vérifications, rejoué plusieurs fois sans variation) : association exacte/probable/absente, nom
+d'article finissant par un nombre respecté, suffixes « -2 » / « (2) », distinction « Fibre » / « Fiber »,
+refus d'un PDF et d'un fichier de plus de 5 Mo, correction manuelle, ordre d'envoi (photo sans suffixe
+d'abord), échec partiel puis nouvel essai limité à la photo en échec, rechargement du catalogue. Régression
+complète rejouée sans casse (31 fichiers de tests).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1499,7 +1528,9 @@ elle-même, comme jsPDF). Vérifié par une capture d'écran réelle (navigateur
   pour y penser elle-même — corrige un cas où ces boutons pouvaient rester visibles (jamais fonctionnels,
   le serveur refusait toujours l'action en 403) après une déconnexion/reconnexion avec une identité
   différente dans la même page (Étape 35) + logo IzyVendeur affiché en haut du formulaire de connexion
-  (`#ecranConnexion .logoConnexion`), image encodée directement dans la page (Étape 37)
+  (`#ecranConnexion .logoConnexion`), image encodée directement dans la page (Étape 37) + onglet Catalogue : nouveau bloc « Importer des photos en masse » (fonctions
+  `associerPhotoAArticle`/`monterImportPhotos`, tableau de contrôle avant envoi, réutilise la route photo
+  existante — aucun changement serveur) (Étape 38)
 - `storage.js` — fonctions d'upload pour le logo ET pour l'image d'accueil WhatsApp (deux dossiers
   séparés, même hébergement Cloudflare R2 déjà en place pour les photos d'articles)
 - `db.js` — nouvelles colonnes `logo_url` et `image_accueil_whatsapp_url` pour le marchand (avec
