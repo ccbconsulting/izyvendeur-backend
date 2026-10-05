@@ -1273,7 +1273,7 @@ Désormais le bot **retient la question** (nouvelle étape de conversation `awai
 
 **Aucune notification automatique n'est envoyée** au client (cela exigerait un nouveau modèle de message
 approuvé par Meta, le client n'ayant souvent plus de conversation ouverte depuis plus de 24 h). C'est le
-marchand qui contacte lui-même ces clients : dans l'onglet **Catalogue** de /admin, en bas, le panneau
+marchand qui contacte lui-même ces clients : dans l'onglet **Catalogue** de /admin, **tout en haut sous le titre** (encadré orange, pastille rouge « N à contacter »), le panneau
 **« Clients en attente de réassort »** liste article, numéro (lien direct wa.me), date de la demande et
 **stock actuel** (« Revenu en stock (N) » en vert ou « Toujours en rupture »), avec un bouton **« Marquer
 comme contacté »**. Une demande n'est jamais supprimée, seulement marquée « Contacté le … ».

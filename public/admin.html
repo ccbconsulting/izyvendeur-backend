@@ -62,8 +62,9 @@
   .miniature { position: relative; width: 80px; height: 80px; }
   .miniature img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
   .miniature button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; line-height: 18px; border-radius: 50%; font-size: 0.85em; }
-  .bloc-liste-attente { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e3e7ec; }
-  .bloc-liste-attente h3 { margin: 0 0 6px; font-size: 1em; }
+  .bloc-liste-attente { margin: 0 0 18px; padding: 14px 16px; border: 2px solid #f0a020; border-left-width: 6px; border-radius: 8px; background: #fff8ea; }
+  .bloc-liste-attente h3 { margin: 0 0 6px; font-size: 1.1em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .badge-attente-compte { background: #d92d20; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: .8em; font-weight: 700; }
   .table-liste-attente { width: 100%; border-collapse: collapse; margin-top: 8px; }
   .table-liste-attente th, .table-liste-attente td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e7ec; vertical-align: middle; }
   .badge-revenu-stock { color: #1a7f37; font-weight: 600; }
@@ -267,8 +268,9 @@ const I18N = {
     titreImportPhotos: "Importer des photos en masse",
     noteImportPhotos: "Sélectionnez plusieurs photos d'un coup. Nommez chaque fichier comme l'article (ex. « Ayusante Toxclean.jpg ») : l'association est automatique et vous pouvez la corriger avant l'envoi. Plusieurs photos pour un même article : ajoutez -2, -3… à la fin du nom (ex. « Ayusante Toxclean-2.jpg »). JPEG, PNG ou WEBP, 5 Mo maximum par photo.",
     titreListeAttente: "Clients en attente de réassort",
-    noteListeAttente: "Clients à qui le bot a répondu « en rupture » et qui ont demandé à être prévenus. Contactez-les vous-même quand l'article est de nouveau en stock, puis cliquez sur « Marqué comme contacté ».",
+    noteListeAttente: "Clients à qui le bot a répondu « en rupture » et qui ont demandé à être prévenus. Contactez-les vous-même quand l'article est de nouveau en stock, puis cliquez sur « Marquer comme contacté ».",
     aucuneAttente: "Aucun client en attente pour le moment.",
+    attACompter: "{n} à contacter",
     colAttArticle: "Article",
     colAttClient: "Client (WhatsApp)",
     colAttDate: "Demandé le",
@@ -800,6 +802,7 @@ const I18N = {
     titreListeAttente: "Customers waiting for restock",
     noteListeAttente: "Customers the bot told \u201cout of stock\u201d who asked to be notified. Contact them yourself once the item is back in stock, then click \u201cMark as contacted\u201d.",
     aucuneAttente: "No customers waiting right now.",
+    attACompter: "{n} to contact",
     colAttArticle: "Item",
     colAttClient: "Customer (WhatsApp)",
     colAttDate: "Requested on",
@@ -1898,6 +1901,13 @@ async function renderCatalogue() {
   function redraw() {
     zone.innerHTML =
       "<h2>" + t("catalogueEtStock") + "</h2>" +
+      // Panneau "Clients en attente de réassort" EN HAUT de l'onglet (demande du 5 octobre 2026) : c'est un
+      // outil de vente/marketing, il doit etre visible au premier coup d'oeil avant la liste des articles.
+      "<div class='bloc-liste-attente' id='blocListeAttente'>" +
+        "<h3>" + t("titreListeAttente") + " <span id='badgeAttenteCompte' class='badge-attente-compte' style='display:none;'></span></h3>" +
+        "<p class='raison'>" + t("noteListeAttente") + "</p>" +
+        "<div id='zoneListeAttente'></div>" +
+      "</div>" +
       (local.length
         ? "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;'>" +
             "<input id='champRechercheArticle' type='search' value=\"" + esc(catalogueTexteRecherche) + "\" placeholder=\"" + esc(t("placeholderRechercheArticle")) + "\" style='flex:1;min-width:220px;max-width:380px;' />" +
@@ -1956,12 +1966,7 @@ async function renderCatalogue() {
             "<input type='file' id='champFichiersImportPhotos' accept='image/png,image/jpeg,image/webp' multiple />" +
             "<div id='zoneImportPhotos' style='margin-top:10px;'></div>" +
           "</div>"
-        : "") +
-      "<div class='bloc-liste-attente'>" +
-        "<h3>" + t("titreListeAttente") + "</h3>" +
-        "<p class='raison'>" + t("noteListeAttente") + "</p>" +
-        "<div id='zoneListeAttente'></div>" +
-      "</div>";
+        : "");
 
     const champRecherche = document.getElementById("champRechercheArticle");
     if (champRecherche) {
@@ -2071,6 +2076,9 @@ async function renderCatalogue() {
       if (!zoneAttente) return;
       let entrees = [];
       try { entrees = await api("/api/" + marchandActif.id + "/liste-attente"); } catch (e) { zoneAttente.innerHTML = ""; return; }
+      const badge = document.getElementById("badgeAttenteCompte");
+      const aContacter = entrees.filter((x) => !x.contacteLe).length;
+      if (badge) { badge.textContent = t("attACompter", { n: aContacter }); badge.style.display = aContacter ? "" : "none"; }
       if (!entrees.length) { zoneAttente.innerHTML = "<p>" + t("aucuneAttente") + "</p>"; return; }
       // Les demandes encore a traiter d'abord, les deja contactees ensuite.
       entrees = entrees.slice().sort((a, b) => (a.contacteLe ? 1 : 0) - (b.contacteLe ? 1 : 0) || String(b.dateISO).localeCompare(String(a.dateISO)));
