@@ -62,6 +62,12 @@
   .miniature { position: relative; width: 80px; height: 80px; }
   .miniature img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
   .miniature button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; line-height: 18px; border-radius: 50%; font-size: 0.85em; }
+  .bloc-liste-attente { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e3e7ec; }
+  .bloc-liste-attente h3 { margin: 0 0 6px; font-size: 1em; }
+  .table-liste-attente { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .table-liste-attente th, .table-liste-attente td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e7ec; vertical-align: middle; }
+  .badge-revenu-stock { color: #1a7f37; font-weight: 600; }
+  .badge-toujours-rupture { color: #b42318; }
   .bloc-import-photos { margin-top: 16px; padding-top: 14px; border-top: 1px solid #e3e7ec; }
   .bloc-import-photos h3 { margin: 0 0 6px; font-size: 1em; }
   .table-import-photos img.apercu-import-photo { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
@@ -260,6 +266,18 @@ const I18N = {
     msgImportErreurs: " {n} ligne(s) ignorée(s) (erreur) : {details}",
     titreImportPhotos: "Importer des photos en masse",
     noteImportPhotos: "Sélectionnez plusieurs photos d'un coup. Nommez chaque fichier comme l'article (ex. « Ayusante Toxclean.jpg ») : l'association est automatique et vous pouvez la corriger avant l'envoi. Plusieurs photos pour un même article : ajoutez -2, -3… à la fin du nom (ex. « Ayusante Toxclean-2.jpg »). JPEG, PNG ou WEBP, 5 Mo maximum par photo.",
+    titreListeAttente: "Clients en attente de réassort",
+    noteListeAttente: "Clients à qui le bot a répondu « en rupture » et qui ont demandé à être prévenus. Contactez-les vous-même quand l'article est de nouveau en stock, puis cliquez sur « Marqué comme contacté ».",
+    aucuneAttente: "Aucun client en attente pour le moment.",
+    colAttArticle: "Article",
+    colAttClient: "Client (WhatsApp)",
+    colAttDate: "Demandé le",
+    colAttStock: "Stock actuel",
+    btnMarquerContacte: "Marquer comme contacté",
+    attContacteLe: "Contacté le ",
+    attRevenuEnStock: "Revenu en stock",
+    attToujoursRupture: "Toujours en rupture",
+    attArticleSupprime: "Article supprimé",
     theadPhotoApercu: "Aperçu",
     theadPhotoFichier: "Fichier",
     theadPhotoArticle: "Article",
@@ -779,6 +797,18 @@ const I18N = {
     msgImportErreurs: " {n} row(s) skipped (error): {details}",
     titreImportPhotos: "Bulk photo import",
     noteImportPhotos: "Select several photos at once. Name each file after the item (e.g. “Ayusante Toxclean.jpg”): matching is automatic and you can correct it before sending. Several photos for the same item: add -2, -3… at the end of the name (e.g. “Ayusante Toxclean-2.jpg”). JPEG, PNG or WEBP, 5 MB maximum per photo.",
+    titreListeAttente: "Customers waiting for restock",
+    noteListeAttente: "Customers the bot told \u201cout of stock\u201d who asked to be notified. Contact them yourself once the item is back in stock, then click \u201cMark as contacted\u201d.",
+    aucuneAttente: "No customers waiting right now.",
+    colAttArticle: "Item",
+    colAttClient: "Customer (WhatsApp)",
+    colAttDate: "Requested on",
+    colAttStock: "Current stock",
+    btnMarquerContacte: "Mark as contacted",
+    attContacteLe: "Contacted on ",
+    attRevenuEnStock: "Back in stock",
+    attToujoursRupture: "Still out of stock",
+    attArticleSupprime: "Item deleted",
     theadPhotoApercu: "Preview",
     theadPhotoFichier: "File",
     theadPhotoArticle: "Item",
@@ -1926,7 +1956,12 @@ async function renderCatalogue() {
             "<input type='file' id='champFichiersImportPhotos' accept='image/png,image/jpeg,image/webp' multiple />" +
             "<div id='zoneImportPhotos' style='margin-top:10px;'></div>" +
           "</div>"
-        : "");
+        : "") +
+      "<div class='bloc-liste-attente'>" +
+        "<h3>" + t("titreListeAttente") + "</h3>" +
+        "<p class='raison'>" + t("noteListeAttente") + "</p>" +
+        "<div id='zoneListeAttente'></div>" +
+      "</div>";
 
     const champRecherche = document.getElementById("champRechercheArticle");
     if (champRecherche) {
@@ -2029,6 +2064,41 @@ async function renderCatalogue() {
         btn.disabled = false;
       }
     };
+    // Liste d'attente de reassort : chargee apres coup et SANS jamais bloquer l'affichage du catalogue (un
+    // echec - ex. droit manquant - laisse simplement la zone vide).
+    async function chargerListeAttente() {
+      const zoneAttente = document.getElementById("zoneListeAttente");
+      if (!zoneAttente) return;
+      let entrees = [];
+      try { entrees = await api("/api/" + marchandActif.id + "/liste-attente"); } catch (e) { zoneAttente.innerHTML = ""; return; }
+      if (!entrees.length) { zoneAttente.innerHTML = "<p>" + t("aucuneAttente") + "</p>"; return; }
+      // Les demandes encore a traiter d'abord, les deja contactees ensuite.
+      entrees = entrees.slice().sort((a, b) => (a.contacteLe ? 1 : 0) - (b.contacteLe ? 1 : 0) || String(b.dateISO).localeCompare(String(a.dateISO)));
+      zoneAttente.innerHTML = "<table class='table-liste-attente'><thead><tr><th>" + t("colAttArticle") + "</th><th>" + t("colAttClient") +
+        "</th><th>" + t("colAttDate") + "</th><th>" + t("colAttStock") + "</th><th></th></tr></thead><tbody>" +
+        entrees.map((e) => {
+          const chiffres = String(e.telephone || "").replace(/[^0-9]/g, "");
+          const revenu = e.stockIllimite || (e.stockActuel != null && e.stockActuel > 0);
+          const stockTxt = !e.articleExiste ? "<span>" + t("attArticleSupprime") + "</span>"
+            : revenu ? "<span class='badge-revenu-stock'>" + t("attRevenuEnStock") + (e.stockIllimite ? "" : " (" + e.stockActuel + ")") + "</span>"
+            : "<span class='badge-toujours-rupture'>" + t("attToujoursRupture") + "</span>";
+          const action = e.contacteLe
+            ? esc(t("attContacteLe") + new Date(e.contacteLe).toLocaleDateString())
+            : "<button data-contacte-attente='" + esc(e.id) + "'>" + t("btnMarquerContacte") + "</button>";
+          return "<tr data-entree-attente='" + esc(e.id) + "'><td>" + esc(e.produit) + "</td><td><a href='https://wa.me/" + chiffres + "' target='_blank' rel='noopener'>" +
+            esc(e.telephone) + "</a></td><td>" + esc(new Date(e.dateISO).toLocaleDateString()) + "</td><td>" + stockTxt + "</td><td>" + action + "</td></tr>";
+        }).join("") + "</tbody></table>";
+      Array.prototype.forEach.call(zoneAttente.querySelectorAll("[data-contacte-attente]"), (btn) => {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          try {
+            await api("/api/" + marchandActif.id + "/liste-attente/" + encodeURIComponent(btn.dataset.contacteAttente) + "/contacte", { method: "POST", body: "{}" });
+            await chargerListeAttente();
+          } catch (e) { alert(t("erreurPrefixe") + e.message); btn.disabled = false; }
+        };
+      });
+    }
+    chargerListeAttente();
     const champFichiersPhotos = document.getElementById("champFichiersImportPhotos");
     if (champFichiersPhotos) {
       monterImportPhotos(catalogue, champFichiersPhotos, document.getElementById("zoneImportPhotos"), () => renderCatalogue());

@@ -1757,6 +1757,23 @@ app.delete("/api/:id/inventaire/instantanes/:snapshotId", protegerAcces, (req, r
   res.json({ ok: true });
 });
 
+// -- Liste d'attente de reassort (octobre 2026) -- clients ayant demande a etre prevenus quand un article en
+// rupture revient en stock (voir conversation.js, enregistrerAttenteReassort). Permission "catalogue" : c'est
+// de la gestion de stock. Le marchand contacte lui-meme ces clients puis marque l'entree "contactee".
+app.get("/api/:id/liste-attente", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  res.json(entry.engine.listerAttenteReassort());
+});
+
+app.post("/api/:id/liste-attente/:entreeId/contacte", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const ok = entry.engine.marquerAttenteReassortContactee(req.params.entreeId, req.auth.adminUser || null);
+  if (!ok) return res.status(404).json({ erreur: "Entrée introuvable ou déjà marquée comme contactée." });
+  res.json({ ok: true });
+});
+
 // ---------------- Webhook WhatsApp ----------------
 
 // --- ETAPE 1 : Verification du webhook par Meta ---
@@ -2327,7 +2344,9 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     ]);
   }
 
-  if (etat.stage === "awaiting_order_confirmation" || etat.stage === "awaiting_confirmation") {
+  // Rupture sur tous les modeles : "Souhaitez-vous que notre equipe vous previenne des le reassort ?" (voir
+  // conversation.js, etape awaiting_reassort) - memes boutons Oui/Non que la confirmation de commande.
+  if (etat.stage === "awaiting_order_confirmation" || etat.stage === "awaiting_confirmation" || etat.stage === "awaiting_reassort") {
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
       { id: ID_OUI, title: tW(etat, "Oui", "Yes") },
       { id: ID_NON, title: tW(etat, "Non", "No") }

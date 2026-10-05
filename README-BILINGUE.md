@@ -1254,6 +1254,39 @@ refus d'un PDF et d'un fichier de plus de 5 Mo, correction manuelle, ordre d'env
 d'abord), échec partiel puis nouvel essai limité à la photo en échec, rechargement du catalogue. Régression
 complète rejouée sans casse (31 fichiers de tests).
 
+## Étape 39 — Rupture de stock : "prévenez-moi au réassort" enfin retenu + liste d'attente dans /admin (nouveau)
+
+Signalé le 5 octobre 2026 : quand un article est en rupture sur **tous** ses modèles, le bot demandait
+« Je vous notifie dès le réassort ? », mais quand le client répondait **oui**, le même message de rupture
+revenait en boucle. Cause : la question était posée sans que le bot s'en souvienne, et il n'existait
+d'ailleurs aucune fonction de notification au réassort derrière.
+
+Désormais le bot **retient la question** (nouvelle étape de conversation `awaiting_reassort`) :
+- **oui** → le client est inscrit sur une **liste d'attente** (numéro WhatsApp + article + date), le bot répond
+  « C'est noté, notre équipe vous préviendra dès que … sera de nouveau disponible » puis repropose le catalogue.
+  Même client + même article = une seule inscription (pas de doublon) ;
+- **non** → retour au catalogue ; **un autre article nommé** ou **n'importe quel texte** → traité normalement,
+  jamais coincé sur la question ;
+- la question est reformulée (« Souhaitez-vous que notre équipe vous prévienne dès le réassort ? ») et
+  accompagnée de boutons WhatsApp **Oui / Non** ; traduction anglaise incluse ;
+- le **Simulateur** de /admin donne la même réponse mais n'écrit **jamais** dans la vraie liste.
+
+**Aucune notification automatique n'est envoyée** au client (cela exigerait un nouveau modèle de message
+approuvé par Meta, le client n'ayant souvent plus de conversation ouverte depuis plus de 24 h). C'est le
+marchand qui contacte lui-même ces clients : dans l'onglet **Catalogue** de /admin, en bas, le panneau
+**« Clients en attente de réassort »** liste article, numéro (lien direct wa.me), date de la demande et
+**stock actuel** (« Revenu en stock (N) » en vert ou « Toujours en rupture »), avec un bouton **« Marquer
+comme contacté »**. Une demande n'est jamais supprimée, seulement marquée « Contacté le … ».
+
+Nouvelles routes (rôle « Catalogue », limitées au marchand concerné) : `GET /api/:id/liste-attente` et
+`POST /api/:id/liste-attente/:entreeId/contacte`. Aucune migration : un marchand existant démarre avec une
+liste vide. Si le marchand préfère l'envoi automatique plus tard, il suffira de brancher un modèle Meta sur
+cette même liste.
+
+Testé le 5 octobre 2026 (nouveaux `test_liste_attente_reassort.js`, moteur + routes + droits, et
+`test_liste_attente_playwright.js`, panneau dans un vrai navigateur) ; régression complète rejouée sans casse
+(33 fichiers de tests).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1270,6 +1303,7 @@ complète rejouée sans casse (31 fichiers de tests).
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 39 : `conversation.js` (étape `awaiting_reassort`, liste d'attente de réassort), `server.js` (routes `/api/:id/liste-attente`, boutons Oui/Non) et `public/admin.html` (panneau « Clients en attente de réassort » dans l'onglet Catalogue).
 - `conversation.js` — moteur catalogue : logique de choix de langue + traduction de toutes les réponses,
   calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année), exemple de
   format ajouté à la demande du numéro de téléphone (Étape 8), formule de politesse ajoutée quand le

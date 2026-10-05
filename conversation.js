@@ -115,6 +115,7 @@ function seedState() {
       caisse: Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() })
     },
     inventorySnapshots: [], // instantanés d'inventaire enregistrés depuis l'onglet Rapports (voir plus bas)
+    listeAttenteReassort: [], // clients ayant demandé à être prévenus au réassort d'un article en rupture (voir plus bas)
     caisseSessions: [], // sessions d'ouverture/fermeture de caisse (Caisse POS, voir plus bas)
     nextCaisseSessionId: 1
   };
@@ -164,6 +165,7 @@ function createCatalogEngine(merchantKey, options) {
     state = await db.initMerchantState(merchantKey, seedState);
     if (!state.settings) state.settings = { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE };
     if (!state.inventorySnapshots) state.inventorySnapshots = [];
+    if (!state.listeAttenteReassort) state.listeAttenteReassort = [];
     // Retro-compatibilite (29 sept 2026) pour un marchand deja existant avant l'ajout des sessions de
     // caisse : jamais de migration forcee de son etat, juste des valeurs de depart s'il ne les a pas encore.
     if (!state.settings.caisse) state.settings.caisse = Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
@@ -529,6 +531,41 @@ function createCatalogEngine(merchantKey, options) {
     // Idem pour pendingChoice - reinitialise a chaque tour, repositionne uniquement aux 3 points de retour
     // "quelle couleur / quelle taille / rupture, laquelle de ces variantes" plus bas.
     session.pendingChoice = null;
+
+    // Reponse a "Souhaitez-vous que notre equipe vous previenne des le reassort ?" (voir plus bas, rupture
+    // sur tous les modeles). oui -> le client est inscrit sur la liste d'attente de l'article ; non -> retour
+    // au catalogue ; toute autre chose (autre article nomme, "panier"...) est traitee normalement, sans
+    // jamais rester coince sur cette question.
+    if (session.stage === "awaiting_reassort") {
+      const produitAttenteId = session.reassortProduitId;
+      session.stage = "idle";
+      session.reassortProduitId = null;
+      const produitAttente = state.catalog.filter((p) => p.id === produitAttenteId)[0];
+      const autreArticleNomme = matchProduct(text);
+      const nommeUnAutre = !!autreArticleNomme && autreArticleNomme !== produitAttenteId;
+      // La selection en cours (l'article en rupture) est abandonnee dans tous les cas : sinon le tour
+      // suivant retomberait sur lui et re-afficherait le message de rupture.
+      session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+      if (!nommeUnAutre && (parseAffirmative(text) || parseNegative(text))) {
+        const veutEtrePrevenu = parseAffirmative(text) && !!produitAttente;
+        if (veutEtrePrevenu) enregistrerAttenteReassort(session, produitAttente);
+        trace.entites = { "Réponse client": text, "Article en rupture": produitAttente ? produitAttente.nom : "—" };
+        trace.action = veutEtrePrevenu ? "Client inscrit sur la liste d'attente de réassort" : "Client ne souhaite pas être prévenu — retour au catalogue";
+        logTrace(session, trace);
+        session.pretPourChoix = true;
+        const listeCat = state.catalog.map((p) => p.nom).join(", ");
+        return veutEtrePrevenu
+          ? sh.t(session,
+              "C'est noté ✅ Notre équipe vous préviendra dès que " + produitAttente.nom + " sera de nouveau disponible. En attendant, quel autre article vous intéresse ? Nous avons : " + listeCat + ".",
+              "Noted ✅ Our team will let you know as soon as " + produitAttente.nom + " is back in stock. In the meantime, which other item are you interested in? We have: " + listeCat + "."
+            )
+          : sh.t(session,
+              "Pas de souci ! Quel article vous intéresse ? Nous avons : " + listeCat + ".",
+              "No worries! Which item are you interested in? We have: " + listeCat + "."
+            );
+      }
+      // sinon : on laisse le message continuer dans le traitement normal ci-dessous
+    }
 
     // "panier" (tape librement ou bouton "Mon panier", voir sh.demandeVoirPanier) est reconnu a n'importe
     // quel moment du parcours d'achat - passe devant toute la logique specifique a l'etape en cours, sur
@@ -969,9 +1006,14 @@ function createCatalogEngine(merchantKey, options) {
           "Sorry, " + product.nom + " " + variant.couleur + " " + variant.taille + " is out of stock 😕. I still have: " + alt + ". Which one would you like?"
         );
       }
+      // On RETIENT la question posee (etape dediee) : sans cela, le "oui" du client retombait sur le meme
+      // article toujours en rupture et le meme message revenait en boucle (octobre 2026). Voir le debut de
+      // processMessage pour le traitement de la reponse et enregistrerAttenteReassort pour la liste d'attente.
+      session.stage = "awaiting_reassort";
+      session.reassortProduitId = product.id;
       return sh.t(session,
-        "Désolée, " + product.nom + " est actuellement en rupture sur tous les modèles. Je vous notifie dès le réassort ?",
-        "Sorry, " + product.nom + " is currently out of stock in all variants. Should I notify you when it's back?"
+        "Désolée, " + product.nom + " est actuellement en rupture sur tous les modèles. Souhaitez-vous que notre équipe vous prévienne dès le réassort ? (oui / non)",
+        "Sorry, " + product.nom + " is currently out of stock in all variants. Would you like our team to let you know as soon as it's back? (yes / no)"
       );
     }
 
@@ -1336,6 +1378,52 @@ function createCatalogEngine(merchantKey, options) {
       });
     });
     return lignes;
+  }
+
+  // ---------------- Liste d'attente de réassort (octobre 2026) ----------------
+  // Un client dont l'article est en rupture sur tous les modeles peut demander a etre prevenu : on garde son
+  // numero (jamais celui du Simulateur) dans state.listeAttenteReassort, et le marchand le voit dans
+  // /admin (onglet Catalogue) pour le contacter lui-meme au reapprovisionnement. Aucun message n'est envoye
+  // automatiquement (cela exigerait un modele WhatsApp approuve par Meta). Une entree n'est jamais supprimee :
+  // le marchand la marque "contactee" (meme principe que la suppression en douceur des instantanes).
+  function enregistrerAttenteReassort(session, product) {
+    if (!state || !session.fromPhone || session.fromPhone === PHONE_SIMULATEUR) return false;
+    const dejaLa = state.listeAttenteReassort.some((e) => e.telephone === session.fromPhone && e.productId === product.id && !e.contacteLe);
+    if (dejaLa) return false;
+    state.listeAttenteReassort.push({
+      id: "att" + Date.now() + Math.floor(Math.random() * 1000),
+      productId: product.id,
+      produit: product.nom,
+      telephone: session.fromPhone,
+      langue: sh.langueSession(session),
+      dateISO: new Date().toISOString(),
+      contacteLe: null,
+      contactePar: null
+    });
+    saveState();
+    return true;
+  }
+
+  // Chaque entree est renvoyee avec le stock virtuel ACTUEL de l'article (somme des variantes), pour que le
+  // marchand voie d'un coup d'oeil lesquels sont deja revenus en stock.
+  function listerAttenteReassort() {
+    if (!state) return [];
+    return state.listeAttenteReassort.map((e) => {
+      const p = state.catalog.filter((x) => x.id === e.productId)[0];
+      let stockActuel = null;
+      if (p) stockActuel = p.stockIllimite ? null : p.variantes.reduce((somme, v) => somme + Math.max(0, virtualStock(p.id, v)), 0);
+      return Object.assign({}, e, { produit: p ? p.nom : e.produit, articleExiste: !!p, stockActuel, stockIllimite: !!(p && p.stockIllimite) });
+    });
+  }
+
+  function marquerAttenteReassortContactee(id, parQui) {
+    if (!state) return false;
+    const e = state.listeAttenteReassort.find((x) => x.id === id);
+    if (!e || e.contacteLe) return false;
+    e.contacteLe = new Date().toISOString();
+    e.contactePar = parQui || null;
+    saveState();
+    return true;
   }
 
   function listerInstantanesInventaire() {
@@ -1724,6 +1812,8 @@ function createCatalogEngine(merchantKey, options) {
     listerInstantanesInventaire,
     enregistrerInstantaneInventaire,
     supprimerInstantaneInventaire,
+    listerAttenteReassort,
+    marquerAttenteReassortContactee,
     getInventaireActuel
   };
 }
