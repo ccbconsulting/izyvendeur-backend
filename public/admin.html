@@ -62,6 +62,11 @@
   .miniature { position: relative; width: 80px; height: 80px; }
   .miniature img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
   .miniature button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; line-height: 18px; border-radius: 50%; font-size: 0.85em; }
+  .btn-deplier-ventes { background: none; border: none; padding: 0 6px 0 0; cursor: pointer; font-size: 0.95em; color: #1f3552; }
+  .btn-deplier-ventes .fleche { display: inline-block; transition: transform .15s; }
+  .btn-deplier-ventes.ouvert .fleche { transform: rotate(90deg); }
+  tr.ligne-detail-variante td { background: #f6f8fb; font-size: 0.93em; }
+  tr.ligne-detail-variante td:first-child { padding-left: 34px; }
   .journal-barre { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0; }
   .journal-barre button.actif { background:#1f6feb; color:#fff; }
   .table-journal { width:100%; border-collapse:collapse; font-size:.9em; }
@@ -524,6 +529,9 @@ const I18N = {
     theadArticleCourt: "Article",
     theadServiceCourt: "Service",
     theadQuantite: "Quantité",
+    theadMontantFcfa: "Montant (FCFA)",
+    titreDetailVariantes: "Voir les variantes vendues",
+    libelleVarianteUnique: "Modèle unique",
     msgPasAssezDonnees: "Pas encore assez de données.",
     h3StockASurveiller: "Stock à surveiller",
     msgAucunArticleSousLeSeuil: "Aucun article sous le seuil d'alerte.",
@@ -1139,6 +1147,9 @@ const I18N = {
     theadArticleCourt: "Item",
     theadServiceCourt: "Service",
     theadQuantite: "Quantity",
+    theadMontantFcfa: "Amount (FCFA)",
+    titreDetailVariantes: "Show variants sold",
+    libelleVarianteUnique: "Single model",
     msgPasAssezDonnees: "Not enough data yet.",
     h3StockASurveiller: "Stock to watch",
     msgAucunArticleSousLeSeuil: "No item below the alert threshold.",
@@ -3522,8 +3533,10 @@ async function renderTableauDeBord() {
   const top =
     "<h3>" + (estCatalogue ? t("h3ArticlesTop") : t("h3ServicesTop")) + "</h3>" +
     (d.topProduits.length
-      ? "<table class='table-donnees'><tr><th>" + (estCatalogue ? t("theadArticleCourt") : t("theadServiceCourt")) + "</th><th>" + t("theadQuantite") + "</th></tr>" +
-        d.topProduits.map((p) => "<tr><td>" + esc(p.nom) + "</td><td>" + p.quantite + "</td></tr>").join("") + "</table>"
+      ? (estCatalogue
+          ? tableVentesParArticleHtml(d.topProduits, t("theadArticleCourt"))
+          : "<table class='table-donnees'><tr><th>" + t("theadServiceCourt") + "</th><th>" + t("theadQuantite") + "</th></tr>" +
+            d.topProduits.map((p) => "<tr><td>" + esc(p.nom) + "</td><td>" + p.quantite + "</td></tr>").join("") + "</table>")
       : "<p class='raison'>" + t("msgPasAssezDonnees") + "</p>");
 
   let bas;
@@ -3548,6 +3561,7 @@ async function renderTableauDeBord() {
   }
 
   zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode + tuiles + sparkline + top + bas;
+  brancherDeplierVentes(zone);
 
   Array.prototype.forEach.call(zone.querySelectorAll(".tuile.cliquable"), (el) => {
     const cible = el.dataset.tuileOnglet;
@@ -3704,6 +3718,49 @@ function genererEtTelechargerPdf(construireContenu, nomFichier) {
   return true;
 }
 
+// Etape 41 : tableau "ventes par article" avec, SOUS chaque article, les variantes (couleur/taille) reellement
+// vendues - clic sur la ligne (ou sur la fleche) pour les deplier/replier. Utilise par le Tableau de bord
+// (Top articles) et par l'onglet Rapports. `liste` : [{nom, quantite, montant, variantes:[{couleur,taille,quantite,montant}]}].
+function libelleVarianteVendue(v) {
+  const parts = [];
+  [v.couleur, v.taille].forEach((x) => {
+    const c = String(x == null ? "" : x).trim();
+    if (c && c !== "-" && parts.indexOf(c) === -1) parts.push(c);
+  });
+  return parts.length ? parts.join(" · ") : t("libelleVarianteUnique");
+}
+
+function tableVentesParArticleHtml(liste, premiereColonne) {
+  return "<table class='table-donnees table-ventes-articles'><tr><th>" + esc(premiereColonne) + "</th><th>" + t("theadQuantite") + "</th><th>" + t("theadMontantFcfa") + "</th></tr>" +
+    liste.map((a, i) => {
+      const vs = Array.isArray(a.variantes) ? a.variantes : [];
+      const nom = vs.length
+        ? "<button type='button' class='btn-deplier-ventes' data-deplier-ventes='" + i + "' title=\"" + esc(t("titreDetailVariantes")) + "\" aria-expanded='false'><span class='fleche'>▸</span></button>" + esc(a.nom)
+        : esc(a.nom);
+      return "<tr class='ligne-article-vendu' data-article-vendu='" + i + "'><td>" + nom + "</td><td>" + a.quantite + "</td><td>" + (a.montant || 0).toLocaleString(localeCourante()) + "</td></tr>" +
+        vs.map((v) => "<tr class='ligne-detail-variante' data-detail-de='" + i + "' style='display:none;'><td>" + esc(libelleVarianteVendue(v)) + "</td><td>" + v.quantite + "</td><td>" + (v.montant || 0).toLocaleString(localeCourante()) + "</td></tr>").join("");
+    }).join("") + "</table>";
+}
+
+// Les espaces fines/insecables que produit toLocaleString("fr-FR") ne s'impriment pas correctement dans les
+// polices standard de jsPDF : on les remplace par une espace normale dans les PDF.
+function nombrePdf(n) { return Number(n).toLocaleString(localeCourante()).replace(/[\u202f\u00a0]/g, " "); }
+
+function brancherDeplierVentes(zone) {
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-deplier-ventes]"), (btn) => {
+    const i = btn.dataset.deplierVentes;
+    const basculer = () => {
+      const ouvert = !btn.classList.contains("ouvert");
+      btn.classList.toggle("ouvert", ouvert);
+      btn.setAttribute("aria-expanded", ouvert ? "true" : "false");
+      Array.prototype.forEach.call(zone.querySelectorAll("tr[data-detail-de='" + i + "']"), (tr) => { tr.style.display = ouvert ? "" : "none"; });
+    };
+    btn.onclick = (e) => { e.stopPropagation(); basculer(); };
+    const ligne = zone.querySelector("tr[data-article-vendu='" + i + "']");
+    if (ligne) { ligne.style.cursor = "pointer"; ligne.onclick = basculer; }
+  });
+}
+
 async function renderRapports() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -3750,8 +3807,9 @@ async function renderRapports() {
         "<table class='table-donnees'><tr>" + Object.keys(r.parStatut).map((s) => "<th>" + esc(libelleStatutCommande(s)) + "</th>").join("") + "</tr><tr>" + Object.keys(r.parStatut).map((s) => "<td>" + r.parStatut[s] + "</td>").join("") + "</tr></table>" +
         "<h3>" + t("h3QuantitesVendues") + "</h3>" +
         (r.parArticle.length
-          ? "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadQuantite") + "</th></tr>" + r.parArticle.map((a) => "<tr><td>" + esc(a.nom) + "</td><td>" + a.quantite + "</td></tr>").join("") + "</table>"
+          ? tableVentesParArticleHtml(r.parArticle, t("theadArticleCourt"))
           : "<p class='raison'>" + t("msgAucuneVentePeriode") + "</p>");
+      brancherDeplierVentes(zoneResultat);
     } catch (e) { zoneResultat.innerHTML = "<div class='erreur'>" + t("erreurPrefixe") + esc(e.message) + "</div>"; }
   };
 
@@ -3766,9 +3824,9 @@ async function renderRapports() {
           t("pdfRapportSousTitreGenere", { date: new Date().toLocaleString(localeCourante()) })
         ],
         sections: [
-          { titre: t("pdfSectionResume"), lignes: [t("pdfLigneNbCommandes", { n: r.nbCommandes }), t("pdfLigneCa", { ca: (r.chiffreAffaires || 0).toLocaleString(localeCourante()) })] },
+          { titre: t("pdfSectionResume"), lignes: [t("pdfLigneNbCommandes", { n: r.nbCommandes }), t("pdfLigneCa", { ca: nombrePdf(r.chiffreAffaires || 0) })] },
           { titre: t("pdfSectionRepartition"), lignes: Object.keys(r.parStatut).map((s) => libelleStatutCommande(s) + " : " + r.parStatut[s]) },
-          { titre: t("pdfSectionQuantites"), lignes: r.parArticle.map((a) => a.nom + " : " + a.quantite), texteVide: t("pdfTexteAucuneVente") }
+          { titre: t("pdfSectionQuantites"), lignes: [].concat.apply([], r.parArticle.map((a) => [a.nom + " : " + a.quantite + " (" + nombrePdf(a.montant || 0) + " FCFA)"].concat((a.variantes || []).map((v) => "     - " + libelleVarianteVendue(v) + " : " + v.quantite + " (" + nombrePdf(v.montant || 0) + " FCFA)")))), texteVide: t("pdfTexteAucuneVente") }
         ]
       }), "rapport-commandes-" + marchandActif.id + "-" + date + ".pdf");
     } catch (e) { alert(t("erreurPrefixe") + e.message); }

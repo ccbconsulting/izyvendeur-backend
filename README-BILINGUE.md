@@ -1327,6 +1327,27 @@ Testé le 6 octobre 2026 : nouveaux `test_journal_audit.js` (droits employé/pro
 confidentialité, anti-pollution) et `test_journal_playwright.js` (boutons absents pour l'employé, onglet Journal,
 vue globale) ; régression complète rejouée sans casse (35 fichiers de tests).
 
+## Étape 41 — Tableau de bord et Rapports : variantes réellement vendues sous chaque article (nouveau)
+
+Demandé le 6 octobre 2026 : dans « Articles les plus vendus » (Tableau de bord) et « Quantités vendues par
+article » (Rapports), seul le nom de l'article apparaissait — impossible de savoir quelle couleur/taille (ou
+quel modèle) avait réellement été vendu.
+
+Désormais, **sous chaque article**, on peut afficher les **variantes réellement vendues** : clic sur la flèche
+(ou sur la ligne entière) pour déplier/replier ; chaque variante montre sa **quantité** et son **montant**
+(ex. « Rouge · M — 3 — 15 000 »). Une nouvelle colonne **Montant (FCFA)** s'ajoute aux deux tableaux. Le
+**rapport PDF** reprend le détail par variante sous chaque article. Une variante « Unique » s'affiche
+simplement « Unique » (et non « Unique · Unique ») ; pour distinguer deux modèles vraiment différents, donner
+des noms distincts à leurs variantes (volume, taille…).
+
+Au passage, correction : les ventes sont maintenant regroupées **par article réel** et non plus par simple nom
+— deux articles portant le même nom ne sont plus fusionnés dans les totaux. Les commandes annulées restent
+exclues. Aucune migration : les lignes de commande enregistraient déjà couleur, taille et prix.
+
+Testé le 6 octobre 2026 (nouveaux `test_ventes_par_variante.js`, calculs, et
+`test_ventes_par_variante_playwright.js`, dépliage dans un vrai navigateur sur le Tableau de bord et les
+Rapports) ; régression complète rejouée sans casse (37 fichiers de tests).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1343,6 +1364,7 @@ vue globale) ; régression complète rejouée sans casse (35 fichiers de tests).
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 41 : `conversation.js` (ventes regroupées par article avec détail des variantes dans `getTableauDeBord` et `getRapportCommandes`) et `public/admin.html` (lignes dépliables sous l'article, colonne Montant, PDF).
 - Étape 40 : `db.js` (journal d'audit : table `journal_audit`), `server.js` (protections de suppression, enregistrement des modifications/connexions, routes `/journal`) et `public/admin.html` (onglet Journal, boutons de suppression masqués pour les employés).
 - Étape 39 : `conversation.js` (étape `awaiting_reassort`, liste d'attente de réassort), `server.js` (routes `/api/:id/liste-attente`, boutons Oui/Non) et `public/admin.html` (panneau « Clients en attente de réassort » dans l'onglet Catalogue).
 - `conversation.js` — moteur catalogue : logique de choix de langue + traduction de toutes les réponses,

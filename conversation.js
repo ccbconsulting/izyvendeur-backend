@@ -1234,6 +1234,37 @@ function createCatalogEngine(merchantKey, options) {
 
   // ---------------- Tableau de bord ----------------
 
+  // Etape 41 (octobre 2026) : ventes regroupees PAR ARTICLE REEL (productId, et non plus par simple nom - deux
+  // articles de meme nom ne sont plus fusionnes), avec le DETAIL DES VARIANTES (couleur/taille) reellement
+  // vendues sous chaque article : { productId, nom, quantite, montant, variantes: [{couleur, taille, quantite, montant}] }.
+  // Les lignes de commande enregistrent deja couleur/taille/prix - aucune migration. `commandes` : commandes
+  // deja filtrees (periode, hors annulees) ; `articleId` : filtre optionnel sur un seul article.
+  function agregerVentesParArticle(commandes, articleId) {
+    const articles = {};
+    const ordre = [];
+    commandes.forEach((o) => (o.items || []).forEach((it) => {
+      if (articleId && articleId !== "tous" && it.productId !== articleId) return;
+      const q = Number(it.quantite) || 0;
+      const montant = Number(it.prix) || (Number(it.prixUnitaire) || 0) * q;
+      const cle = it.productId || ("nom:" + it.produit);
+      if (!articles[cle]) { articles[cle] = { productId: it.productId || null, nom: it.produit, quantite: 0, montant: 0, _v: {} }; ordre.push(cle); }
+      const a = articles[cle];
+      a.nom = it.produit || a.nom;
+      a.quantite += q;
+      a.montant += montant;
+      const cv = (it.couleur || "") + "\u0001" + (it.taille || "");
+      if (!a._v[cv]) a._v[cv] = { couleur: it.couleur || "", taille: it.taille || "", quantite: 0, montant: 0 };
+      a._v[cv].quantite += q;
+      a._v[cv].montant += montant;
+    }));
+    return ordre.map((cle) => {
+      const a = articles[cle];
+      const variantes = Object.keys(a._v).map((k) => a._v[k]).sort((x, y) => y.quantite - x.quantite);
+      return { productId: a.productId, nom: a.nom, quantite: a.quantite, montant: a.montant, variantes };
+    }).sort((x, y) => y.quantite - x.quantite);
+  }
+
+
   function sameDay(a, b) {
     return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   }
@@ -1276,14 +1307,7 @@ function createCatalogEngine(merchantKey, options) {
       sparkline7j.push(actives.filter((o) => sameDay(new Date(o.dateISO), jour)).length);
     }
 
-    const quantites = {};
-    dansPeriode.forEach((o) => (o.items || []).forEach((it) => {
-      quantites[it.produit] = (quantites[it.produit] || 0) + (Number(it.quantite) || 0);
-    }));
-    const topProduits = Object.keys(quantites)
-      .map((nom) => ({ nom, quantite: quantites[nom] }))
-      .sort((a, b) => b.quantite - a.quantite)
-      .slice(0, 4);
+    const topProduits = agregerVentesParArticle(dansPeriode).slice(0, 4);
 
     return {
       periode,
@@ -1345,15 +1369,12 @@ function createCatalogEngine(merchantKey, options) {
     const parStatut = {};
     STATUT_LIST.forEach((s) => (parStatut[s] = 0));
     let ca = 0;
-    const quantitesParArticle = {};
+    const nonAnnulees = [];
     filtrees.forEach((o) => {
       parStatut[o.statut] = (parStatut[o.statut] || 0) + 1;
       if (o.statut !== "Annulée") {
         ca += o.prix || 0;
-        (o.items || []).forEach((it) => {
-          if (articleId && articleId !== "tous" && it.productId !== articleId) return;
-          quantitesParArticle[it.produit] = (quantitesParArticle[it.produit] || 0) + (Number(it.quantite) || 0);
-        });
+        nonAnnulees.push(o);
       }
     });
 
@@ -1363,7 +1384,7 @@ function createCatalogEngine(merchantKey, options) {
       nbCommandes: filtrees.length,
       chiffreAffaires: ca,
       parStatut,
-      parArticle: Object.keys(quantitesParArticle).map((nom) => ({ nom, quantite: quantitesParArticle[nom] })).sort((a, b) => b.quantite - a.quantite)
+      parArticle: agregerVentesParArticle(nonAnnulees, articleId)
     };
   }
 
