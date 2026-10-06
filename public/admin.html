@@ -694,6 +694,8 @@ const I18N = {
     labelQrNumero: "Numéro WhatsApp de la boutique (format international, ex. 237690000000)",
     labelQrMessage: "Message de départ pré-rempli chez le client",
     defautQrMessage: "Bonjour",
+    labelQrLogo: "Afficher mon logo au centre du QR code",
+    noteQrLogo: "Le logo reste petit (environ 20 % de la largeur) pour que le QR code reste lisible par tous les téléphones.",
     btnQrPng: "Télécharger l'image (PNG)",
     btnQrPdf: "Télécharger l'affiche (PDF A5)",
     btnQrCopier: "Copier le lien",
@@ -1325,6 +1327,8 @@ const I18N = {
     labelQrNumero: "Shop WhatsApp number (international format, e.g. 237690000000)",
     labelQrMessage: "Pre-filled starting message on the customer's side",
     defautQrMessage: "Hello",
+    labelQrLogo: "Show my logo in the centre of the QR code",
+    noteQrLogo: "The logo stays small (about 20% of the width) so the QR code remains readable on every phone.",
     btnQrPng: "Download image (PNG)",
     btnQrPdf: "Download poster (A5 PDF)",
     btnQrCopier: "Copy link",
@@ -4089,14 +4093,26 @@ function qrLienCourant() {
   const m = (champM ? champM.value : "").trim();
   return "https://wa.me/" + n + (m ? "?text=" + encodeURIComponent(m) : "");
 }
-function qrMatrice(lien) {
-  const q = qrcode(0, "M");
+function qrMatrice(lien, avecLogo) {
+  // Niveau H (~30 % de donnees recuperables) uniquement quand un logo masque le centre ; M sinon (QR plus aere).
+  const q = qrcode(0, avecLogo ? "H" : "M");
   q.addData(lien);
   q.make();
   return q;
 }
-function qrDessinerCanvas(canvas, lien, taille) {
-  const q = qrMatrice(lien);
+// Le logo (fond blanc inclus) occupe au plus QR_LOGO_BOITE de la largeur des modules, le logo lui-meme
+// QR_LOGO_IMAGE : bien en dessous de la capacite de correction du niveau H, centre pris sur des modules de donnees
+// uniquement (jamais sur les 3 reperes d'angle).
+const QR_LOGO_BOITE = 0.24, QR_LOGO_IMAGE = 0.20;
+function qrDimensionsLogo(logo, largeur) {
+  const ratio = logo.w / logo.h;
+  const max = largeur * QR_LOGO_IMAGE;
+  let w = max, h = max;
+  if (ratio >= 1) h = max / ratio; else w = max * ratio;
+  return { w, h, boite: largeur * QR_LOGO_BOITE };
+}
+function qrDessinerCanvas(canvas, lien, taille, logo) {
+  const q = qrMatrice(lien, !!logo);
   const n = q.getModuleCount();
   const marge = 4;
   const px = Math.max(1, Math.floor(taille / (n + 2 * marge)));
@@ -4107,6 +4123,12 @@ function qrDessinerCanvas(canvas, lien, taille) {
   c.fillStyle = "#000000";
   for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) {
     if (q.isDark(r, k)) c.fillRect((k + marge) * px, (r + marge) * px, px, px);
+  }
+  if (logo) {
+    const d = qrDimensionsLogo(logo, n * px);
+    const cx = total / 2, cy = total / 2;
+    c.fillStyle = "#ffffff"; c.fillRect(cx - d.boite / 2, cy - d.boite / 2, d.boite, d.boite);
+    c.drawImage(logo.img, cx - d.w / 2, cy - d.h / 2, d.w, d.h);
   }
 }
 function qrNomFichier(ext) {
@@ -4120,7 +4142,14 @@ function qrTelecharger(blob, nom) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+let qrLogoCache = { url: null, promesse: null };
 function qrChargerLogo() {
+  const url = marchandActif.logoUrl || null;
+  if (qrLogoCache.url === url && qrLogoCache.promesse) return qrLogoCache.promesse;
+  qrLogoCache = { url, promesse: qrChargerLogoSansCache() };
+  return qrLogoCache.promesse;
+}
+function qrChargerLogoSansCache() {
   return new Promise((resolve) => {
     if (!marchandActif.logoUrl) return resolve(null);
     const img = new Image();
@@ -4130,18 +4159,19 @@ function qrChargerLogo() {
         const c = document.createElement("canvas");
         c.width = img.naturalWidth; c.height = img.naturalHeight;
         c.getContext("2d").drawImage(img, 0, 0);
-        resolve({ data: c.toDataURL("image/png"), w: img.naturalWidth, h: img.naturalHeight });
+        resolve({ img, data: c.toDataURL("image/png"), w: img.naturalWidth, h: img.naturalHeight });
       } catch (e) { resolve(null); }
     };
     img.onerror = () => resolve(null);
     img.src = marchandActif.logoUrl;
   });
 }
-async function qrGenererAffichePdf(lien) {
+async function qrGenererAffichePdf(lien, logoCentre) {
   const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a5" });
   const L = 148, H = 210;
   let y = 16;
-  const logo = await qrChargerLogo();
+  // Logo deja au centre du QR : on ne le repete pas en haut de l'affiche.
+  const logo = logoCentre ? null : await qrChargerLogo();
   if (logo && logo.w && logo.h) {
     const hMax = 24, wMax = 70;
     let h = hMax, w = hMax * logo.w / logo.h;
@@ -4152,7 +4182,7 @@ async function qrGenererAffichePdf(lien) {
   const nomLignes = doc.splitTextToSize(marchandActif.nom || "", L - 24);
   doc.text(nomLignes, L / 2, y + 8, { align: "center" });
   y += 8 + nomLignes.length * 9 + 4;
-  const q = qrMatrice(lien);
+  const q = qrMatrice(lien, !!logoCentre);
   const n = q.getModuleCount();
   const marge = 4;
   const cote = 100;
@@ -4161,6 +4191,12 @@ async function qrGenererAffichePdf(lien) {
   doc.setFillColor(0, 0, 0);
   for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) {
     if (q.isDark(r, k)) doc.rect(x0 + (k + marge) * mod, y + (r + marge) * mod, mod + 0.02, mod + 0.02, "F");
+  }
+  if (logoCentre) {
+    const d = qrDimensionsLogo(logoCentre, n * mod);
+    const cx = x0 + cote / 2, cy = y + cote / 2;
+    doc.setFillColor(255, 255, 255); doc.rect(cx - d.boite / 2, cy - d.boite / 2, d.boite, d.boite, "F");
+    try { doc.addImage(logoCentre.data, "PNG", cx - d.w / 2, cy - d.h / 2, d.w, d.h); } catch (e) { /* logo ignore */ }
   }
   doc.setDrawColor(200, 200, 200); doc.rect(x0, y, cote, cote);
   y += cote + 12;
@@ -4173,6 +4209,12 @@ async function qrGenererAffichePdf(lien) {
   doc.text(t("pdfQrPropulse"), L / 2, H - 10, { align: "center" });
   doc.save(qrNomFichier("pdf"));
 }
+// Logo a poser au centre : seulement si le marchand en a un, que la case est cochee et que l'image a pu se charger.
+async function qrLogoActif() {
+  const c = document.getElementById("champQrLogo");
+  if (!c || !c.checked) return null;
+  return await qrChargerLogo();
+}
 function blocQrHtml() {
   const msgDefaut = t("defautQrMessage");
   return "<h3>" + t("h3Qr") + "</h3>" +
@@ -4182,6 +4224,7 @@ function blocQrHtml() {
     "<button id='btnQrSauverNumero' class='principal'>" + t("enregistrer") + "</button></div>" +
     "<label>" + t("labelQrMessage") + "</label>" +
     "<input id='champQrMessage' value=\"" + esc(msgDefaut) + "\" />" +
+    (marchandActif.logoUrl ? "<label style='display:block;margin-top:10px;'><input type='checkbox' id='champQrLogo' checked /> " + t("labelQrLogo") + "</label><p class='raison'>" + t("noteQrLogo") + "</p>" : "") +
     "<p id='noteQr' class='raison' style='display:none;'>" + t("noteQrNumeroManquant") + "</p>" +
     "<div style='margin:12px 0;'><canvas id='canvasQr' style='width:240px;height:240px;border:1px solid #ddd;background:#fff;image-rendering:pixelated;'></canvas></div>" +
     "<div style='display:flex;gap:8px;flex-wrap:wrap;'>" +
@@ -4194,15 +4237,22 @@ function brancherBlocQr() {
   const canvas = document.getElementById("canvasQr");
   const note = document.getElementById("noteQr");
   const boutons = ["btnQrPng", "btnQrPdf", "btnQrCopier"].map((id) => document.getElementById(id));
-  function rafraichir() {
+  let jeton = 0;
+  async function rafraichir() {
+    const moi_ = ++jeton;
     const lien = qrLienCourant();
     note.style.display = lien ? "none" : "";
     canvas.style.display = lien ? "" : "none";
     boutons.forEach((b) => { b.disabled = !lien; });
-    if (lien) qrDessinerCanvas(canvas, lien, 480);
+    if (!lien) return;
+    const logo = await qrLogoActif();
+    if (moi_ !== jeton) return; // une saisie plus recente a deja relance le dessin
+    qrDessinerCanvas(canvas, lien, 480, logo);
   }
   document.getElementById("champQrNumero").oninput = rafraichir;
   document.getElementById("champQrMessage").oninput = rafraichir;
+  const caseLogo = document.getElementById("champQrLogo");
+  if (caseLogo) caseLogo.onchange = rafraichir;
   document.getElementById("btnQrSauverNumero").onclick = async () => {
     const valeur = document.getElementById("champQrNumero").value.trim() || null;
     try {
@@ -4211,16 +4261,16 @@ function brancherBlocQr() {
       alert(t("alertNumeroPublicEnregistre"));
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
-  document.getElementById("btnQrPng").onclick = () => {
+  document.getElementById("btnQrPng").onclick = async () => {
     const lien = qrLienCourant(); if (!lien) return;
     const c = document.createElement("canvas");
-    qrDessinerCanvas(c, lien, 1000);
+    qrDessinerCanvas(c, lien, 1000, await qrLogoActif());
     c.toBlob((blob) => { if (blob) qrTelecharger(blob, qrNomFichier("png")); }, "image/png");
   };
   document.getElementById("btnQrPdf").onclick = async () => {
     const lien = qrLienCourant(); if (!lien) return;
     if (!pdfDisponible()) { alert(t("alertQrPdfIndispo")); return; }
-    try { await qrGenererAffichePdf(lien); } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    try { await qrGenererAffichePdf(lien, await qrLogoActif()); } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
   document.getElementById("btnQrCopier").onclick = async () => {
     const lien = qrLienCourant(); if (!lien) return;

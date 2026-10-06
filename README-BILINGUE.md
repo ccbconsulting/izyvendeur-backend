@@ -1384,6 +1384,26 @@ relu avec un décodeur QR indépendant et renvoie bien le lien `wa.me` attendu ;
 copie du lien, nom de fichier, enregistrement serveur, refus employé / autre marchand / sans connexion, et
 absence de bloc chez l'employé. Régression complète rejouée sans casse.
 
+## Étape 43 — Logo du marchand au centre du QR code (nouveau)
+
+Demandé le 6 octobre 2026, dans le prolongement de l'Étape 42 : afficher le **logo du marchand au centre de son
+QR code**, comme on le voit souvent ailleurs.
+
+Dans le bloc « QR code WhatsApp » de Mon compte, quand le marchand a un logo (celui de son /admin), une case
+**« Afficher mon logo au centre du QR code »** apparaît, **cochée par défaut**. Le logo est alors posé sur un
+petit carré blanc au centre de l'**aperçu**, du **PNG** et de l'**affiche PDF**. Sans logo, rien ne change (pas
+de case, QR classique). Si le logo gêne (très détaillé, fond sombre), il suffit de décocher.
+
+**Lisibilité** : avec un logo, le QR code passe automatiquement au niveau de correction d'erreur le plus fort
+(H, environ 30 % des données récupérables) ; le logo reste petit (environ 20 % de la largeur, carré blanc
+compris environ 24 %, soit moins de 6 % de la surface) et ne couvre jamais les trois repères d'angle. Sur
+l'affiche PDF, le logo n'est plus répété en haut quand il figure déjà au centre du QR.
+
+Testé le 6 octobre 2026 (nouveau `test_qr_logo.js`, navigateur réel) : le QR avec logo est relu avec un
+décodeur indépendant dans l'aperçu, le PNG téléchargé et l'affiche PDF, y compris avec un message long (QR plus
+dense) ; case décochée (aucun pixel du logo), marchand sans logo (pas de case), et surface occupée par le logo
+mesurée. Régression complète rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1400,6 +1420,7 @@ absence de bloc chez l'employé. Régression complète rejouée sans casse.
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 43 : `public/admin.html` uniquement (case « logo au centre » du bloc QR : aperçu, PNG et affiche PDF, niveau de correction H avec logo).
 - Étape 42 : `public/admin.html` (bloc « QR code WhatsApp » dans Mon compte + bibliothèque QR embarquée) et `server.js` (le numéro WhatsApp public n'est plus réservé à l'option « Lien de commande »).
 - Étape 41 : `conversation.js` (ventes regroupées par article avec détail des variantes dans `getTableauDeBord` et `getRapportCommandes`) et `public/admin.html` (lignes dépliables sous l'article, colonne Montant, PDF).
 - Étape 40 : `db.js` (journal d'audit : table `journal_audit`), `server.js` (protections de suppression, enregistrement des modifications/connexions, routes `/journal`) et `public/admin.html` (onglet Journal, boutons de suppression masqués pour les employés).
