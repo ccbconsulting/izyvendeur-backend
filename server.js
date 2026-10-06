@@ -1923,6 +1923,31 @@ app.delete("/api/marchands/:id/logo", protegerAcces, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Etape 43 (correctif) : relais du logo du marchand vers /admin, UNIQUEMENT pour dessiner le QR code avec son
+// logo au centre. Le logo est heberge sur Cloudflare R2 (autre origine, sans en-tete CORS) : le navigateur
+// sait l'AFFICHER dans une balise <img>, mais interdit de le recopier dans un canvas (necessaire pour fabriquer
+// le PNG/PDF du QR). Ce relais le re-sert depuis la meme origine que /admin. Aucun parametre n'est
+// accepte : l'URL relayee est TOUJOURS celle enregistree en base pour ce marchand (jamais fournie par le
+// client, donc pas de relais ouvert vers n'importe quelle adresse). Memes regles de portee que le reste : un
+// marchand ne lit que son propre logo, le superadmin celui de n'importe qui. Lecture seule, aucun effet de bord.
+app.get("/api/marchands/:id/logo-image", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res); if (!entry) return;
+  const url = entry.merchant.logoUrl || null;
+  if (!url || !/^https?:\/\//i.test(url)) return res.status(404).json({ erreur: "Aucun logo." });
+  try {
+    const reponse = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!reponse.ok) return res.status(502).json({ erreur: "Logo inaccessible." });
+    const type = (reponse.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    if (!/^image\/(png|jpe?g|webp)$/.test(type)) return res.status(502).json({ erreur: "Le fichier du logo n'est pas une image." });
+    const donnees = Buffer.from(await reponse.arrayBuffer());
+    if (donnees.length > 5 * 1024 * 1024) return res.status(502).json({ erreur: "Logo trop volumineux." });
+    res.set({ "Content-Type": type, "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff" });
+    res.send(donnees);
+  } catch (e) {
+    res.status(502).json({ erreur: "Logo inaccessible." });
+  }
+});
+
 app.post("/api/marchands/:id/image-accueil-whatsapp", protegerAcces, uploadPhoto.single("image"), async (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   if (!storage.estConfigure()) {

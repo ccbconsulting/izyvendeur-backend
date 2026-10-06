@@ -1399,7 +1399,16 @@ de case, QR classique). Si le logo gêne (très détaillé, fond sombre), il suf
 compris environ 24 %, soit moins de 6 % de la surface) et ne couvre jamais les trois repères d'angle. Sur
 l'affiche PDF, le logo n'est plus répété en haut quand il figure déjà au centre du QR.
 
-Testé le 6 octobre 2026 (nouveau `test_qr_logo.js`, navigateur réel) : le QR avec logo est relu avec un
+**Correctif important (même jour)** : la première version n'affichait pas le logo en production. Le logo est
+hébergé sur Cloudflare R2 (un autre domaine, sans autorisation « CORS ») : le navigateur sait l'afficher dans
+une page mais interdit de le recopier dans le QR code. Nouvelle route de **relais** en lecture seule
+`GET /api/marchands/:id/logo-image` : elle re-sert le logo depuis le même domaine que /admin. L'adresse relayée
+est toujours celle enregistrée en base pour ce marchand (aucun paramètre accepté, donc pas de relais ouvert vers
+une adresse quelconque), un marchand ne lit que son propre logo, le superadmin celui de n'importe qui, sans
+connexion c'est refusé. Si le logo reste inaccessible, un message l'indique et le QR s'affiche sans logo.
+Aucune configuration à faire sur Cloudflare.
+
+Testé le 6 octobre 2026 (nouveau `test_qr_logo.js`, navigateur réel, avec un logo servi par un AUTRE domaine sans CORS comme R2) : le QR avec logo est relu avec un
 décodeur indépendant dans l'aperçu, le PNG téléchargé et l'affiche PDF, y compris avec un message long (QR plus
 dense) ; case décochée (aucun pixel du logo), marchand sans logo (pas de case), et surface occupée par le logo
 mesurée. Régression complète rejouée sans casse.
@@ -1420,7 +1429,7 @@ mesurée. Régression complète rejouée sans casse.
 
 ## Fichiers modifiés dans ce zip
 
-- Étape 43 : `public/admin.html` uniquement (case « logo au centre » du bloc QR : aperçu, PNG et affiche PDF, niveau de correction H avec logo).
+- Étape 43 : `public/admin.html` (case « logo au centre » du bloc QR : aperçu, PNG et affiche PDF, niveau de correction H avec logo) et `server.js` (relais `GET /api/marchands/:id/logo-image`, nécessaire car le logo est sur R2 sans CORS).
 - Étape 42 : `public/admin.html` (bloc « QR code WhatsApp » dans Mon compte + bibliothèque QR embarquée) et `server.js` (le numéro WhatsApp public n'est plus réservé à l'option « Lien de commande »).
 - Étape 41 : `conversation.js` (ventes regroupées par article avec détail des variantes dans `getTableauDeBord` et `getRapportCommandes`) et `public/admin.html` (lignes dépliables sous l'article, colonne Montant, PDF).
 - Étape 40 : `db.js` (journal d'audit : table `journal_audit`), `server.js` (protections de suppression, enregistrement des modifications/connexions, routes `/journal`) et `public/admin.html` (onglet Journal, boutons de suppression masqués pour les employés).

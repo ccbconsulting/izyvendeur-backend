@@ -696,6 +696,7 @@ const I18N = {
     defautQrMessage: "Bonjour",
     labelQrLogo: "Afficher mon logo au centre du QR code",
     noteQrLogo: "Le logo reste petit (environ 20 % de la largeur) pour que le QR code reste lisible par tous les téléphones.",
+    noteQrLogoIndispo: "Le logo n'a pas pu être chargé : le QR code est affiché sans logo. Rechargez la page et réessayez.",
     btnQrPng: "Télécharger l'image (PNG)",
     btnQrPdf: "Télécharger l'affiche (PDF A5)",
     btnQrCopier: "Copier le lien",
@@ -1329,6 +1330,7 @@ const I18N = {
     defautQrMessage: "Hello",
     labelQrLogo: "Show my logo in the centre of the QR code",
     noteQrLogo: "The logo stays small (about 20% of the width) so the QR code remains readable on every phone.",
+    noteQrLogoIndispo: "The logo could not be loaded: the QR code is shown without a logo. Reload the page and try again.",
     btnQrPng: "Download image (PNG)",
     btnQrPdf: "Download poster (A5 PDF)",
     btnQrCopier: "Copy link",
@@ -4162,8 +4164,14 @@ function qrChargerLogoSansCache() {
         resolve({ img, data: c.toDataURL("image/png"), w: img.naturalWidth, h: img.naturalHeight });
       } catch (e) { resolve(null); }
     };
-    img.onerror = () => resolve(null);
-    img.src = marchandActif.logoUrl;
+    // Le logo est sur un autre domaine (Cloudflare R2) sans CORS : un canvas ne peut pas le recopier directement
+    // (il deviendrait "tainted"). On le charge donc d'abord via le relais same-origin du serveur, et seulement
+    // en repli en direct (au cas ou le bucket aurait du CORS).
+    let essaiDirect = false;
+    img.onerror = () => {
+      if (!essaiDirect) { essaiDirect = true; img.src = marchandActif.logoUrl; } else resolve(null);
+    };
+    img.src = "/api/marchands/" + encodeURIComponent(marchandActif.id) + "/logo-image?v=" + encodeURIComponent(marchandActif.logoUrl);
   });
 }
 async function qrGenererAffichePdf(lien, logoCentre) {
@@ -4224,7 +4232,7 @@ function blocQrHtml() {
     "<button id='btnQrSauverNumero' class='principal'>" + t("enregistrer") + "</button></div>" +
     "<label>" + t("labelQrMessage") + "</label>" +
     "<input id='champQrMessage' value=\"" + esc(msgDefaut) + "\" />" +
-    (marchandActif.logoUrl ? "<label style='display:block;margin-top:10px;'><input type='checkbox' id='champQrLogo' checked /> " + t("labelQrLogo") + "</label><p class='raison'>" + t("noteQrLogo") + "</p>" : "") +
+    (marchandActif.logoUrl ? "<label style='display:block;margin-top:10px;'><input type='checkbox' id='champQrLogo' checked /> " + t("labelQrLogo") + "</label><p class='raison'>" + t("noteQrLogo") + "</p><p id='noteQrLogoIndispo' class='raison' style='display:none;color:#b45309;'>" + t("noteQrLogoIndispo") + "</p>" : "") +
     "<p id='noteQr' class='raison' style='display:none;'>" + t("noteQrNumeroManquant") + "</p>" +
     "<div style='margin:12px 0;'><canvas id='canvasQr' style='width:240px;height:240px;border:1px solid #ddd;background:#fff;image-rendering:pixelated;'></canvas></div>" +
     "<div style='display:flex;gap:8px;flex-wrap:wrap;'>" +
@@ -4248,6 +4256,8 @@ function brancherBlocQr() {
     const logo = await qrLogoActif();
     if (moi_ !== jeton) return; // une saisie plus recente a deja relance le dessin
     qrDessinerCanvas(canvas, lien, 480, logo);
+    const alerteLogo = document.getElementById("noteQrLogoIndispo");
+    if (alerteLogo) alerteLogo.style.display = (document.getElementById("champQrLogo").checked && !logo) ? "" : "none";
   }
   document.getElementById("champQrNumero").oninput = rafraichir;
   document.getElementById("champQrMessage").oninput = rafraichir;
