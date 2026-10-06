@@ -1805,7 +1805,8 @@ app.put("/api/:id/notification", protegerAcces, async (req, res) => {
 // /notification ci-dessus. --
 app.put("/api/:id/numero-whatsapp-public", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
-  if (!entry.merchant.optionLienCommande) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  // Etape 42 : plus reserve a l'option "Lien de commande" - le numero sert aussi au QR code WhatsApp (ouvert a tous
+  // les marchands). L'option continue de gouverner uniquement les boutons "Copier le lien" par article.
   const { numeroWhatsappPublic } = req.body || {};
   const maj = await db.updateMerchantFields(req.params.id, { numeroWhatsappPublic: numeroWhatsappPublic || null });
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });

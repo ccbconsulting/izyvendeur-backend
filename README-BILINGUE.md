@@ -1348,6 +1348,42 @@ Testé le 6 octobre 2026 (nouveaux `test_ventes_par_variante.js`, calculs, et
 `test_ventes_par_variante_playwright.js`, dépliage dans un vrai navigateur sur le Tableau de bord et les
 Rapports) ; régression complète rejouée sans casse (37 fichiers de tests).
 
+## Étape 42 — QR code WhatsApp pour chaque marchand (nouveau)
+
+Demandé le 6 octobre 2026 : pouvoir créer, pour chaque marchand, un **QR code** que ses clients scannent pour
+ouvrir directement une conversation WhatsApp avec sa boutique (vitrine, flyers, cartes de visite, réseaux
+sociaux).
+
+Dans **Mon compte**, un nouveau bloc **« QR code WhatsApp »** (FR/EN) :
+
+- le **numéro WhatsApp** de la boutique (format international, ex. 237690000000) avec un bouton Enregistrer ;
+- un **message de départ** pré-rempli chez le client (« Bonjour » par défaut, modifiable ou vide) ;
+- un **aperçu en direct** du QR code (il se met à jour pendant la saisie) ;
+- **Télécharger l'image (PNG)** : image nette 1000 px, prête à imprimer ou à poster ;
+- **Télécharger l'affiche (PDF A5)** : logo du marchand (s'il en a un), nom, QR code, « Scannez pour nous
+  écrire sur WhatsApp », numéro, « Propulsé par IzyVendeur » ;
+- **Copier le lien** (le lien `wa.me` contenu dans le QR).
+
+Tant que le numéro fait moins de 8 chiffres, l'aperçu est masqué et les boutons sont désactivés avec un
+message d'aide.
+
+**Sécurité / accès (inchangé dans l'esprit)** : ce bloc n'est pas une option payante ; il est visible
+uniquement du **marchand propriétaire** et du **super-administrateur** — jamais des employés (leur « Mon
+compte » ne contient pas ce bloc, et la route d'enregistrement du numéro leur reste refusée sans le rôle
+Paramètres). Un marchand ne peut jamais modifier le numéro d'un autre marchand. Seul le super-administrateur
+continue de décider des options payantes (Stock illimité, Lien de commande, etc.).
+
+**Technique** : le QR code est généré entièrement dans le navigateur avec la petite bibliothèque
+« qrcode-generator » (licence MIT, embarquée dans `admin.html`, aucune dépendance à installer, aucune requête
+externe). Le PDF utilise jsPDF déjà présent pour les rapports. Côté serveur, seule la route
+`PUT /api/:id/numero-whatsapp-public` change : elle n'est plus réservée à l'option « Lien de commande » (cette
+option ne gouverne plus que les boutons « Copier le lien » par article, inchangés).
+
+Testé le 6 octobre 2026 (nouveau `test_qr_marchand.js`) : le QR de l'aperçu, du PNG et de l'affiche PDF est
+relu avec un décodeur QR indépendant et renvoie bien le lien `wa.me` attendu ; numéro invalide, message vide,
+copie du lien, nom de fichier, enregistrement serveur, refus employé / autre marchand / sans connexion, et
+absence de bloc chez l'employé. Régression complète rejouée sans casse.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1364,6 +1400,7 @@ Rapports) ; régression complète rejouée sans casse (37 fichiers de tests).
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 42 : `public/admin.html` (bloc « QR code WhatsApp » dans Mon compte + bibliothèque QR embarquée) et `server.js` (le numéro WhatsApp public n'est plus réservé à l'option « Lien de commande »).
 - Étape 41 : `conversation.js` (ventes regroupées par article avec détail des variantes dans `getTableauDeBord` et `getRapportCommandes`) et `public/admin.html` (lignes dépliables sous l'article, colonne Montant, PDF).
 - Étape 40 : `db.js` (journal d'audit : table `journal_audit`), `server.js` (protections de suppression, enregistrement des modifications/connexions, routes `/journal`) et `public/admin.html` (onglet Journal, boutons de suppression masqués pour les employés).
 - Étape 39 : `conversation.js` (étape `awaiting_reassort`, liste d'attente de réassort), `server.js` (routes `/api/:id/liste-attente`, boutons Oui/Non) et `public/admin.html` (panneau « Clients en attente de réassort » dans l'onglet Catalogue).
