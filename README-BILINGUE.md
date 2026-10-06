@@ -1287,6 +1287,46 @@ Testé le 5 octobre 2026 (nouveaux `test_liste_attente_reassort.js`, moteur + ro
 `test_liste_attente_playwright.js`, panneau dans un vrai navigateur) ; régression complète rejouée sans casse
 (33 fichiers de tests).
 
+## Étape 40 — Employés : plus aucune suppression + Journal des modifications et des connexions (nouveau)
+
+Demandé le 6 octobre 2026 : un(e) employé(e) ne doit rien pouvoir effacer, et le propriétaire doit pouvoir
+vérifier qui a fait quoi.
+
+**1) Suppressions réservées au propriétaire (et au super-administrateur)** — règle fixe, sans case à cocher
+par employé. Un(e) employé(e) peut **ajouter et modifier**, jamais supprimer :
+- **articles** (déjà le cas depuis l'Étape 33) ;
+- **variantes** (couleur/taille) : le bouton × disparaît ; pour une variante épuisée, l'employé met son **stock à 0** ;
+- **photos** d'un article (il peut en **ajouter**) ;
+- **logo** et **image d'accueil WhatsApp**.
+Ces règles sont aussi appliquées **côté serveur** : un appel direct à l'API est refusé (403) ou
+automatiquement annulé (une variante/photo/article retiré d'un enregistrement de catalogue est remis tel quel ;
+renommer une variante reste possible). Chaque tentative bloquée est inscrite au journal.
+
+**2) Journal des modifications** — qui, quand, quoi : catalogue (**avant → après** : prix, stock, nom, variantes,
+photos, articles ajoutés/supprimés ; un enregistrement sans changement réel n'écrit rien), photos, import de
+catalogue, commandes, paramètres, employés, identifiants, logo, réponses manuelles, caisse, IzyFacture, etc.
+Les refus (403) apparaissent aussi (« Refusé »).
+
+**3) Journal des connexions** — connexions réussies, **échecs** et déconnexions, avec **adresse IP réelle**
+(derrière Cloudflare) et appareil. Un identifiant tapé qui ne correspond à aucun compte n'est jamais écrit
+(pour qu'un mot de passe collé par erreur dans ce champ n'apparaisse pas).
+
+**Qui voit quoi (onglet « Journal » de /admin, FR/EN)** : le **propriétaire** du marchand (pour **ses** données) et
+le **super-administrateur** (tous les marchands + vue « global » avec colonne Marchand) — **jamais** un employé,
+jamais un autre marchand (403 côté serveur, onglet absent côté écran). Le marchand ne voit **aucune trace** des
+actions réservées au super-administrateur (options payantes, suspension, création/suppression de marchand) ni
+son identité/IP. Le journal est **en ajout seul** (aucune route pour le modifier ou l'effacer), ne contient
+**jamais** de mot de passe, clé ou texte de message (seulement les champs touchés), et un marchand ne peut pas
+écrire dans le journal d'un autre. Conservation : 12 mois (base Render) ; en mode fichier local, 20 000 lignes max.
+
+Nouvelles routes : `GET /api/:id/journal/modifications`, `GET /api/:id/journal/connexions` (propriétaire ou
+super-admin), `GET /api/journal/global?type=modification|connexion` (super-admin). Nouvelle table
+`journal_audit` créée automatiquement au premier usage (aucune action manuelle sur Render).
+
+Testé le 6 octobre 2026 : nouveaux `test_journal_audit.js` (droits employé/propriétaire/autre marchand, contenu,
+confidentialité, anti-pollution) et `test_journal_playwright.js` (boutons absents pour l'employé, onglet Journal,
+vue globale) ; régression complète rejouée sans casse (35 fichiers de tests).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
@@ -1303,6 +1343,7 @@ Testé le 5 octobre 2026 (nouveaux `test_liste_attente_reassort.js`, moteur + ro
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 40 : `db.js` (journal d'audit : table `journal_audit`), `server.js` (protections de suppression, enregistrement des modifications/connexions, routes `/journal`) et `public/admin.html` (onglet Journal, boutons de suppression masqués pour les employés).
 - Étape 39 : `conversation.js` (étape `awaiting_reassort`, liste d'attente de réassort), `server.js` (routes `/api/:id/liste-attente`, boutons Oui/Non) et `public/admin.html` (panneau « Clients en attente de réassort » dans l'onglet Catalogue).
 - `conversation.js` — moteur catalogue : logique de choix de langue + traduction de toutes les réponses,
   calcul du Tableau de bord/Rapports par période (jour/semaine/mois/trimestre/année), exemple de

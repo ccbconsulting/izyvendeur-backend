@@ -62,6 +62,14 @@
   .miniature { position: relative; width: 80px; height: 80px; }
   .miniature img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #e3e7ec; }
   .miniature button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; padding: 0; line-height: 18px; border-radius: 50%; font-size: 0.85em; }
+  .journal-barre { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0; }
+  .journal-barre button.actif { background:#1f6feb; color:#fff; }
+  .table-journal { width:100%; border-collapse:collapse; font-size:.9em; }
+  .table-journal th, .table-journal td { text-align:left; padding:6px 8px; border-bottom:1px solid #e3e7ec; vertical-align:top; }
+  .table-journal .j-detail div { margin:1px 0; }
+  .table-journal .j-ua { color:#667; font-size:.85em; max-width:200px; overflow-wrap:anywhere; }
+  .j-statut-refuse, .j-statut-echec { color:#b42318; font-weight:600; }
+  .j-statut-ok { color:#1a7f37; }
   .bloc-liste-attente { margin: 0 0 18px; padding: 14px 16px; border: 2px solid #f0a020; border-left-width: 6px; border-radius: 8px; background: #fff8ea; }
   .bloc-liste-attente h3 { margin: 0 0 6px; font-size: 1.1em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .badge-attente-compte { background: #d92d20; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: .8em; font-weight: 700; }
@@ -219,6 +227,89 @@ const I18N = {
     ongletParametresService: "Paramètres",
     ongletEmployes: "Employés",
     ongletCompte: "Mon compte",
+    ongletJournal: "Journal",
+    titreJournal: "Journal d'activité",
+    noteJournal: "Visible uniquement par le propriétaire du compte (et l'administrateur IzyVendeur) — jamais par les employés. Ce journal ne peut ni être modifié ni être effacé.",
+    jSousModifications: "Modifications",
+    jSousConnexions: "Connexions",
+    jPerimetreMarchand: "Ce marchand",
+    jPerimetreTous: "Tous les marchands (global)",
+    jColQuand: "Quand",
+    jColQui: "Qui",
+    jColAction: "Action",
+    jColDetail: "Détail",
+    jColIp: "Adresse IP",
+    jColAppareil: "Appareil",
+    jColMarchand: "Marchand",
+    jVide: "Aucune entrée pour le moment.",
+    jPlus: "Afficher plus ancien",
+    jChargementErreur: "Impossible de charger le journal.",
+    jStatutOk: "Réussi",
+    jStatutRefuse: "Refusé",
+    jStatutEchec: "Échec",
+    jRoleSuperadmin: "Administrateur IzyVendeur",
+    jRoleMarchand: "Propriétaire",
+    jRoleEmploye: "Employé(e)",
+    jInconnu: "—",
+    noteEmployeSuppression: "Vous pouvez ajouter et modifier, mais pas supprimer (articles, variantes, photos). Pour retirer une variante épuisée, mettez simplement son stock à 0 — le propriétaire peut supprimer.",
+    act_connexion_ok: "Connexion réussie",
+    act_connexion_echec: "Tentative de connexion échouée",
+    act_deconnexion: "Déconnexion",
+    act_marchand_cree: "Marchand créé",
+    act_marchand_supprime: "Marchand supprimé",
+    act_marchand_actif_modifie: "Suspension / réactivation",
+    act_options_payantes_modifiees: "Options payantes modifiées",
+    act_identifiants_modifies: "Identifiants modifiés",
+    act_employe_cree: "Employé créé",
+    act_employe_modifie: "Employé modifié",
+    act_employe_supprime: "Employé supprimé",
+    act_izyfacture_parametres_modifies: "Paramètres IzyFacture modifiés",
+    act_izyfacture_testee: "Connexion IzyFacture testée",
+    act_facture_creee: "Facture créée",
+    act_paiement_facture_enregistre: "Paiement de facture enregistré",
+    act_infos_marchand_modifiees: "Infos du marchand modifiées",
+    act_catalogue_modifie: "Catalogue modifié",
+    act_catalogue_importe: "Catalogue importé (fichier)",
+    act_vente_caisse: "Vente en caisse",
+    act_caisse_ouverte: "Caisse ouverte",
+    act_caisse_fermee: "Caisse fermée",
+    act_photo_ajoutee: "Photo ajoutée",
+    act_photo_supprimee: "Photo supprimée",
+    act_commande_statut_modifie: "Statut de commande modifié",
+    act_services_modifies: "Services modifiés",
+    act_rendezvous_statut_modifie: "Statut de rendez-vous modifié",
+    act_parametres_modifies: "Paramètres modifiés",
+    act_notification_modifiee: "Numéro de notification modifié",
+    act_numero_public_modifie: "Numéro WhatsApp affiché modifié",
+    act_filigrane_modifie: "Filigrane modifié",
+    act_alerte_testee: "Alerte testée",
+    act_logo_modifie: "Logo modifié",
+    act_logo_supprime: "Logo supprimé",
+    act_image_accueil_modifiee: "Image d'accueil modifiée",
+    act_image_accueil_supprimee: "Image d'accueil supprimée",
+    act_reponse_manuelle_envoyee: "Réponse manuelle envoyée à un client",
+    act_inventaire_instantane_cree: "Instantané d'inventaire créé",
+    act_inventaire_instantane_supprime: "Instantané d'inventaire supprimé",
+    act_client_attente_contacte: "Client en attente marqué contacté",
+    act_suppression_bloquee: "Suppression bloquée (annulée automatiquement)",
+    jcArticleAjoute: "Article ajouté : {art}",
+    jcArticleSupprime: "Article supprimé : {art}",
+    jcChamp: "{art} — {champ} : « {de} » → « {a} »",
+    jcVarianteAjoutee: "{art} — variante ajoutée : {v}",
+    jcVarianteSupprimee: "{art} — variante supprimée : {v}",
+    jcVarianteChamp: "{art} ({v}) — {champ} : {de} → {a}",
+    jcPhotos: "{art} — photos : +{aj} / −{ret}",
+    jcPlus: "… et {n} autre(s) changement(s)",
+    jdPhoto: "Article : {art}",
+    jdCommande: "Commande n° {c} → {s}",
+    jdEmploye: "Employé : {e}",
+    jdRoles: "Rôles : {r}",
+    jdMotDePasseChange: "mot de passe changé",
+    jdChamps: "Champs : {c}",
+    jdFichier: "Fichier : {f}",
+    jdCible: "Cible : {c}",
+    jdTelephone: "Client : {t}",
+    jdLignes: "{n} ligne(s)",
     ongletCatalogue: "Catalogue & stock",
     ongletCommandes: "Commandes",
     ongletRapports: "Rapports",
@@ -751,6 +842,89 @@ const I18N = {
     ongletParametresService: "Settings",
     ongletEmployes: "Employees",
     ongletCompte: "My account",
+    ongletJournal: "Log",
+    titreJournal: "Activity log",
+    noteJournal: "Visible only to the account owner (and the IzyVendeur administrator) — never to employees. This log cannot be edited or erased.",
+    jSousModifications: "Changes",
+    jSousConnexions: "Logins",
+    jPerimetreMarchand: "This merchant",
+    jPerimetreTous: "All merchants (global)",
+    jColQuand: "When",
+    jColQui: "Who",
+    jColAction: "Action",
+    jColDetail: "Details",
+    jColIp: "IP address",
+    jColAppareil: "Device",
+    jColMarchand: "Merchant",
+    jVide: "No entries yet.",
+    jPlus: "Show older",
+    jChargementErreur: "Could not load the log.",
+    jStatutOk: "Done",
+    jStatutRefuse: "Denied",
+    jStatutEchec: "Failed",
+    jRoleSuperadmin: "IzyVendeur administrator",
+    jRoleMarchand: "Owner",
+    jRoleEmploye: "Employee",
+    jInconnu: "—",
+    noteEmployeSuppression: "You can add and edit, but not delete (items, variants, photos). To remove a sold-out variant, simply set its stock to 0 — the owner can delete.",
+    act_connexion_ok: "Successful login",
+    act_connexion_echec: "Failed login attempt",
+    act_deconnexion: "Logout",
+    act_marchand_cree: "Merchant created",
+    act_marchand_supprime: "Merchant deleted",
+    act_marchand_actif_modifie: "Suspended / reactivated",
+    act_options_payantes_modifiees: "Paid options changed",
+    act_identifiants_modifies: "Credentials changed",
+    act_employe_cree: "Employee created",
+    act_employe_modifie: "Employee updated",
+    act_employe_supprime: "Employee deleted",
+    act_izyfacture_parametres_modifies: "IzyFacture settings changed",
+    act_izyfacture_testee: "IzyFacture connection tested",
+    act_facture_creee: "Invoice created",
+    act_paiement_facture_enregistre: "Invoice payment recorded",
+    act_infos_marchand_modifiees: "Merchant info changed",
+    act_catalogue_modifie: "Catalog changed",
+    act_catalogue_importe: "Catalog imported (file)",
+    act_vente_caisse: "Register sale",
+    act_caisse_ouverte: "Register opened",
+    act_caisse_fermee: "Register closed",
+    act_photo_ajoutee: "Photo added",
+    act_photo_supprimee: "Photo deleted",
+    act_commande_statut_modifie: "Order status changed",
+    act_services_modifies: "Services changed",
+    act_rendezvous_statut_modifie: "Appointment status changed",
+    act_parametres_modifies: "Settings changed",
+    act_notification_modifiee: "Notification number changed",
+    act_numero_public_modifie: "Displayed WhatsApp number changed",
+    act_filigrane_modifie: "Watermark changed",
+    act_alerte_testee: "Alert tested",
+    act_logo_modifie: "Logo changed",
+    act_logo_supprime: "Logo deleted",
+    act_image_accueil_modifiee: "Welcome image changed",
+    act_image_accueil_supprimee: "Welcome image deleted",
+    act_reponse_manuelle_envoyee: "Manual reply sent to a customer",
+    act_inventaire_instantane_cree: "Inventory snapshot created",
+    act_inventaire_instantane_supprime: "Inventory snapshot deleted",
+    act_client_attente_contacte: "Waiting customer marked as contacted",
+    act_suppression_bloquee: "Deletion blocked (automatically cancelled)",
+    jcArticleAjoute: "Item added: {art}",
+    jcArticleSupprime: "Item deleted: {art}",
+    jcChamp: "{art} — {champ}: \"{de}\" → \"{a}\"",
+    jcVarianteAjoutee: "{art} — variant added: {v}",
+    jcVarianteSupprimee: "{art} — variant deleted: {v}",
+    jcVarianteChamp: "{art} ({v}) — {champ}: {de} → {a}",
+    jcPhotos: "{art} — photos: +{aj} / −{ret}",
+    jcPlus: "… and {n} more change(s)",
+    jdPhoto: "Item: {art}",
+    jdCommande: "Order #{c} → {s}",
+    jdEmploye: "Employee: {e}",
+    jdRoles: "Roles: {r}",
+    jdMotDePasseChange: "password changed",
+    jdChamps: "Fields: {c}",
+    jdFichier: "File: {f}",
+    jdCible: "Target: {c}",
+    jdTelephone: "Customer: {t}",
+    jdLignes: "{n} line(s)",
     ongletCatalogue: "Catalog & stock",
     ongletCommandes: "Orders",
     ongletRapports: "Reports",
@@ -1599,6 +1773,7 @@ function construireOnglets() {
         ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametresService"), renderParametresService, "parametres"],
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
+        ["journal", t("ongletJournal"), renderJournal, "gestion"],
         ["compte", t("ongletCompte"), renderCompte, null]
       ]
     : [
@@ -1616,6 +1791,7 @@ function construireOnglets() {
         ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
+        ["journal", t("ongletJournal"), renderJournal, "gestion"],
         ["compte", t("ongletCompte"), renderCompte, null]
       ].filter(Boolean);
 
@@ -1867,7 +2043,7 @@ async function renderCatalogue() {
     const photos = p.photos || [];
     return "<div class='bloc-photos'>" +
       (photos.length ? "<div class='miniatures-photos'>" + photos.map((url) =>
-        "<div class='miniature'><img src=\"" + esc(url) + "\" alt='' /><button data-suppr-photo='" + pi + ":" + esc(url) + "' class='danger'>×</button></div>"
+        "<div class='miniature'><img src=\"" + esc(url) + "\" alt='' />" + (estGestionnaireCatalogue ? "<button data-suppr-photo='" + pi + ":" + esc(url) + "' class='danger'>×</button>" : "") + "</div>"
       ).join("") + "</div>" : "<p class='raison'>" + t("msgAucunePhoto") + "</p>") +
       "<input type='file' accept='image/png,image/jpeg,image/webp' data-fichier-photo='" + pi + "' /> " +
       "<button data-ajouter-photo='" + pi + "'>" + t("btnAjouterPhoto") + "</button>" +
@@ -1901,6 +2077,7 @@ async function renderCatalogue() {
   function redraw() {
     zone.innerHTML =
       "<h2>" + t("catalogueEtStock") + "</h2>" +
+      (estGestionnaireCatalogue ? "" : "<p class='raison' id='noteEmployeSuppression'>" + t("noteEmployeSuppression") + "</p>") +
       // Panneau "Clients en attente de réassort" EN HAUT de l'onglet (demande du 5 octobre 2026) : c'est un
       // outil de vente/marketing, il doit etre visible au premier coup d'oeil avant la liste des articles.
       "<div class='bloc-liste-attente' id='blocListeAttente'>" +
@@ -1939,7 +2116,7 @@ async function renderCatalogue() {
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='stockReel' value='" + v.stockReel + "' class=\"" + (!p.stockIllimite && v.stockReel <= (v.seuilAlerte || 0) ? "alerte-stock" : "") + "\" /></td>" +
               "<td title=\"" + esc(t("titleStockVirtuel")) + "\">" + (p.stockIllimite ? "∞ " + t("stockIllimiteSymbole") : (v.stockVirtuel != null ? v.stockVirtuel : v.stockReel)) + "</td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='seuilAlerte' value='" + (v.seuilAlerte || 0) + "' /></td>" +
-              "<td><button data-suppr-variante='" + pi + ":" + vi + "' class='danger'>×</button></td>" +
+              "<td>" + (estGestionnaireCatalogue ? "<button data-suppr-variante='" + pi + ":" + vi + "' class='danger'>×</button>" : "") + "</td>" +
             "</tr>"
           ).join("") +
           "</table>" +
@@ -3716,7 +3893,7 @@ function blocLogoHtml() {
       "<div>" +
         "<input type='file' id='champLogo' accept='image/png,image/jpeg,image/webp' /> " +
         "<button id='btnUploaderLogo'>" + t("btnUploaderLogo") + "</button>" +
-        (marchandActif.logoUrl ? " <button id='btnSupprimerLogo' class='danger'>" + t("supprimer") + "</button>" : "") +
+        (marchandActif.logoUrl && (moi.role === "marchand" || moi.role === "superadmin") ? " <button id='btnSupprimerLogo' class='danger'>" + t("supprimer") + "</button>" : "") +
       "</div>" +
     "</div>" +
     (marchandActif.logoUrl
@@ -3778,7 +3955,7 @@ function blocImageAccueilWhatsappHtml() {
       "<div>" +
         "<input type='file' id='champImageAccueil' accept='image/png,image/jpeg,image/webp' /> " +
         "<button id='btnUploaderImageAccueil'>" + t("btnUploaderImageAccueil") + "</button>" +
-        (marchandActif.imageAccueilWhatsappUrl ? " <button id='btnSupprimerImageAccueil' class='danger'>" + t("supprimer") + "</button>" : "") +
+        (marchandActif.imageAccueilWhatsappUrl && (moi.role === "marchand" || moi.role === "superadmin") ? " <button id='btnSupprimerImageAccueil' class='danger'>" + t("supprimer") + "</button>" : "") +
       "</div>" +
     "</div>";
 }
@@ -4092,6 +4269,110 @@ async function renderCompte() {
 // ---------------- Employés (comptes à accès restreint) ----------------
 // Reservé au propriétaire du marchand et au super-administrateur (voir construireOnglets, permission
 // "gestion") — un employé ne voit jamais cet onglet, quels que soient ses accès.
+
+// ---------------------------------------------------------------------------------------------------------
+// Onglet "Journal" (Etape 40) - modifications + connexions. Onglet "gestion" : proprietaire du marchand et
+// super-administrateur UNIQUEMENT (jamais un employe : voir construireOnglets et les routes /journal du
+// serveur, qui re-verifient de leur cote). Le super-administrateur peut en plus basculer sur la vue globale.
+// ---------------------------------------------------------------------------------------------------------
+let journalOnglet = "modifications";
+let journalPerimetre = "marchand";
+
+function libelleRoleJournal(role) {
+  return role === "superadmin" ? t("jRoleSuperadmin") : role === "marchand" ? t("jRoleMarchand") : role === "employe" ? t("jRoleEmploye") : "";
+}
+
+function detailJournalHtml(ligne) {
+  let d = null;
+  try { d = ligne.detail ? JSON.parse(ligne.detail) : null; } catch (e) { d = null; }
+  if (!d) return "";
+  const out = [];
+  if (Array.isArray(d.changes)) {
+    d.changes.forEach((c) => {
+      const base = { art: esc(c.art), v: esc(c.v), champ: esc(c.champ), de: esc(c.de), a: esc(c.a), aj: c.ajoutees || 0, ret: c.retirees || 0 };
+      const cle = { article_ajoute: "jcArticleAjoute", article_supprime: "jcArticleSupprime", champ: "jcChamp", variante_ajoutee: "jcVarianteAjoutee",
+        variante_supprimee: "jcVarianteSupprimee", variante_champ: "jcVarianteChamp", photos: "jcPhotos" }[c.k];
+      if (cle) out.push(t(cle, base));
+    });
+    if (d.plus) out.push(t("jcPlus", { n: d.plus }));
+  }
+  if (d.art && !Array.isArray(d.changes)) out.push(t("jdPhoto", { art: esc(d.art) }));
+  if (d.commande) out.push(t("jdCommande", { c: esc(d.commande), s: esc(d.statut || "") }));
+  if (d.rendezvous) out.push(esc(d.rendezvous) + " → " + esc(d.statut || ""));
+  if (d.employe) out.push(t("jdEmploye", { e: esc(d.employe) }));
+  if (Array.isArray(d.roles) && d.roles.length) out.push(t("jdRoles", { r: esc(d.roles.join(", ")) }));
+  if (d.motDePasse === true) out.push(t("jdMotDePasseChange"));
+  if (Array.isArray(d.champs) && d.champs.length) out.push(t("jdChamps", { c: esc(d.champs.join(", ")) }));
+  if (d.fichier) out.push(t("jdFichier", { f: esc(d.fichier) }));
+  if (d.cible) out.push(t("jdCible", { c: esc(d.cible) }));
+  if (d.telephone) out.push(t("jdTelephone", { t: esc(d.telephone) }));
+  if (d.lignes != null) out.push(t("jdLignes", { n: d.lignes }));
+  return out.map((x) => "<div>" + x + "</div>").join("");
+}
+
+async function renderJournal() {
+  const zone = document.getElementById("contenuOnglet");
+  const estSuper = moi.role === "superadmin";
+  if (!estSuper) journalPerimetre = "marchand";
+  let lignes = [];
+  let suivant = null;
+
+  function statutHtml(s) {
+    const cle = s === "refuse" ? "jStatutRefuse" : s === "echec" ? "jStatutEchec" : "jStatutOk";
+    return "<span class='j-statut-" + esc(s || "ok") + "'>" + t(cle) + "</span>";
+  }
+
+  function dessiner() {
+    const global = estSuper && journalPerimetre === "global";
+    zone.innerHTML =
+      "<h2>" + t("titreJournal") + "</h2>" +
+      "<p class='raison'>" + t("noteJournal") + "</p>" +
+      "<div class='journal-barre'>" +
+        "<button data-j-onglet='modifications' class='" + (journalOnglet === "modifications" ? "actif" : "") + "'>" + t("jSousModifications") + "</button>" +
+        "<button data-j-onglet='connexions' class='" + (journalOnglet === "connexions" ? "actif" : "") + "'>" + t("jSousConnexions") + "</button>" +
+        (estSuper ? "<select id='journalPerimetre'><option value='marchand'" + (global ? "" : " selected") + ">" + t("jPerimetreMarchand") + "</option><option value='global'" + (global ? " selected" : "") + ">" + t("jPerimetreTous") + "</option></select>" : "") +
+      "</div>" +
+      (lignes.length
+        ? "<table class='table-journal'><thead><tr><th>" + t("jColQuand") + "</th>" + (global ? "<th>" + t("jColMarchand") + "</th>" : "") +
+          "<th>" + t("jColQui") + "</th><th>" + t("jColAction") + "</th><th>" + t("jColDetail") + "</th><th>" + t("jColIp") + "</th><th>" + t("jColAppareil") + "</th></tr></thead><tbody>" +
+          lignes.map((l) =>
+            "<tr data-journal-ligne='" + esc(l.action) + "'><td>" + esc(new Date(l.horodatageISO).toLocaleString(localeCourante())) + "</td>" +
+            (global ? "<td>" + esc(l.marchandNom || l.merchantKey || t("jInconnu")) + "</td>" : "") +
+            "<td>" + esc(l.acteurNom || t("jInconnu")) + (l.acteurRole ? "<br><span class='raison'>" + esc(libelleRoleJournal(l.acteurRole)) + "</span>" : "") + "</td>" +
+            "<td>" + esc(t("act_" + l.action)) + "<br>" + statutHtml(l.statut) + "</td>" +
+            "<td class='j-detail'>" + detailJournalHtml(l) + "</td>" +
+            "<td>" + esc(l.ip || "") + "</td><td class='j-ua'>" + esc(l.userAgent || "") + "</td></tr>"
+          ).join("") + "</tbody></table>"
+        : "<p>" + t("jVide") + "</p>") +
+      (suivant ? "<p><button id='btnJournalPlus'>" + t("jPlus") + "</button></p>" : "");
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-j-onglet]"), (b) => {
+      b.onclick = () => { journalOnglet = b.dataset.jOnglet; charger(false); };
+    });
+    const sel = document.getElementById("journalPerimetre");
+    if (sel) sel.onchange = () => { journalPerimetre = sel.value; charger(false); };
+    const plus = document.getElementById("btnJournalPlus");
+    if (plus) plus.onclick = () => charger(true);
+  }
+
+  async function charger(suite) {
+    const type = journalOnglet === "connexions" ? "connexions" : "modifications";
+    const global = estSuper && journalPerimetre === "global";
+    const url = global
+      ? "/api/journal/global?type=" + (type === "connexions" ? "connexion" : "modification")
+      : "/api/" + marchandActif.id + "/journal/" + type + "?";
+    try {
+      const rep = await api(url + (suite && suivant ? "&avant=" + suivant : ""));
+      lignes = suite ? lignes.concat(rep.lignes || []) : (rep.lignes || []);
+      suivant = rep.suivant || null;
+      dessiner();
+    } catch (e) {
+      zone.innerHTML = "<div class='erreur'>" + t("jChargementErreur") + "</div>";
+    }
+  }
+
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  await charger(false);
+}
 
 async function renderEmployes() {
   const zone = document.getElementById("contenuOnglet");

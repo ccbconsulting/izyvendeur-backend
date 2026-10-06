@@ -24,6 +24,7 @@ const path = require("path");
 const DATA_FILE = path.join(__dirname, "data.json");
 const MERCHANTS_FILE = path.join(__dirname, "merchants.json");
 const CONVERSATION_LOG_FILE = path.join(__dirname, "conversation-log.json");
+const AUDIT_LOG_FILE = path.join(__dirname, "audit-log.json");
 const DATABASE_URL = process.env.DATABASE_URL;
 
 // Nombre max de messages conserves PAR client (au-dela, les plus anciens sont abandonnes) - evite une
@@ -696,6 +697,119 @@ async function getConversationHistory(merchantKey, telephone) {
   return ((journal[merchantKey] || {})[telephone] || []).slice();
 }
 
+// ============================================================================
+// Journal d'audit (Etape 40) : journal des MODIFICATIONS et journal des CONNEXIONS.
+// Table generique, en ajout seul (aucune route ne modifie ni ne supprime une ligne). Visible uniquement du
+// marchand proprietaire (pour SES donnees) et du superadmin (pour tout) - voir les routes /journal dans server.js.
+// On n'y stocke JAMAIS de mot de passe, de jeton ni de corps de requete brut : seulement un resume lisible.
+// ============================================================================
+const MAX_AUDIT_LOCAL = 20000;          // plafond du fichier local (mode sans base)
+const RETENTION_AUDIT_JOURS = 365;      // purge des lignes plus anciennes (mode base)
+let auditTableVerifiee = false;
+
+async function ensureAuditTable() {
+  if (auditTableVerifiee) return;
+  await pool.query(
+    "CREATE TABLE IF NOT EXISTS journal_audit (" +
+      "id SERIAL PRIMARY KEY, " +
+      "type TEXT NOT NULL, " +              // 'modification' | 'connexion'
+      "merchant_key TEXT NOT NULL DEFAULT '', " +
+      "acteur_role TEXT, acteur_nom TEXT, acteur_id TEXT, " +
+      "action TEXT NOT NULL, " +
+      "detail TEXT, " +
+      "statut TEXT, " +                     // 'ok' | 'echec' | 'refuse'
+      "ip TEXT, user_agent TEXT, " +
+      "horodatage TIMESTAMPTZ NOT NULL DEFAULT now()" +
+    ")"
+  );
+  await pool.query("CREATE INDEX IF NOT EXISTS idx_journal_audit_marchand ON journal_audit (type, merchant_key, horodatage)");
+  await pool.query("DELETE FROM journal_audit WHERE horodatage < now() - ($1 || ' days')::interval", [String(RETENTION_AUDIT_JOURS)]);
+  auditTableVerifiee = true;
+}
+
+function lireAuditLocal() {
+  try {
+    if (fs.existsSync(AUDIT_LOG_FILE)) {
+      const v = JSON.parse(fs.readFileSync(AUDIT_LOG_FILE, "utf8"));
+      if (Array.isArray(v)) return v;
+    }
+  } catch (erreur) {
+    console.error("Erreur de lecture de audit-log.json, on repart d'un journal vide :", erreur);
+  }
+  return [];
+}
+
+function nettoyerChampAudit(v, max) {
+  if (v === undefined || v === null) return null;
+  return String(v).replace(/[\u0000-\u001f]+/g, " ").slice(0, max);
+}
+
+// entree : { type, merchantKey, acteurRole, acteurNom, acteurId, action, detail, statut, ip, userAgent }
+// Ne leve jamais d'exception vers l'appelant (le journal ne doit jamais casser l'action elle-meme).
+async function journalAjouter(entree) {
+  try {
+    const e = {
+      type: entree.type === "connexion" ? "connexion" : "modification",
+      merchantKey: nettoyerChampAudit(entree.merchantKey, 120) || "",
+      acteurRole: nettoyerChampAudit(entree.acteurRole, 30),
+      acteurNom: nettoyerChampAudit(entree.acteurNom, 120),
+      acteurId: nettoyerChampAudit(entree.acteurId, 120),
+      action: nettoyerChampAudit(entree.action, 120) || "inconnue",
+      detail: entree.detail === undefined || entree.detail === null ? null : String(entree.detail).slice(0, 4000),
+      statut: nettoyerChampAudit(entree.statut, 20) || "ok",
+      ip: nettoyerChampAudit(entree.ip, 80),
+      userAgent: nettoyerChampAudit(entree.userAgent, 300)
+    };
+    if (pool) {
+      await ensureAuditTable();
+      await pool.query(
+        "INSERT INTO journal_audit (type, merchant_key, acteur_role, acteur_nom, acteur_id, action, detail, statut, ip, user_agent) " +
+          "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        [e.type, e.merchantKey, e.acteurRole, e.acteurNom, e.acteurId, e.action, e.detail, e.statut, e.ip, e.userAgent]
+      );
+      return;
+    }
+    const liste = lireAuditLocal();
+    liste.push({ ...e, horodatageISO: new Date().toISOString() });
+    const aEcrire = liste.length > MAX_AUDIT_LOCAL ? liste.slice(-MAX_AUDIT_LOCAL) : liste;
+    fs.writeFileSync(AUDIT_LOG_FILE, JSON.stringify(aEcrire));
+  } catch (erreur) {
+    console.error("Erreur d'ecriture du journal d'audit :", erreur);
+  }
+}
+
+// Lecture (du plus recent au plus ancien). filtre : { type, merchantKey (undefined = tous les marchands),
+// limite, avantId (pagination par curseur : lignes d'id < avantId) }.
+async function journalLister(filtre) {
+  const type = filtre.type === "connexion" ? "connexion" : "modification";
+  const limite = Math.max(1, Math.min(500, parseInt(filtre.limite, 10) || 100));
+  const mk = filtre.merchantKey;
+  if (pool) {
+    await ensureAuditTable();
+    const params = [type];
+    let where = "type = $1";
+    if (mk !== undefined) { params.push(mk); where += " AND merchant_key = $" + params.length; }
+    if (filtre.avantId) { params.push(parseInt(filtre.avantId, 10) || 0); where += " AND id < $" + params.length; }
+    params.push(limite);
+    const res = await pool.query(
+      "SELECT id, type, merchant_key, acteur_role, acteur_nom, acteur_id, action, detail, statut, ip, user_agent, horodatage " +
+        "FROM journal_audit WHERE " + where + " ORDER BY id DESC LIMIT $" + params.length,
+      params
+    );
+    return res.rows.map(r => ({
+      id: r.id, type: r.type, merchantKey: r.merchant_key, acteurRole: r.acteur_role, acteurNom: r.acteur_nom,
+      acteurId: r.acteur_id, action: r.action, detail: r.detail, statut: r.statut, ip: r.ip, userAgent: r.user_agent,
+      horodatageISO: new Date(r.horodatage).toISOString()
+    }));
+  }
+  const toutes = lireAuditLocal();
+  const avecId = toutes.map((e, i) => ({ ...e, id: i + 1 }));
+  return avecId
+    .filter(e => e.type === type && (mk === undefined || e.merchantKey === mk) && (!filtre.avantId || e.id < parseInt(filtre.avantId, 10)))
+    .reverse()
+    .slice(0, limite);
+}
+
 module.exports = {
   initRegistry,
   addMerchant,
@@ -709,6 +823,8 @@ module.exports = {
   logConversationMessage,
   getConversationSummaries,
   getConversationHistory,
+  journalAjouter,
+  journalLister,
   usingDatabase: !!pool,
   CLES_MIGRATIONS_ROLES_CONNUES
 };

@@ -594,6 +594,254 @@ app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
+// ---------------- Journal d'audit (Etape 40) ----------------
+// Deux journaux, en ajout seul (voir db.js, table journal_audit) :
+//   - MODIFICATIONS : qui a change quoi (catalogue avec avant/apres, parametres, employes, commandes...).
+//   - CONNEXIONS : connexions reussies/echouees et deconnexions, avec adresse IP reelle (voir clientip.js).
+// Lisibles UNIQUEMENT par le proprietaire du marchand (pour SES donnees) et par le super-administrateur
+// (voir routes /journal plus bas) - jamais par un(e) employe(e). On ne journalise jamais un mot de passe,
+// un jeton, une cle API ni le texte d'un message : seulement des resumes (champs touches, noms d'articles...).
+
+// Actions reservees au super-administrateur : jamais montrees au marchand (il ne doit pas voir ces options).
+const ACTIONS_SUPERADMIN_SEULEMENT = new Set([
+  "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees"
+]);
+
+const LIBELLES_ACTIONS_AUDIT = {
+  "POST /api/marchands": "marchand_cree",
+  "PUT /api/:id/identifiants": "identifiants_modifies",
+  "POST /api/:id/employes": "employe_cree",
+  "PUT /api/:id/employes/:employeId": "employe_modifie",
+  "DELETE /api/:id/employes/:employeId": "employe_supprime",
+  "PUT /api/:id/actif": "marchand_actif_modifie",
+  "PUT /api/marchands/:id/options-payantes": "options_payantes_modifiees",
+  "PUT /api/:id/izyfacture/parametres": "izyfacture_parametres_modifies",
+  "POST /api/:id/izyfacture/tester": "izyfacture_testee",
+  "POST /api/:id/commandes/:orderId/izyfacture/facturer": "facture_creee",
+  "POST /api/:id/commandes/:orderId/izyfacture/paiement": "paiement_facture_enregistre",
+  "PUT /api/marchands/:id/infos": "infos_marchand_modifiees",
+  "DELETE /api/marchands/:id": "marchand_supprime",
+  "PUT /api/:id/catalogue": "catalogue_modifie",
+  "POST /api/:id/pos/vente": "vente_caisse",
+  "POST /api/:id/caisse/session/ouvrir": "caisse_ouverte",
+  "POST /api/:id/caisse/session/fermer": "caisse_fermee",
+  "POST /api/:id/catalogue/importer": "catalogue_importe",
+  "POST /api/:id/catalogue/:productId/photos": "photo_ajoutee",
+  "DELETE /api/:id/catalogue/:productId/photos": "photo_supprimee",
+  "PUT /api/:id/commandes/:orderId/statut": "commande_statut_modifie",
+  "PUT /api/:id/services": "services_modifies",
+  "PUT /api/:id/rendezvous/:apptId/statut": "rendezvous_statut_modifie",
+  "PUT /api/:id/parametres": "parametres_modifies",
+  "PUT /api/:id/notification": "notification_modifiee",
+  "PUT /api/:id/numero-whatsapp-public": "numero_public_modifie",
+  "PUT /api/:id/filigrane-logo": "filigrane_modifie",
+  "POST /api/marchands/:id/tester-alerte": "alerte_testee",
+  "POST /api/marchands/:id/logo": "logo_modifie",
+  "DELETE /api/marchands/:id/logo": "logo_supprime",
+  "POST /api/marchands/:id/image-accueil-whatsapp": "image_accueil_modifiee",
+  "DELETE /api/marchands/:id/image-accueil-whatsapp": "image_accueil_supprimee",
+  "POST /api/:id/conversations/:telephone/repondre": "reponse_manuelle_envoyee",
+  "POST /api/:id/inventaire/instantanes": "inventaire_instantane_cree",
+  "DELETE /api/:id/inventaire/instantanes/:snapshotId": "inventaire_instantane_supprime",
+  "POST /api/:id/liste-attente/:entreeId/contacte": "client_attente_contacte"
+};
+
+function cleCorpsAudit(corps) {
+  return corps && typeof corps === "object" && !Array.isArray(corps) ? Object.keys(corps).slice(0, 30) : [];
+}
+
+// Resume NON sensible de la requete (jamais de valeur de mot de passe/cle/message) - la liste des champs
+// touches suffit pour savoir "ce qui a ete modifie" sans exposer de secret.
+function detailAuditRequete(code, req) {
+  const b = req.body || {};
+  const p = req.params || {};
+  const entry = engines[p.id];
+  const nomArticle = () => {
+    const prod = entry && entry.engine.type === "catalogue" && entry.engine.getCatalog().filter((x) => x.id === p.productId)[0];
+    return prod ? prod.nom : null;
+  };
+  switch (code) {
+    case "photo_ajoutee": case "photo_supprimee": return { art: nomArticle(), productId: p.productId || null };
+    case "commande_statut_modifie": return { commande: p.orderId, statut: b.statut || null };
+    case "rendezvous_statut_modifie": return { rendezvous: p.apptId, statut: b.statut || null };
+    case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null };
+    case "employe_modifie": {
+      const emp = entry && (entry.merchant.employes || []).filter((e) => e.id === p.employeId)[0];
+      return { employe: (emp && emp.nom) || p.employeId, roles: Array.isArray(b.roles) ? b.roles : null,
+               motDePasse: !!(b.motDePasse || b.generer || b.genererMotDePasse) };
+    }
+    case "employe_supprime": return { employe: (res_locals_employe(entry, p.employeId)) };
+    case "identifiants_modifies": return { motDePasse: !!(b.motDePasse || b.generer || b.genererMotDePasse), identifiant: !!b.adminUser };
+    case "marchand_actif_modifie": return { actif: b.actif };
+    case "options_payantes_modifiees": return { options: b };
+    case "reponse_manuelle_envoyee": return { telephone: p.telephone };
+    case "client_attente_contacte": return { entree: p.entreeId };
+    case "inventaire_instantane_supprime": return { instantane: p.snapshotId };
+    case "catalogue_importe": return { fichier: req.file ? req.file.originalname : null };
+    case "vente_caisse": return { lignes: Array.isArray(b.lignes) ? b.lignes.length : null, modePaiement: b.modePaiement || null };
+    case "parametres_modifies": case "infos_marchand_modifiees": case "izyfacture_parametres_modifies":
+    case "services_modifies": case "logo_modifie": case "image_accueil_modifiee":
+      return { champs: cleCorpsAudit(b) };
+    default: return {};
+  }
+}
+function res_locals_employe(entry, employeId) {
+  const emp = entry && (entry.merchant.employes || []).filter((e) => e.id === employeId)[0];
+  return (emp && emp.nom) || employeId;
+}
+
+function acteurAudit(req) {
+  const a = req.auth;
+  const entry = a.merchantId && engines[a.merchantId];
+  let nom = a.adminUser;
+  if (a.role === "employe" && entry) {
+    const emp = (entry.merchant.employes || []).filter((e) => e.id === a.employeId)[0];
+    if (emp && emp.nom) nom = emp.nom + " (" + a.adminUser + ")";
+  }
+  return { acteurRole: a.role, acteurNom: nom, acteurId: a.employeId || a.adminUser };
+}
+
+function ipAudit(req) { return req.ip || (req.socket && req.socket.remoteAddress) || null; }
+function uaAudit(req) { return req.get("user-agent") || null; }
+
+app.use("/api", (req, res, next) => {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
+  res.on("finish", () => {
+    try {
+      if (!req.auth || !req.route) return;                       // non authentifie (401) : rien a journaliser
+      if (res.statusCode >= 400 && res.statusCode !== 403) return; // erreurs de saisie/serveur : pas des actions
+      const cle = req.method + " " + req.route.path;
+      const code = LIBELLES_ACTIONS_AUDIT[cle];
+      if (!code) return;                                         // simulateur, connexion/deconnexion (journalises a part)...
+      const acteur = acteurAudit(req);
+      // Un marchand/employe est toujours journalise sous SON propre marchand (jamais sous celui qu'il aurait
+      // vise par une URL falsifiee : il ne doit pas pouvoir polluer le journal d'un autre) ; le
+      // super-administrateur sous le marchand concerne.
+      let merchantKey = req.auth.role === "superadmin" ? (req.params.id || "") : (req.auth.merchantId || "");
+      if (res.locals.audit && res.locals.audit.merchantKey !== undefined) merchantKey = res.locals.audit.merchantKey;
+      if (res.statusCode === 403) {
+        const detail = Object.assign({}, detailAuditRequete(code, req), req.params.id && req.params.id !== merchantKey ? { cible: req.params.id } : {});
+        db.journalAjouter(Object.assign({ type: "modification", merchantKey, action: code, statut: "refuse",
+          detail: JSON.stringify(detail), ip: ipAudit(req), userAgent: uaAudit(req) }, acteur));
+        return;
+      }
+      if (res.locals.audit && res.locals.audit.ignorer) return;  // ex: catalogue enregistre sans aucun changement reel
+      const detail = (res.locals.audit && res.locals.audit.detail) || detailAuditRequete(code, req);
+      db.journalAjouter(Object.assign({ type: "modification", merchantKey, action: code, statut: "ok",
+        detail: JSON.stringify(detail), ip: ipAudit(req), userAgent: uaAudit(req) }, acteur));
+      (res.locals.auditExtra || []).forEach((x) => {
+        db.journalAjouter(Object.assign({ type: "modification", merchantKey, action: x.action, statut: x.statut || "refuse",
+          detail: JSON.stringify(x.detail || {}), ip: ipAudit(req), userAgent: uaAudit(req) }, acteur));
+      });
+    } catch (e) { console.error("Journal d'audit (middleware) :", e); }
+  });
+  next();
+});
+
+// ---- Comparaison avant/apres d'un catalogue (PUT /api/:id/catalogue) : uniquement les VRAIS changements ----
+function texteAudit(v) {
+  if (v === undefined || v === null || v === "") return "";
+  return String(typeof v === "object" ? JSON.stringify(v) : v).slice(0, 80);
+}
+function cleVarianteAudit(v, i) { return (v.couleur || "") + "|" + (v.taille || ""); }
+
+function comparerCatalogues(avant, apres) {
+  const changes = [];
+  const parId = new Map();
+  (avant || []).forEach((p) => { if (p && p.id) parId.set(p.id, p); });
+  const idsApres = new Set();
+  (apres || []).forEach((p) => {
+    if (!p || !p.id) { changes.push({ k: "article_ajoute", art: texteAudit(p && p.nom) }); return; }
+    idsApres.add(p.id);
+    const a = parId.get(p.id);
+    if (!a) { changes.push({ k: "article_ajoute", art: texteAudit(p.nom) }); return; }
+    const art = texteAudit(a.nom || p.nom);
+    const champs = new Set(Object.keys(a).concat(Object.keys(p)));
+    champs.forEach((c) => {
+      if (c === "variantes" || c === "photos" || c === "id") return;
+      if (texteAudit(a[c]) !== texteAudit(p[c])) changes.push({ k: "champ", art, champ: c, de: texteAudit(a[c]), a: texteAudit(p[c]) });
+    });
+    const va = new Map(); (a.variantes || []).forEach((v, i) => va.set(cleVarianteAudit(v) + "#" + [...va.keys()].filter((k) => k.indexOf(cleVarianteAudit(v) + "#") === 0).length, v));
+    const vp = new Map(); (p.variantes || []).forEach((v, i) => vp.set(cleVarianteAudit(v) + "#" + [...vp.keys()].filter((k) => k.indexOf(cleVarianteAudit(v) + "#") === 0).length, v));
+    vp.forEach((v, k) => {
+      const lib = ((v.couleur || "") + " " + (v.taille || "")).trim();
+      const o = va.get(k);
+      if (!o) { changes.push({ k: "variante_ajoutee", art, v: lib }); return; }
+      new Set(Object.keys(o).concat(Object.keys(v))).forEach((c) => {
+        if (c === "stockVirtuel") return; // valeur calculee, jamais une modification
+        if (texteAudit(o[c]) !== texteAudit(v[c])) changes.push({ k: "variante_champ", art, v: lib, champ: c, de: texteAudit(o[c]), a: texteAudit(v[c]) });
+      });
+    });
+    va.forEach((v, k) => { if (!vp.has(k)) changes.push({ k: "variante_supprimee", art, v: ((v.couleur || "") + " " + (v.taille || "")).trim() }); });
+    const pa = a.photos || [], pp = p.photos || [];
+    const ajout = pp.filter((u) => pa.indexOf(u) === -1).length, retir = pa.filter((u) => pp.indexOf(u) === -1).length;
+    if (ajout || retir) changes.push({ k: "photos", art, ajoutees: ajout, retirees: retir });
+  });
+  parId.forEach((a, id) => { if (!idsApres.has(id)) changes.push({ k: "article_supprime", art: texteAudit(a.nom) }); });
+  return changes;
+}
+
+// Filet "employe" pour le catalogue : un(e) employe(e) ne peut ni supprimer d'article (deja gere),
+// ni retirer une variante, ni retirer une photo - meme par appel direct a l'API. Retourne le catalogue
+// corrige + la liste de ce qui a ete restaure (pour le journal : tentative bloquee).
+function appliquerFiletEmployeCatalogue(actuel, soumis) {
+  const restaures = [];
+  const parId = new Map();
+  (actuel || []).forEach((p) => { if (p && p.id) parId.set(p.id, p); });
+  const corrige = (soumis || []).map((p) => {
+    const a = p && p.id ? parId.get(p.id) : null;
+    if (!a) return p;
+    const copie = Object.assign({}, p);
+    // Variantes : si le nombre diminue, on remet les variantes manquantes (jusqu'au nombre retire - une
+    // simple RENOMMEE de variante ne change pas le nombre et reste donc acceptee, sans doublon).
+    const vSoumises = Array.isArray(p.variantes) ? p.variantes : [];
+    const vActuelles = Array.isArray(a.variantes) ? a.variantes : [];
+    if (vSoumises.length < vActuelles.length) {
+      const cles = new Set(vSoumises.map((v) => cleVarianteAudit(v)));
+      const manquantes = vActuelles.filter((v) => !cles.has(cleVarianteAudit(v))).slice(0, vActuelles.length - vSoumises.length);
+      if (manquantes.length) {
+        copie.variantes = vSoumises.concat(manquantes);
+        manquantes.forEach((v) => restaures.push({ k: "variante_supprimee", art: texteAudit(a.nom), v: ((v.couleur || "") + " " + (v.taille || "")).trim() }));
+      }
+    }
+    // Photos : on garde toutes celles du serveur ; les nouvelles (ajoutees via la route d'envoi) restent.
+    const phSoumises = Array.isArray(p.photos) ? p.photos : [];
+    const phActuelles = Array.isArray(a.photos) ? a.photos : [];
+    const retirees = phActuelles.filter((u) => phSoumises.indexOf(u) === -1);
+    if (retirees.length) {
+      copie.photos = phActuelles.concat(phSoumises.filter((u) => phActuelles.indexOf(u) === -1));
+      restaures.push({ k: "photos", art: texteAudit(a.nom), retirees: retirees.length });
+    }
+    return copie;
+  });
+  return { catalogue: corrige, restaures };
+}
+
+
+// Qui est-ce (pour le journal des connexions) : un super-administrateur est journalise au niveau GLOBAL
+// (merchantKey "" - jamais visible d'un marchand), un marchand/employe sous son marchand.
+function descriptionActeurConnexion(a) {
+  const entry = a.merchantId && engines[a.merchantId];
+  let nom = a.adminUser;
+  if (a.role === "employe" && entry) {
+    const emp = (entry.merchant.employes || []).filter((e) => e.id === a.employeId)[0];
+    if (emp && emp.nom) nom = emp.nom + " (" + a.adminUser + ")";
+  }
+  return { merchantKey: a.role === "superadmin" ? "" : (a.merchantId || ""), acteurRole: a.role, acteurNom: nom, acteurId: a.employeId || a.adminUser };
+}
+
+// Pour un echec de connexion : retrouve le compte reel portant cet identifiant (ou null).
+function trouverCompteParIdentifiant(identifiant) {
+  if (identifiant === (process.env.ADMIN_USER || "admin")) return { merchantKey: "", role: "superadmin", nom: identifiant };
+  for (const id of Object.keys(engines)) {
+    const m = engines[id].merchant;
+    if (m.adminUser && m.adminUser === identifiant) return { merchantKey: id, role: "marchand", nom: identifiant };
+    const emp = (m.employes || []).filter((e) => e.identifiant && e.identifiant === identifiant)[0];
+    if (emp) return { merchantKey: id, role: "employe", nom: (emp.nom || "") + " (" + identifiant + ")" };
+  }
+  return null;
+}
+
 // ---------------- API d'administration (protegee) ----------------
 
 // Connexion (29 septembre 2026, remplace l'authentification HTTP Basic) : verifie les identifiants fournis
@@ -612,9 +860,16 @@ app.post("/api/connexion", (req, res) => {
   }
   const auth = identifierCompte(String(identifiant), String(motDePasse));
   if (!auth) {
+    // Journal des connexions : on ne retient l'identifiant tape que s'il correspond a un compte REEL (sinon
+    // quelqu'un qui colle son mot de passe dans le champ identifiant le verrait ecrit dans le journal).
+    const cible = trouverCompteParIdentifiant(String(identifiant));
+    db.journalAjouter({ type: "connexion", merchantKey: cible ? cible.merchantKey : "", acteurRole: cible ? cible.role : null,
+      acteurNom: cible ? cible.nom : null, acteurId: null, action: "connexion_echec", statut: "echec", ip: ipAudit(req), userAgent: uaAudit(req) });
     res.status(401).json({ erreur: "Identifiant ou mot de passe incorrect." });
     return;
   }
+  db.journalAjouter(Object.assign({ type: "connexion", action: "connexion_ok", statut: "ok", ip: ipAudit(req), userAgent: uaAudit(req) },
+    descriptionActeurConnexion(auth)));
   ecrireCookieSession(res, { role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, employeId: auth.employeId || null });
   res.json({ role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, roles: auth.roles || null });
 });
@@ -622,8 +877,59 @@ app.post("/api/connexion", (req, res) => {
 // Deconnexion : efface le cookie de session. Reussit toujours, meme sans cookie present ou deja expire -
 // du point de vue du client, se deconnecter ne doit jamais echouer.
 app.post("/api/deconnexion", (req, res) => {
+  const payload = cryptoUtil.verifierJetonSession(lireCookie(req, NOM_COOKIE_SESSION));
+  if (payload) {
+    db.journalAjouter(Object.assign({ type: "connexion", action: "deconnexion", statut: "ok", ip: ipAudit(req), userAgent: uaAudit(req) },
+      descriptionActeurConnexion({ role: payload.role, merchantId: payload.merchantId || null, adminUser: payload.adminUser, employeId: payload.employeId || null })));
+  }
   effacerCookieSession(res);
   res.json({ ok: true });
+});
+
+// -- Journaux (Etape 40) : modifications + connexions. Lecture seule, reservee au PROPRIETAIRE du marchand
+// (pour ses propres donnees) et au super-administrateur - jamais a un(e) employe(e), meme avec tous les roles.
+// Au marchand, on masque les actions reservees au super-administrateur (options payantes, suspension...) et
+// l'identite/IP du super-administrateur : il ne doit pas voir ces options (voir ACTIONS_SUPERADMIN_SEULEMENT). --
+function filtrerJournalPourDemandeur(req, lignes) {
+  if (req.auth.role === "superadmin") return lignes;
+  return lignes
+    .filter((l) => !ACTIONS_SUPERADMIN_SEULEMENT.has(l.action) && l.acteurRole !== "superadmin")
+    .map((l) => ({ id: l.id, type: l.type, action: l.action, statut: l.statut, acteurRole: l.acteurRole, acteurNom: l.acteurNom,
+      detail: l.detail, ip: l.ip, userAgent: l.userAgent, horodatageISO: l.horodatageISO }));
+}
+
+async function repondreJournal(req, res, type) {
+  const id = req.params.id;
+  if (!verifierPortee(req, res, id)) return;
+  if (!estGestionnaireDuMarchand(req, id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  if (!engines[id]) return res.status(404).json({ erreur: "Marchand inconnu : " + id });
+  try {
+    const limite = Math.max(1, Math.min(200, parseInt(req.query.limite, 10) || 100));
+    const brutes = await db.journalLister({ type, merchantKey: id, limite, avantId: req.query.avant });
+    const lignes = filtrerJournalPourDemandeur(req, brutes);
+    res.json({ lignes, suivant: brutes.length === limite ? brutes[brutes.length - 1].id : null });
+  } catch (erreur) {
+    console.error("Journal (lecture) :", erreur);
+    res.status(500).json({ erreur: "Lecture du journal impossible." });
+  }
+}
+app.get("/api/:id/journal/modifications", protegerAcces, (req, res) => repondreJournal(req, res, "modification"));
+app.get("/api/:id/journal/connexions", protegerAcces, (req, res) => repondreJournal(req, res, "connexion"));
+
+// Vue globale (tous les marchands + evenements hors marchand : creation de marchand, connexions du
+// super-administrateur...) : super-administrateur UNIQUEMENT.
+app.get("/api/journal/global", protegerAcces, async (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  try {
+    const type = req.query.type === "connexion" ? "connexion" : "modification";
+    const limite = Math.max(1, Math.min(200, parseInt(req.query.limite, 10) || 100));
+    const brutes = await db.journalLister({ type, limite, avantId: req.query.avant });
+    const lignes = brutes.map((l) => Object.assign({}, l, { marchandNom: l.merchantKey && engines[l.merchantKey] ? engines[l.merchantKey].merchant.nom : null }));
+    res.json({ lignes, suivant: brutes.length === limite ? brutes[brutes.length - 1].id : null });
+  } catch (erreur) {
+    console.error("Journal global (lecture) :", erreur);
+    res.status(500).json({ erreur: "Lecture du journal impossible." });
+  }
 });
 
 // Le super-administrateur voit tous les marchands ; un marchand ne voit que lui-meme (l'interface
@@ -1137,14 +1443,34 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   // renderCatalogue), mais un appel direct a cette route (hors interface) pourrait sinon quand meme
   // soumettre un catalogue plus court qu'avant - on reinjecte silencieusement les articles manquants
   // plutot que de rejeter tout l'enregistrement (les autres modifications, elles, restent acceptees).
+  const catalogueAvant = JSON.parse(JSON.stringify(entry.engine.getCatalog() || []));
+  let suppressionsBloquees = [];
   if (!estGestionnaireDuMarchand(req, req.params.id) && Array.isArray(corps)) {
     const catalogueActuel = entry.engine.getCatalog();
     const idsPresents = new Set(corps.filter((p) => p && p.id).map((p) => p.id));
     const manquants = catalogueActuel.filter((p) => p && p.id && !idsPresents.has(p.id));
-    if (manquants.length) corps = corps.concat(manquants);
+    if (manquants.length) {
+      corps = corps.concat(manquants);
+      manquants.forEach((p) => suppressionsBloquees.push({ k: "article_supprime", art: String(p.nom || "").slice(0, 80) }));
+    }
+    // Etape 40 : meme principe pour les VARIANTES et les PHOTOS - un(e) employe(e) ne supprime rien (il/elle
+    // met le stock a 0 pour une variante epuisee). Voir appliquerFiletEmployeCatalogue.
+    const filet = appliquerFiletEmployeCatalogue(catalogueActuel, corps);
+    corps = filet.catalogue;
+    suppressionsBloquees = suppressionsBloquees.concat(filet.restaures);
   }
   const nouveau = entry.engine.updateCatalog(corps);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
+  // Journal : uniquement les vrais changements (un enregistrement sans modification n'ecrit rien).
+  const changements = comparerCatalogues(catalogueAvant, nouveau);
+  if (changements.length) {
+    res.locals.audit = { detail: { changes: changements.slice(0, 200), plus: Math.max(0, changements.length - 200) } };
+  } else {
+    res.locals.audit = { ignorer: true };
+  }
+  if (suppressionsBloquees.length) {
+    res.locals.auditExtra = [{ action: "suppression_bloquee", statut: "refuse", detail: { changes: suppressionsBloquees.slice(0, 100) } }];
+  }
   res.json(nouveau);
 });
 
@@ -1343,6 +1669,8 @@ app.post("/api/:id/catalogue/:productId/photos", protegerAcces, uploadPhoto.sing
 
 app.delete("/api/:id/catalogue/:productId/photos", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
+  // Etape 40 : un(e) employe(e) peut AJOUTER une photo mais jamais en supprimer (proprietaire/super-admin seulement).
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   const { url } = req.body || {};
   if (!url) return res.status(400).json({ erreur: "url requise." });
@@ -1585,6 +1913,7 @@ app.post("/api/marchands/:id/logo", protegerAcces, uploadPhoto.single("logo"), a
 
 app.delete("/api/marchands/:id/logo", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   const ancienUrl = entry.merchant.logoUrl || null;
   const maj = await db.updateMerchantFields(req.params.id, { logoUrl: null });
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
@@ -1618,6 +1947,7 @@ app.post("/api/marchands/:id/image-accueil-whatsapp", protegerAcces, uploadPhoto
 
 app.delete("/api/marchands/:id/image-accueil-whatsapp", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   const ancienUrl = entry.merchant.imageAccueilWhatsappUrl || null;
   const maj = await db.updateMerchantFields(req.params.id, { imageAccueilWhatsappUrl: null });
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
