@@ -271,7 +271,10 @@ function creerRouteur(moteurs, principal, deps) {
     return { type: "moteur", volet, texte: brut, suffixe: null };
   }
 
-  return { traiter, voletActif, voletsUtilisables, etatDe: (tel) => (etats[tel] ? Object.assign({}, etats[tel]) : null) };
+  // Efface l'etat de routage d'un numero (bouton « Reinitialiser » du Simulateur de /admin).
+  function oublier(tel) { delete etats[tel]; }
+
+  return { traiter, oublier, voletActif, voletsUtilisables, etatDe: (tel) => (etats[tel] ? Object.assign({}, etats[tel]) : null) };
 }
 
 module.exports = { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE };

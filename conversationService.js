@@ -1211,8 +1211,8 @@ function createServiceEngine(merchantKey, options) {
   // donnees). Contrairement au moteur catalogue, ce moteur n'a pas (encore) de panneau de trace/analyse
   // detaille : `trace` reste toujours null ici, /admin masque simplement ce panneau pour un marchand
   // service.
-  function handleMessageSimulateur(text) {
-    const reponse = handleMessage(PHONE_SIMULATEUR, text);
+  function handleMessageSimulateur(text, opts) {
+    const reponse = handleMessage(PHONE_SIMULATEUR, text, opts);
     return { reponse, trace: null };
   }
 

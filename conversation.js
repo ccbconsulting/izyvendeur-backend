@@ -1271,10 +1271,10 @@ function createCatalogEngine(merchantKey, options) {
   // Envoie un message "comme si" il venait d'un client, sous le numero reserve PHONE_SIMULATEUR. Retourne
   // a la fois la reponse du bot et la derniere trace d'analyse (entites reconnues, verification de stock,
   // action prise) pour que /admin affiche le panneau "Moteur IA — extraction en direct" du prototype.
-  function handleMessageSimulateur(text) {
+  function handleMessageSimulateur(text, opts) {
     const session = getSession(PHONE_SIMULATEUR);
     session.derniereTrace = null;
-    const reponse = handleMessage(PHONE_SIMULATEUR, text);
+    const reponse = handleMessage(PHONE_SIMULATEUR, text, opts);
     return { reponse, trace: session.derniereTrace };
   }
 

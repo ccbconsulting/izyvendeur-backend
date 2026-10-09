@@ -275,6 +275,27 @@ const I18N = {
     act_marchand_supprime: "Marchand supprimé",
     act_marchand_actif_modifie: "Suspension / réactivation",
     act_options_payantes_modifiees: "Options payantes modifiées",
+    act_module_secondaire_modifie: "Second volet (hybride) modifié",
+    voletCatalogue: "Catalogue",
+    voletService: "Rendez-vous",
+    typeHybrideLibelle: "{a} + {b}",
+    ongletParametresCatalogueHyb: "Paramètres catalogue",
+    ongletParametresServiceHyb: "Paramètres rendez-vous",
+    h3ModuleSecondaire: "Second volet (marchand hybride)",
+    noteModuleSecondaire: "Permet à ce marchand d'avoir catalogue ET rendez-vous derrière le même numéro WhatsApp. Le client choisit son parcours après la langue. Retirer le second volet le masque (clients, onglets, rappels) mais ne supprime AUCUNE donnée : il réapparaît tel quel si vous le rendez. Réservé au super-administrateur.",
+    labelModuleSecondaire: "Second volet",
+    optionModuleAucun: "Aucun (marchand à un seul volet)",
+    optionModuleAjoutCatalogue: "Ajouter le catalogue (produits, commandes)",
+    optionModuleAjoutService: "Ajouter les rendez-vous (services, rendez-vous)",
+    btnEnregistrerModule: "Enregistrer le second volet",
+    alertModuleEnregistre: "Second volet enregistré.",
+    confirmRetirerModule: "Retirer le second volet ? Il sera masqué pour les clients et dans /admin, mais ses données sont conservées.",
+    promptModuleSecondaire: "Second volet (facultatif, super-administrateur uniquement) : tapez 'catalogue' ou 'service' pour créer un marchand HYBRIDE, ou laissez vide.",
+    alertModuleSecondaireIdentique: "Le second volet doit être différent du type principal.",
+    descIzyfactureHybride: "Connectez IzyVendeur à votre compte IzyFacture : une facture officielle est créée automatiquement quand une commande est confirmée ET quand un rendez-vous est marqué « Honoré » (factures séparées). Une commande ou un rendez-vous annulé après facturation génère un avoir. La clé est chiffrée avant d'être enregistrée et n'est jamais réaffichée en clair.",
+    labelIzyfactureAutoHybride: "Créer automatiquement la facture (commande confirmée ou rendez-vous « Honoré »)",
+    noteSimulateurHybride: "Ce marchand a deux volets : le Simulateur suit exactement le parcours d'un vrai client (langue, puis choix produits / rendez-vous).",
+    labelVoletConversation: "Volet",
     act_identifiants_modifies: "Identifiants modifiés",
     act_employe_cree: "Employé créé",
     act_employe_modifie: "Employé modifié",
@@ -920,6 +941,27 @@ const I18N = {
     act_marchand_supprime: "Merchant deleted",
     act_marchand_actif_modifie: "Suspended / reactivated",
     act_options_payantes_modifiees: "Paid options changed",
+    act_module_secondaire_modifie: "Second section (hybrid) changed",
+    voletCatalogue: "Catalog",
+    voletService: "Appointments",
+    typeHybrideLibelle: "{a} + {b}",
+    ongletParametresCatalogueHyb: "Catalog settings",
+    ongletParametresServiceHyb: "Appointment settings",
+    h3ModuleSecondaire: "Second section (hybrid merchant)",
+    noteModuleSecondaire: "Lets this merchant offer catalog AND appointments behind the same WhatsApp number. The customer picks their path after the language. Removing the second section hides it (customers, tabs, reminders) but deletes NO data: it comes back as it was if you restore it. Super-administrator only.",
+    labelModuleSecondaire: "Second section",
+    optionModuleAucun: "None (single-section merchant)",
+    optionModuleAjoutCatalogue: "Add the catalog (products, orders)",
+    optionModuleAjoutService: "Add appointments (services, appointments)",
+    btnEnregistrerModule: "Save the second section",
+    alertModuleEnregistre: "Second section saved.",
+    confirmRetirerModule: "Remove the second section? It will be hidden from customers and from /admin, but its data is kept.",
+    promptModuleSecondaire: "Second section (optional, super-administrator only): type 'catalogue' or 'service' to create a HYBRID merchant, or leave empty.",
+    alertModuleSecondaireIdentique: "The second section must differ from the main type.",
+    descIzyfactureHybride: "Connect IzyVendeur to your IzyFacture account: an official invoice is created automatically when an order is confirmed AND when an appointment is marked \"Completed\" (separate invoices). An order or appointment cancelled after invoicing generates a credit note. The key is encrypted before being stored and is never shown again in full.",
+    labelIzyfactureAutoHybride: "Automatically create the invoice (order confirmed or appointment \"Completed\")",
+    noteSimulateurHybride: "This merchant has two sections: the Simulator follows exactly what a real customer goes through (language, then products / appointments choice).",
+    labelVoletConversation: "Section",
     act_identifiants_modifies: "Credentials changed",
     act_employe_cree: "Employee created",
     act_employe_modifie: "Employee updated",
@@ -1503,6 +1545,16 @@ function libelleJour(j) {
   return map[j] ? t(map[j]) : j;
 }
 function libelleTypeMarchand(type) { return type === "service" ? t("typeService") : t("typeCatalogue"); }
+// Etape 48 : un marchand HYBRIDE a deux volets (`modules` = [principal, second], fournis par GET /api/marchands).
+function modulesAdmin(m) { m = m || marchandActif; return m && Array.isArray(m.modules) && m.modules.length ? m.modules : [m ? m.type : "catalogue"]; }
+function estHybrideAdmin(m) { return modulesAdmin(m).length > 1; }
+function libelleMarchandType(m) {
+  const mods = modulesAdmin(m);
+  return mods.length > 1 ? t("typeHybrideLibelle", { a: libelleTypeMarchand(mods[0]), b: libelleTypeMarchand(mods[1]) }) : libelleTypeMarchand(m.type);
+}
+// Volet (« catalogue » / « service ») de l'onglet affiche, pour un marchand hybride : ajoute ?volet= aux
+// appels qui en ont besoin (voir api() ci-dessous). null hors marchand hybride et pour les onglets communs.
+let voletCourant = null;
 
 function brancherSelecteurLangue() {
   const btnFr = document.getElementById("btnLangueFr");
@@ -1529,6 +1581,11 @@ function esc(v) {
 
 async function api(chemin, opts) {
   const options = Object.assign({ headers: { "Content-Type": "application/json" } }, opts || {});
+  // Marchand hybride (Etape 48) : l'onglet affiche precise son volet pour les routes qui servent les deux
+  // (parametres, tableau de bord...). Les routes propres a un volet (commandes, rendez-vous...) l'ignorent.
+  if (voletCourant && marchandActif && estHybrideAdmin() && chemin.indexOf("/api/" + marchandActif.id + "/") === 0 && chemin.indexOf("volet=") === -1) {
+    chemin += (chemin.indexOf("?") === -1 ? "?" : "&") + "volet=" + voletCourant;
+  }
   const res = await fetch(chemin, options);
   // Session absente/expiree/invalidee (compte modifie ou supprime depuis l'emission du cookie - voir
   // protegerAcces cote serveur) : plutot que de laisser chaque appelant gerer ce cas individuellement,
@@ -1664,7 +1721,7 @@ async function demarrer() {
     btnModifier.style.display = "";
     btnSuspendre.style.display = "";
     btnSupprimer.style.display = "";
-    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(libelleTypeMarchand(m.type)) + ") — id: " + esc(m.id) + (m.actif === false ? t("suspendu") : "") + "</option>").join("");
+    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(libelleMarchandType(m)) + ") — id: " + esc(m.id) + (m.actif === false ? t("suspendu") : "") + "</option>").join("");
     sel.onchange = () => choisirMarchand(sel.value);
     btnSuspendre.onclick = async () => {
       const nouveauEtat = !(marchandActif.actif !== false);
@@ -1731,12 +1788,15 @@ document.getElementById("btnNouveauMarchand").onclick = async () => {
   if (!id) return;
   const nom = prompt(t("promptNomMarchand"), id) || id;
   const type = (prompt(t("promptTypeMarchand"), "catalogue") || "").trim();
+  // Second volet (marchand hybride) : propose uniquement ici, dans l'ecran du super-administrateur.
+  const moduleSecondaire = (prompt(t("promptModuleSecondaire"), "") || "").trim();
+  if (moduleSecondaire && moduleSecondaire === type) { alert(t("alertModuleSecondaireIdentique")); return; }
   const phoneNumberId = prompt(t("promptPhoneNumberIdCreation")) || null;
   const adminUser = prompt(t("promptAdminUser"), id) || id;
   const adminPassword = prompt(t("promptAdminPassword"));
   if (!adminPassword) { alert(t("alertMdpInitialRequis")); return; }
   try {
-    await api("/api/marchands", { method: "POST", body: JSON.stringify({ id, nom, type, phoneNumberId, adminUser, adminPassword }) });
+    await api("/api/marchands", { method: "POST", body: JSON.stringify({ id, nom, type, phoneNumberId, adminUser, adminPassword, moduleSecondaire: moduleSecondaire || undefined }) });
     alert(t("alertMarchandCree", { u: adminUser, p: adminPassword }));
     await demarrer();
   } catch (e) { alert(t("erreurPrefixe") + e.message); }
@@ -1806,6 +1866,19 @@ function rolesDisponibles() {
   // "rapports" (meme journee) detache Rapports de "tableaudebord", et "inventaire" (juste apres, meme
   // journee) detache a son tour Inventaire de "rapports" - les deux etaient a l'origine un seul onglet
   // "Rapports" dans /admin, desormais deux onglets distincts, marchand catalogue uniquement.
+  if (estHybrideAdmin()) {
+    // Marchand hybride : les roles des DEUX volets (un employe garde le sien et ne voit que ses onglets).
+    return [
+      ["catalogue", t("roleCatalogue")],
+      ["commandes", t("roleCommandes")],
+      ["rendezvous", t("roleRendezvous")],
+      ["conversations", t("roleConversationsService")],
+      ["tableaudebord", t("roleTableauDeBord")],
+      ["rapports", t("roleRapports")],
+      ["inventaire", t("roleInventaire")],
+      ["parametres", t("roleParametres")]
+    ].concat(modulesAdmin().indexOf("catalogue") !== -1 && marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : []);
+  }
   if (marchandActif.type === "service") {
     return [
       ["rendezvous", t("roleRendezvous")],
@@ -1840,7 +1913,38 @@ function construireOnglets() {
   //   - "gestion" : reserve au propriétaire du marchand et au super-administrateur, JAMAIS un employe.
   //   - un role (ou tableau de roles, acces accorde des qu'un seul est present) : visible pour le
   //     propriétaire/super-administrateur (toujours), et pour un employe seulement s'il a ce role.
-  let onglets = marchandActif.type === "service"
+  const hybride = estHybrideAdmin();
+  // Marchand hybride (Etape 48) : onglets des DEUX volets, ceux du volet principal en premier. 5e element =
+  // volet envoye au serveur (?volet=) quand l'onglet s'ouvre ; null = onglet commun (Simulateur via le
+  // routeur, Conversations regroupees, Employes, Journal, Mon compte).
+  const ongletsCatalogue = () => [
+    ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue", "catalogue"],
+    ["commandes", t("ongletCommandes"), renderCommandes, "commandes", "catalogue"],
+    marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse", "catalogue"] : null,
+    ["rapports", t("ongletRapports"), renderRapports, "rapports", "catalogue"],
+    ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire", "catalogue"],
+    ["parametres", t("ongletParametresCatalogueHyb"), renderParametresCatalogue, "parametres", "catalogue"]
+  ];
+  const ongletsService = () => [
+    ["services", t("ongletServices"), renderServices, "rendezvous", "service"],
+    ["rendezvous", t("ongletRendezvous"), renderRendezvous, "rendezvous", "service"],
+    ["parametresService", t("ongletParametresServiceHyb"), renderParametresService, "parametres", "service"]
+  ];
+  let onglets = hybride
+    ? [
+        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord", null]
+      ].concat(
+        modulesAdmin()[0] === "service" ? ongletsService().concat(ongletsCatalogue()) : ongletsCatalogue().concat(ongletsService()),
+        [
+          // Visible si le role « conversations » OU les deux roles operationnels (voir simulateurHybrideAutorise cote serveur).
+          ["simulateur", t("ongletSimulateur"), renderSimulateur, (roles) => roles.indexOf("conversations") !== -1 || (roles.indexOf("catalogue") !== -1 && roles.indexOf("rendezvous") !== -1), null],
+          ["conversations", t("ongletConversations"), renderConversations, "conversations", null],
+          ["employes", t("ongletEmployes"), renderEmployes, "gestion", null],
+          ["journal", t("ongletJournal"), renderJournal, "gestion", null],
+          ["compte", t("ongletCompte"), renderCompte, null, null]
+        ]
+      ).filter(Boolean)
+    : marchandActif.type === "service"
     ? [
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
         ["services", t("ongletServices"), renderServices, "rendezvous"],
@@ -1876,20 +1980,24 @@ function construireOnglets() {
     if (permission === null) return true;
     if (permission === "gestion") return moi.role === "marchand" || moi.role === "superadmin";
     if (moi.role !== "employe") return true; // proprietaire/super-administrateur : toujours tout voir
+    if (typeof permission === "function") return permission(moi.roles || []);
     const requis = Array.isArray(permission) ? permission : [permission];
     return requis.some((p) => (moi.roles || []).indexOf(p) !== -1);
   });
 
   barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "' class='" + (i === 0 ? "actif" : "") + "'>" + esc(o[1]) + "</button>").join("");
   const fonctions = {};
-  onglets.forEach((o) => { fonctions[o[0]] = o[2]; });
+  const volets = {};
+  onglets.forEach((o) => { fonctions[o[0]] = o[2]; volets[o[0]] = hybride ? (o[4] || null) : null; });
   Array.prototype.forEach.call(barre.querySelectorAll("button"), (btn) => {
     btn.onclick = () => {
       Array.prototype.forEach.call(barre.querySelectorAll("button"), (b) => b.classList.remove("actif"));
       btn.classList.add("actif");
+      voletCourant = volets[btn.dataset.onglet];
       fonctions[btn.dataset.onglet]();
     };
   });
+  voletCourant = onglets.length && hybride ? (onglets[0][4] || null) : null;
   if (onglets.length) onglets[0][2]();
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("accesNonConfigure") + "</div>";
 }
@@ -3124,13 +3232,16 @@ function lireCaisseParametresFormulaire() {
 // est une information financiere sensible, jamais accessible a un employe meme via le role "parametres".
 function blocIzyfactureHtml(etat, estService) {
   const e = etat || { cleEnregistree: false, indiceCle: "", autoFacturation: false };
+  // Marchand hybride : le bloc (une seule cle, un seul reglage pour tout le marchand) n'est montre que dans
+  // les Parametres du volet principal, avec un texte qui couvre commandes ET rendez-vous.
+  const hybride = estHybrideAdmin();
   return "<h3>" + t("h3Izyfacture") + "</h3>" +
-    "<p style='color:#666; font-size:0.9em;'>" + t(estService ? "descIzyfactureRdv" : "descIzyfacture") + "</p>" +
+    "<p style='color:#666; font-size:0.9em;'>" + t(hybride ? "descIzyfactureHybride" : (estService ? "descIzyfactureRdv" : "descIzyfacture")) + "</p>" +
     (e.cleEnregistree ? "<p style='color:#2a7a2a; font-size:0.9em;'>" + esc(t("izyfactureCleActuelle", { indice: e.indiceCle })) + "</p>" : "") +
     "<label>" + t("labelIzyfactureCle") + "</label>" +
     "<input id='izyfactureCle' type='password' autocomplete='off' placeholder=\"" + esc(e.cleEnregistree ? t("placeholderIzyfactureCleRemplacer") : t("placeholderIzyfactureCle")) + "\" />" +
     "<label style='display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:normal;'>" +
-      "<input type='checkbox' id='izyfactureAuto'" + (e.autoFacturation ? " checked" : "") + " /> " + t(estService ? "labelIzyfactureAutoRdv" : "labelIzyfactureAuto") +
+      "<input type='checkbox' id='izyfactureAuto'" + (e.autoFacturation ? " checked" : "") + " /> " + t(hybride ? "labelIzyfactureAutoHybride" : (estService ? "labelIzyfactureAutoRdv" : "labelIzyfactureAuto")) +
     "</label>" +
     "<div style='margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;'>" +
       "<button id='btnIzyfactureTester' type='button'>" + t("btnIzyfactureTester") + "</button>" +
@@ -3142,9 +3253,13 @@ function blocIzyfactureHtml(etat, estService) {
 // Le bloc IzyFacture existe dans Parametres des deux types de marchand (catalogue ET service, Etape 46) :
 // apres une sauvegarde on redessine donc le bon ecran.
 function rafraichirParametresMarchand() {
+  if (estHybrideAdmin()) return voletCourant === "service" ? renderParametresService() : renderParametresCatalogue();
   if (marchandActif.type === "service") return renderParametresService();
   return renderParametresCatalogue();
 }
+// Dans quel onglet Parametres afficher le bloc IzyFacture ? Toujours pour un marchand a un seul volet ;
+// pour un hybride, seulement dans celui du volet principal.
+function izyfactureDansCetOnglet(volet) { return !estHybrideAdmin() || marchandActif.type === volet; }
 function brancherBlocIzyfacture() {
   const zoneResultat = document.getElementById("izyfactureResultatTest");
   document.getElementById("btnIzyfactureTester").onclick = async () => {
@@ -3191,7 +3306,7 @@ async function renderParametresCatalogue() {
   // "Facturation IzyFacture" est une option payante (voir blocOptionsPayantesHtml) : tant que le
   // super-administrateur ne l'a pas debloquee pour ce marchand, la route /izyfacture/parametres refuse
   // meme au proprietaire (403) - inutile de l'appeler, et le bloc entier reste invisible plus bas.
-  const izyfactureDebloquee = estGestionnaire && marchandActif.optionFacturationIzyfacture === true;
+  const izyfactureDebloquee = estGestionnaire && marchandActif.optionFacturationIzyfacture === true && izyfactureDansCetOnglet("catalogue");
   const [parametres, izyfactureEtat] = await Promise.all([
     api("/api/" + marchandActif.id + "/parametres"),
     izyfactureDebloquee ? api("/api/" + marchandActif.id + "/izyfacture/parametres") : Promise.resolve(null)
@@ -3342,7 +3457,7 @@ async function renderParametresService() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const estGestionnaireSvc = moi.role === "marchand" || moi.role === "superadmin";
-  const izyfactureDebloqueeSvc = estGestionnaireSvc && marchandActif.optionFacturationIzyfacture === true;
+  const izyfactureDebloqueeSvc = estGestionnaireSvc && marchandActif.optionFacturationIzyfacture === true && izyfactureDansCetOnglet("service");
   const [parametres, izyfactureEtatSvc] = await Promise.all([
     api("/api/" + marchandActif.id + "/parametres"),
     izyfactureDebloqueeSvc ? api("/api/" + marchandActif.id + "/izyfacture/parametres") : Promise.resolve(null)
@@ -3487,6 +3602,7 @@ async function renderConversations() {
         "<div class='carte-produit'>" +
           "<div style='display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;'>" +
             "<strong>" + esc(c.telephone) + "</strong>" +
+            (estHybrideAdmin() && c.volet ? "<span class='raison'>" + t("labelVoletConversation") + " : " + t(c.volet === "service" ? "voletService" : "voletCatalogue") + "</span>" : "") +
             "<span class='raison'>" + formaterDureeDepuis(c.depuisISO) + "</span>" +
           "</div>" +
           "<div style='max-height:160px; overflow-y:auto; margin:10px 0; padding:8px; background:#f6f7f9; border-radius:6px; font-size:0.9em;'>" +
@@ -3589,11 +3705,14 @@ async function renderHistoriqueDetail(telephone) {
 async function renderTableauDeBord() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
-  const d = await api("/api/" + marchandActif.id + "/tableau-de-bord?periode=" + encodeURIComponent(dashboardPeriodeActuelle));
-  const estCatalogue = marchandActif.type !== "service";
+  // Marchand hybride (Etape 48) : un tableau de bord COMBINE (une section par volet, meme periode).
+  const voletsDash = modulesAdmin();
+  const hybrideDash = voletsDash.length > 1;
+  const donneesDash = await Promise.all(voletsDash.map((v) =>
+    api("/api/" + marchandActif.id + "/tableau-de-bord?periode=" + encodeURIComponent(dashboardPeriodeActuelle) + (hybrideDash ? "&volet=" + v : ""))
+  ));
+  const d = donneesDash[0];
   const jours = t("joursAbrev");
-  const maxSpark = Math.max(1, ...d.sparkline7j);
-  const aujourdhuiIndex = (new Date().getDay() + 6) % 7; // 0 = lundi
 
   const selecteurPeriode =
     "<div class='controles-rapport'>" +
@@ -3623,6 +3742,8 @@ async function renderTableauDeBord() {
     return "<div class='" + classes + "'" + attrs + "><div class='valeur'>" + valeurHtml + "</div><div class='libelle'>" + libelle + "</div></div>";
   }
 
+  function sectionDashboard(d, estCatalogue) {
+  const maxSpark = Math.max(1, ...d.sparkline7j);
   let tuiles = "<div class='tuiles'>" +
     tuile(estCatalogue ? "commandes" : "rendezvous", d.commandesPeriode, estCatalogue ? t("libelleCommandesPeriodeDash") : t("libelleRdvPeriodeDash")) +
     tuile(estCatalogue ? "rapports" : "rendezvous", (d.caPeriode || 0).toLocaleString(localeCourante()) + " FCFA", t("libelleCaPeriodeDash")) +
@@ -3674,7 +3795,14 @@ async function renderTableauDeBord() {
         : "<p class='raison'>" + t("msgAucunRdvProchain") + "</p>");
   }
 
-  zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode + tuiles + sparkline + top + bas;
+  return tuiles + sparkline + top + bas;
+  }
+
+  const sectionsDash = voletsDash.map((v, i) =>
+    (hybrideDash ? "<h2 style='margin-top:26px; border-bottom:2px solid #e3e6ea; padding-bottom:4px;'>" + t(v === "service" ? "voletService" : "voletCatalogue") + "</h2>" : "") +
+    sectionDashboard(donneesDash[i], v !== "service")
+  ).join("");
+  zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode + sectionsDash;
   brancherDeplierVentes(zone);
 
   Array.prototype.forEach.call(zone.querySelectorAll(".tuile.cliquable"), (el) => {
@@ -3704,17 +3832,23 @@ async function renderSimulateur() {
   const id = marchandActif.id;
   if (!simulateurHistoriques[id]) simulateurHistoriques[id] = [];
   const historique = simulateurHistoriques[id];
-  const aUneTrace = marchandActif.type !== "service";
+  const hybrideSimu = estHybrideAdmin();
+  const aUneTrace = marchandActif.type !== "service" || hybrideSimu;
 
   function dessiner() {
     zone.innerHTML =
       "<h2>" + t("simulateurTitre") + "</h2>" +
       "<p class='raison'>" + t("noteSimulateur") + "</p>" +
+      (hybrideSimu ? "<p class='raison'>" + t("noteSimulateurHybride") + "</p>" : "") +
       "<div id='chatFenetre' class='chat-fenetre'>" +
-        (historique.length ? historique.map((m) =>
+        (historique.length ? historique.map((m, i) =>
           "<div class='bulle " + (m.de === "client" ? "client" : "bot") + "'>" +
             (m.traceAssociee && m.traceAssociee.photo ? "<img src=\"" + esc(m.traceAssociee.photo) + "\" alt='' />" : "") +
             esc(m.texte) +
+            // Menu a deux boutons du marchand hybride : cliquable seulement tant que c'est le dernier message.
+            (m.boutons && i === historique.length - 1
+              ? "<div style='margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;'>" + m.boutons.map((b) => "<button class='principal' data-volet-bouton='" + esc(b.volet) + "'>" + esc(b.title) + "</button>").join("") + "</div>"
+              : "") +
           "</div>"
         ).join("") : "<p class='raison'>" + t("msgEnvoyezPremierMessage") + "</p>") +
       "</div>" +
@@ -3729,8 +3863,12 @@ async function renderSimulateur() {
     fenetre.scrollTop = fenetre.scrollHeight;
 
     const champ = document.getElementById("champMessageSimu");
-    document.getElementById("btnEnvoyerSimu").onclick = envoyer;
+    document.getElementById("btnEnvoyerSimu").onclick = () => envoyer();
     champ.addEventListener("keydown", (e) => { if (e.key === "Enter") envoyer(); });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-volet-bouton]"), (b) => {
+      // Meme jeton que celui produit par un vrai clic sur le bouton WhatsApp (voir hybride.js).
+      b.onclick = () => envoyer(b.dataset.voletBouton === "service" ? "__volet_service__" : "__volet_catalogue__", b.textContent);
+    });
     document.getElementById("btnResetSimu").onclick = async () => {
       try {
         await api("/api/" + id + "/simulateur/reset", { method: "POST" });
@@ -3739,15 +3877,15 @@ async function renderSimulateur() {
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
 
-    async function envoyer() {
-      const texte = champ.value.trim();
+    async function envoyer(texteEnvoye, texteAffiche) {
+      const texte = (typeof texteEnvoye === "string" ? texteEnvoye : champ.value).trim();
       if (!texte) return;
-      historique.push({ de: "client", texte });
+      historique.push({ de: "client", texte: texteAffiche || texte });
       champ.value = "";
       dessiner();
       try {
         const rep = await api("/api/" + id + "/simulateur/message", { method: "POST", body: JSON.stringify({ message: texte }) });
-        historique.push({ de: "bot", texte: rep.reponse, traceAssociee: rep.trace });
+        historique.push({ de: "bot", texte: rep.reponse, traceAssociee: rep.trace, boutons: rep.boutons || null });
         dessiner();
         document.getElementById("champMessageSimu").focus();
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
@@ -4419,9 +4557,44 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionNotifStatut'" + (marchandActif.optionNotificationsStatut ? " checked" : "") + " /> " + t("labelOptionNotifStatut") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionFacturationIzyfacture'" + (marchandActif.optionFacturationIzyfacture ? " checked" : "") + " /> " + t("labelOptionFacturationIzyfacture") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaissePos'" + (marchandActif.optionCaissePos ? " checked" : "") + " /> " + t("labelOptionCaissePos") + "</label>" +
-    "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>";
+    "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
+    blocModuleSecondaireHtml();
+}
+// Second volet d'un marchand hybride (Etape 48) : ce bloc n'existe que dans l'ecran « Mon compte » du
+// SUPER-ADMINISTRATEUR (blocOptionsPayantesHtml n'est appele que dans cette branche) ; le serveur refuse de
+// toute facon la route a tout autre role (403).
+function blocModuleSecondaireHtml() {
+  if (!moi || moi.role !== "superadmin") return "";
+  const autre = marchandActif.type === "service" ? "catalogue" : "service";
+  const actuel = modulesAdmin()[1] || "";
+  return "<h3>" + t("h3ModuleSecondaire") + "</h3>" +
+    "<p class='raison'>" + t("noteModuleSecondaire") + "</p>" +
+    "<label>" + t("labelModuleSecondaire") + "</label>" +
+    "<select id='champModuleSecondaire'>" +
+      "<option value=''" + (actuel === "" ? " selected" : "") + ">" + t("optionModuleAucun") + "</option>" +
+      "<option value='" + autre + "'" + (actuel === autre ? " selected" : "") + ">" + t(autre === "service" ? "optionModuleAjoutService" : "optionModuleAjoutCatalogue") + "</option>" +
+    "</select>" +
+    "<div style='margin-top:10px;'><button id='btnSauverModuleSecondaire' class='principal'>" + t("btnEnregistrerModule") + "</button></div>";
+}
+function brancherBlocModuleSecondaire() {
+  const bouton = document.getElementById("btnSauverModuleSecondaire");
+  if (!bouton) return;
+  bouton.onclick = async () => {
+    const valeur = document.getElementById("champModuleSecondaire").value || null;
+    const actuel = modulesAdmin()[1] || null;
+    if (valeur === actuel) return;
+    if (!valeur && !confirm(t("confirmRetirerModule"))) return;
+    const idMarchand = marchandActif.id;
+    try {
+      await api("/api/marchands/" + idMarchand + "/module-secondaire", { method: "PUT", body: JSON.stringify({ moduleSecondaire: valeur }) });
+      alert(t("alertModuleEnregistre"));
+      await demarrer();
+      if (marchands.some((m) => m.id === idMarchand)) choisirMarchand(idMarchand);
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
 }
 function brancherBlocOptionsPayantes() {
+  brancherBlocModuleSecondaire();
   document.getElementById("btnSauverOptionsPayantes").onclick = async () => {
     try {
       await api("/api/marchands/" + marchandActif.id + "/options-payantes", {

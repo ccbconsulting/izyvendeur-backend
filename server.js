@@ -240,12 +240,37 @@ async function construireEntree(m) {
     await moteurs[second].init();
   }
   const entree = { merchant: m, engine: moteurs[m.type], moteurs };
-  if (modules.length > 1) {
-    entree.routeur = creerRouteur(moteurs, m.type, {
-      journaliser: (tel, de, texte) => { db.logConversationMessage(m.id, tel, de, texte).catch(() => {}); }
-    });
-  }
+  if (modules.length > 1) entree.routeur = creerRouteurPourMarchand(m, moteurs);
   return entree;
+}
+
+function creerRouteurPourMarchand(m, moteurs) {
+  return creerRouteur(moteurs, m.type, {
+    // Le Simulateur de /admin ne laisse jamais de trace dans le vrai journal des conversations.
+    journaliser: (tel, de, texte) => { if (tel !== "SIMULATEUR") db.logConversationMessage(m.id, tel, de, texte).catch(() => {}); }
+  });
+}
+
+// Etape 48 : accorde (ou retire) le second volet d'un marchand DEJA charge, a chaud, sans redemarrage.
+// L'objet `entry` est modifie EN PLACE (les routes et boucles qui le tiennent voient le changement).
+// Retirer le second volet le MASQUE seulement : son etat reste enregistre sous sa cle (`<id>::<volet>`) et
+// n'est jamais supprime ; l'accorder a nouveau le retrouve tel quel.
+async function appliquerModuleSecondaire(entry, module) {
+  const m = entry.merchant;
+  const cible = (module === "catalogue" || module === "service") && module !== m.type ? module : null;
+  const actuel = modulesDuMarchand(m)[1] || null;
+  if (cible === actuel) return;
+  if (cible) {
+    m.moduleSecondaire = cible; // d'abord : cleEtatSecondaire(m) en depend
+    const moteur = fabriquerMoteur(cible, m.id, { cleEtat: cleEtatSecondaire(m), sansDonneesDemo: true });
+    await moteur.init();
+    entry.moteurs[cible] = moteur;
+    entry.routeur = creerRouteurPourMarchand(m, entry.moteurs);
+  } else {
+    delete entry.moteurs[actuel];
+    delete entry.routeur;
+    m.moduleSecondaire = null;
+  }
 }
 
 function estHybride(entry) { return !!(entry && entry.routeur); }
@@ -712,7 +737,7 @@ app.get("/admin", (req, res) => {
 
 // Actions reservees au super-administrateur : jamais montrees au marchand (il ne doit pas voir ces options).
 const ACTIONS_SUPERADMIN_SEULEMENT = new Set([
-  "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees"
+  "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees", "module_secondaire_modifie"
 ]);
 
 const LIBELLES_ACTIONS_AUDIT = {
@@ -723,6 +748,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "DELETE /api/:id/employes/:employeId": "employe_supprime",
   "PUT /api/:id/actif": "marchand_actif_modifie",
   "PUT /api/marchands/:id/options-payantes": "options_payantes_modifiees",
+  "PUT /api/marchands/:id/module-secondaire": "module_secondaire_modifie",
   "PUT /api/:id/izyfacture/parametres": "izyfacture_parametres_modifies",
   "POST /api/:id/izyfacture/tester": "izyfacture_testee",
   "POST /api/:id/commandes/:orderId/izyfacture/facturer": "facture_creee",
@@ -786,6 +812,7 @@ function detailAuditRequete(code, req) {
     case "identifiants_modifies": return { motDePasse: !!(b.motDePasse || b.generer || b.genererMotDePasse), identifiant: !!b.adminUser };
     case "marchand_actif_modifie": return { actif: b.actif };
     case "options_payantes_modifiees": return { options: b };
+    case "module_secondaire_modifie": return { moduleSecondaire: b.moduleSecondaire || null };
     case "reponse_manuelle_envoyee": return { telephone: p.telephone };
     case "client_attente_contacte": return { entree: p.entreeId };
     case "inventaire_instantane_supprime": return { instantane: p.snapshotId };
@@ -1089,9 +1116,15 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
 // ensuite depuis l'onglet "Mon compte").
 app.post("/api/marchands", protegerAcces, async (req, res) => {
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
-  const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification } = req.body || {};
+  const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification, moduleSecondaire } = req.body || {};
   if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
   if (type !== "catalogue" && type !== "service") return res.status(400).json({ erreur: "type doit être 'catalogue' ou 'service'." });
+  // Marchand HYBRIDE (Etape 48) : second volet accorde des la creation — reserve au super-administrateur
+  // (cette route l'est deja en entier), jamais deductible d'une autre source.
+  if (moduleSecondaire !== undefined && moduleSecondaire !== null && moduleSecondaire !== "") {
+    if (moduleSecondaire !== "catalogue" && moduleSecondaire !== "service") return res.status(400).json({ erreur: "moduleSecondaire doit être 'catalogue' ou 'service'." });
+    if (moduleSecondaire === type) return res.status(400).json({ erreur: "Le second volet doit être différent du type principal." });
+  }
   if (engines[id]) return res.status(409).json({ erreur: "Un marchand avec cet id existe déjà." });
   if (!adminUser || !adminPassword) return res.status(400).json({ erreur: "adminUser et adminPassword sont requis pour créer les identifiants de connexion du marchand." });
   const merchant = {
@@ -1100,6 +1133,7 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
     adminUser,
     adminPassword: bcrypt.hashSync(String(adminPassword), 10),
     phoneNotification: phoneNotification || null,
+    moduleSecondaire: moduleSecondaire === "catalogue" || moduleSecondaire === "service" ? moduleSecondaire : null,
     // Marchand tout juste cree : n'a jamais connu l'ancien regroupement de roles employe (commandes dans
     // conversations, tableaudebord/rapports dans parametres - voir migrerRolesEmployes dans db.js), donc
     // rien a migrer pour lui. Sans ce marquage explicite, un futur redemarrage du serveur risquerait de
@@ -1110,7 +1144,7 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
   engines[id] = await construireEntree(merchant);
   if (merchant.phoneNumberId) phoneNumberIndex[merchant.phoneNumberId] = id;
   console.log("Nouveau marchand ajoute via l'API : " + id + " (" + type + ")");
-  res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type, adminUser: merchant.adminUser });
+  res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type, adminUser: merchant.adminUser, moduleSecondaire: merchant.moduleSecondaire });
 });
 
 // Qui suis-je ? Utilise par l'interface d'administration pour savoir si l'utilisateur connecte est le
@@ -1347,6 +1381,35 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionCaissePos = maj.optionCaissePos;
   console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}.`);
   res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos });
+});
+
+// -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
+// Reserve au super-administrateur, exactement comme les options payantes : un marchand (ou un employe) ne
+// peut JAMAIS se l'accorder, et cette action est masquee de son journal (voir ACTIONS_SUPERADMIN_SEULEMENT).
+// Retirer le module le MASQUE seulement (clients, menu, onglets, rappels) : ses donnees restent intactes
+// et reapparaissent telles quelles si le module est accorde a nouveau. --
+app.put("/api/marchands/:id/module-secondaire", protegerAcces, async (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = engines[req.params.id];
+  if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
+  const brut = (req.body || {}).moduleSecondaire;
+  const demande = brut === undefined || brut === null || brut === "" || brut === "aucun" ? null : brut;
+  if (demande !== null && demande !== "catalogue" && demande !== "service") return res.status(400).json({ erreur: "moduleSecondaire doit être 'catalogue', 'service' ou null." });
+  if (demande !== null && demande === entry.merchant.type) return res.status(400).json({ erreur: "Le second volet doit être différent du type principal (" + entry.merchant.type + ")." });
+  const avant = modulesDuMarchand(entry.merchant)[1] || null;
+  try {
+    if (demande !== avant) {
+      const maj = await db.updateMerchantFields(req.params.id, { moduleSecondaire: demande });
+      if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+      await appliquerModuleSecondaire(entry, demande);
+    }
+  } catch (erreur) {
+    console.error(`[${req.params.id}] Echec du changement de module secondaire :`, erreur);
+    return res.status(500).json({ erreur: "Impossible de modifier le second volet." });
+  }
+  res.locals.audit = { detail: { avant, apres: demande } };
+  console.log(`[${req.params.id}] Module secondaire modifié par ${req.auth.adminUser} : ${avant || "aucun"} -> ${demande || "aucun"}.`);
+  res.json({ id: req.params.id, moduleSecondaire: demande, modules: modulesDuMarchand(entry.merchant) });
 });
 
 // ---------------- Pont IzyFacture (facturation automatique des commandes confirmees) ----------------
@@ -2219,15 +2282,41 @@ app.get("/api/:id/tableau-de-bord", protegerAcces, (req, res) => {
 // operationnel de ce type de marchand ("catalogue" ou "rendezvous") OU le role "conversations" (tester le
 // parcours bot fait aussi partie du service client). --
 
+const PHONE_SIMULATEUR_HYBRIDE = "SIMULATEUR"; // meme numero reserve que PHONE_SIMULATEUR des deux moteurs
+
+// Un employe ne teste le parcours COMPLET d'un marchand hybride (qui montre les deux volets) que s'il a le
+// role « conversations » ou le role operationnel de CHACUN des volets ; sinon il utilise `?volet=`.
+function simulateurHybrideAutorise(req, entry) {
+  if (req.auth.role !== "employe") return true;
+  const roles = req.auth.roles || [];
+  if (roles.indexOf("conversations") !== -1) return true;
+  return Object.keys(entry.moteurs).every((t) => roles.indexOf(t === "service" ? "rendezvous" : "catalogue") !== -1);
+}
+
+function simulerHybride(entry, message) {
+  const d = entry.routeur.traiter(PHONE_SIMULATEUR_HYBRIDE, message);
+  if (d.type === "menu") return { reponse: d.texte, trace: null, volet: null, boutons: d.boutons.map((b) => ({ volet: b.volet, title: b.title })) };
+  let r;
+  if (d.type === "reprise") r = { reponse: d.reponse, trace: null };
+  else r = entry.moteurs[d.volet].handleMessageSimulateur(d.texte, d.sansJournalClient ? { sansJournalClient: true } : undefined);
+  if (r.reponse && d.suffixe) r.reponse += d.suffixe;
+  return Object.assign({}, r, { volet: d.volet });
+}
+
 app.post("/api/:id/simulateur/message", protegerAcces, (req, res) => {
   const merchantExistant = engines[req.params.id];
   // Marchand hybride : le role operationnel de CHACUN de ses volets ouvre le Simulateur (volet choisi par `?volet=`).
   const permissionsOperationnelles = merchantExistant
     ? Object.keys(merchantExistant.moteurs).map((t) => (t === "service" ? "rendezvous" : "catalogue"))
     : ["catalogue"];
+  const modeRouteur = !!(merchantExistant && estHybride(merchantExistant) && !(req.query && req.query.volet));
   const entry = getMarchandAutorise(req, res, permissionsOperationnelles.concat("conversations")); if (!entry) return;
+  if (modeRouteur && !simulateurHybrideAutorise(req, merchantExistant)) return res.status(403).json({ erreur: "Vous n'avez pas accès à cette fonctionnalité." });
   const { message } = req.body || {};
   if (!message || !String(message).trim()) return res.status(400).json({ erreur: "message requis." });
+  // Marchand hybride SANS `?volet=` : le Simulateur passe par le MEME routeur que le vrai WhatsApp (porte de
+  // langue, menu a deux boutons, paniers separes). Avec `?volet=`, il teste directement ce volet.
+  if (modeRouteur) return res.json(simulerHybride(merchantExistant, String(message)));
   res.json(entry.engine.handleMessageSimulateur(String(message)));
 });
 
@@ -2237,7 +2326,14 @@ app.post("/api/:id/simulateur/reset", protegerAcces, (req, res) => {
   const permissionsOperationnelles = merchantExistant
     ? Object.keys(merchantExistant.moteurs).map((t) => (t === "service" ? "rendezvous" : "catalogue"))
     : ["catalogue"];
+  const modeRouteur = !!(merchantExistant && estHybride(merchantExistant) && !(req.query && req.query.volet));
   const entry = getMarchandAutorise(req, res, permissionsOperationnelles.concat("conversations")); if (!entry) return;
+  if (modeRouteur) {
+    if (!simulateurHybrideAutorise(req, merchantExistant)) return res.status(403).json({ erreur: "Vous n'avez pas accès à cette fonctionnalité." });
+    Object.keys(merchantExistant.moteurs).forEach((t) => merchantExistant.moteurs[t].resetSimulateur());
+    merchantExistant.routeur.oublier(PHONE_SIMULATEUR_HYBRIDE);
+    return res.json({ ok: true });
+  }
   entry.engine.resetSimulateur();
   res.json({ ok: true });
 });
