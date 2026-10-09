@@ -182,6 +182,27 @@ const TEMPLATES_ALERTE_MARCHAND = {
   }
 };
 
+// Template WhatsApp envoye AU CLIENT (et non au marchand) : le rappel de rendez-vous (Etape 44). Un rappel
+// part la veille, bien apres la derniere reponse du client : WhatsApp refuse alors le texte libre (fenetre de
+// 24 h depassee, erreur 131047) et seul un template approuve passe. Marche a suivre cote Meta (WhatsApp
+// Manager > Modeles de messages, categorie "Utilitaire") : creer le modele nomme EXACTEMENT
+// "izyvendeur_rappel_rdv", en francais (code "fr") ET en anglais (code "en") sous ce MEME nom, avec 4
+// variables nommees dans cet ordre : {{client_nom}}, {{service}}, {{creneau}}, {{entreprise}}. Texte
+// suggere (fr) : "Bonjour {{client_nom}}, petit rappel de votre rendez-vous {{service}} le {{creneau}} chez
+// {{entreprise}}. Pour reporter ou annuler, repondez-nous ici." ; (en) : "Hello {{client_nom}}, a friendly
+// reminder of your {{service}} appointment on {{creneau}} at {{entreprise}}. To reschedule or cancel, just
+// reply here." Tant qu'il n'est pas approuve, le rappel part en texte libre quand c'est possible (client qui
+// a ecrit dans les 24 h) et l'echec est signale dans /admin > Rendez-vous sinon.
+const TEMPLATES_CLIENT = {
+  rappel_rdv: {
+    nom: "izyvendeur_rappel_rdv",
+    langueFr: "fr",
+    langueEn: "en",
+    // params: [client, service(+praticien), creneau, entreprise]
+    parametresNoms: ["client_nom", "service", "creneau", "entreprise"]
+  }
+};
+
 // ---------------- Registre des marchands + moteurs de conversation ----------------
 // engines[merchantId] = { merchant, engine }  -- engine expose toujours handleMessage(fromPhone, texte),
 // quel que soit son type (catalogue ou service), ce qui garde le webhook simple.
@@ -205,6 +226,29 @@ function creerOptionsEngine(merchantKey) {
       const entry = engines[merchantKey];
       if (!entry) return;
       await envoyerImageWhatsApp(destinataire, urlImage, legende, entry.merchant.phoneNumberId);
+    },
+    // Rappel de rendez-vous AU CLIENT (Etape 44) : texte libre d'abord (gratuit, passe si le client a ecrit
+    // dans les 24 h), puis repli sur le template approuve TEMPLATES_CLIENT.rappel_rdv. Renvoie
+    // { ok, canal, erreur } pour que le moteur sache s'il doit reessayer (voir envoyerRappelsDuJour).
+    envoyerRappel: async (destinataire, texteLibre, info) => {
+      const entry = engines[merchantKey];
+      if (!entry) return { ok: false, erreur: "Marchand introuvable" };
+      const phoneNumberId = entry.merchant.phoneNumberId;
+      if (!phoneNumberId || !WHATSAPP_TOKEN) return { ok: false, erreur: "WhatsApp non configuré (token ou numéro manquant)" };
+      try {
+        if (await envoyerMessageWhatsApp(destinataire, texteLibre, phoneNumberId)) return { ok: true, canal: "texte" };
+      } catch (erreur) {
+        console.error(`[${merchantKey}] Erreur réseau lors du rappel en texte libre :`, erreur);
+      }
+      const config = TEMPLATES_CLIENT.rappel_rdv;
+      const langue = info && info.langue === "en" ? config.langueEn : config.langueFr;
+      const parametres = ((info && info.parametres) || []).concat([entry.merchant.nom || ""]).map(nettoyerPourTemplate);
+      const envoiTemplateReussi = await envoyerTemplateWhatsApp(destinataire, phoneNumberId, config.nom, langue, parametres, config.parametresNoms);
+      if (envoiTemplateReussi) return { ok: true, canal: "template" };
+      return {
+        ok: false,
+        erreur: "Texte libre refusé par WhatsApp (probablement hors de la fenêtre de 24 h) et template \"" + config.nom + "\" (" + langue + ") non envoyé — créé et approuvé chez Meta ?"
+      };
     },
     // `typeAlerte` choisit le template (voir TEMPLATES_ALERTE_MARCHAND ci-dessus) ; `params` est la liste
     // de valeurs BRUTES (pas encore mises en forme) a inserer dans ses variables, dans l'ordre. C'est ici,
@@ -1764,6 +1808,9 @@ app.get("/api/:id/parametres", protegerAcces, (req, res) => {
 app.put("/api/:id/parametres", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
   let corps = req.body || {};
+  if (corps.fuseau !== undefined && !sh.fuseauValide(corps.fuseau)) {
+    return res.status(400).json({ erreur: "Fuseau horaire invalide (exemple : Africa/Douala)." });
+  }
   // Meme principe de filtrage cote serveur que stockIllimite (PUT /api/:id/catalogue) et
   // numero-whatsapp-public ci-dessous : un marchand ne peut pas regler ses notifications de statut par
   // appel API direct tant que le super-administrateur n'a pas debloque l'option pour lui, meme si
@@ -2710,12 +2757,11 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   }
 
   if (etat.stage === "awaiting_slot_choice" && etat.proposedSlots && etat.proposedSlots.length) {
+    // Libelles fournis par le moteur (langue de la session + fuseau du marchand, Etape 44/45) - jamais
+    // formates ici avec le fuseau du serveur.
     const boutons = etat.proposedSlots.slice(0, 3).map((slot, i) => ({
       id: PREFIXE_CRENEAU + i,
-      title: tronquerTexte(
-        new Date(slot).toLocaleString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
-        20
-      )
+      title: tronquerTexte((etat.proposedSlotsLabels && etat.proposedSlotsLabels[i]) || String(i + 1), 20)
     }));
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, boutons);
   }
@@ -2793,10 +2839,13 @@ async function envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texteCorps, b
 }
 
 // --- Fonction utilitaire : envoyer un message texte via l'API WhatsApp Cloud ---
+// Renvoie true si WhatsApp a accepte le message, false sinon (token/numero manquant, refus de Meta - par
+// exemple texte libre hors de la fenetre de 24 h). Les appelants historiques l'ignorent ; les rappels de
+// rendez-vous (Etape 44, voir envoyerRappel dans creerOptionsEngine) s'en servent pour reessayer.
 async function envoyerMessageWhatsApp(destinataire, texte, phoneNumberId) {
   if (!WHATSAPP_TOKEN || !phoneNumberId) {
     console.error("WHATSAPP_TOKEN ou phone_number_id manquant — impossible d'envoyer la reponse.");
-    return;
+    return false;
   }
 
   const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`;
@@ -2818,9 +2867,10 @@ async function envoyerMessageWhatsApp(destinataire, texte, phoneNumberId) {
   if (!reponse.ok) {
     const detail = await reponse.text();
     console.error(`Echec de l'envoi WhatsApp (${reponse.status}) :`, detail);
-  } else {
-    console.log("Reponse envoyee avec succes.");
+    return false;
   }
+  console.log("Reponse envoyee avec succes.");
+  return true;
 }
 
 // --- Fonction utilitaire : envoyer une image via l'API WhatsApp Cloud, par lien (URL publique) ---

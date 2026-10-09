@@ -1413,11 +1413,80 @@ décodeur indépendant dans l'aperçu, le PNG téléchargé et l'affiche PDF, y 
 dense) ; case décochée (aucun pixel du logo), marchand sans logo (pas de case), et surface occupée par le logo
 mesurée. Régression complète rejouée sans casse.
 
+## Étape 44 — Rendez-vous : bonne heure (fuseau de Douala) et rappels fiables (nouveau)
+
+Demandé le 5 octobre 2026 après l'audit du moteur de rendez-vous. Deux risques réels étaient confirmés dans le code.
+
+**1. Fuseau horaire.** Quand un client écrivait « demain 10h », le serveur convertissait avec **sa propre horloge**
+(Render tourne en UTC) : le créneau était enregistré à 10h UTC, soit **11h à Douala**, alors que le client avait lu
+« 10h ». Désormais toutes les heures de rendez-vous (créneaux proposés, horaires d'ouverture, pauses, rappels,
+tableau de bord) sont calculées dans le **fuseau du marchand**, par défaut **Africa/Douala (UTC+1)**, quel que
+soit le fuseau du serveur. Réglage dans /admin > Paramètres (service) > « Fuseau horaire » (liste : Douala,
+Libreville, Brazzaville, Kinshasa, Lagos, Abidjan, Dakar, Paris, UTC). Une valeur inconnue est refusée par l'API.
+
+**Rendez-vous déjà enregistrés** : au premier démarrage avec cette version, chaque marchand « service » subit une
+**migration unique** : les anciens rendez-vous sont relus avec l'horloge qui les avait fabriqués et reconvertis
+dans le fuseau du marchand, de sorte que l'heure que le client a lue (« 10h ») est conservée. La migration est
+marquée (`fuseauMigre`) et ne se rejoue jamais ; si le serveur tournait déjà à l'heure de Douala, rien ne change.
+Une ligne `Fuseau Africa/Douala : N rendez-vous re-interprété(s)` apparaît dans les logs quand elle agit.
+
+**2. Rappels de la veille.** Avant, le rappel était marqué « envoyé » **avant** l'envoi, un refus de WhatsApp (texte
+libre interdit hors de la fenêtre de 24 h avec le client — le cas normal pour un rappel la veille) était définitif
+et invisible. Maintenant :
+
+- le rappel ne passe à « envoyé » qu'**après acceptation par WhatsApp** ;
+- **texte libre d'abord** (gratuit, passe si le client a écrit dans les 24 h), puis **repli sur le modèle** (template)
+  `izyvendeur_rappel_rdv`, dans la langue du client ;
+- en cas d'échec : **4 essais au maximum**, espacés de 30 min, 2 h puis 4 h, et plus aucun essai dans les 2 h qui
+  précèdent le rendez-vous ; un arrêt du serveur n'en fait plus rater : le premier essai a lieu dès que le rendez-vous passe sous 24 h
+  (un rendez-vous pris moins de 20 h à l'avance ne reçoit pas de rappel, comme avant) ;
+- deux passages simultanés ne peuvent plus envoyer un rappel en double ;
+- **visible dans /admin > Rendez-vous** : nouvelle colonne « Rappel » (envoyé / envoyé par modèle / nouvel essai prévu /
+  NON envoyé + la raison renvoyée par WhatsApp) et un bandeau rouge quand des rappels ont échoué.
+
+**À FAIRE DE VOTRE CÔTÉ chez Meta (WhatsApp Manager > Modèles de messages, catégorie « Utilitaire »)** : créer le
+modèle nommé **exactement** `izyvendeur_rappel_rdv`, en **français (fr) ET en anglais (en)** sous ce même nom, avec
+4 variables nommées dans cet ordre : `{{client_nom}}`, `{{service}}`, `{{creneau}}`, `{{entreprise}}`.
+Texte suggéré (fr) : « Bonjour {{client_nom}}, petit rappel de votre rendez-vous {{service}} le {{creneau}} chez
+{{entreprise}}. Pour reporter ou annuler, répondez-nous ici. » — (en) : « Hello {{client_nom}}, a friendly reminder of
+your {{service}} appointment on {{creneau}} at {{entreprise}}. To reschedule or cancel, just reply here. »
+Tant qu'il n'est pas approuvé, les rappels partent quand même en texte libre pour les clients qui ont écrit dans les
+dernières 24 h, et les autres apparaissent en « NON envoyé » dans /admin.
+
+Limite connue : le fuseau n'est appliqué qu'au volet **service**. Les journées du Tableau de bord du volet
+catalogue utilisent toujours l'heure du serveur (écart d'une heure possible autour de minuit) — à traiter à part si besoin.
+
+## Étape 45 — Volet service (rendez-vous) bilingue FR/EN (nouveau)
+
+Le moteur de rendez-vous parle maintenant **français et anglais**, comme le moteur catalogue :
+
+- **Porte de langue** au premier message (liste Français / English), et le texte d'origine du client (« coupe demain
+  10h ») est retraité juste après son choix au lieu d'être perdu. Changement possible à tout moment (« in English
+  please », « en français »). La langue est conservée après une réservation, une annulation ou un report.
+- **Toutes les réponses** sont traduites : choix du service, jour/heure, créneaux proposés, nom, récapitulatif,
+  confirmation, refus, annulation, report, limite anti-inondation, demande d'un humain.
+- **Comprend l'anglais** : « tomorrow », « day after tomorrow », « next Friday », « 10am », « 2:30 pm », « noon »,
+  « the second one », « something else », « cancel / reschedule my appointment ». Les services sont reconnus aussi par leur
+  nom anglais courant (haircut, manicure, facial, braids, oil change... : table de synonymes dans le code) ; les noms
+  affichés restent ceux que vous avez saisis.
+- **Dates en anglais** : « Monday 12 Oct at 2:00 PM » (français inchangé : « Lundi 12/10 à 14h »).
+- **Menus WhatsApp cliquables** : titres des listes/boutons et libellés des créneaux dans la langue du client.
+- **Rappel de la veille** envoyé dans la langue du client (modèle `izyvendeur_rappel_rdv` en `fr` ou `en`).
+- **Message de confirmation** : nouveau champ « English » dans /admin > Paramètres ; s'il est vide, un message par
+  défaut en anglais est utilisé (l'ancien champ devient le message français).
+- Vos **alertes marchand** restent en français (c'est votre langue).
+
+Les marchands « service » existants ont donc désormais la porte de langue au premier message de chaque client.
+
+Testé le 9 octobre 2026 : `test_etape44_45_moteur_service.js` (61 vérifications, rejoué sous **quatre fuseaux serveur**
+UTC, Douala, Tokyo, Los Angeles : le créneau est toujours à la bonne heure de Douala ; migration, idempotence ; rappels :
+échec, réessais espacés, abandon, marge de 2 h, doublons) et `test_etape44_45_service_http_playwright.js` (serveur réel,
+WhatsApp simulé : texte libre refusé puis modèle fr/en, tout refusé, webhook anglais avec liste et boutons de créneaux, /admin
+au navigateur : colonne Rappel, bandeau, fuseau, message English, fuseau invalide refusé).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
-- **Le moteur rendez-vous (conversationService.js)** — la prise de RDV par le client sur WhatsApp reste
-  entièrement en français pour l'instant (l'interface /admin pour gérer les rendez-vous/services, elle,
-  est déjà bilingue depuis l'étape 2 ci-dessus). Ce sera la prochaine étape si vous le souhaitez.
+- ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
 - **Les noms d'articles/catégories/services** — un article s'appelle comme vous l'avez écrit
   (ex: "Robe wax imprimée"), il n'y a pas de traduction automatique du nom lui-même.
 - Les messages que le bot vous envoie à VOUS, marchand, pour vous notifier d'une nouvelle commande
@@ -1429,6 +1498,8 @@ mesurée. Régression complète rejouée sans casse.
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 45 : `conversationService.js` (porte de langue, toutes les réponses FR/EN, dates/heures/ordinaux anglais, synonymes de services), `shared.js` (mots-clés anglais : autre chose, annuler/reporter un rendez-vous), `server.js` (boutons de créneaux fournis par le moteur dans la langue du client) et `public/admin.html` (message de confirmation English).
+- Étape 44 : `shared.js` (fonctions de fuseau horaire), `conversationService.js` (heures dans le fuseau du marchand, migration unique des rendez-vous, rappels fiables avec réessais), `server.js` (`envoyerMessageWhatsApp` renvoie vrai/faux, rappel texte libre puis modèle `izyvendeur_rappel_rdv`, validation du fuseau) et `public/admin.html` (fuseau, colonne et bandeau « Rappel »).
 - Étape 43 : `public/admin.html` (case « logo au centre » du bloc QR : aperçu, PNG et affiche PDF, niveau de correction H avec logo) et `server.js` (relais `GET /api/marchands/:id/logo-image`, nécessaire car le logo est sur R2 sans CORS).
 - Étape 42 : `public/admin.html` (bloc « QR code WhatsApp » dans Mon compte + bibliothèque QR embarquée) et `server.js` (le numéro WhatsApp public n'est plus réservé à l'option « Lien de commande »).
 - Étape 41 : `conversation.js` (ventes regroupées par article avec détail des variantes dans `getTableauDeBord` et `getRapportCommandes`) et `public/admin.html` (lignes dépliables sous l'article, colonne Montant, PDF).

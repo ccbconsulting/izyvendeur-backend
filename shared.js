@@ -26,7 +26,7 @@ function parseNegative(text) {
 // sans en nommer une nouvelle ("je veux autre chose", "un autre service"...).
 function parseWantsSomethingElse(text) {
   const t = text.toLowerCase();
-  return /\b(autre\s+chose|un\s+autre\s+article|un\s+autre\s+produit|un\s+autre\s+service|autre\s+article|autre\s+produit|autre\s+service|pas\s+celui[\s-]l[àa]|pas\s+ça|pas\s+ca|change(?:r)?\s+d['’]article|change(?:r)?\s+d['’]avis|oublie[rz]?\s+(?:ça|ca|cela)|annule[rz]?\s+(?:ça|ca|cela)?|laisse\s+tomber|recommen[cç]ons|recommencer)\b/.test(t);
+  return /\b(autre\s+chose|un\s+autre\s+article|un\s+autre\s+produit|un\s+autre\s+service|autre\s+article|autre\s+produit|autre\s+service|pas\s+celui[\s-]l[àa]|pas\s+ça|pas\s+ca|change(?:r)?\s+d['’]article|change(?:r)?\s+d['’]avis|oublie[rz]?\s+(?:ça|ca|cela)|annule[rz]?\s+(?:ça|ca|cela)?|laisse\s+tomber|recommen[cç]ons|recommencer|something\s+else|another\s+(?:service|item|product|one)|other\s+(?:service|item|product)|a\s+different\s+(?:service|item|product)|not\s+that\s+one|never\s*mind|forget\s+it|start\s+over|change\s+my\s+mind)\b/.test(t);
 }
 
 function echapperHtml(valeur) {
@@ -146,10 +146,10 @@ function demandeVoirPanier(texte) {
 function detecterIntentionRdv(texte) {
   const t = normaliserPourRecherche(texte);
   if (!t.trim()) return null;
-  const mentionneRdv = /\b(rendez[\s-]?vous|rdv|reservation)\b/.test(t);
+  const mentionneRdv = /\b(rendez[\s-]?vous|rdv|reservation|appointment|booking)\b/.test(t);
   if (!mentionneRdv) return null;
-  if (/\b(annuler|annulation|supprime[rz]?|decommande[rz]?)\b/.test(t)) return "annuler";
-  if (/\b(reporter|report|reprogramme[rz]?|deplace[rz]?|changer|modifie[rz]?|decale[rz]?)\b/.test(t)) return "reporter";
+  if (/\b(annuler|annulation|supprime[rz]?|decommande[rz]?|cancel|cancell?ation|cancelled|delete)\b/.test(t)) return "annuler";
+  if (/\b(reporter|report|reprogramme[rz]?|deplace[rz]?|changer|modifie[rz]?|decale[rz]?|reschedule|postpone|move|change|shift|rebook)\b/.test(t)) return "reporter";
   return null;
 }
 
@@ -331,6 +331,61 @@ function listerConversationsEnAttente(conversationsHumain) {
     .sort((a, b) => new Date(a.depuisISO) - new Date(b.depuisISO));
 }
 
+// ---------------- Fuseau horaire (volet service) ----------------
+// Toutes les heures saisies/affichees par le moteur de rendez-vous (conversationService.js) sont des heures
+// MURALES dans le fuseau du marchand (par defaut Africa/Douala, UTC+1 sans heure d'ete), PAS dans celui du
+// serveur (Render tourne en UTC : "10h" tape par un client doit rester 10h a Douala, donc 09:00 UTC). Les
+// instants stockes (dateISO) restent des instants absolus ; seules ces fonctions les convertissent, sans
+// jamais utiliser getHours()/setHours()/getDay() (qui dependent du fuseau du serveur).
+const FUSEAU_PAR_DEFAUT = "Africa/Douala";
+
+function fuseauValide(tz) {
+  if (typeof tz !== "string" || !tz.length) return false;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch (e) { return false; }
+}
+
+const _formatteursFuseau = {};
+function partiesFuseau(date, tz) {
+  const f = _formatteursFuseau[tz] || (_formatteursFuseau[tz] = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric"
+  }));
+  const o = {};
+  f.formatToParts(date).forEach((p) => { if (p.type !== "literal") o[p.type] = parseInt(p.value, 10); });
+  const heure = o.hour === 24 ? 0 : o.hour;
+  return {
+    annee: o.year, mois: o.month, jour: o.day, heure, minute: o.minute,
+    jourSemaine: new Date(Date.UTC(o.year, o.month - 1, o.day)).getUTCDay() // 0 = dimanche
+  };
+}
+
+function _decalageFuseauMs(ts, tz) {
+  const tsMin = Math.floor(ts / 60000) * 60000;
+  const p = partiesFuseau(new Date(tsMin), tz);
+  return Date.UTC(p.annee, p.mois - 1, p.jour, p.heure, p.minute) - tsMin;
+}
+
+// Instant correspondant a "annee-mois-jour heure:minute" lu sur une horloge murale du fuseau `tz`
+// (mois 1-12). Les debordements (jour 32, mois 13...) sont normalises comme Date.UTC le fait.
+function dateDepuisPartiesFuseau(annee, mois, jour, heure, minute, tz) {
+  const naif = Date.UTC(annee, mois - 1, jour, heure || 0, minute || 0, 0, 0);
+  const off1 = _decalageFuseauMs(naif, tz);
+  let r = naif - off1;
+  const off2 = _decalageFuseauMs(r, tz);
+  if (off2 !== off1) r = naif - off2;
+  return new Date(r);
+}
+
+function debutJourFuseau(date, tz) {
+  const p = partiesFuseau(date, tz);
+  return dateDepuisPartiesFuseau(p.annee, p.mois, p.jour, 0, 0, tz);
+}
+
+function ajouterJoursFuseau(date, n, tz) {
+  const p = partiesFuseau(date, tz);
+  const u = new Date(Date.UTC(p.annee, p.mois - 1, p.jour + n));
+  return dateDepuisPartiesFuseau(u.getUTCFullYear(), u.getUTCMonth() + 1, u.getUTCDate(), p.heure, p.minute, tz);
+}
+
 module.exports = {
   formatFcfa,
   piocheParmi,
@@ -362,5 +417,11 @@ module.exports = {
   ajouterMessageHistorique,
   demarrerPauseHumain,
   repondreHumain,
-  listerConversationsEnAttente
+  listerConversationsEnAttente,
+  FUSEAU_PAR_DEFAUT,
+  fuseauValide,
+  partiesFuseau,
+  dateDepuisPartiesFuseau,
+  debutJourFuseau,
+  ajouterJoursFuseau
 };

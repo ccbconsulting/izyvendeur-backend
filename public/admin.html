@@ -32,6 +32,9 @@
   button.danger { background: #fdecec; color: #b3261e; border: 1px solid #f3c8c6; border-radius: 6px; padding: 4px 9px; }
   .alerte-stock { border-color: #e3a008 !important; background: #fff8e6; }
   .raison { font-size: 0.85em; color: #6b7685; margin-top: 4px; }
+  .rappel-ok { color: #1e7e4a; }
+  .rappel-echec { color: #c0392b; font-weight: 600; }
+  .rappel-attente { color: #b9770e; }
   .chargement, .erreur { padding: 20px; color: #6b7685; }
   .erreur { color: #b3261e; }
   label { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 0.92em; }
@@ -495,7 +498,16 @@ const I18N = {
     btnAjouterPraticien: "+ Ajouter un praticien",
     placeholderNomPraticien: "Nom du praticien",
     msgAucunPraticien: "Aucun praticien configuré — une seule ressource reçoit les rendez-vous à la fois.",
-    labelMsgConfirmRdv: "Message de confirmation automatique (envoyé au client quand il confirme son rendez-vous)",
+    labelMsgConfirmRdv: "Message de confirmation automatique — français (envoyé au client quand il confirme son rendez-vous)",
+    labelMsgConfirmRdvEn: "Message de confirmation automatique — English (facultatif : utilisé uniquement si le client a choisi English dans la conversation ; laissez vide pour utiliser une version par défaut)",
+    labelFuseau: "Fuseau horaire",
+    noteFuseau: "Toutes les heures de rendez-vous (créneaux proposés aux clients, rappels, horaires d'ouverture) sont comprises dans ce fuseau. Cameroun, Gabon, Congo : Africa/Douala (UTC+1). À régler une seule fois.",
+    theadRappel: "Rappel",
+    rappelEnvoye: "Rappel envoyé",
+    rappelEnvoyeTemplate: "Rappel envoyé (modèle WhatsApp)",
+    rappelEchec: "Rappel NON envoyé",
+    rappelEnCours: "Nouvel essai prévu",
+    rappelAlerteEchecs: "{n} rendez-vous n'ont pas reçu leur rappel WhatsApp. Contactez ces clients vous-même, et vérifiez que le modèle de message \"izyvendeur_rappel_rdv\" est créé et approuvé dans WhatsApp Manager.",
 
     conversationsTitre: "Conversations",
     msgAucunClientAttend: "Aucun client n'attend actuellement un humain. Dès qu'un client le demande sur WhatsApp, il apparaît ici (et vous êtes averti par WhatsApp si un numéro de notification est configuré dans \"Mon compte\").",
@@ -1129,7 +1141,16 @@ const I18N = {
     btnAjouterPraticien: "+ Add a practitioner",
     placeholderNomPraticien: "Practitioner's name",
     msgAucunPraticien: "No practitioners configured — a single resource handles appointments at a time.",
-    labelMsgConfirmRdv: "Automatic confirmation message (sent to the customer when they confirm their appointment)",
+    labelMsgConfirmRdv: "Automatic confirmation message — French (sent to the customer when they confirm their appointment)",
+    labelMsgConfirmRdvEn: "Automatic confirmation message — English (optional: used only if the customer chose English in the conversation; leave blank to use a default version)",
+    labelFuseau: "Time zone",
+    noteFuseau: "All appointment times (slots offered to customers, reminders, opening hours) are understood in this time zone. Cameroon, Gabon, Congo: Africa/Douala (UTC+1). Set it once.",
+    theadRappel: "Reminder",
+    rappelEnvoye: "Reminder sent",
+    rappelEnvoyeTemplate: "Reminder sent (WhatsApp template)",
+    rappelEchec: "Reminder NOT sent",
+    rappelEnCours: "Retry scheduled",
+    rappelAlerteEchecs: "{n} appointment(s) did not receive their WhatsApp reminder. Please contact these customers yourself, and check that the message template \"izyvendeur_rappel_rdv\" is created and approved in WhatsApp Manager.",
 
     conversationsTitre: "Conversations",
     msgAucunClientAttend: "No customer is currently waiting for a human. As soon as a customer requests one on WhatsApp, they'll appear here (and you'll be notified on WhatsApp if a notification number is set up in \"My account\").",
@@ -3253,9 +3274,18 @@ async function renderRendezvous() {
   const rdvs = await api("/api/" + marchandActif.id + "/rendezvous");
   const statuts = ["Nouvelle", "Confirmé", "Honoré", "Absent", "Annulé"];
   const tri = rdvs.slice().reverse();
+  const nbRappelsEchec = rdvs.filter((a) => a.rappelStatut === "echec").length;
+  // Etat du rappel automatique de la veille (Etape 44) : visible, pour qu'un echec ne passe jamais inapercu.
+  function badgeRappel(a) {
+    if (a.rappelStatut === "envoye") return "<span class='rappel-ok'>" + esc(a.rappelCanal === "template" ? t("rappelEnvoyeTemplate") : t("rappelEnvoye")) + "</span>";
+    if (a.rappelStatut === "echec") return "<span class='rappel-echec'>" + esc(t("rappelEchec")) + "</span>" + (a.rappelErreur ? "<div class='raison'>" + esc(a.rappelErreur) + "</div>" : "");
+    if (a.rappelStatut === "en_cours") return "<span class='rappel-attente'>" + esc(t("rappelEnCours")) + "</span>" + (a.rappelErreur ? "<div class='raison'>" + esc(a.rappelErreur) + "</div>" : "");
+    return "—";
+  }
   zone.innerHTML =
     "<h2>" + t("rendezvousTitre", { n: rdvs.length }) + "</h2>" +
-    "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadDateHeure") + "</th><th>" + t("theadService") + "</th><th>" + t("theadPraticien") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadPrix") + "</th><th>" + t("theadStatut") + "</th></tr>" +
+    (nbRappelsEchec ? "<div id='alerteRappels' class='rappel-echec' style='margin:8px 0;padding:8px;border:1px solid #c0392b;border-radius:6px;'>" + esc(t("rappelAlerteEchecs", { n: nbRappelsEchec })) + "</div>" : "") +
+    "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadDateHeure") + "</th><th>" + t("theadService") + "</th><th>" + t("theadPraticien") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadPrix") + "</th><th>" + t("theadStatut") + "</th><th>" + t("theadRappel") + "</th></tr>" +
     (tri.length ? tri.map((a) =>
       "<tr>" +
         "<td>RDV-" + String(a.id).padStart(4, "0") + "</td>" +
@@ -3268,8 +3298,9 @@ async function renderRendezvous() {
         "<td><select data-rdv='" + a.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === a.statut ? " selected" : "") + ">" + esc(libelleStatutRdv(s)) + "</option>").join("") + "</select>" +
           (a.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(a.raisonAnnulation) + "</div>" : "") +
         "</td>" +
+        "<td class='cellule-rappel' data-rdv-rappel='" + a.id + "'>" + badgeRappel(a) + "</td>" +
       "</tr>"
-    ).join("") : "<tr><td colspan='8'>" + t("aucunRendezvous") + "</td></tr>") +
+    ).join("") : "<tr><td colspan='9'>" + t("aucunRendezvous") + "</td></tr>") +
     "</table>";
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-rdv]"), (sel) => {
     sel.addEventListener("change", async () => {
@@ -3299,6 +3330,13 @@ async function renderParametresService() {
     "<h2>" + t("paramTitre") + "</h2>" +
     "<label>" + t("labelDureeCreneau") + "</label>" +
     "<input type='number' id='dureeCreneau' value='" + (parametres.dureeCreneauMinutes || 30) + "' />" +
+    "<label>" + t("labelFuseau") + "</label>" +
+    "<select id='fuseauRdv'>" +
+      ["Africa/Douala", "Africa/Libreville", "Africa/Brazzaville", "Africa/Kinshasa", "Africa/Lagos", "Africa/Abidjan", "Africa/Dakar", "Europe/Paris", "UTC"].map((z) =>
+        "<option value='" + z + "'" + (z === (parametres.fuseau || "Africa/Douala") ? " selected" : "") + ">" + z + "</option>"
+      ).join("") +
+    "</select>" +
+    "<p class='raison'>" + t("noteFuseau") + "</p>" +
     "<h3>" + t("h3HorairesOuverture") + "</h3>" +
     "<p class='raison'>" + t("notePause") + "</p>" +
     "<table class='table-donnees'><tr><th>" + t("theadJour") + "</th><th>" + t("theadOuvert") + "</th><th>" + t("theadDebut") + "</th><th>" + t("theadFin") + "</th><th>" + t("theadPauseDebut") + "</th><th>" + t("theadPauseFin") + "</th></tr>" +
@@ -3318,6 +3356,8 @@ async function renderParametresService() {
     "<button id='btnAjouterPraticien'>" + t("btnAjouterPraticien") + "</button>" +
     "<label>" + t("labelMsgConfirmRdv") + "</label>" +
     "<textarea id='msgConfirm' rows='6'>" + esc(parametres.autoConfirmMessage || "") + "</textarea>" +
+    "<label>" + t("labelMsgConfirmRdvEn") + "</label>" +
+    "<textarea id='msgConfirmEn' rows='6'>" + esc(parametres.autoConfirmMessageEn || "") + "</textarea>" +
     "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>";
 
   function redrawPraticiens() {
@@ -3370,7 +3410,9 @@ async function renderParametresService() {
           dureeCreneauMinutes: Number(document.getElementById("dureeCreneau").value),
           horaires: nouvHoraires,
           praticiens: nouvPraticiens,
-          autoConfirmMessage: document.getElementById("msgConfirm").value
+          fuseau: document.getElementById("fuseauRdv").value,
+          autoConfirmMessage: document.getElementById("msgConfirm").value,
+          autoConfirmMessageEn: document.getElementById("msgConfirmEn").value
         })
       });
       alert(t("alertParametresEnregistres"));
