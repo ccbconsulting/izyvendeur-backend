@@ -615,6 +615,8 @@ const I18N = {
     placeholderIzyfactureCle: "izf_…",
     placeholderIzyfactureCleRemplacer: "Laisser vide pour garder la clé actuelle",
     labelIzyfactureAuto: "Créer automatiquement les factures à la confirmation d'une commande",
+    descIzyfactureRdv: "Connectez IzyVendeur à votre compte IzyFacture pour créer automatiquement une facture officielle dès qu'un rendez-vous passe au statut « Honoré » (prestation réalisée). Un rendez-vous annulé après facturation génère un avoir. La clé est chiffrée avant d'être enregistrée et n'est jamais réaffichée en clair.",
+    labelIzyfactureAutoRdv: "Créer automatiquement la facture quand un rendez-vous est marqué « Honoré »",
     btnIzyfactureTester: "Tester la connexion",
     btnIzyfactureSauver: "Enregistrer",
     btnIzyfactureEffacer: "Déconnecter IzyFacture",
@@ -727,7 +729,7 @@ const I18N = {
     labelOptionStockIllimite: "Stock illimité (case à cocher par article dans le Catalogue)",
     labelOptionLienCommande: "Lien de commande (numéro WhatsApp affiché + bouton « Copier le lien » par article)",
     labelOptionNotifStatut: "Notifications de statut (message WhatsApp automatique au client)",
-    labelOptionFacturationIzyfacture: "Facturation IzyFacture (facturation automatique des commandes confirmées)",
+    labelOptionFacturationIzyfacture: "Facturation IzyFacture (facturation automatique des commandes confirmées ou des rendez-vous honorés)",
     labelOptionCaissePos: "Caisse POS (encaissement en boutique physique, onglet Caisse — utilise le même stock que la vente en ligne)",
     alertOptionsEnregistrees: "Options enregistrées.",
 
@@ -1258,6 +1260,8 @@ const I18N = {
     placeholderIzyfactureCle: "izf_…",
     placeholderIzyfactureCleRemplacer: "Leave blank to keep the current key",
     labelIzyfactureAuto: "Automatically create invoices when an order is confirmed",
+    descIzyfactureRdv: "Connect IzyVendeur to your IzyFacture account to automatically create an official invoice as soon as an appointment is marked \"Completed\" (service delivered). An appointment cancelled after invoicing generates a credit note. The key is encrypted before being stored and is never shown again in full.",
+    labelIzyfactureAutoRdv: "Automatically create the invoice when an appointment is marked \"Completed\"",
     btnIzyfactureTester: "Test connection",
     btnIzyfactureSauver: "Save",
     btnIzyfactureEffacer: "Disconnect IzyFacture",
@@ -1370,7 +1374,7 @@ const I18N = {
     labelOptionStockIllimite: "Unlimited stock (per-item checkbox in the Catalog tab)",
     labelOptionLienCommande: "Order link (displayed WhatsApp number + per-item \"Copy link\" button)",
     labelOptionNotifStatut: "Status notifications (automatic WhatsApp message to the customer)",
-    labelOptionFacturationIzyfacture: "IzyFacture invoicing (automatic invoicing of confirmed orders)",
+    labelOptionFacturationIzyfacture: "IzyFacture invoicing (automatic invoicing of confirmed orders or completed appointments)",
     labelOptionCaissePos: "POS Register (in-store checkout, Register tab — uses the same stock as online sales)",
     alertOptionsEnregistrees: "Options saved.",
 
@@ -2843,7 +2847,7 @@ function celluleFacturePaiement(o) {
   return "<div style='margin-top:4px;'>" + badge + "</div>" + recu + bouton;
 }
 
-function celluleIzyfacture(o) {
+function celluleIzyfacture(o, estRdv) {
   let badge, bouton = "";
   if (o.izyfactureStatut === "facturee") {
     badge = "<span style='background:#e6f7e6; color:#1e7a1e; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + esc(t("badgeIzyfactureFacturee", { numero: o.izyfactureNumero || "" })) + "</span>";
@@ -2861,6 +2865,10 @@ function celluleIzyfacture(o) {
   } else if (o.izyfactureStatut === "erreur") {
     badge = "<span style='background:#fde2e2; color:#a12b2b; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;' title=\"" + esc(o.izyfactureErreur || "") + "\">" + esc(t("badgeIzyfactureErreur")) + "</span>";
     bouton = "<button data-izyfacturer='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnIzyfactureReessayer")) + "</button>";
+  } else if (estRdv && o.statut !== "Honoré") {
+    // Etape 46 : un rendez-vous se facture une fois la prestation faite (statut "Honoré") - ni bouton ni
+    // badge tant que ce n'est pas le cas (Nouvelle, Confirmé, Absent, Annulé sans facture).
+    badge = "<span style='color:#999;'>—</span>";
   } else {
     badge = "<span style='color:#999;'>" + esc(t("badgeIzyfactureAucune")) + "</span>";
     bouton = "<button data-izyfacturer='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnIzyfactureFacturer")) + "</button>";
@@ -2973,14 +2981,21 @@ async function renderCommandes() {
     });
   });
 
+  brancherBoutonsIzyfacture(zone, "commandes", renderCommandes);
+}
+
+// Boutons "Facturer"/"Réessayer" et "Enregistrer un paiement" du pont IzyFacture, partages par l'onglet
+// Commandes (segment "commandes") et l'onglet Rendez-vous (segment "rendezvous", Etape 46) : memes routes
+// serveur de forme /api/:id/<segment>/:objetId/izyfacture/(facturer|paiement), memes badges, memes dialogues.
+function brancherBoutonsIzyfacture(zone, segment, rerendre) {
   Array.prototype.forEach.call(zone.querySelectorAll("[data-izyfacturer]"), (btn) => {
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       try {
-        const order = await api("/api/" + marchandActif.id + "/commandes/" + btn.dataset.izyfacturer + "/izyfacture/facturer", { method: "POST" });
+        const order = await api("/api/" + marchandActif.id + "/" + segment + "/" + btn.dataset.izyfacturer + "/izyfacture/facturer", { method: "POST" });
         if (order.izyfactureStatut === "facturee") alert(t("alertIzyfactureFacturee", { numero: order.izyfactureNumero || "" }));
         else if (order.izyfactureErreur) alert(t("alertIzyfactureEchec", { erreur: order.izyfactureErreur }));
-        renderCommandes();
+        rerendre();
       } catch (e) {
         alert(t("erreurPrefixe") + e.message);
         btn.disabled = false;
@@ -2989,7 +3004,7 @@ async function renderCommandes() {
   });
 
   // Bouton "Enregistrer un paiement" (voir celluleFacturePaiement plus haut et POST
-  // /api/:id/commandes/:orderId/izyfacture/paiement cote serveur) : 3 prompt() successifs (montant obligatoire,
+  // /api/:id/<segment>/:id/izyfacture/paiement cote serveur) : 3 prompt() successifs (montant obligatoire,
   // methode, reference optionnelle), dans le meme esprit minimal que promptRaisonAnnulation ci-dessus - pas de
   // vraie boite de dialogue dans cette interface. La methode saisie en texte libre est normalisee cote client
   // vers les codes attendus par IzyFacture (voir NORMALISATION_METHODE_PAIEMENT) ; si elle ne correspond a
@@ -3008,12 +3023,12 @@ async function renderCommandes() {
       btn.disabled = true;
       try {
         const resultat = await api(
-          "/api/" + marchandActif.id + "/commandes/" + orderId + "/izyfacture/paiement",
+          "/api/" + marchandActif.id + "/" + segment + "/" + orderId + "/izyfacture/paiement",
           { method: "POST", body: JSON.stringify({ montant, methode, reference }) }
         );
         if (resultat.izyfactureRecuNumero) alert(t("alertIzyfacturePaiementEnregistre", { numero: resultat.izyfactureRecuNumero }));
         else alert(t("alertIzyfacturePaiementEnregistreSansRecu"));
-        renderCommandes();
+        rerendre();
       } catch (e) {
         alert(t("alertIzyfacturePaiementEchec", { erreur: e.message }));
         btn.disabled = false;
@@ -3107,15 +3122,15 @@ function lireCaisseParametresFormulaire() {
 // Bloc "Facturation IzyFacture" (voir izyfacture.js/server.js) - reserve au proprietaire du marchand ou au
 // super-administrateur (meme regle que la route serveur /api/:id/izyfacture/parametres) : la cle IzyFacture
 // est une information financiere sensible, jamais accessible a un employe meme via le role "parametres".
-function blocIzyfactureHtml(etat) {
+function blocIzyfactureHtml(etat, estService) {
   const e = etat || { cleEnregistree: false, indiceCle: "", autoFacturation: false };
   return "<h3>" + t("h3Izyfacture") + "</h3>" +
-    "<p style='color:#666; font-size:0.9em;'>" + t("descIzyfacture") + "</p>" +
+    "<p style='color:#666; font-size:0.9em;'>" + t(estService ? "descIzyfactureRdv" : "descIzyfacture") + "</p>" +
     (e.cleEnregistree ? "<p style='color:#2a7a2a; font-size:0.9em;'>" + esc(t("izyfactureCleActuelle", { indice: e.indiceCle })) + "</p>" : "") +
     "<label>" + t("labelIzyfactureCle") + "</label>" +
     "<input id='izyfactureCle' type='password' autocomplete='off' placeholder=\"" + esc(e.cleEnregistree ? t("placeholderIzyfactureCleRemplacer") : t("placeholderIzyfactureCle")) + "\" />" +
     "<label style='display:flex; align-items:center; gap:8px; margin-top:10px; font-weight:normal;'>" +
-      "<input type='checkbox' id='izyfactureAuto'" + (e.autoFacturation ? " checked" : "") + " /> " + t("labelIzyfactureAuto") +
+      "<input type='checkbox' id='izyfactureAuto'" + (e.autoFacturation ? " checked" : "") + " /> " + t(estService ? "labelIzyfactureAutoRdv" : "labelIzyfactureAuto") +
     "</label>" +
     "<div style='margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;'>" +
       "<button id='btnIzyfactureTester' type='button'>" + t("btnIzyfactureTester") + "</button>" +
@@ -3123,6 +3138,12 @@ function blocIzyfactureHtml(etat) {
       (e.cleEnregistree ? "<button id='btnIzyfactureEffacer' type='button' class='danger'>" + t("btnIzyfactureEffacer") + "</button>" : "") +
     "</div>" +
     "<div id='izyfactureResultatTest' style='margin-top:8px; font-size:0.9em;'></div>";
+}
+// Le bloc IzyFacture existe dans Parametres des deux types de marchand (catalogue ET service, Etape 46) :
+// apres une sauvegarde on redessine donc le bon ecran.
+function rafraichirParametresMarchand() {
+  if (marchandActif.type === "service") return renderParametresService();
+  return renderParametresCatalogue();
 }
 function brancherBlocIzyfacture() {
   const zoneResultat = document.getElementById("izyfactureResultatTest");
@@ -3148,7 +3169,7 @@ function brancherBlocIzyfacture() {
       if (cleSaisie) corps.apiKey = cleSaisie;
       await api("/api/" + marchandActif.id + "/izyfacture/parametres", { method: "PUT", body: JSON.stringify(corps) });
       alert(t("alertParametresEnregistres"));
-      renderParametresCatalogue();
+      rafraichirParametresMarchand();
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
   const btnEffacer = document.getElementById("btnIzyfactureEffacer");
@@ -3157,7 +3178,7 @@ function brancherBlocIzyfacture() {
       if (!confirm(t("confirmIzyfactureEffacer"))) return;
       try {
         await api("/api/" + marchandActif.id + "/izyfacture/parametres", { method: "PUT", body: JSON.stringify({ apiKey: "" }) });
-        renderParametresCatalogue();
+        rafraichirParametresMarchand();
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   }
@@ -3275,6 +3296,7 @@ async function renderRendezvous() {
   const statuts = ["Nouvelle", "Confirmé", "Honoré", "Absent", "Annulé"];
   const tri = rdvs.slice().reverse();
   const nbRappelsEchec = rdvs.filter((a) => a.rappelStatut === "echec").length;
+  const avecFacture = marchandActif.optionFacturationIzyfacture === true;
   // Etat du rappel automatique de la veille (Etape 44) : visible, pour qu'un echec ne passe jamais inapercu.
   function badgeRappel(a) {
     if (a.rappelStatut === "envoye") return "<span class='rappel-ok'>" + esc(a.rappelCanal === "template" ? t("rappelEnvoyeTemplate") : t("rappelEnvoye")) + "</span>";
@@ -3285,7 +3307,7 @@ async function renderRendezvous() {
   zone.innerHTML =
     "<h2>" + t("rendezvousTitre", { n: rdvs.length }) + "</h2>" +
     (nbRappelsEchec ? "<div id='alerteRappels' class='rappel-echec' style='margin:8px 0;padding:8px;border:1px solid #c0392b;border-radius:6px;'>" + esc(t("rappelAlerteEchecs", { n: nbRappelsEchec })) + "</div>" : "") +
-    "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadDateHeure") + "</th><th>" + t("theadService") + "</th><th>" + t("theadPraticien") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadPrix") + "</th><th>" + t("theadStatut") + "</th><th>" + t("theadRappel") + "</th></tr>" +
+    "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadDateHeure") + "</th><th>" + t("theadService") + "</th><th>" + t("theadPraticien") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadPrix") + "</th><th>" + t("theadStatut") + "</th><th>" + t("theadRappel") + "</th>" + (avecFacture ? "<th>" + t("theadFacture") + "</th>" : "") + "</tr>" +
     (tri.length ? tri.map((a) =>
       "<tr>" +
         "<td>RDV-" + String(a.id).padStart(4, "0") + "</td>" +
@@ -3299,8 +3321,9 @@ async function renderRendezvous() {
           (a.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(a.raisonAnnulation) + "</div>" : "") +
         "</td>" +
         "<td class='cellule-rappel' data-rdv-rappel='" + a.id + "'>" + badgeRappel(a) + "</td>" +
+        (avecFacture ? "<td class='cellule-facture' data-rdv-facture='" + a.id + "'>" + celluleIzyfacture(a, true) + "</td>" : "") +
       "</tr>"
-    ).join("") : "<tr><td colspan='9'>" + t("aucunRendezvous") + "</td></tr>") +
+    ).join("") : "<tr><td colspan='" + (avecFacture ? 10 : 9) + "'>" + t("aucunRendezvous") + "</td></tr>") +
     "</table>";
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-rdv]"), (sel) => {
     sel.addEventListener("change", async () => {
@@ -3312,12 +3335,18 @@ async function renderRendezvous() {
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     });
   });
+  brancherBoutonsIzyfacture(zone, "rendezvous", renderRendezvous);
 }
 
 async function renderParametresService() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
-  const parametres = await api("/api/" + marchandActif.id + "/parametres");
+  const estGestionnaireSvc = moi.role === "marchand" || moi.role === "superadmin";
+  const izyfactureDebloqueeSvc = estGestionnaireSvc && marchandActif.optionFacturationIzyfacture === true;
+  const [parametres, izyfactureEtatSvc] = await Promise.all([
+    api("/api/" + marchandActif.id + "/parametres"),
+    izyfactureDebloqueeSvc ? api("/api/" + marchandActif.id + "/izyfacture/parametres") : Promise.resolve(null)
+  ]);
   const jours = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
   const horaires = parametres.horaires || {};
   // Praticiens (staff pouvant recevoir des rendez-vous en parallele) : vide par defaut, ce qui garde
@@ -3358,7 +3387,10 @@ async function renderParametresService() {
     "<textarea id='msgConfirm' rows='6'>" + esc(parametres.autoConfirmMessage || "") + "</textarea>" +
     "<label>" + t("labelMsgConfirmRdvEn") + "</label>" +
     "<textarea id='msgConfirmEn' rows='6'>" + esc(parametres.autoConfirmMessageEn || "") + "</textarea>" +
-    "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>";
+    "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>" +
+    (izyfactureDebloqueeSvc ? blocIzyfactureHtml(izyfactureEtatSvc, true) : "");
+
+  if (izyfactureDebloqueeSvc) brancherBlocIzyfacture();
 
   function redrawPraticiens() {
     const conteneur = document.getElementById("listePraticiens");

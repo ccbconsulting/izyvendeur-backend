@@ -55,6 +55,13 @@ function externalRefPourCommande(merchantKey, orderId) {
   return merchantKey + "-CMD-" + orderId;
 }
 
+// Meme principe pour un rendez-vous honore (volet service) : "-RDV-" au lieu de "-CMD-", pour que les deux
+// numerotations ne puissent jamais se confondre cote IzyFacture (un marchand hybride a des commandes ET des
+// rendez-vous, chacun avec son propre compteur d'identifiants).
+function externalRefPourRendezVous(merchantKey, apptId) {
+  return merchantKey + "-RDV-" + apptId;
+}
+
 // `client.name` est obligatoire si le client est nouveau chez IzyFacture (voir doc section 3) - IzyVendeur
 // ne connait pas le nom du client (seulement son telephone WhatsApp et son adresse), donc on construit un
 // nom d'affichage a partir du numero, mieux que rien pour retrouver la facture plus tard.
@@ -69,6 +76,11 @@ function construireLignesPourCommande(commande) {
     if (variante) desc += " (" + variante + ")";
     return { desc, qty: it.quantite || 1, price: it.prixUnitaire || 0 };
   });
+}
+
+function nomClientPourRendezVous(rdv) {
+  if (rdv.clientNom) return rdv.clientNom;
+  return rdv.telephone ? "Client WhatsApp " + rdv.telephone : "Client IzyVendeur";
 }
 
 // Verifie une cle (bouton "Tester la connexion" cote /admin) - GET /me, voir doc section 2.
@@ -96,6 +108,26 @@ async function facturerCommande(apiKey, merchantKey, commande) {
   return izf("POST", "/invoices", apiKey, corps);
 }
 
+// Facture d'un rendez-vous honore - une seule ligne (la prestation, quantite 1). Le prix est celui enregistre
+// sur le rendez-vous au moment de la prise (voir createAppointment) ; un prix a 0 est refuse en amont
+// (server.js), IzyFacture n'ayant rien a facturer.
+async function facturerRendezVous(apiKey, merchantKey, rdv) {
+  const ref = externalRefPourRendezVous(merchantKey, rdv.id);
+  const corps = {
+    source: "izyvendeur",
+    externalRef: ref,
+    pricesIncludeTax: true,
+    client: {
+      name: nomClientPourRendezVous(rdv),
+      phone: rdv.telephone || undefined,
+      externalId: rdv.telephone ? String(rdv.telephone).replace(/\D/g, "") : undefined
+    },
+    lines: [{ desc: rdv.service || "Prestation", qty: 1, price: Number(rdv.prix) || 0 }],
+    notes: "Rendez-vous WhatsApp " + ref
+  };
+  return izf("POST", "/invoices", apiKey, corps);
+}
+
 // Paiement recu apres coup (ex: espèces a la livraison) - POST /invoices/{id}/payments, voir doc section 5.
 // Pas encore relie a une action de /admin dans cette livraison (prevu pour une prochaine etape) - expose ici
 // pour que la brique soit prete.
@@ -113,8 +145,10 @@ async function creerAvoirAnnulation(apiKey, invoiceId, raison) {
 module.exports = {
   izf,
   externalRefPourCommande,
+  externalRefPourRendezVous,
   verifierCle,
   facturerCommande,
+  facturerRendezVous,
   enregistrerPaiement,
   creerAvoirAnnulation
 };

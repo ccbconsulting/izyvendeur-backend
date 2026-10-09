@@ -1484,6 +1484,35 @@ UTC, Douala, Tokyo, Los Angeles : le créneau est toujours à la bonne heure de 
 WhatsApp simulé : texte libre refusé puis modèle fr/en, tout refusé, webhook anglais avec liste et boutons de créneaux, /admin
 au navigateur : colonne Rappel, bandeau, fuseau, message English, fuseau invalide refusé).
 
+## Étape 46 — Facturation IzyFacture des rendez-vous honorés (nouveau)
+
+Le pont vers IzyFacture, jusque-là réservé aux commandes du catalogue, sert maintenant aussi les marchands **service** :
+
+- **Quand un rendez-vous passe à « Honoré »** (la prestation a eu lieu), IzyVendeur crée la facture IzyFacture : une ligne
+  (le service, quantité 1, prix enregistré sur le rendez-vous), client = nom donné au bot + numéro WhatsApp. Référence
+  anti-doublon `<marchand>-RDV-<n°>` : un réessai ne crée jamais de seconde facture. Le client reçoit par WhatsApp
+  « Votre facture n° … a été établie » (dans sa langue ; rien n'est envoyé pour un rendez-vous du Simulateur).
+- **Si le rendez-vous est annulé après avoir été facturé**, un avoir est créé automatiquement (motif = raison d'annulation).
+- **Absent, Nouvelle, Confirmé, Annulé sans facture** : rien n'est facturé. Un rendez-vous au prix 0 n'est pas envoyé à
+  IzyFacture : il est marqué « erreur : prix nul ».
+- **Paiements** : bouton « Enregistrer un paiement » sous la facture (acompte ou solde, espèces, OM, MoMo...), reçu numéroté
+  et message au client, exactement comme pour les commandes.
+- **Pannes IzyFacture** : le rendez-vous passe « en attente » et est réessayé toutes les 5 minutes (comme les commandes) ;
+  bouton « Réessayer » aussi. Un rendez-vous en attente mais annulé entre-temps n'est plus facturé.
+- **Dans /admin** : onglet Rendez-vous, nouvelle colonne **Facture** (visible seulement si l'option est débloquée pour le
+  marchand) ; onglet Paramètres (service), bloc « Facturation IzyFacture » (clé + case « facturer automatiquement quand un
+  rendez-vous est marqué Honoré »), réservé au propriétaire et au super-administrateur.
+- **Sécurité inchangée** : l'option « Facturation IzyFacture » reste débloquée par le **super-administrateur seul**
+  (Options payantes) ; sans elle, ni colonne, ni bloc, et les routes répondent 403. Un employé avec le rôle « rendez-vous »
+  peut facturer/encaisser mais ne voit jamais la clé. Les rendez-vous du Simulateur ne sont jamais facturés.
+- Le libellé de l'option payante devient « commandes confirmées **ou rendez-vous honorés** ».
+
+Testé le 9 octobre 2026 : `test_etape46_facturation_rdv.js` (serveur réel + faux IzyFacture : facture au statut Honoré, ligne
+et référence, pas de doublon, paiements partiel/total/dépassement, avoir, prix nul, panne puis réessai, balayage de démarrage,
+simulateur, option non débloquée, rôles employé, isolation entre marchands, journal) et
+`test_etape46_facturation_rdv_playwright.js` (/admin au navigateur : colonne, boutons, paiement, avoir, bloc Paramètres,
+marchand sans l'option).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1498,6 +1527,7 @@ au navigateur : colonne Rappel, bandeau, fuseau, message English, fuseau invalid
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 46 : `izyfacture.js` (facture d'un rendez-vous), `conversationService.js` (lecture d'un rendez-vous, enregistrement de l'état de facturation), `server.js` (facturation à « Honoré », avoir à l'annulation, routes facturer/paiement des rendez-vous, balayage de réessai, journal) et `public/admin.html` (colonne Facture, bloc IzyFacture des Paramètres service, boutons partagés avec les commandes).
 - Étape 45 : `conversationService.js` (porte de langue, toutes les réponses FR/EN, dates/heures/ordinaux anglais, synonymes de services), `shared.js` (mots-clés anglais : autre chose, annuler/reporter un rendez-vous), `server.js` (boutons de créneaux fournis par le moteur dans la langue du client) et `public/admin.html` (message de confirmation English).
 - Étape 44 : `shared.js` (fonctions de fuseau horaire), `conversationService.js` (heures dans le fuseau du marchand, migration unique des rendez-vous, rappels fiables avec réessais), `server.js` (`envoyerMessageWhatsApp` renvoie vrai/faux, rappel texte libre puis modèle `izyvendeur_rappel_rdv`, validation du fuseau) et `public/admin.html` (fuseau, colonne et bandeau « Rappel »).
 - Étape 43 : `public/admin.html` (case « logo au centre » du bloc QR : aperçu, PNG et affiche PDF, niveau de correction H avec logo) et `server.js` (relais `GET /api/marchands/:id/logo-image`, nécessaire car le logo est sur R2 sans CORS).

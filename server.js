@@ -663,6 +663,8 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/izyfacture/tester": "izyfacture_testee",
   "POST /api/:id/commandes/:orderId/izyfacture/facturer": "facture_creee",
   "POST /api/:id/commandes/:orderId/izyfacture/paiement": "paiement_facture_enregistre",
+  "POST /api/:id/rendezvous/:apptId/izyfacture/facturer": "facture_creee",
+  "POST /api/:id/rendezvous/:apptId/izyfacture/paiement": "paiement_facture_enregistre",
   "PUT /api/marchands/:id/infos": "infos_marchand_modifiees",
   "DELETE /api/marchands/:id": "marchand_supprime",
   "PUT /api/:id/catalogue": "catalogue_modifie",
@@ -708,6 +710,8 @@ function detailAuditRequete(code, req) {
     case "photo_ajoutee": case "photo_supprimee": return { art: nomArticle(), productId: p.productId || null };
     case "commande_statut_modifie": return { commande: p.orderId, statut: b.statut || null };
     case "rendezvous_statut_modifie": return { rendezvous: p.apptId, statut: b.statut || null };
+    case "facture_creee": case "paiement_facture_enregistre":
+      return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
     case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null };
     case "employe_modifie": {
       const emp = entry && (entry.merchant.employes || []).filter((e) => e.id === p.employeId)[0];
@@ -1792,9 +1796,67 @@ app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
   const { statut, raisonAnnulation } = req.body || {};
+  // Statut AVANT changement (meme logique que pour les commandes) : on ne facture que si le rendez-vous vient
+  // REELLEMENT de passer a "Honoré", pas s'il y etait deja.
+  const avant = entry.engine.getAppointmentById(req.params.apptId);
+  const statutAvant = avant ? avant.statut : null;
   const appt = entry.engine.updateAppointmentStatus(req.params.apptId, statut, raisonAnnulation);
   if (!appt) return res.status(404).json({ erreur: "Rendez-vous introuvable." });
   res.json(appt);
+
+  // Pont IzyFacture (Etape 46) - APRES avoir repondu, jamais bloquant : facture a l'"Honoré" (la prestation a
+  // eu lieu, le client a paye sur place), avoir si le rendez-vous est annule APRES avoir ete facture. Les
+  // rendez-vous du Simulateur ne sont jamais factures.
+  if (statutAvant !== appt.statut && appt.source !== "simulateur" && entry.merchant.optionFacturationIzyfacture && entry.merchant.izyfactureApiKey) {
+    if (appt.statut === "Honoré" && entry.merchant.izyfactureAutoFacturation && !appt.izyfactureFactureId) {
+      tenterFacturationCommande(entry, appt).catch((erreur) =>
+        console.error(`[${req.params.id}] Echec inattendu de la facturation IzyFacture (rendez-vous #${appt.id}) :`, erreur)
+      );
+    } else if (appt.statut === "Annulé" && appt.izyfactureFactureId && appt.izyfactureStatut !== "avoir") {
+      tenterAvoirCommande(entry, appt, appt.raisonAnnulation).catch((erreur) =>
+        console.error(`[${req.params.id}] Echec inattendu de l'avoir IzyFacture (rendez-vous #${appt.id}) :`, erreur)
+      );
+    }
+  }
+});
+
+// Facturation manuelle / reessai (bouton "Facturer"/"Réessayer" de l'onglet Rendez-vous). Meme permission que
+// la gestion des rendez-vous. Refuse de facturer un rendez-vous qui n'a pas eu lieu (Nouvelle, Confirmé,
+// Absent, Annulé) : une facture n'a de sens que pour une prestation honoree - sauf s'il en a deja une (un
+// reessai apres changement de statut ne doit pas etre bloque).
+app.post("/api/:id/rendezvous/:apptId/izyfacture/facturer", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
+  const appt = entry.engine.getAppointmentById(req.params.apptId);
+  if (!appt || appt.source === "simulateur") return res.status(404).json({ erreur: "Rendez-vous introuvable." });
+  if (appt.statut !== "Honoré" && !appt.izyfactureFactureId) {
+    return res.status(400).json({ erreur: "Seul un rendez-vous au statut « Honoré » peut être facturé." });
+  }
+  await tenterFacturationCommande(entry, appt);
+  res.json(entry.engine.getAppointmentById(req.params.apptId));
+});
+
+// Enregistrer un paiement sur la facture d'un rendez-vous (meme comportement que pour une commande).
+app.post("/api/:id/rendezvous/:apptId/izyfacture/paiement", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
+  const appt = entry.engine.getAppointmentById(req.params.apptId);
+  if (!appt || appt.source === "simulateur") return res.status(404).json({ erreur: "Rendez-vous introuvable." });
+  if (!appt.izyfactureFactureId) return res.status(400).json({ erreur: "Ce rendez-vous n'a pas encore de facture IzyFacture — facturez-le d'abord." });
+  const montant = parseInt(req.body && req.body.montant, 10);
+  if (!montant || montant <= 0) return res.status(400).json({ erreur: "Montant invalide : indiquez un nombre de FCFA supérieur à zéro." });
+  const methode = (req.body && req.body.methode) ? String(req.body.methode).trim() : "especes";
+  const reference = (req.body && req.body.reference) ? String(req.body.reference).trim().slice(0, 80) : undefined;
+  try {
+    await enregistrerPaiementCommande(entry, appt, { montant, methode, reference });
+    res.json(entry.engine.getAppointmentById(req.params.apptId));
+  } catch (erreur) {
+    res.status(statutReponseExterne(erreur)).json({ erreur: erreur.message || "Échec de l'enregistrement du paiement auprès d'IzyFacture.", code: erreur.code || null });
+  }
 });
 
 // -- Parametres : commun aux deux types (autoConfirmMessage, + horaires/dureeCreneauMinutes pour service) --
@@ -3062,8 +3124,30 @@ async function envoyerMessageWhatsAppDiag(destinataire, texte, phoneNumberId) {
 // ci-dessus) ET le passage periodique de reessai (voir plus bas) — une seule logique, jamais dupliquee.
 // Jamais d'exception qui remonte a l'appelant : toute erreur est journalisee et enregistree sur la commande
 // (izyfactureStatut/izyfactureErreur) plutot que de faire planter la requete ou le passage periodique.
+//
+// Etape 46 : ces fonctions servent AUSSI les rendez-vous honores du volet service. `order` designe alors un
+// rendez-vous (meme schema de champs izyfacture*, voir conversationService.js) ; seul ce qui differe est
+// isole dans les trois petits utilitaires ci-dessous, decides par le type du moteur du marchand.
+function estRendezVous(entry) { return entry.engine.type === "service"; }
+function libelleObjetFacture(entry, order) { return estRendezVous(entry) ? "le rendez-vous #" + order.id : "la commande #" + order.id; }
+function refAffichageObjet(entry, order) { return (estRendezVous(entry) ? "RDV-" : "CMD-") + String(order.id).padStart(4, "0"); }
+function appelFacturer(entry, cle, order) {
+  return estRendezVous(entry)
+    ? izyfacture.facturerRendezVous(cle, entry.merchant.id, order)
+    : izyfacture.facturerCommande(cle, entry.merchant.id, order);
+}
+
 async function tenterFacturationCommande(entry, order) {
   if (!entry.merchant.izyfactureApiKey) return;
+  // Un rendez-vous sans prix (service gratuit/prix 0) n'a rien a facturer : on le dit clairement plutot que
+  // d'envoyer une facture a zero a IzyFacture (erreur non reessayable, visible dans /admin).
+  if (estRendezVous(entry) && !(Number(order.prix) > 0)) {
+    entry.engine.enregistrerEtatIzyFacture(order.id, {
+      izyfactureStatut: "erreur",
+      izyfactureErreur: "Prix du rendez-vous nul : rien à facturer."
+    });
+    return;
+  }
   const cle = cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey);
   if (!cle) {
     entry.engine.enregistrerEtatIzyFacture(order.id, {
@@ -3073,7 +3157,7 @@ async function tenterFacturationCommande(entry, order) {
     return;
   }
   try {
-    const reponse = await izyfacture.facturerCommande(cle, entry.merchant.id, order);
+    const reponse = await appelFacturer(entry, cle, order);
     entry.engine.enregistrerEtatIzyFacture(order.id, {
       izyfactureStatut: "facturee",
       izyfactureFactureId: reponse.invoice.id,
@@ -3083,7 +3167,7 @@ async function tenterFacturationCommande(entry, order) {
       izyfactureUrlVerification: reponse.invoice.verifyUrl || null,
       izyfactureErreur: null
     });
-    console.log(`[${entry.merchant.id}] Facture IzyFacture ${reponse.invoice.number} créée pour la commande #${order.id}${reponse.duplicate ? " (déjà existante, aucun doublon)" : ""}.`);
+    console.log(`[${entry.merchant.id}] Facture IzyFacture ${reponse.invoice.number} créée pour ${libelleObjetFacture(entry, order)}${reponse.duplicate ? " (déjà existante, aucun doublon)" : ""}.`);
     // Notification client (doc, section 9 point 4) uniquement pour une facture NOUVELLEMENT creee
     // (reponse.duplicate === false) - un reessai manuel (bouton /admin) ou automatique sur une commande deja
     // facturee renvoie la meme facture (anti-doublon externalRef, voir izyfacture.js) et ne doit pas
@@ -3093,7 +3177,7 @@ async function tenterFacturationCommande(entry, order) {
       try {
         await notifierClientFactureCreee(entry, order, reponse.invoice);
       } catch (erreurNotif) {
-        console.error(`[${entry.merchant.id}] Échec de la notification client (facture créée, commande #${order.id}) :`, erreurNotif.message || erreurNotif);
+        console.error(`[${entry.merchant.id}] Échec de la notification client (facture créée, ${libelleObjetFacture(entry, order)}) :`, erreurNotif.message || erreurNotif);
       }
     }
   } catch (erreur) {
@@ -3101,7 +3185,7 @@ async function tenterFacturationCommande(entry, order) {
       izyfactureStatut: erreur.retryable ? "en_attente" : "erreur",
       izyfactureErreur: erreur.message || "Erreur IzyFacture inconnue"
     });
-    console.error(`[${entry.merchant.id}] Échec de facturation IzyFacture (commande #${order.id}, ${erreur.retryable ? "sera réessayé" : "non réessayable"}) :`, erreur.message, erreur.code || "");
+    console.error(`[${entry.merchant.id}] Échec de facturation IzyFacture (${libelleObjetFacture(entry, order)}, ${erreur.retryable ? "sera réessayé" : "non réessayable"}) :`, erreur.message, erreur.code || "");
   }
 }
 
@@ -3110,19 +3194,19 @@ async function tenterAvoirCommande(entry, order, raison) {
   const cle = cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey);
   if (!cle) return;
   try {
-    const reponse = await izyfacture.creerAvoirAnnulation(cle, order.izyfactureFactureId, raison);
+    const reponse = await izyfacture.creerAvoirAnnulation(cle, order.izyfactureFactureId, raison || (estRendezVous(entry) ? "Rendez-vous annulé" : undefined));
     entry.engine.enregistrerEtatIzyFacture(order.id, {
       izyfactureStatut: "avoir",
       izyfactureAvoirNumero: reponse.creditNote.number,
       izyfactureErreur: null
     });
-    console.log(`[${entry.merchant.id}] Avoir IzyFacture ${reponse.creditNote.number} créé pour la commande annulée #${order.id}.`);
+    console.log(`[${entry.merchant.id}] Avoir IzyFacture ${reponse.creditNote.number} créé pour ${estRendezVous(entry) ? "le rendez-vous annulé" : "la commande annulée"} #${order.id}.`);
   } catch (erreur) {
     // Pas de changement de izyfactureStatut ici : la facture reste valide chez IzyFacture (une commande
     // annulee dont l'avoir a echoue garde son statut "facturee" — le passage periodique ci-dessous la
     // reessaiera, voir DOIT_REESSAYER_AVOIR plus bas) plutot que de faire disparaitre silencieusement
     // l'echec ou de reintroduire un etat incoherent.
-    console.error(`[${entry.merchant.id}] Échec de création d'avoir IzyFacture (commande #${order.id}) :`, erreur.message, erreur.code || "");
+    console.error(`[${entry.merchant.id}] Échec de création d'avoir IzyFacture (${libelleObjetFacture(entry, order)}) :`, erreur.message, erreur.code || "");
   }
 }
 
@@ -3162,7 +3246,7 @@ async function enregistrerPaiementCommande(entry, order, { montant, methode, ref
     izyfactureRecuNumero: recu ? recu.number : (order.izyfactureRecuNumero || null),
     izyfacturePaiements: historique
   });
-  console.log(`[${entry.merchant.id}] Paiement de ${montant} FCFA enregistré sur la facture ${order.izyfactureNumero || order.izyfactureFactureId} (commande #${order.id})${recu ? `, reçu ${recu.number}` : ""}.`);
+  console.log(`[${entry.merchant.id}] Paiement de ${montant} FCFA enregistré sur la facture ${order.izyfactureNumero || order.izyfactureFactureId} (${libelleObjetFacture(entry, order)})${recu ? `, reçu ${recu.number}` : ""}.`);
   // Notification client (voir doc, section 9 point 4) - à la différence des notifications de statut de
   // commande (fire-and-forget dans conversation.js), on l'attend ici : c'est une action ponctuelle voulue
   // par le marchand, mieux vaut qu'un échec soit visible dans les logs au bon moment plutôt que plus tard
@@ -3171,7 +3255,7 @@ async function enregistrerPaiementCommande(entry, order, { montant, methode, ref
   try {
     await notifierClientPaiementRecu(entry, order, montant, recu ? recu.number : null);
   } catch (erreur) {
-    console.error(`[${entry.merchant.id}] Échec de la notification client (paiement reçu, commande #${order.id}) :`, erreur.message || erreur);
+    console.error(`[${entry.merchant.id}] Échec de la notification client (paiement reçu, ${libelleObjetFacture(entry, order)}) :`, erreur.message || erreur);
   }
 }
 
@@ -3182,10 +3266,11 @@ async function enregistrerPaiementCommande(entry, order, { montant, methode, ref
 async function notifierClientPaiementRecu(entry, order, montant, numeroRecu) {
   if (!order.fromWhatsapp || order.source !== "whatsapp") return;
   const langue = order.langue === "en" ? "en" : "fr";
-  const ref = "CMD-" + String(order.id).padStart(4, "0");
+  const ref = refAffichageObjet(entry, order);
+  const rdv = estRendezVous(entry);
   let texte = langue === "en"
-    ? `Payment of ${sh.formatFcfa(montant)} received for your order ${ref}. Thank you!`
-    : `Paiement de ${sh.formatFcfa(montant)} bien reçu pour votre commande ${ref}. Merci !`;
+    ? `Payment of ${sh.formatFcfa(montant)} received for your ${rdv ? "appointment" : "order"} ${ref}. Thank you!`
+    : `Paiement de ${sh.formatFcfa(montant)} bien reçu pour votre ${rdv ? "rendez-vous" : "commande"} ${ref}. Merci !`;
   if (numeroRecu) {
     texte += langue === "en" ? ` Receipt No. ${numeroRecu}.` : ` Reçu n° ${numeroRecu}.`;
   }
@@ -3231,20 +3316,24 @@ const INTERVALLE_REESSAIS_IZYFACTURE_MS = 5 * 60 * 1000;
 async function reessayerFacturationsIzyFactureEnAttente() {
   for (const merchantId of Object.keys(engines)) {
     const entry = engines[merchantId];
-    if (!entry || entry.engine.type !== "catalogue") continue;
+    if (!entry) continue; // catalogue (commandes) ET service (rendez-vous honores, Etape 46)
     if (entry.merchant.actif === false) continue;
     if (!entry.merchant.optionFacturationIzyfacture || !entry.merchant.izyfactureApiKey) continue;
+    const service = entry.engine.type === "service";
     let commandes;
     try {
-      commandes = entry.engine.getOrders();
+      commandes = service ? entry.engine.getAppointments() : entry.engine.getOrders();
     } catch (erreur) {
       console.error(`[${merchantId}] Échec de lecture des commandes pour le réessai IzyFacture :`, erreur);
       continue;
     }
     for (const order of commandes) {
       if (order.izyfactureStatut === "en_attente") {
+        // Un rendez-vous en attente de facturation mais repasse entre-temps a un autre statut que "Honoré"
+        // (ex: annule) n'est plus a facturer.
+        if (service && order.statut !== "Honoré" && !order.izyfactureFactureId) continue;
         await tenterFacturationCommande(entry, order);
-      } else if (order.statut === "Annulée" && order.izyfactureFactureId && order.izyfactureStatut === "facturee") {
+      } else if (order.statut === (service ? "Annulé" : "Annulée") && order.izyfactureFactureId && order.izyfactureStatut === "facturee") {
         // Une commande deja facturee, annulee entre-temps, dont l'avoir avait echoue au premier essai (voir
         // le commentaire dans tenterAvoirCommande) - reessaye ici plutot que de rester bloquee.
         await tenterAvoirCommande(entry, order, order.raisonAnnulation);

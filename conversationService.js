@@ -599,6 +599,9 @@ function createServiceEngine(merchantKey, options) {
       // rappelProchaineTentativeISO/rappelCanal documentent les essais.
       rappelEnvoye: false,
       rappelTentatives: 0,
+      // Facturation IzyFacture (Etape 46) : meme schema que les commandes du catalogue (voir
+      // conversation.js), rempli par server.js quand le rendez-vous passe a "Honoré".
+      izyfacturePaiements: [],
       source: session.fromPhone === PHONE_SIMULATEUR ? "simulateur" : "whatsapp",
       fromWhatsapp: session.fromPhone || null
     };
@@ -1285,9 +1288,30 @@ function createServiceEngine(merchantKey, options) {
     return appt;
   }
 
+  // Lecture d'un rendez-vous par id (copie), y compris un rendez-vous du Simulateur : utilise par le pont
+  // IzyFacture (server.js) qui doit relire l'etat courant apres chaque appel reseau.
+  function getAppointmentById(apptId) {
+    if (!state) return null;
+    const appt = state.appointments.filter((a) => a.id === Number(apptId))[0];
+    return appt ? Object.assign({}, appt) : null;
+  }
+
+  // Enregistre sur le rendez-vous le resultat d'un appel a IzyFacture (meme role que dans conversation.js
+  // pour les commandes). Retourne le rendez-vous mis a jour, ou null s'il n'existe plus.
+  function enregistrerEtatIzyFacture(apptId, patch) {
+    if (!state) return null;
+    const appt = state.appointments.filter((a) => a.id === Number(apptId))[0];
+    if (!appt) return null;
+    Object.assign(appt, patch);
+    saveState();
+    return appt;
+  }
+
   return {
     type: "service",
     init,
+    getAppointmentById,
+    enregistrerEtatIzyFacture,
     handleMessage,
     getAppointments,
     getServices,
