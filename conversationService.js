@@ -109,6 +109,13 @@ function ouverture(session, poolFr, poolEn) {
   return piocheParmi(sh.t(session, poolFr, poolEn));
 }
 
+// Etat de depart SANS service de demonstration (second volet d'un marchand hybride, Etape 47).
+function seedStateVide() {
+  const e = seedState();
+  e.services = [];
+  return e;
+}
+
 function seedState() {
   return {
     services: JSON.parse(JSON.stringify(SEED_SERVICES)),
@@ -166,9 +173,14 @@ function createServiceEngine(merchantKey, options) {
   // reponse - memoire seulement (comme `sessions`/`conversationsHumain`) : un redemarrage remet a zero,
   // ce qui n'est pas grave (au pire un client tres occasionnel la revoit un jour).
   const humanHintDonne = {};
+  // Etape 47 (marchand hybride) : le SECOND moteur d'un marchand hybride partage son identifiant (journal des
+  // conversations, alertes) mais range son etat sous une cle distincte (`options.cleEtat`), pour ne jamais
+  // melanger catalogue et rendez-vous ; `options.sansDonneesDemo` evite d'y semer les articles/services de
+  // demonstration (le marchand n'a encore rien configure dans ce volet). Absents = comportement d'avant.
+  const cleEtat = (options && options.cleEtat) || merchantKey;
 
   async function init() {
-    state = await db.initMerchantState(merchantKey, seedState);
+    state = await db.initMerchantState(cleEtat, options && options.sansDonneesDemo ? seedStateVide : seedState);
     if (!state.settings) state.settings = seedState().settings;
     if (!state.settings.horaires) state.settings.horaires = JSON.parse(JSON.stringify(DEFAULT_HORAIRES));
     if (!state.settings.dureeCreneauMinutes) state.settings.dureeCreneauMinutes = DEFAULT_DUREE_CRENEAU_MINUTES;
@@ -209,7 +221,7 @@ function createServiceEngine(merchantKey, options) {
 
   function saveState() {
     if (!state) return;
-    db.persistMerchantState(merchantKey, state).catch((erreur) => {
+    db.persistMerchantState(cleEtat, state).catch((erreur) => {
       console.error("[" + merchantKey + "] Erreur de sauvegarde de l'etat (la derniere modification pourrait etre perdue au redemarrage) :", erreur);
     });
   }
@@ -909,10 +921,31 @@ function createServiceEngine(merchantKey, options) {
     return sh.t(session, "Votre ancien rendez-vous est annulé. ", "Your previous appointment has been cancelled. ") + handleDateTimeAttempt(session, "", service);
   }
 
-  function handleMessage(fromPhone, text) {
+  // `opts.sansJournalClient` (Etape 47, routeur hybride) : le texte ne vient pas tel quel du client (salutation
+  // synthetique apres le menu, message d'origine rejoue apres la porte de langue) ou a deja ete journalise
+  // par le routeur : on ne l'ecrit pas une seconde fois dans l'historique.
+  // On retient la derniere reponse de CHAQUE client (voir reponseDeReprise) : un client d'un marchand hybride qui
+  // quitte ce volet en plein parcours (panier, saisie du nom...) retrouve exactement sa derniere question en y
+  // revenant, au lieu qu'une phrase synthetique soit prise pour sa reponse (ex: « Bonjour » comme nom).
+  function handleMessage(fromPhone, text, opts) {
+    const reponse = traiterMessage(fromPhone, text, opts);
+    if (reponse && sessions[fromPhone]) sessions[fromPhone].derniereReponse = reponse;
+    return reponse;
+  }
+
+  // Derniere question posee a ce client SI son parcours est en cours dans ce moteur (pas au repos), sinon null.
+  // Ne modifie rien. Utilisee par le routeur hybride pour reprendre un volet la ou le client l'avait laisse.
+  function reponseDeReprise(fromPhone) {
+    const s = sessions[fromPhone];
+    if (!s || !s.derniereReponse) return null;
+    const enCours = s.stage !== "idle" || !!s.pendingChoice || !!s.attenteChoixContactHumain;
+    return enCours ? s.derniereReponse : null;
+  }
+
+  function traiterMessage(fromPhone, text, opts) {
     if (!state) return sh.t(sessions[fromPhone], "Le service redémarre, un instant s'il vous plaît...", "The service is restarting, one moment please...");
 
-    journaliser(fromPhone, "client", text);
+    if (!(opts && opts.sansJournalClient)) journaliser(fromPhone, "client", text);
 
     // Reponse du client au choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact,
     // pose juste apres une demande d'humain ci-dessous) : verifiee AVANT pauseHumainActive() car la pause
@@ -1020,6 +1053,32 @@ function createServiceEngine(merchantKey, options) {
     await envoyer(telephone, message);
     journaliser(telephone, "marchand", message);
     return true;
+  }
+
+
+  // ---------------- Routage hybride (Etape 47, voir server.js : routeur du webhook) ----------------
+  // Impose la langue deja choisie par le client aupres du routeur (porte de langue unique pour tout le marchand
+  // hybride) : cree la session si besoin et marque la porte de langue comme franchie, sans rien repondre.
+  function definirLangueSession(fromPhone, langue) {
+    const s = getSession(fromPhone);
+    s.langue = langue === "en" ? "en" : "fr";
+    s.gateLangueEnvoyee = true;
+    delete s.texteAvantLangue;
+    return s.langue;
+  }
+
+  // true tant qu'une pause "conversation avec un humain" est EN COURS pour ce client (sans jamais la lever
+  // elle-meme, contrairement a sh.pauseHumainActive) : le routeur laisse alors le client sur ce volet, ou
+  // le message reste sans reponse automatique jusqu'a la fin de la pause.
+  function estEnPauseHumain(fromPhone) {
+    const c = conversationsHumain[fromPhone];
+    if (!c || !c.enAttente) return false;
+    return (Date.now() - new Date(c.depuisISO).getTime()) < sh.DUREE_PAUSE_HUMAIN_MS;
+  }
+  // Langue de la session de ce client ("fr"/"en"), ou null s'il n'a pas encore de session dans ce moteur.
+  function langueDeSession(fromPhone) {
+    const s = sessions[fromPhone];
+    return s ? sh.langueSession(s) : null;
   }
 
   // Etat courant de la session d'UN client (apres traitement de son dernier message) - utilise par
@@ -1322,6 +1381,10 @@ function createServiceEngine(merchantKey, options) {
     getConversationsEnAttente,
     repondreConversationHumain,
     getEtatSession,
+    definirLangueSession,
+    reponseDeReprise,
+    estEnPauseHumain,
+    langueDeSession,
     handleMessageSimulateur,
     resetSimulateur,
     getTableauDeBord,

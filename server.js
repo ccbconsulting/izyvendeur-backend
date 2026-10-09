@@ -23,6 +23,7 @@ const createServiceEngine = require("./conversationService");
 const izyfacture = require("./izyfacture");
 const cryptoUtil = require("./crypto-util");
 const { clientIp } = require("./clientip");
+const { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE } = require("./hybride");
 
 const app = express();
 
@@ -209,6 +210,70 @@ const TEMPLATES_CLIENT = {
 const engines = {};
 const phoneNumberIndex = {}; // phone_number_id WhatsApp -> merchantId
 
+// ---------------- Marchand HYBRIDE (Etape 47) : un numero, deux volets ----------------
+// Un marchand a toujours un volet PRINCIPAL (`type`, choisi a la creation) et peut avoir un SECOND volet
+// (`moduleSecondaire`, accorde par le super-administrateur seul). Chaque volet a son propre moteur ; le
+// principal garde l'etat enregistre sous l'id du marchand (donc rien ne change pour les marchands
+// existants), le second sous une cle d'etat distincte. engines[id] = { merchant, engine (= principal),
+// moteurs: { catalogue?, service? }, routeur? (seulement si deux moteurs) }.
+function modulesDuMarchand(m) {
+  const liste = [m.type];
+  if ((m.moduleSecondaire === "catalogue" || m.moduleSecondaire === "service") && m.moduleSecondaire !== m.type) liste.push(m.moduleSecondaire);
+  return liste;
+}
+function cleEtatSecondaire(m) { return m.id + "::" + m.moduleSecondaire; }
+
+function fabriquerMoteur(type, merchantKey, optionsSupplementaires) {
+  const options = Object.assign(creerOptionsEngine(merchantKey), optionsSupplementaires || {});
+  return type === "service" ? createServiceEngine(merchantKey, options) : createCatalogEngine(merchantKey, options);
+}
+
+// Construit (et initialise) tous les moteurs d'un marchand + son routeur s'il est hybride.
+async function construireEntree(m) {
+  const moteurs = {};
+  moteurs[m.type] = fabriquerMoteur(m.type, m.id);
+  await moteurs[m.type].init();
+  const modules = modulesDuMarchand(m);
+  if (modules.length > 1) {
+    const second = modules[1];
+    moteurs[second] = fabriquerMoteur(second, m.id, { cleEtat: cleEtatSecondaire(m), sansDonneesDemo: true });
+    await moteurs[second].init();
+  }
+  const entree = { merchant: m, engine: moteurs[m.type], moteurs };
+  if (modules.length > 1) {
+    entree.routeur = creerRouteur(moteurs, m.type, {
+      journaliser: (tel, de, texte) => { db.logConversationMessage(m.id, tel, de, texte).catch(() => {}); }
+    });
+  }
+  return entree;
+}
+
+function estHybride(entry) { return !!(entry && entry.routeur); }
+
+// Vue d'une entree pour UN volet : meme marchand, mais `engine` = le moteur de ce volet. Permet a tout le
+// code existant (routes /admin, facturation IzyFacture, webhook...) qui lit `entry.engine` de fonctionner
+// tel quel sur le bon volet d'un marchand hybride. Pour un marchand a un seul moteur, ou un volet qu'il
+// n'a pas, renvoie l'entree elle-meme (le controle de type de chaque route repond alors 400 comme avant).
+function vueEntree(entry, type) {
+  if (!entry || !entry.moteurs || !entry.moteurs[type] || entry.engine.type === type) return entry;
+  return { merchant: entry.merchant, engine: entry.moteurs[type], moteurs: entry.moteurs, routeur: entry.routeur, volet: type };
+}
+
+// Pour les routes /admin : quelle(s) vue(s) d'un marchand hybride une permission implique-t-elle ?
+// Les permissions propres a un volet (catalogue, commandes, caisse, inventaire, rapports -> catalogue ;
+// rendezvous -> service) l'imposent ; les autres (parametres, tableau de bord, simulateur, conversations...)
+// s'appliquent aux deux volets et utilisent `?volet=` (principal par defaut).
+const VOLET_DE_PERMISSION = { catalogue: "catalogue", commandes: "catalogue", caisse: "catalogue", inventaire: "catalogue", rapports: "catalogue", rendezvous: "service" };
+function vuePourRequete(req, entry, permission) {
+  if (!entry || !entry.moteurs || Object.keys(entry.moteurs).length < 2) return entry;
+  const perms = Array.isArray(permission) ? permission : (permission ? [permission] : []);
+  const impliques = perms.map((p) => VOLET_DE_PERMISSION[p]);
+  if (perms.length && impliques.every(Boolean) && new Set(impliques).size === 1) return vueEntree(entry, impliques[0]);
+  const demande = req.query && req.query.volet ? String(req.query.volet) : null;
+  if (demande && entry.moteurs[demande]) return vueEntree(entry, demande);
+  return entry;
+}
+
 // Fournit a un moteur de conversation les fonctions dont il a besoin pour parler a WhatsApp lui-meme (au
 // lieu de renvoyer simplement une reponse au webhook) : envoyer un message texte a N'IMPORTE QUEL numero
 // (reponses manuelles du marchand a un client mis en pause), envoyer une photo d'article (voir
@@ -311,12 +376,10 @@ function nettoyerPourTemplate(texte) {
 async function chargerMarchands() {
   const marchands = await db.initRegistry();
   for (const m of marchands) {
-    const options = creerOptionsEngine(m.id);
-    const engine = m.type === "service" ? createServiceEngine(m.id, options) : createCatalogEngine(m.id, options);
-    await engine.init();
-    engines[m.id] = { merchant: m, engine };
+    engines[m.id] = await construireEntree(m);
     if (m.phoneNumberId) phoneNumberIndex[m.phoneNumberId] = m.id;
-    console.log("Marchand charge : " + m.id + " (" + m.type + ")" + (m.phoneNumberId ? " — numero " + m.phoneNumberId : " — AUCUN numero WhatsApp associe"));
+    const modules = modulesDuMarchand(m);
+    console.log("Marchand charge : " + m.id + " (" + (modules.length > 1 ? "hybride : " + modules.join(" + ") : m.type) + ")" + (m.phoneNumberId ? " — numero " + m.phoneNumberId : " — AUCUN numero WhatsApp associe"));
   }
 }
 
@@ -528,7 +591,8 @@ function getMarchandAutorise(req, res, permission) {
       return null;
     }
   }
-  return getMarchandOu404(req, res);
+  const entree = getMarchandOu404(req, res);
+  return entree ? vuePourRequete(req, entree, permission) : entree;
 }
 
 // true si l'utilisateur authentifie est le PROPRIETAIRE de ce marchand (role "marchand") ou le
@@ -703,7 +767,7 @@ function detailAuditRequete(code, req) {
   const p = req.params || {};
   const entry = engines[p.id];
   const nomArticle = () => {
-    const prod = entry && entry.engine.type === "catalogue" && entry.engine.getCatalog().filter((x) => x.id === p.productId)[0];
+    const prod = entry && entry.moteurs.catalogue && entry.moteurs.catalogue.getCatalog().filter((x) => x.id === p.productId)[0];
     return prod ? prod.nom : null;
   };
   switch (code) {
@@ -985,6 +1049,7 @@ app.get("/api/journal/global", protegerAcces, async (req, res) => {
 app.get("/api/marchands", protegerAcces, (req, res) => {
   const tous = Object.values(engines).map((e) => ({
     id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
+    moduleSecondaire: modulesDuMarchand(e.merchant)[1] || null, modules: modulesDuMarchand(e.merchant),
     phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false,
     logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null,
     numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null,
@@ -1042,10 +1107,7 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
     rolesMigres: db.CLES_MIGRATIONS_ROLES_CONNUES
   };
   await db.addMerchant(merchant);
-  const options = creerOptionsEngine(id);
-  const engine = type === "service" ? createServiceEngine(id, options) : createCatalogEngine(id, options);
-  await engine.init();
-  engines[id] = { merchant, engine };
+  engines[id] = await construireEntree(merchant);
   if (merchant.phoneNumberId) phoneNumberIndex[merchant.phoneNumberId] = id;
   console.log("Nouveau marchand ajoute via l'API : " + id + " (" + type + ")");
   res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type, adminUser: merchant.adminUser });
@@ -1135,7 +1197,7 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
   if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
   const rolesIncompatibles = rolesDemandes.filter((r) =>
-    (r === "catalogue" && entry.engine.type !== "catalogue") || (r === "rendezvous" && entry.engine.type !== "service")
+    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service)
   );
   if (rolesIncompatibles.length) {
     return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -1198,7 +1260,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
       const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
       if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
       const rolesIncompatibles = rolesDemandes.filter((r) =>
-        (r === "catalogue" && entry.engine.type !== "catalogue") || (r === "rendezvous" && entry.engine.type !== "service")
+        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service)
       );
       if (rolesIncompatibles.length) {
         return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -2097,14 +2159,20 @@ app.delete("/api/marchands/:id/image-accueil-whatsapp", protegerAcces, async (re
 
 app.get("/api/:id/conversations", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
-  res.json(entry.engine.getConversationsEnAttente());
+  // Marchand hybride : les conversations en pause des DEUX volets, dans une seule liste.
+  const listes = Object.keys(entry.moteurs).map((t) => entry.moteurs[t].getConversationsEnAttente().map((c) => Object.assign({}, c, { volet: t })));
+  res.json([].concat(...listes));
 });
 
 app.post("/api/:id/conversations/:telephone/repondre", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "conversations"); if (!entry) return;
   const { message } = req.body || {};
   if (!message || !String(message).trim()) return res.status(400).json({ erreur: "message requis." });
-  const ok = await entry.engine.repondreConversationHumain(req.params.telephone, String(message));
+  let ok = false;
+  for (const t of Object.keys(entry.moteurs)) {
+    ok = await entry.moteurs[t].repondreConversationHumain(req.params.telephone, String(message));
+    if (ok) break;
+  }
   if (!ok) return res.status(404).json({ erreur: "Conversation introuvable (peut-être déjà reprise par le bot après 10 minutes)." });
   res.json({ ok: true });
 });
@@ -2153,8 +2221,11 @@ app.get("/api/:id/tableau-de-bord", protegerAcces, (req, res) => {
 
 app.post("/api/:id/simulateur/message", protegerAcces, (req, res) => {
   const merchantExistant = engines[req.params.id];
-  const permissionOperationnelle = merchantExistant && merchantExistant.merchant.type === "service" ? "rendezvous" : "catalogue";
-  const entry = getMarchandAutorise(req, res, [permissionOperationnelle, "conversations"]); if (!entry) return;
+  // Marchand hybride : le role operationnel de CHACUN de ses volets ouvre le Simulateur (volet choisi par `?volet=`).
+  const permissionsOperationnelles = merchantExistant
+    ? Object.keys(merchantExistant.moteurs).map((t) => (t === "service" ? "rendezvous" : "catalogue"))
+    : ["catalogue"];
+  const entry = getMarchandAutorise(req, res, permissionsOperationnelles.concat("conversations")); if (!entry) return;
   const { message } = req.body || {};
   if (!message || !String(message).trim()) return res.status(400).json({ erreur: "message requis." });
   res.json(entry.engine.handleMessageSimulateur(String(message)));
@@ -2162,8 +2233,11 @@ app.post("/api/:id/simulateur/message", protegerAcces, (req, res) => {
 
 app.post("/api/:id/simulateur/reset", protegerAcces, (req, res) => {
   const merchantExistant = engines[req.params.id];
-  const permissionOperationnelle = merchantExistant && merchantExistant.merchant.type === "service" ? "rendezvous" : "catalogue";
-  const entry = getMarchandAutorise(req, res, [permissionOperationnelle, "conversations"]); if (!entry) return;
+  // Marchand hybride : le role operationnel de CHACUN de ses volets ouvre le Simulateur (volet choisi par `?volet=`).
+  const permissionsOperationnelles = merchantExistant
+    ? Object.keys(merchantExistant.moteurs).map((t) => (t === "service" ? "rendezvous" : "catalogue"))
+    : ["catalogue"];
+  const entry = getMarchandAutorise(req, res, permissionsOperationnelles.concat("conversations")); if (!entry) return;
   entry.engine.resetSimulateur();
   res.json({ ok: true });
 });
@@ -2324,7 +2398,7 @@ app.post("/webhook", async (req, res) => {
     }
 
     const merchantId = phoneNumberId && phoneNumberIndex[phoneNumberId];
-    const marchand = merchantId && engines[merchantId];
+    let marchand = merchantId && engines[merchantId];
     if (!marchand) {
       console.warn("Message recu sur le phone_number_id " + phoneNumberId + ", qui n'est associe a AUCUN marchand connu. Message ignore.");
       return;
@@ -2349,6 +2423,12 @@ app.post("/webhook", async (req, res) => {
       await envoyerMessageWhatsApp(from, messageSuspendu, phoneNumberId);
       return;
     }
+
+    // Marchand HYBRIDE (Etape 47) : tout le reste du traitement (pagination, categories, menus cliquables,
+    // moteur de conversation) s'applique au volet ou se trouve DEJA ce client ; le routeur peut ensuite le
+    // faire changer de volet pour ce message (voir plus bas). `entreeComplete` garde l'acces aux deux moteurs.
+    const entreeComplete = marchand;
+    if (estHybride(entreeComplete)) marchand = vueEntree(entreeComplete, entreeComplete.routeur.voletActif(from));
 
     // Clic sur "Voir plus d'articles/services ▸" (pagination d'un catalogue/service trop fourni pour
     // tenir sur une seule liste WhatsApp - 10 lignes max au total) : pure navigation d'affichage, ne
@@ -2448,7 +2528,33 @@ app.post("/webhook", async (req, res) => {
 
     console.log(`[${merchantId}] Message recu de ${from} : "${texteRecu}"`);
 
-    const reponse = marchand.engine.handleMessage(from, texteRecu);
+    // Marchand hybride : le routeur decide quel moteur recoit ce message (ou repond lui-meme par le menu a
+    // deux boutons). Un marchand a un seul volet saute entierement ce bloc.
+    let texteMoteur = texteRecu;
+    let optionsMoteur;
+    let suffixeReponse = null;
+    let reponseDeReprise = null;
+    if (estHybride(entreeComplete)) {
+      const decision = entreeComplete.routeur.traiter(from, texteRecu);
+      if (decision.type === "menu") {
+        console.log(`[${merchantId}] Marchand hybride : menu produits / rendez-vous envoye a ${from}.`);
+        const menuEnvoye = await envoyerBoutonsWhatsApp(from, phoneNumberId, decision.texte, decision.boutons.map((b) => ({
+          id: b.volet === "catalogue" ? ID_VOLET_CATALOGUE : ID_VOLET_SERVICE, title: b.title
+        }))).catch(() => false);
+        if (!menuEnvoye) await envoyerMessageWhatsApp(from, decision.texte, phoneNumberId);
+        return;
+      }
+      marchand = vueEntree(entreeComplete, decision.volet);
+      texteMoteur = decision.texte;
+      suffixeReponse = decision.suffixe || null;
+      if (decision.sansJournalClient) optionsMoteur = { sansJournalClient: true };
+      if (decision.type === "reprise") reponseDeReprise = decision.reponse;
+      console.log(`[${merchantId}] Marchand hybride : message de ${from} confie au volet "${decision.volet}"${decision.type === "reprise" ? " (reprise de sa derniere question)" : ""}.`);
+    }
+
+    // Reprise (client revenu dans un volet en plein parcours) : on rejoue sa derniere question telle quelle.
+    let reponse = reponseDeReprise !== null ? reponseDeReprise : marchand.engine.handleMessage(from, texteMoteur, optionsMoteur);
+    if (reponse && suffixeReponse) reponse += suffixeReponse;
 
     // Une reponse "vide" (null) signifie que la conversation est en pause pour un humain (voir shared.js)
     // - on reste volontairement silencieux, le marchand repondra depuis /admin.
@@ -2499,6 +2605,9 @@ const ID_AUTRE_ARTICLE = "IZY_AUTRE";
 const ID_PANIER_CONTINUER = "IZY_PANIER_CONTINUER";
 const ID_PANIER_TERMINER = "IZY_PANIER_TERMINER";
 const ID_LANG_FR = "IZY_LANG_FR";
+// Menu a deux boutons d'un marchand hybride (Etape 47, voir hybride.js).
+const ID_VOLET_CATALOGUE = "IZY_VOLET_CAT";
+const ID_VOLET_SERVICE = "IZY_VOLET_SVC";
 const ID_LANG_EN = "IZY_LANG_EN";
 const PREFIXE_RETIRER_PANIER = "IZY_DELCART_";
 // Navigation par categorie (Etape 24, 27 sept 2026 - demandee des qu'un catalogue depasse une poignee
@@ -2646,6 +2755,8 @@ function resoudreTexteInteractif(marchand, interactive) {
 
   if (id === ID_LANG_FR) return "fr"; // reponse a la porte bilingue (voir sh.detecterChoixLangueInitial)
   if (id === ID_LANG_EN) return "en";
+  if (id === ID_VOLET_CATALOGUE) return JETON_VOLET_CATALOGUE; // choix du volet (marchand hybride, voir hybride.js)
+  if (id === ID_VOLET_SERVICE) return JETON_VOLET_SERVICE;
   if (id === ID_HUMAIN) return "un conseiller";
   if (id === ID_CONTACT_ECRIT) return "réponse écrite ici";
   if (id === ID_CONTACT_APPEL) return "être rappelé";
@@ -3314,9 +3425,16 @@ const PORT = process.env.PORT || 3000;
 const INTERVALLE_REESSAIS_IZYFACTURE_MS = 5 * 60 * 1000;
 
 async function reessayerFacturationsIzyFactureEnAttente() {
+  // Un marchand hybride (Etape 47) a deux moteurs : on balaie chacun, via sa vue (entry.engine = ce volet).
+  const vues = [];
   for (const merchantId of Object.keys(engines)) {
-    const entry = engines[merchantId];
-    if (!entry) continue; // catalogue (commandes) ET service (rendez-vous honores, Etape 46)
+    const complet = engines[merchantId];
+    if (!complet) continue;
+    Object.keys(complet.moteurs).forEach((t) => vues.push(vueEntree(complet, t)));
+  }
+  for (const entry of vues) {
+    const merchantId = entry.merchant.id;
+    // catalogue (commandes) ET service (rendez-vous honores, Etape 46)
     if (entry.merchant.actif === false) continue;
     if (!entry.merchant.optionFacturationIzyfacture || !entry.merchant.izyfactureApiKey) continue;
     const service = entry.engine.type === "service";
@@ -3352,10 +3470,10 @@ const INTERVALLE_RAPPELS_MS = 30 * 60 * 1000;
 async function envoyerRappelsPourTousLesMarchands() {
   for (const merchantId of Object.keys(engines)) {
     const entry = engines[merchantId];
-    if (!entry || entry.engine.type !== "service") continue;
+    if (!entry || !entry.moteurs.service) continue; // volet rendez-vous d'un marchand service OU hybride
     if (entry.merchant.actif === false) continue; // marchand suspendu : pas de rappel envoye
     try {
-      await entry.engine.envoyerRappelsDuJour();
+      await entry.moteurs.service.envoyerRappelsDuJour();
     } catch (erreur) {
       console.error(`[${merchantId}] Echec de l'envoi des rappels de rendez-vous :`, erreur);
     }

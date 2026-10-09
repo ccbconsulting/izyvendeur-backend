@@ -1513,6 +1513,33 @@ simulateur, option non débloquée, rôles employé, isolation entre marchands, 
 `test_etape46_facturation_rdv_playwright.js` (/admin au navigateur : colonne, boutons, paiement, avoir, bloc Paramètres,
 marchand sans l'option).
 
+## Étape 47 — Marchand hybride : catalogue + rendez-vous sur le même numéro WhatsApp (nouveau, côté serveur)
+
+Un marchand peut maintenant avoir **deux volets** derrière un seul numéro WhatsApp : **catalogue** (commandes) et **service**
+(rendez-vous). Le volet « principal » est le type choisi à la création ; le second est un **module secondaire**.
+
+- **Menu pour le client** : après le choix de la langue, un hybride reçoit un message à **deux boutons** (catalogue / rendez-vous).
+  « menu principal » ramène à ce choix. Un marchand non hybride ne voit **aucune différence** (même parcours qu'avant).
+- **Paniers séparés** : le client peut commencer une commande, passer aux rendez-vous, puis revenir ; chaque volet reprend là où
+  il s'était arrêté (la dernière question est réaffichée, rien n'est inventé à sa place). Pas de panier mélangé. Paiement sur place.
+- **Données séparées** : chaque volet a son propre état (le second sous la clé `<marchand>::service` ou `<marchand>::catalogue`),
+  vide au départ (sans données de démonstration), rechargé tel quel au redémarrage. La colonne `module_secondaire` est ajoutée
+  automatiquement à la table des marchands (chemin PostgreSQL non testé ici, comme pour toute migration de colonne).
+- **Facturation IzyFacture** : commandes et rendez-vous sont facturés **séparément** (références `<marchand>-CMD-n` et
+  `<marchand>-RDV-n`), avoirs, paiements et balayage de réessai couvrent les deux volets. Les **rappels de rendez-vous** du
+  second volet partent comme pour un marchand service.
+- **/admin (API)** : les routes existantes servent chaque volet (`/api/:id/commandes`, `/rendezvous`...) ; en cas d'ambiguïté
+  (ex. permission commune) on précise `?volet=catalogue|service`. Les conversations sont regroupées, avec le volet indiqué ;
+  la pause « humain » est par volet. Un employé garde son rôle (commandes / rendez-vous) et ne voit que son volet.
+- **Sécurité** : le second module ne peut être accordé que par le **super-administrateur** ; un marchand ne voit ni ne peut
+  modifier cette option. Le retirer **masque** le volet sans jamais supprimer ses données. (L'interface de création et les
+  Options payantes arrivent à l'Étape 48 ; en attendant, le champ `moduleSecondaire` se pose directement dans le registre des marchands, et l'API de listing expose `modules` et `moduleSecondaire`.)
+
+Testé le 9 octobre 2026 : `test_etape47_hybride_webhook.js` (vrais webhooks simulés : porte de langue, menu à deux boutons,
+paniers séparés avec reprise, persistance par volet, API admin par volet, rôles employé, conversations regroupées, pause humaine,
+volet vide, marchands non hybrides inchangés, redémarrage) et `test_etape47_hybride_izyfacture.js` (factures CMD/RDV séparées,
+paiements, avoirs, balayage, rappel du second volet, verrou de l'option payante).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1527,6 +1554,7 @@ marchand sans l'option).
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 47 : `hybride.js` (NOUVEAU : routeur langue → menu → volet), `server.js` (registre à deux moteurs, vues par volet, intégration webhook, conversations regroupées, boucles de rappel/réessai), `conversation.js` et `conversationService.js` (état persistant par clé, reprise sans message synthétique, langue de session), `shared.js` (durée de pause humaine exportée) et `db.js` (colonne `module_secondaire`).
 - Étape 46 : `izyfacture.js` (facture d'un rendez-vous), `conversationService.js` (lecture d'un rendez-vous, enregistrement de l'état de facturation), `server.js` (facturation à « Honoré », avoir à l'annulation, routes facturer/paiement des rendez-vous, balayage de réessai, journal) et `public/admin.html` (colonne Facture, bloc IzyFacture des Paramètres service, boutons partagés avec les commandes).
 - Étape 45 : `conversationService.js` (porte de langue, toutes les réponses FR/EN, dates/heures/ordinaux anglais, synonymes de services), `shared.js` (mots-clés anglais : autre chose, annuler/reporter un rendez-vous), `server.js` (boutons de créneaux fournis par le moteur dans la langue du client) et `public/admin.html` (message de confirmation English).
 - Étape 44 : `shared.js` (fonctions de fuseau horaire), `conversationService.js` (heures dans le fuseau du marchand, migration unique des rendez-vous, rappels fiables avec réessais), `server.js` (`envoyerMessageWhatsApp` renvoie vrai/faux, rappel texte libre puis modèle `izyvendeur_rappel_rdv`, validation du fuseau) et `public/admin.html` (fuseau, colonne et bandeau « Rappel »).

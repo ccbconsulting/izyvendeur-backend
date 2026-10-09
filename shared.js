@@ -411,6 +411,7 @@ module.exports = {
   detecteChoixAppel,
   messageReprisePause,
   estMessageChoixLangue,
+  DUREE_PAUSE_HUMAIN_MS,
   mentionHumainDisponible,
   pauseHumainActive,
   consommerSignalReprise,
