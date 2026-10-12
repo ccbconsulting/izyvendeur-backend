@@ -535,6 +535,39 @@ function createCatalogEngine(merchantKey, options) {
     saveState();
   }
 
+  // ---------------- Etape 49 : recapitulatif avec telephone + correction a la confirmation ----------------
+  // Extrait un telephone et/ou une adresse d'un message libre. Meme regex de telephone que l'etape
+  // awaiting_delivery. Ignore les "mots de liaison" ("mon numero est", "adresse :"...) pour ne pas les
+  // prendre pour une adresse. En retrait, l'adresse (boutique) n'est jamais modifiable.
+  const REGEX_TELEPHONE = /(\+?237)?[\s.-]?[62]\d{7,8}/;
+  function extraireCoordonnees(texte, modeRetrait) {
+    const res = { telephone: null, adresse: null };
+    let reste = String(texte || "");
+    const m = reste.match(REGEX_TELEPHONE);
+    if (m) { res.telephone = m[0].trim(); reste = reste.replace(m[0], " "); }
+    const k = reste.match(/^([\s\S]*\b(?:num[ée]ro|num|t[ée]l[ée]?phone|t[ée]l|phone|number|adresse|address)\b)[\s:,;.\-]*(?:(?:est|is|c['’]est|it['’]s)\b)?[\s:,;.\-]*([\s\S]*)$/i);
+    if (k) reste = k[2];
+    reste = reste.replace(/^[\s:,;.\-]+|[\s:,;.\-]+$/g, "").replace(/\s+/g, " ");
+    if (!modeRetrait && reste.replace(/[,\-\s]/g, "").length > 3) res.adresse = reste.slice(0, 200);
+    return res;
+  }
+
+  function recapitulatifCommande(session, order, introFr, introEn) {
+    const libelle = sh.t(session, session.modeLivraison === "retrait" ? "Retrait" : "Livraison", session.modeLivraison === "retrait" ? "Pickup" : "Delivery");
+    return sh.t(session,
+      introFr + " (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\nTél : " + (order.telephone || "—") + "\n" + libelle + " : " + (order.adresse || "—") + "\n\nConfirmez-vous cette commande ? (oui / non / modifier)",
+      introEn + " (" + orderRef(order) + "):\n" + describeItems(order.items) + "\nTotal: " + formatFcfa(order.prix) + "\nPhone: " + (order.telephone || "—") + "\n" + libelle + ": " + (order.adresse || "—") + "\n\nDo you confirm this order? (yes / no / edit)"
+    );
+  }
+
+  function questionCorrectionCommande(session, order) {
+    const retrait = session.modeLivraison === "retrait";
+    return sh.t(session,
+      "Pas de souci, corrigeons cela. Envoyez-moi directement votre bon numéro de téléphone" + (retrait ? "" : " et/ou votre bonne adresse de livraison") + " (exemple : 6xxxxxxxx" + (retrait ? "" : ", puis votre adresse") + "). Si vous préférez ne pas confirmer maintenant, répondez « annuler » : la commande " + orderRef(order) + " restera enregistrée et notre équipe reviendra vers vous.",
+      "No problem, let's fix that. Just send me your correct phone number" + (retrait ? "" : " and/or your correct delivery address") + " (e.g. 6xxxxxxxx" + (retrait ? "" : ", then your address") + "). If you'd rather not confirm now, reply \"cancel\": order " + orderRef(order) + " will stay on file and our team will get back to you."
+    );
+  }
+
   function processMessage(session, text) {
     const trace = { message: text, entites: {}, verification: null, action: null, photo: null };
     // Reinitialise a chaque tour - seuls les 4 points de retour "quel article vous interesse ?" plus bas
@@ -820,11 +853,7 @@ function createCatalogEngine(merchantKey, options) {
         session.stage = "awaiting_order_confirmation";
         trace.action = "Commande " + orderRef(order) + " créée (statut Nouvelle) — récapitulatif envoyé, confirmation demandée";
         logTrace(session, trace);
-        const libelleAdresse = sh.t(session, session.modeLivraison === "retrait" ? "Retrait" : "Livraison", session.modeLivraison === "retrait" ? "Pickup" : "Delivery");
-        return sh.t(session,
-          "Merci pour ces informations ! Voici le récapitulatif de votre commande (" + orderRef(order) + ") :\n" + describeItems(order.items) + "\nTotal : " + formatFcfa(order.prix) + "\n" + libelleAdresse + " : " + session.adresse + "\n\nConfirmez-vous cette commande ? (oui / non)",
-          "Thanks for these details! Here's your order summary (" + orderRef(order) + "):\n" + describeItems(order.items) + "\nTotal: " + formatFcfa(order.prix) + "\n" + libelleAdresse + ": " + session.adresse + "\n\nDo you confirm this order? (yes / no)"
-        );
+        return recapitulatifCommande(session, order, "Merci pour ces informations ! Voici le récapitulatif de votre commande", "Thanks for these details! Here's your order summary");
       }
       const missing = [];
       if (!session.telephone) missing.push(sh.t(session, "numéro de téléphone (exemple : 6xxxxxxxx)", "phone number (e.g. 6xxxxxxxx)"));
@@ -837,9 +866,76 @@ function createCatalogEngine(merchantKey, options) {
       );
     }
 
+    if (session.stage === "awaiting_order_correction") {
+      const pendingOrder = state.orders.filter((x) => x.id === session.pendingOrderId)[0];
+      trace.entites = { "Réponse client": text };
+      if (!pendingOrder) {
+        const replyNo = sh.t(session, "Très bien, votre commande reste enregistrée.", "No problem, your order remains on file.") + " " + ouverture(session, REMERCIEMENTS_DECLIN, REMERCIEMENTS_DECLIN_EN);
+        Object.assign(session, freshSession(session));
+        logTrace(session, trace);
+        return replyNo;
+      }
+      if (/^\s*(annul|cancel|laisse|laissez|non\b|no\b|stop|plus tard|later)/i.test(text)) {
+        trace.action = "Client renonce à confirmer maintenant — commande " + orderRef(pendingOrder) + " reste en Nouvelle, à confirmer manuellement";
+        const replyCancel = sh.t(session,
+          "Très bien, votre commande reste enregistrée. Notre équipe reviendra vers vous pour la confirmer.",
+          "No problem, your order remains on file. Our team will get back to you to confirm it."
+        ) + " " + ouverture(session, REMERCIEMENTS_DECLIN, REMERCIEMENTS_DECLIN_EN);
+        Object.assign(session, freshSession(session));
+        logTrace(session, trace);
+        return replyCancel;
+      }
+      const coord = extraireCoordonnees(text, pendingOrder.modeLivraison === "retrait");
+      if (!coord.telephone && !coord.adresse) {
+        trace.action = "Correction non comprise — nouvelle demande de saisie";
+        logTrace(session, trace);
+        return questionCorrectionCommande(session, pendingOrder);
+      }
+      if (coord.telephone) { pendingOrder.telephone = coord.telephone; session.telephone = coord.telephone; }
+      if (coord.adresse) { pendingOrder.adresse = coord.adresse; session.adresse = coord.adresse; }
+      pendingOrder.coordonneesCorrigeesLe = new Date().toISOString();
+      saveState();
+      session.stage = "awaiting_order_confirmation";
+      trace.action = "Client corrige ses coordonnées — commande " + orderRef(pendingOrder) + " mise à jour, récapitulatif renvoyé";
+      logTrace(session, trace);
+      return recapitulatifCommande(session, pendingOrder, "C'est corrigé ! Voici le récapitulatif mis à jour de votre commande", "Done! Here's the updated summary of your order");
+    }
+
     if (session.stage === "awaiting_order_confirmation") {
       const pendingOrder = state.orders.filter((x) => x.id === session.pendingOrderId)[0];
       trace.entites = { "Réponse client": text };
+
+      // Etape 49 : le client peut corriger son telephone / son adresse AVANT de confirmer. Un numero (ou
+      // "adresse : ...") dans le message met a jour la commande en attente et renvoie le recapitulatif ; le
+      // mot "modifier/corriger/erreur..." ouvre l'etape de correction ; "non" propose aussi de corriger
+      // avant de laisser la commande en attente.
+      if (pendingOrder) {
+        const retraitCorr = pendingOrder.modeLivraison === "retrait";
+        const aMotAdresse = /\b(adresse|address)\b/i.test(text);
+        const coord = extraireCoordonnees(text, retraitCorr);
+        const correctionDirecte = !!coord.telephone || (aMotAdresse && !!coord.adresse);
+        if (correctionDirecte) {
+          if (coord.telephone) { pendingOrder.telephone = coord.telephone; session.telephone = coord.telephone; }
+          if (coord.adresse && (aMotAdresse || coord.telephone)) { pendingOrder.adresse = coord.adresse; session.adresse = coord.adresse; }
+          pendingOrder.coordonneesCorrigeesLe = new Date().toISOString();
+          saveState();
+          trace.action = "Client corrige ses coordonnées avant confirmation — commande " + orderRef(pendingOrder) + " mise à jour, récapitulatif renvoyé";
+          logTrace(session, trace);
+          return recapitulatifCommande(session, pendingOrder, "C'est corrigé ! Voici le récapitulatif mis à jour de votre commande", "Done! Here's the updated summary of your order");
+        }
+        if (/\b(modifi|corrig|chang|erreur|tromp|incorrect|mauvais|faux|wrong|mistake|correct|edit|fix|update)/i.test(text) && !parseAffirmative(text)) {
+          session.stage = "awaiting_order_correction";
+          trace.action = "Client souhaite corriger ses coordonnées — nouvelle saisie demandée";
+          logTrace(session, trace);
+          return questionCorrectionCommande(session, pendingOrder);
+        }
+        if (parseNegative(text)) {
+          session.stage = "awaiting_order_correction";
+          trace.action = "Client répond non — proposition de corriger téléphone/adresse avant de laisser la commande en attente";
+          logTrace(session, trace);
+          return questionCorrectionCommande(session, pendingOrder);
+        }
+      }
 
       if (pendingOrder && parseAffirmative(text)) {
         applyStatusChange(pendingOrder, "Confirmée");
@@ -879,8 +975,8 @@ function createCatalogEngine(merchantKey, options) {
         trace.action = "Réponse ambiguë — nouvelle demande de confirmation claire pour " + orderRef(pendingOrder);
         logTrace(session, trace);
         return sh.t(session,
-          "Je n'ai pas bien compris. Confirmez-vous votre commande " + orderRef(pendingOrder) + " ? Répondez simplement par oui ou non — notre équipe reviendra vers vous pour toute autre question.",
-          "I didn't quite understand. Do you confirm your order " + orderRef(pendingOrder) + "? Just reply yes or no — our team will get back to you for anything else."
+          "Je n'ai pas bien compris. Confirmez-vous votre commande " + orderRef(pendingOrder) + " ? Répondez oui pour confirmer, ou « modifier » pour corriger votre numéro ou votre adresse — notre équipe reviendra vers vous pour toute autre question.",
+          "I didn't quite understand. Do you confirm your order " + orderRef(pendingOrder) + "? Reply yes to confirm, or \"edit\" to fix your phone number or address — our team will get back to you for anything else."
         );
       }
 
@@ -1651,6 +1747,32 @@ function createCatalogEngine(merchantKey, options) {
     return order;
   }
 
+  // Etape 49 : correction du telephone / de l'adresse d'une commande depuis /admin. Valide cote serveur
+  // (jamais de confiance au navigateur) : telephone au format camerounais attendu, adresse <= 200 caracteres.
+  function updateOrderContact(orderId, champs) {
+    if (!state) return { erreur: "introuvable" };
+    const order = state.orders.filter((o) => o.id === Number(orderId))[0];
+    if (!order || order.source === "simulateur") return { erreur: "introuvable" };
+    if (order.source === "pos") return { erreur: "Une vente en caisse n'a ni téléphone ni adresse à corriger." };
+    const nouveauTel = champs && champs.telephone != null ? String(champs.telephone).trim() : null;
+    const nouvelleAdresse = champs && champs.adresse != null ? String(champs.adresse).trim() : null;
+    if (nouveauTel === null && nouvelleAdresse === null) return { erreur: "Aucune modification fournie." };
+    const telNormalise = nouveauTel === null ? null : nouveauTel.replace(/[\s.-]/g, "");
+    if (telNormalise !== null && !/^(\+?237)?[62]\d{7,8}$/.test(telNormalise)) {
+      return { erreur: "Numéro de téléphone invalide (exemple : 6xxxxxxxx)." };
+    }
+    if (nouvelleAdresse !== null) {
+      if (order.modeLivraison === "retrait") return { erreur: "L'adresse d'une commande en retrait ne se modifie pas." };
+      if (nouvelleAdresse.replace(/[,\-\s]/g, "").length <= 3) return { erreur: "Adresse trop courte." };
+      if (nouvelleAdresse.length > 200) return { erreur: "Adresse trop longue (200 caractères maximum)." };
+    }
+    if (telNormalise !== null) order.telephone = telNormalise;
+    if (nouvelleAdresse !== null) order.adresse = nouvelleAdresse;
+    order.coordonneesCorrigeesLe = new Date().toISOString();
+    saveState();
+    return { order };
+  }
+
   // Lit une commande par id sans la modifier - utilise par server.js pour connaitre son statut AVANT un
   // appel a updateOrderStatus (celui-ci ne renvoie que la commande APRES changement), afin de savoir si le
   // statut vient reellement de basculer vers "Confirmee"/"Annulee" (voir le pont IzyFacture, izyfacture.js).
@@ -1881,6 +2003,7 @@ function createCatalogEngine(merchantKey, options) {
     ajouterPhotoProduit,
     supprimerPhotoProduit,
     updateOrderStatus,
+    updateOrderContact,
     enregistrerEtatIzyFacture,
     getConversationsEnAttente,
     repondreConversationHumain,

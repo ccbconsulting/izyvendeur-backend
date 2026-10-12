@@ -765,6 +765,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/catalogue/:productId/photos": "photo_ajoutee",
   "DELETE /api/:id/catalogue/:productId/photos": "photo_supprimee",
   "PUT /api/:id/commandes/:orderId/statut": "commande_statut_modifie",
+  "PUT /api/:id/commandes/:orderId/coordonnees": "commande_coordonnees_modifiees",
   "PUT /api/:id/services": "services_modifies",
   "PUT /api/:id/rendezvous/:apptId/statut": "rendezvous_statut_modifie",
   "PUT /api/:id/parametres": "parametres_modifies",
@@ -799,6 +800,7 @@ function detailAuditRequete(code, req) {
   switch (code) {
     case "photo_ajoutee": case "photo_supprimee": return { art: nomArticle(), productId: p.productId || null };
     case "commande_statut_modifie": return { commande: p.orderId, statut: b.statut || null };
+    case "commande_coordonnees_modifiees": return { commande: p.orderId, champs: [b.telephone != null ? "telephone" : null, b.adresse != null ? "adresse" : null].filter(Boolean) };
     case "rendezvous_statut_modifie": return { rendezvous: p.apptId, statut: b.statut || null };
     case "facture_creee": case "paiement_facture_enregistre":
       return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
@@ -1862,6 +1864,19 @@ app.get("/api/:id/commandes", protegerAcces, (req, res) => {
   res.json(entry.engine.getOrders());
 });
 
+// Etape 49 : corriger le telephone et/ou l'adresse d'une commande depuis /admin (le client s'est trompe et
+// previent le marchand par un autre canal). Meme permission "commandes" que le changement de statut ; jamais
+// pour une vente comptoir (pos), ni une commande du simulateur ; l'adresse d'un retrait n'est pas modifiable.
+app.put("/api/:id/commandes/:orderId/coordonnees", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const { telephone, adresse } = req.body || {};
+  const r = entry.engine.updateOrderContact(req.params.orderId, { telephone, adresse });
+  if (r.erreur === "introuvable") return res.status(404).json({ erreur: "Commande introuvable." });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json(r.order);
+});
+
 app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
@@ -2692,6 +2707,7 @@ app.post("/webhook", async (req, res) => {
 const ID_HUMAIN = "IZY_HUMAIN";
 const ID_OUI = "IZY_OUI";
 const ID_NON = "IZY_NON";
+const ID_MODIFIER = "IZY_MODIFIER"; // Etape 49 : bouton "Modifier" de la confirmation de commande
 const PREFIXE_CRENEAU = "IZY_SLOT_";
 const PREFIXE_VOIR_PLUS = "IZY_PLUS_";
 // Panier multi-articles (moteur catalogue uniquement) : voir conversation.js (sh.demandeVoirPanier, stage
@@ -2858,6 +2874,7 @@ function resoudreTexteInteractif(marchand, interactive) {
   if (id === ID_CONTACT_APPEL) return "être rappelé";
   if (id === ID_OUI) return "oui";
   if (id === ID_NON) return "non";
+  if (id === ID_MODIFIER) return "modifier";
   if (id === ID_PANIER) return "voir mon panier";
   if (id === ID_AUTRE_ARTICLE) return "autre chose";
   if (id === ID_PANIER_CONTINUER) return "continuer mes achats";
@@ -3018,7 +3035,15 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
   // Rupture sur tous les modeles : "Souhaitez-vous que notre equipe vous previenne des le reassort ?" (voir
   // conversation.js, etape awaiting_reassort) - memes boutons Oui/Non que la confirmation de commande.
-  if (etat.stage === "awaiting_order_confirmation" || etat.stage === "awaiting_confirmation" || etat.stage === "awaiting_reassort") {
+  // Etape 49 : la confirmation de COMMANDE propose un 3e bouton "Modifier" (corriger telephone/adresse).
+  if (etat.stage === "awaiting_order_confirmation") {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: ID_OUI, title: tW(etat, "Oui", "Yes") },
+      { id: ID_NON, title: tW(etat, "Non", "No") },
+      { id: ID_MODIFIER, title: tW(etat, "Modifier", "Edit") }
+    ]);
+  }
+  if (etat.stage === "awaiting_confirmation" || etat.stage === "awaiting_reassort") {
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
       { id: ID_OUI, title: tW(etat, "Oui", "Yes") },
       { id: ID_NON, title: tW(etat, "Non", "No") }

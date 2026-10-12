@@ -313,6 +313,11 @@ const I18N = {
     act_photo_ajoutee: "Photo ajoutée",
     act_photo_supprimee: "Photo supprimée",
     act_commande_statut_modifie: "Statut de commande modifié",
+    act_commande_coordonnees_modifiees: "Téléphone / adresse de commande modifiés",
+    btnCorrigerCoordonnees: "Corriger tél./adresse",
+    promptNouveauTelephone: "Nouveau numéro de téléphone du client (exemple : 6xxxxxxxx) :",
+    promptNouvelleAdresse: "Nouvelle adresse de livraison :",
+    badgeCoordonneesCorrigees: "corrigé",
     act_services_modifies: "Services modifiés",
     act_rendezvous_statut_modifie: "Statut de rendez-vous modifié",
     act_parametres_modifies: "Paramètres modifiés",
@@ -979,6 +984,11 @@ const I18N = {
     act_photo_ajoutee: "Photo added",
     act_photo_supprimee: "Photo deleted",
     act_commande_statut_modifie: "Order status changed",
+    act_commande_coordonnees_modifiees: "Order phone / address changed",
+    btnCorrigerCoordonnees: "Fix phone / address",
+    promptNouveauTelephone: "Customer's new phone number (e.g. 6xxxxxxxx):",
+    promptNouvelleAdresse: "New delivery address:",
+    badgeCoordonneesCorrigees: "corrected",
     act_services_modifies: "Services changed",
     act_rendezvous_statut_modifie: "Appointment status changed",
     act_parametres_modifies: "Settings changed",
@@ -3058,7 +3068,9 @@ async function renderCommandes() {
           ? "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeRetrait") + "</span>"
           : "<span style='background:#e2f0ff; color:#0a4a8f; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeLivraison") + "</span>") + "</td>" +
         "<td>" + (o.source === "pos" ? "—" : esc(o.telephone)) + "</td>" +
-        "<td>" + (o.source === "pos" ? "—" : esc(o.adresse)) + "</td>" +
+        "<td>" + (o.source === "pos" ? "—" : esc(o.adresse) +
+          (o.coordonneesCorrigeesLe ? " <span class='raison'>(" + t("badgeCoordonneesCorrigees") + ")</span>" : "") +
+          "<div><button type='button' data-corriger='" + o.id + "' data-retrait='" + (o.modeLivraison === "retrait" ? "1" : "0") + "' data-tel='" + esc(o.telephone || "") + "' data-adr='" + esc(o.adresse || "") + "'>" + t("btnCorrigerCoordonnees") + "</button></div>") + "</td>" +
         "<td><select data-commande='" + o.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === o.statut ? " selected" : "") + ">" + esc(libelleStatutCommande(s)) + "</option>").join("") + "</select>" +
           (o.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
@@ -3084,6 +3096,28 @@ async function renderCommandes() {
       if (sel.value === "Annulée") raison = prompt(t("promptRaisonAnnulation")) || "";
       try {
         await api("/api/" + marchandActif.id + "/commandes/" + sel.dataset.commande + "/statut", { method: "PUT", body: JSON.stringify({ statut: sel.value, raisonAnnulation: raison }) });
+        renderCommandes();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    });
+  });
+
+  // Etape 49 : corriger le telephone / l'adresse d'une commande (le client s'est trompe et previent par un
+  // autre canal). Annuler un prompt (null) = ne rien changer pour ce champ.
+  Array.prototype.forEach.call(zone.querySelectorAll("button[data-corriger]"), (btn) => {
+    btn.addEventListener("click", async () => {
+      const tel = prompt(t("promptNouveauTelephone"), btn.dataset.tel || "");
+      if (tel === null) return;
+      let adr = null;
+      if (btn.dataset.retrait !== "1") {
+        adr = prompt(t("promptNouvelleAdresse"), btn.dataset.adr || "");
+        if (adr === null) return;
+      }
+      const corps = {};
+      if (tel.trim() && tel.trim() !== btn.dataset.tel) corps.telephone = tel.trim();
+      if (adr !== null && adr.trim() && adr.trim() !== btn.dataset.adr) corps.adresse = adr.trim();
+      if (!Object.keys(corps).length) return;
+      try {
+        await api("/api/" + marchandActif.id + "/commandes/" + btn.dataset.corriger + "/coordonnees", { method: "PUT", body: JSON.stringify(corps) });
         renderCommandes();
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     });

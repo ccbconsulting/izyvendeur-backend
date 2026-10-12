@@ -1574,6 +1574,36 @@ rôles employé, journal masqué au marchand) et `test_etape48_hybride_admin_pla
 tableau de bord combiné, Simulateur avec boutons, IzyFacture dans le bon onglet, marchand simple inchangé, employés, super-administrateur :
 accord, retrait avec confirmation, création d'un hybride).
 
+## Étape 49 — Corriger son numéro ou son adresse avant de confirmer une commande (nouveau)
+
+**Ce qui changeait un client qui se trompait** : le récapitulatif n'affichait pas son numéro, « non » laissait la commande enregistrée avec l'erreur,
+et toute autre réponse faisait seulement répéter « oui / non ». Désormais :
+
+- **Le récapitulatif affiche le téléphone** (« Tél : 6xx… » / « Phone: … ») en plus de l'adresse, avec trois boutons WhatsApp : **Oui / Non / Modifier**
+  (Yes / No / Edit en anglais). Le texte invite aussi à répondre « modifier ».
+- **Le client envoie simplement la bonne information** : un numéro (« mon numéro est 677000111 »), une adresse précédée du mot « adresse : … », ou les deux
+  d'un coup. La **même commande** est mise à jour (même référence, pas de doublon) et le récapitulatif corrigé est renvoyé. Les mots de liaison
+  (« mon numéro est », « adresse : ») ne sont jamais pris pour une adresse.
+- **« Modifier / corriger / erreur / je me suis trompé » (ou le bouton Modifier)** ouvre une saisie guidée : le client envoie son bon numéro et/ou sa
+  bonne adresse (un texte libre sans numéro est pris comme la nouvelle adresse).
+- **« Non »** propose maintenant de corriger avant de laisser la commande en attente. Le client répond **« annuler »** pour retrouver l'ancien
+  comportement : commande « Nouvelle », équipe qui revient vers lui, conversation remise à zéro.
+- **Retrait en boutique** : l'adresse de retrait n'est jamais modifiée, seul le numéro peut l'être.
+- **Tout est bilingue** (FR/EN, selon la langue choisie par le client). L'alerte envoyée au marchand à la confirmation porte les coordonnées **corrigées**.
+- Le moteur rendez-vous n'est pas concerné : le téléphone d'un rendez-vous est le numéro WhatsApp du client lui-même (rien à saisir, donc rien à se tromper).
+
+**Côté marchand, dans /admin > Commandes** : un bouton **« Corriger tél./adresse »** sous l'adresse de chaque commande WhatsApp (jamais sur une vente en
+caisse). Deux questions (téléphone puis adresse ; une seule en retrait), annuler une question ne change rien. Le numéro est contrôlé côté serveur
+(format camerounais, espaces et « +237 » acceptés puis normalisés) et l'adresse limitée à 200 caractères. La ligne porte la mention « corrigé ».
+Route : `PUT /api/:id/commandes/:orderId/coordonnees`, même permission « commandes » que le changement de statut (un employé sans ce rôle ou un autre
+marchand reçoit un refus). L'action est inscrite dans le Journal des modifications (sans le numéro ni l'adresse, seulement les champs touchés).
+
+Testé le 12 octobre 2026 : `test_etape49_correction_commande.js` (webhooks WhatsApp réels simulés : récapitulatif avec téléphone et trois boutons,
+corrections successives du numéro, de l'adresse, des deux, bouton Modifier, « non » puis « annuler », message ambigu, parcours anglais, alerte
+marchand avec les nouvelles coordonnées, API /admin : validations, retrait, vente caisse, 404, permissions, journal) et
+`test_etape49_correction_commande_playwright.js` (navigateur : bouton, deux questions, retrait, annulation, numéro invalide), plus la régression
+complète des tests existants.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1588,6 +1618,7 @@ accord, retrait avec confirmation, création d'un hybride).
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 49 : `conversation.js` (récapitulatif avec téléphone, étape de correction, `updateOrderContact`), `server.js` (bouton Modifier, route `PUT /api/:id/commandes/:orderId/coordonnees`, journal) et `public/admin.html` (bouton « Corriger tél./adresse », textes FR/EN).
 - Étape 48 : `server.js` (accord/retrait à chaud du second volet, création hybride, Simulateur par le routeur, journal), `hybride.js` (réinitialisation d'un numéro), `conversation.js` et `conversationService.js` (le Simulateur accepte les options du routeur) et `public/admin.html` (onglets fusionnés, tableau de bord combiné, Simulateur à boutons, bloc « Second volet », création hybride, IzyFacture du volet principal).
 - Étape 47 : `hybride.js` (NOUVEAU : routeur langue → menu → volet), `server.js` (registre à deux moteurs, vues par volet, intégration webhook, conversations regroupées, boucles de rappel/réessai), `conversation.js` et `conversationService.js` (état persistant par clé, reprise sans message synthétique, langue de session), `shared.js` (durée de pause humaine exportée) et `db.js` (colonne `module_secondaire`).
 - Étape 46 : `izyfacture.js` (facture d'un rendez-vous), `conversationService.js` (lecture d'un rendez-vous, enregistrement de l'état de facturation), `server.js` (facturation à « Honoré », avoir à l'annulation, routes facturer/paiement des rendez-vous, balayage de réessai, journal) et `public/admin.html` (colonne Facture, bloc IzyFacture des Paramètres service, boutons partagés avec les commandes).
