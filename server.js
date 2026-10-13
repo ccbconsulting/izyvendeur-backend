@@ -2901,6 +2901,41 @@ function tW(etat, texteFr, texteEn) {
   return etat && etat.langue === "en" ? texteEn : texteFr;
 }
 
+// Etape 50 (13 oct 2026) : le moteur catalogue annonce "Quel article vous interesse ? Nous avons : A, B, C..."
+// en listant TOUS les articles dans le texte. Avec un grand catalogue (cas reel : 62 parfums), ce texte
+// devient un pave illisible ET depasse la limite WhatsApp de 1024 caracteres pour le corps d'un message
+// interactif (la fin etait coupee en plein mot). Quand le catalogue depasse SEUIL_LISTE_COMPACTE articles
+// et qu'un menu cliquable accompagne le message (categories ou articles), on retire donc cette liste du
+// corps : elle est de toute facon dans le menu. A la place on met le "message d'accueil personnalise" du
+// marchand (Parametres) s'il en a un - il est ainsi rappele a chaque affichage du catalogue - sinon une
+// courte invite a toucher le bouton. Petit catalogue (<= seuil) : AUCUN changement, la liste reste dans le
+// texte comme avant. Le texte de repli (si l'envoi interactif echoue) reste, lui, le texte d'origine.
+const SEUIL_LISTE_COMPACTE = 8;
+function compacterTexteMenuCatalogue(marchand, texte, etat) {
+  try {
+    if (!marchand || !marchand.engine || marchand.engine.type !== "catalogue") return texte;
+    if ((marchand.engine.getCatalog() || []).length <= SEUIL_LISTE_COMPACTE) return texte;
+    const m = String(texte).match(/^([\s\S]*?(?:[Qq]uel (?:autre )?article vous intéresse \?|[Ww]hich (?:other )?item are you interested in\?))\s*(?:Nous avons|We have)\s*:[\s\S]*$/);
+    if (!m) return texte;
+    const entete = m[1].trim();
+    const en = etat && etat.langue === "en";
+    const reglages = (marchand.engine.getSettings && marchand.engine.getSettings()) || {};
+    const accueilFr = String(reglages.messageAccueilSupplementaire || "").trim();
+    const accueilEn = String(reglages.messageAccueilSupplementaireEn || "").trim();
+    const accueil = en ? (accueilEn || accueilFr) : (accueilFr || accueilEn);
+    let corps;
+    if (accueil) {
+      const seule = entete.match(/^(?:Bonjour ! |Hello! )?(Quel article vous intéresse \?|Which item are you interested in\?)$/);
+      corps = seule ? accueil + "\n\n" + seule[1] : entete + "\n\n" + accueil;
+    } else {
+      corps = entete + " " + (en ? "Tap the button below to browse our catalog." : "Touchez le bouton ci-dessous pour parcourir notre catalogue.");
+    }
+    return tronquerTexte(corps, 1000);
+  } catch (e) {
+    return texte;
+  }
+}
+
 // Tente d'accompagner `texte` (la reponse deja calculee par le moteur) d'un menu cliquable adapte a l'etat
 // de la conversation. Renvoie true si un message interactif a bien ete envoye (rien d'autre a faire),
 // false s'il n'y a pas de menu pertinent ICI ou si l'envoi a echoue (l'appelant se rabat alors sur
@@ -2939,6 +2974,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
   if (etat.stage === "idle" && etat.pretPourChoix) {
     const estCatalogue = marchand.engine.type === "catalogue";
+    texte = compacterTexteMenuCatalogue(marchand, texte, etat); // Etape 50 : voir plus haut
 
     // Navigation par categorie (Etape 24) : seulement si ca a un vrai interet (2+ categories distinctes) -
     // un catalogue non categorise, ou avec une seule categorie, garde le comportement direct d'avant (liste

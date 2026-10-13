@@ -1604,6 +1604,25 @@ marchand avec les nouvelles coordonnées, API /admin : validations, retrait, ven
 `test_etape49_correction_commande_playwright.js` (navigateur : bouton, deux questions, retrait, annulation, numéro invalide), plus la régression
 complète des tests existants.
 
+## Étape 50 — Menu du catalogue allégé pour les grands catalogues (nouveau)
+
+Demandé après un test réel sur le marchand CHOLY House (62 parfums) : le premier message du bot énumérait
+tous les articles dans son texte (« Nous avons : H01 …, H02 …, … »). C'était un pavé illisible pour le client
+et, au-delà de 1024 caractères, WhatsApp coupait la fin en plein mot (« … F20 K »).
+
+- **Règle.** Si le catalogue compte **plus de 8 articles** et qu'un menu cliquable accompagne le message
+  (écran des catégories, ou liste des articles), la liste des noms est **retirée du texte** : elle est de toute
+  façon dans le menu.
+- **À la place :** le **message d'accueil personnalisé** du marchand (Paramètres), dans la langue du client
+  (anglais si rempli, sinon le français, et inversement), suivi de la question « Quel article vous intéresse ? ».
+  Il est donc rappelé **à chaque affichage du catalogue** (début de conversation, panier vidé, retour au
+  catalogue…), en plus de son affichage unique avant le choix de langue, qui ne change pas. Sans message
+  d'accueil, une courte invite le remplace : « Touchez le bouton ci-dessous pour parcourir notre catalogue. »
+- **Petit catalogue (8 articles ou moins) :** rien ne change, la liste reste dans le texte comme avant.
+- **Conseil de rédaction :** comme ce message est maintenant répété, évitez d'y écrire « Choisissez votre
+  langue » : le choix de langue s'affiche juste en dessous au tout premier message.
+- Aucune migration ni nouvelle variable. Fichier modifié : `server.js` uniquement (`compacterTexteMenuCatalogue`).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1619,6 +1638,7 @@ complète des tests existants.
 ## Fichiers modifiés dans ce zip
 
 - Étape 49 : `conversation.js` (récapitulatif avec téléphone, étape de correction, `updateOrderContact`), `server.js` (bouton Modifier, route `PUT /api/:id/commandes/:orderId/coordonnees`, journal) et `public/admin.html` (bouton « Corriger tél./adresse », textes FR/EN).
+- Étape 50 : `server.js` (`compacterTexteMenuCatalogue` : corps du menu catalogue sans la liste de tous les articles quand le catalogue dépasse 8 articles, message d'accueil du marchand à la place).
 - Étape 48 : `server.js` (accord/retrait à chaud du second volet, création hybride, Simulateur par le routeur, journal), `hybride.js` (réinitialisation d'un numéro), `conversation.js` et `conversationService.js` (le Simulateur accepte les options du routeur) et `public/admin.html` (onglets fusionnés, tableau de bord combiné, Simulateur à boutons, bloc « Second volet », création hybride, IzyFacture du volet principal).
 - Étape 47 : `hybride.js` (NOUVEAU : routeur langue → menu → volet), `server.js` (registre à deux moteurs, vues par volet, intégration webhook, conversations regroupées, boucles de rappel/réessai), `conversation.js` et `conversationService.js` (état persistant par clé, reprise sans message synthétique, langue de session), `shared.js` (durée de pause humaine exportée) et `db.js` (colonne `module_secondaire`).
 - Étape 46 : `izyfacture.js` (facture d'un rendez-vous), `conversationService.js` (lecture d'un rendez-vous, enregistrement de l'état de facturation), `server.js` (facturation à « Honoré », avoir à l'annulation, routes facturer/paiement des rendez-vous, balayage de réessai, journal) et `public/admin.html` (colonne Facture, bloc IzyFacture des Paramètres service, boutons partagés avec les commandes).
