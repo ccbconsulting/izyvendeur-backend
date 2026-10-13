@@ -1623,6 +1623,16 @@ et, au-delà de 1024 caractères, WhatsApp coupait la fin en plein mot (« … F
   langue » : le choix de langue s'affiche juste en dessous au tout premier message.
 - Aucune migration ni nouvelle variable. Fichier modifié : `server.js` uniquement (`compacterTexteMenuCatalogue`).
 
+## Étape 51 — Le Simulateur montre le même texte allégé que WhatsApp (nouveau)
+
+Suite de l'Étape 50 : l'onglet **Simulateur WhatsApp** de /admin affichait encore le texte brut du bot, donc la
+longue liste de tous les articles, alors que le vrai WhatsApp la remplace maintenant par votre message
+d'accueil. Le Simulateur applique désormais **la même règle, dans les mêmes conditions** (catalogue de plus de
+8 articles, bot prêt à recevoir le choix d'un article). Le marchand voit ainsi ce que voit son client et peut
+l'aider. Les réponses qui ne sont pas un retour au catalogue (quantité, panier, confirmation…) ne changent pas.
+Limite inchangée : le Simulateur n'affiche toujours pas les boutons et listes cliquables de WhatsApp.
+Aucune migration. Fichier modifié : `server.js` uniquement (`compacterReponseSimulateur`, volets hybrides inclus).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1639,6 +1649,7 @@ et, au-delà de 1024 caractères, WhatsApp coupait la fin en plein mot (« … F
 
 - Étape 49 : `conversation.js` (récapitulatif avec téléphone, étape de correction, `updateOrderContact`), `server.js` (bouton Modifier, route `PUT /api/:id/commandes/:orderId/coordonnees`, journal) et `public/admin.html` (bouton « Corriger tél./adresse », textes FR/EN).
 - Étape 50 : `server.js` (`compacterTexteMenuCatalogue` : corps du menu catalogue sans la liste de tous les articles quand le catalogue dépasse 8 articles, message d'accueil du marchand à la place).
+- Étape 51 : `server.js` (`compacterReponseSimulateur` : le Simulateur applique le même allègement du texte du catalogue que WhatsApp).
 - Étape 48 : `server.js` (accord/retrait à chaud du second volet, création hybride, Simulateur par le routeur, journal), `hybride.js` (réinitialisation d'un numéro), `conversation.js` et `conversationService.js` (le Simulateur accepte les options du routeur) et `public/admin.html` (onglets fusionnés, tableau de bord combiné, Simulateur à boutons, bloc « Second volet », création hybride, IzyFacture du volet principal).
 - Étape 47 : `hybride.js` (NOUVEAU : routeur langue → menu → volet), `server.js` (registre à deux moteurs, vues par volet, intégration webhook, conversations regroupées, boucles de rappel/réessai), `conversation.js` et `conversationService.js` (état persistant par clé, reprise sans message synthétique, langue de session), `shared.js` (durée de pause humaine exportée) et `db.js` (colonne `module_secondaire`).
 - Étape 46 : `izyfacture.js` (facture d'un rendez-vous), `conversationService.js` (lecture d'un rendez-vous, enregistrement de l'état de facturation), `server.js` (facturation à « Honoré », avoir à l'annulation, routes facturer/paiement des rendez-vous, balayage de réessai, journal) et `public/admin.html` (colonne Facture, bloc IzyFacture des Paramètres service, boutons partagés avec les commandes).

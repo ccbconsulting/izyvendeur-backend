@@ -2313,9 +2313,25 @@ function simulerHybride(entry, message) {
   if (d.type === "menu") return { reponse: d.texte, trace: null, volet: null, boutons: d.boutons.map((b) => ({ volet: b.volet, title: b.title })) };
   let r;
   if (d.type === "reprise") r = { reponse: d.reponse, trace: null };
-  else r = entry.moteurs[d.volet].handleMessageSimulateur(d.texte, d.sansJournalClient ? { sansJournalClient: true } : undefined);
+  else r = compacterReponseSimulateur(entry.moteurs[d.volet], entry.moteurs[d.volet].handleMessageSimulateur(d.texte, d.sansJournalClient ? { sansJournalClient: true } : undefined));
   if (r.reponse && d.suffixe) r.reponse += d.suffixe;
   return Object.assign({}, r, { volet: d.volet });
+}
+
+// Etape 51 (13 oct 2026) : le Simulateur affichait le texte BRUT du moteur, donc encore la longue liste de
+// tous les articles, alors que le vrai WhatsApp la remplace desormais par le message d'accueil du marchand
+// (Etape 50, compacterTexteMenuCatalogue). On applique ici la MEME regle, dans les MEMES conditions que
+// le vrai envoi (etape "idle" + pret pour un choix), pour que le marchand voie ce que voit son client et
+// puisse l'aider. Les boutons/listes cliquables, eux, ne sont toujours pas simules.
+function compacterReponseSimulateur(moteur, resultat) {
+  try {
+    if (!resultat || !resultat.reponse || !moteur || moteur.type !== "catalogue" || typeof moteur.getEtatSession !== "function") return resultat;
+    const etat = moteur.getEtatSession("SIMULATEUR"); // numero reserve, voir PHONE_SIMULATEUR dans conversation.js
+    if (!etat || etat.stage !== "idle" || !etat.pretPourChoix) return resultat;
+    return Object.assign({}, resultat, { reponse: compacterTexteMenuCatalogue({ engine: moteur }, resultat.reponse, etat) });
+  } catch (e) {
+    return resultat;
+  }
 }
 
 app.post("/api/:id/simulateur/message", protegerAcces, (req, res) => {
@@ -2332,7 +2348,7 @@ app.post("/api/:id/simulateur/message", protegerAcces, (req, res) => {
   // Marchand hybride SANS `?volet=` : le Simulateur passe par le MEME routeur que le vrai WhatsApp (porte de
   // langue, menu a deux boutons, paniers separes). Avec `?volet=`, il teste directement ce volet.
   if (modeRouteur) return res.json(simulerHybride(merchantExistant, String(message)));
-  res.json(entry.engine.handleMessageSimulateur(String(message)));
+  res.json(compacterReponseSimulateur(entry.engine, entry.engine.handleMessageSimulateur(String(message))));
 });
 
 app.post("/api/:id/simulateur/reset", protegerAcces, (req, res) => {
