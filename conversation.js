@@ -250,15 +250,25 @@ function createCatalogEngine(merchantKey, options) {
     return items.reduce((s, it) => s + it.prixUnitaire * it.quantite, 0);
   }
 
+  // Etape 52 : "-" (ou "—") est la couleur par defaut des articles sans couleur (ex: parfums). Il ne doit
+  // jamais s'afficher au client : joindreVariante ignore ces valeurs vides/placeholder.
+  function joindreVariante(sep) {
+    const parts = Array.prototype.slice.call(arguments, 1).filter((x) => {
+      const t = String(x == null ? "" : x).trim();
+      return t !== "" && t !== "-" && t !== "—" && t !== "–";
+    });
+    return parts.join(sep);
+  }
+
   function describeItems(items) {
     return items
-      .map((it) => "• " + it.produit + " — " + it.couleur + " · " + it.taille + " × " + it.quantite + " — " + formatFcfa(it.prixUnitaire * it.quantite))
+      .map((it) => "• " + it.produit + " — " + joindreVariante(" · ", it.couleur, it.taille) + " × " + it.quantite + " — " + formatFcfa(it.prixUnitaire * it.quantite))
       .join("\n");
   }
 
   function describeItemsNumbered(items) {
     return items
-      .map((it, i) => (i + 1) + ". " + it.produit + " — " + it.couleur + " · " + it.taille + " × " + it.quantite + " — " + formatFcfa(it.prixUnitaire * it.quantite))
+      .map((it, i) => (i + 1) + ". " + it.produit + " — " + joindreVariante(" · ", it.couleur, it.taille) + " × " + it.quantite + " — " + formatFcfa(it.prixUnitaire * it.quantite))
       .join("\n");
   }
 
@@ -539,12 +549,18 @@ function createCatalogEngine(merchantKey, options) {
   // Extrait un telephone et/ou une adresse d'un message libre. Meme regex de telephone que l'etape
   // awaiting_delivery. Ignore les "mots de liaison" ("mon numero est", "adresse :"...) pour ne pas les
   // prendre pour une adresse. En retrait, l'adresse (boutique) n'est jamais modifiable.
-  const REGEX_TELEPHONE = /(\+?237)?[\s.-]?[62]\d{7,8}/;
+  // Etape 52 : accepte les separateurs (espaces, points, tirets) entre les chiffres : "6 90 12 34 56",
+  // "+237 6 77 88 99 11", "690-12-34-56". Le numero stocke est normalise (sans separateurs internes).
+  const REGEX_TELEPHONE = /(?<![\d])(\+?237[\s.-]?)?[62](?:[\s.-]?\d){7,8}(?![\d])/;
+  function normaliserTelephone(brut) {
+    const t = String(brut || "").trim();
+    return (t.startsWith("+") ? "+" : "") + t.replace(/[^\d]/g, "");
+  }
   function extraireCoordonnees(texte, modeRetrait) {
     const res = { telephone: null, adresse: null };
     let reste = String(texte || "");
     const m = reste.match(REGEX_TELEPHONE);
-    if (m) { res.telephone = m[0].trim(); reste = reste.replace(m[0], " "); }
+    if (m) { res.telephone = normaliserTelephone(m[0]); reste = reste.replace(m[0], " "); }
     const k = reste.match(/^([\s\S]*\b(?:num[ée]ro|num|t[ée]l[ée]?phone|t[ée]l|phone|number|adresse|address)\b)[\s:,;.\-]*(?:(?:est|is|c['’]est|it['’]s)\b)?[\s:,;.\-]*([\s\S]*)$/i);
     if (k) reste = k[2];
     reste = reste.replace(/^[\s:,;.\-]+|[\s:,;.\-]+$/g, "").replace(/\s+/g, " ");
@@ -663,8 +679,8 @@ function createCatalogEngine(merchantKey, options) {
         trace.action = "Quantité demandée supérieure au stock virtuel disponible";
         logTrace(session, trace);
         return sh.t(session,
-          "Il ne me reste que " + virt0 + " pièce(s) disponible(s) pour " + product0.nom + " " + variant0.couleur + " " + variant0.taille + ". Combien en voulez-vous (max " + virt0 + ") ?",
-          "I only have " + virt0 + " piece(s) left for " + product0.nom + " " + variant0.couleur + " " + variant0.taille + ". How many would you like (max " + virt0 + ")?"
+          "Il ne me reste que " + virt0 + " pièce(s) disponible(s) pour " + joindreVariante(" ", product0.nom, variant0.couleur, variant0.taille) + ". Combien en voulez-vous (max " + virt0 + ") ?",
+          "I only have " + virt0 + " piece(s) left for " + joindreVariante(" ", product0.nom, variant0.couleur, variant0.taille) + ". How many would you like (max " + virt0 + ")?"
         );
       }
       session.cart.push({ productId: product0.id, produit: product0.nom, couleur: variant0.couleur, taille: variant0.taille, quantite: qty, prixUnitaire: variant0.prix });
@@ -673,8 +689,8 @@ function createCatalogEngine(merchantKey, options) {
       trace.action = "Article ajouté au panier — proposition d'ajouter un autre article";
       logTrace(session, trace);
       return ouverture(session, OUVERTURES_AJOUT, OUVERTURES_AJOUT_EN) + sh.t(session,
-        " Ajouté au panier ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article, voir votre panier, ou terminer votre commande ?",
-        " Added to cart ✅ " + qty + " × " + product0.nom + " " + variant0.couleur + " " + variant0.taille + " — " + formatFcfa(variant0.prix * qty) + ".\nWould you like to add another item, view your cart, or complete your order?"
+        " Ajouté au panier ✅ " + qty + " × " + joindreVariante(" ", product0.nom, variant0.couleur, variant0.taille) + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article, voir votre panier, ou terminer votre commande ?",
+        " Added to cart ✅ " + qty + " × " + joindreVariante(" ", product0.nom, variant0.couleur, variant0.taille) + " — " + formatFcfa(variant0.prix * qty) + ".\nWould you like to add another item, view your cart, or complete your order?"
       );
     }
 
@@ -712,7 +728,7 @@ function createCatalogEngine(merchantKey, options) {
         const idx = parseInt(posMatch[1], 10) - 1;
         if (idx >= 0 && idx < session.cart.length) {
           const retire = session.cart.splice(idx, 1)[0];
-          trace.action = "Article retiré du panier : " + retire.produit + " " + retire.couleur + " " + retire.taille;
+          trace.action = "Article retiré du panier : " + retire.produit + " " + joindreVariante(" ", retire.couleur, retire.taille);
           logTrace(session, trace);
           if (!session.cart.length) {
             session.stage = "idle";
@@ -812,7 +828,7 @@ function createCatalogEngine(merchantKey, options) {
         logTrace(session, trace);
         return reponsePanier;
       }
-      const phoneMatch = text.match(/(\+?237)?[\s.-]?[62]\d{7,8}/);
+      const phoneMatch = text.match(REGEX_TELEPHONE);
       const additiveIntent = /\b(aussi|encore|ajout|en\s*plus|also|more|add)\b/i.test(text);
       if (!phoneMatch && !session.adresse && (text.trim().length <= 20 || additiveIntent)) {
         const directProduct = matchProduct(text);
@@ -825,7 +841,7 @@ function createCatalogEngine(merchantKey, options) {
         }
       }
       let remaining = text;
-      if (phoneMatch) { session.telephone = phoneMatch[0].trim(); remaining = text.replace(phoneMatch[0], "").trim(); }
+      if (phoneMatch) { session.telephone = normaliserTelephone(phoneMatch[0]); remaining = text.replace(phoneMatch[0], "").trim(); }
       // En retrait, l'adresse est deja pre-remplie avec celle de la boutique (voir awaiting_mode_livraison
       // ci-dessus) - on ne la laisse JAMAIS ecraser par du texte que le client tape en donnant son numero
       // (ex: "677123456 merci" -> le reste ne doit pas remplacer l'adresse de retrait).
@@ -1081,8 +1097,8 @@ function createCatalogEngine(merchantKey, options) {
       session.pendingChoice = { type: "taille", options: uniqueSizes };
       const prefixeTaille = couleurReconnue ? ouverture(session, OUVERTURES_COULEUR, OUVERTURES_COULEUR_EN) + " " : "";
       return prefixeTaille + sh.t(session,
-        "Quelle taille pour " + product.nom + " " + couleur + " ? Disponible : " + uniqueSizes.join(", ") + ".",
-        "What size for " + product.nom + " " + couleur + "? Available: " + uniqueSizes.join(", ") + "."
+        "Quelle taille pour " + joindreVariante(" ", product.nom, couleur) + " ? Disponible : " + uniqueSizes.join(", ") + ".",
+        "What size for " + joindreVariante(" ", product.nom, couleur) + "? Available: " + uniqueSizes.join(", ") + "."
       );
     }
 
@@ -1091,7 +1107,7 @@ function createCatalogEngine(merchantKey, options) {
       trace.action = "Combinaison introuvable — options proposées";
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
       logTrace(session, trace);
-      const options0 = product.variantes.map((v) => v.couleur + " " + v.taille).join(", ");
+      const options0 = product.variantes.map((v) => joindreVariante(" ", v.couleur, v.taille)).join(", ");
       return sh.t(session,
         "Désolée, je n'ai pas cette combinaison pour " + product.nom + ". Options disponibles : " + options0 + ".",
         "Sorry, I don't have that combination for " + product.nom + ". Available options: " + options0 + "."
@@ -1108,10 +1124,10 @@ function createCatalogEngine(merchantKey, options) {
       logTrace(session, trace);
       if (alternatives.length) {
         session.pendingChoice = { type: "variante", options: alternatives.map((v) => ({ couleur: v.couleur, taille: v.taille })) };
-        const alt = alternatives.map((v) => v.couleur + " " + v.taille + " (" + virtualStock(product.id, v) + ")").join(", ");
+        const alt = alternatives.map((v) => joindreVariante(" ", v.couleur, v.taille) + " (" + virtualStock(product.id, v) + ")").join(", ");
         return sh.t(session,
-          "Désolée, " + product.nom + " " + variant.couleur + " " + variant.taille + " est en rupture 😕. Il me reste : " + alt + ". Lequel voulez-vous ?",
-          "Sorry, " + product.nom + " " + variant.couleur + " " + variant.taille + " is out of stock 😕. I still have: " + alt + ". Which one would you like?"
+          "Désolée, " + joindreVariante(" ", product.nom, variant.couleur, variant.taille) + " est en rupture 😕. Il me reste : " + alt + ". Lequel voulez-vous ?",
+          "Sorry, " + joindreVariante(" ", product.nom, variant.couleur, variant.taille) + " is out of stock 😕. I still have: " + alt + ". Which one would you like?"
         );
       }
       // On RETIENT la question posee (etape dediee) : sans cela, le "oui" du client retombait sur le meme
@@ -1134,8 +1150,8 @@ function createCatalogEngine(merchantKey, options) {
     const mentionStock = product.stockIllimite ? "" : (" (" + virt + " pièce(s) en stock)");
     const mentionStockEn = product.stockIllimite ? "" : (" (" + virt + " piece(s) in stock)");
     return ouverture(session, OUVERTURES_DISPO, OUVERTURES_DISPO_EN) + sh.t(session,
-      " il est disponible ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " l'unité" + mentionStock + ". Combien de pièces souhaitez-vous ?",
-      " it's available ✅ " + product.nom + " " + variant.couleur + " " + variant.taille + " — " + formatFcfa(variant.prix) + " each" + mentionStockEn + ". How many would you like?"
+      " il est disponible ✅ " + joindreVariante(" ", product.nom, variant.couleur, variant.taille) + " — " + formatFcfa(variant.prix) + " l'unité" + mentionStock + ". Combien de pièces souhaitez-vous ?",
+      " it's available ✅ " + joindreVariante(" ", product.nom, variant.couleur, variant.taille) + " — " + formatFcfa(variant.prix) + " each" + mentionStockEn + ". How many would you like?"
     );
   }
 
@@ -1942,7 +1958,7 @@ function createCatalogEngine(merchantKey, options) {
       if (quantite < 1) return { erreur: "Quantité invalide pour \"" + p.nom + "\"." };
       const disponible = virtualStock(p.id, v);
       if (quantite > disponible) {
-        return { erreur: "Stock insuffisant pour \"" + p.nom + "\" (" + v.couleur + " " + v.taille + ") : " + disponible + " disponible(s)." };
+        return { erreur: "Stock insuffisant pour \"" + p.nom + "\" (" + joindreVariante(" ", v.couleur, v.taille) + ") : " + disponible + " disponible(s)." };
       }
       items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, prixUnitaire: v.prix, prix: v.prix * quantite, _variant: v });
     }

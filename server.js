@@ -2926,6 +2926,10 @@ function tW(etat, texteFr, texteEn) {
 // marchand (Parametres) s'il en a un - il est ainsi rappele a chaque affichage du catalogue - sinon une
 // courte invite a toucher le bouton. Petit catalogue (<= seuil) : AUCUN changement, la liste reste dans le
 // texte comme avant. Le texte de repli (si l'envoi interactif echoue) reste, lui, le texte d'origine.
+// Etape 52 : la couleur par defaut "-" (articles sans couleur) ne doit pas apparaitre dans les listes WhatsApp.
+function libelleVarianteClient(couleur, taille) {
+  return [couleur, taille].filter((x) => { const t = String(x == null ? "" : x).trim(); return t !== "" && t !== "-" && t !== "—" && t !== "–"; }).join(" ");
+}
 const SEUIL_LISTE_COMPACTE = 8;
 function compacterTexteMenuCatalogue(marchand, texte, etat) {
   try {
@@ -3037,7 +3041,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     if (!labels) return false;
 
     const items = pc.options.slice(0, 8).map((opt) => {
-      const libelle = pc.type === "variante" ? opt.couleur + " " + opt.taille : String(opt);
+      const libelle = pc.type === "variante" ? libelleVarianteClient(opt.couleur, opt.taille) : String(opt);
       return { id: libelle, nom: libelle, description: "" };
     });
     // Le client peut regarder cette liste sans s'y engager : une ligne le ramène directement au catalogue
@@ -3067,7 +3071,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     const rows = etat.cart.slice(0, 6).map((it, i) => ({
       id: PREFIXE_RETIRER_PANIER + i,
       title: tronquerTexte(it.produit, 24),
-      description: tronquerTexte(tW(etat, "🗑️ Retirer — ", "🗑️ Remove — ") + it.couleur + " " + it.taille + " × " + it.quantite + " — " + sh.formatFcfa(it.prixUnitaire * it.quantite), 72)
+      description: tronquerTexte(tW(etat, "🗑️ Retirer — ", "🗑️ Remove — ") + libelleVarianteClient(it.couleur, it.taille) + " × " + it.quantite + " — " + sh.formatFcfa(it.prixUnitaire * it.quantite), 72)
     }));
     rows.push({ id: ID_PANIER_CONTINUER, title: tronquerTexte(tW(etat, "🛍️ Continuer mes achats", "🛍️ Keep shopping"), 24) });
     rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte(tW(etat, "✅ Terminer ma commande", "✅ Complete my order"), 24) });

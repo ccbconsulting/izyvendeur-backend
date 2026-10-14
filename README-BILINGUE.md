@@ -1633,6 +1633,22 @@ l'aider. Les réponses qui ne sont pas un retour au catalogue (quantité, panier
 Limite inchangée : le Simulateur n'affiche toujours pas les boutons et listes cliquables de WhatsApp.
 Aucune migration. Fichier modifié : `server.js` uniquement (`compacterReponseSimulateur`, volets hybrides inclus).
 
+## Étape 52 — Numéros avec espaces reconnus, et plus de « - » à la place de la couleur (nouveau)
+
+Deux défauts trouvés en rejouant le parcours client dans le Simulateur (catalogue CHOLY House) :
+
+1. **Téléphone écrit avec des espaces.** « 6 90 12 34 56 Bonamoussadi » ou « +237 6 77 88 99 11 » n'étaient pas
+   reconnus : le bot redemandait le numéro. Les séparateurs (espaces, points, tirets) entre les chiffres sont
+   maintenant acceptés, y compris à l'étape « modifier » du récapitulatif. Le numéro enregistré est nettoyé
+   (« 690123456 » ou « +237677889911 »). Les numéros collés fonctionnent comme avant. Un numéro de plus de
+   9 chiffres n'est plus coupé en silence : le bot redemande le numéro.
+2. **Couleur « - ».** Les articles sans couleur (parfums…) ont « - » comme couleur interne, qui s'affichait au
+   client (« Quelle taille pour H01 Invictus - ? », « H01 Invictus — - · 30 ml »). Ce « - » est maintenant masqué
+   dans les messages du bot, le panier, le récapitulatif et les listes WhatsApp. Les vraies couleurs s'affichent
+   comme avant. Rien ne change dans /admin.
+
+Aucune migration. Fichiers modifiés : `conversation.js` et `server.js`. Test : `test_etape52_telephone_couleur.js`.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1649,6 +1665,7 @@ Aucune migration. Fichier modifié : `server.js` uniquement (`compacterReponseSi
 
 - Étape 49 : `conversation.js` (récapitulatif avec téléphone, étape de correction, `updateOrderContact`), `server.js` (bouton Modifier, route `PUT /api/:id/commandes/:orderId/coordonnees`, journal) et `public/admin.html` (bouton « Corriger tél./adresse », textes FR/EN).
 - Étape 50 : `server.js` (`compacterTexteMenuCatalogue` : corps du menu catalogue sans la liste de tous les articles quand le catalogue dépasse 8 articles, message d'accueil du marchand à la place).
+- Étape 52 : `conversation.js` (`REGEX_TELEPHONE` avec séparateurs, `normaliserTelephone`, `joindreVariante`) et `server.js` (`libelleVarianteClient` dans les listes WhatsApp).
 - Étape 51 : `server.js` (`compacterReponseSimulateur` : le Simulateur applique le même allègement du texte du catalogue que WhatsApp).
 - Étape 48 : `server.js` (accord/retrait à chaud du second volet, création hybride, Simulateur par le routeur, journal), `hybride.js` (réinitialisation d'un numéro), `conversation.js` et `conversationService.js` (le Simulateur accepte les options du routeur) et `public/admin.html` (onglets fusionnés, tableau de bord combiné, Simulateur à boutons, bloc « Second volet », création hybride, IzyFacture du volet principal).
 - Étape 47 : `hybride.js` (NOUVEAU : routeur langue → menu → volet), `server.js` (registre à deux moteurs, vues par volet, intégration webhook, conversations regroupées, boucles de rappel/réessai), `conversation.js` et `conversationService.js` (état persistant par clé, reprise sans message synthétique, langue de session), `shared.js` (durée de pause humaine exportée) et `db.js` (colonne `module_secondaire`).
