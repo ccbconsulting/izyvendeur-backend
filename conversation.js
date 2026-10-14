@@ -408,17 +408,50 @@ function createCatalogEngine(merchantKey, options) {
     });
   }
 
+  // Etape 53 : mots-cles de l'article reconnus dans le message + score. Bonus quand le message entier
+  // (ex: "Dior Vol 2") est une partie du nom complet de l'article : cela departage "... Vol 1" / "... Vol 2".
+  function scoreProduit(entry, t) {
+    const hits = entry.keywords.filter((kw) => kw && t.indexOf(kw) !== -1);
+    const phrase = t.trim();
+    let score = hits.reduce((a, k) => a + k.length, 0);
+    if (phrase.length >= 4 && entry.keywords[0] && entry.keywords[0].indexOf(phrase) !== -1) { score += 100; hits.push("§phrase"); }
+    return { hits, score };
+  }
+
   function matchProduct(text) {
     const t = text.toLowerCase();
-    const candidates = [];
+    let meilleur = null;
     buildProductIndex().forEach((entry) => {
-      entry.keywords.forEach((kw) => {
-        if (kw && t.indexOf(kw) !== -1) candidates.push({ id: entry.id, len: kw.length });
-      });
+      const sc = scoreProduit(entry, t);
+      const hits = sc.hits;
+      if (!hits.length) return;
+      // Etape 53 : on retient l'article dont les mots reconnus sont les plus nombreux/longs au total
+      // ("Sauvage Elixir" -> L02, pas le premier article contenant "sauvage"); a egalite, le mot le
+      // plus long puis l'ordre du catalogue (comportement historique).
+      const score = sc.score;
+      const plusLong = Math.max.apply(null, hits.map((k) => k.length));
+      if (!meilleur || score > meilleur.score || (score === meilleur.score && plusLong > meilleur.plusLong)) meilleur = { id: entry.id, score, plusLong };
     });
-    if (!candidates.length) return null;
-    candidates.sort((a, b) => b.len - a.len);
-    return candidates[0].id;
+    return meilleur ? meilleur.id : null;
+  }
+
+  // Etape 53 : plusieurs articles correspondent EXACTEMENT de la meme facon au message du client (ex: "Sauvage"
+  // pour H09 / L02 / L05, ou "My Way" pour F13 / F19). Avant, le premier de la liste etait pris en silence,
+  // et le client pouvait commander le mauvais article. Retourne la liste des ids en cas d'egalite parfaite
+  // (meme score, memes mots reconnus), sinon null : un nom plus precis ("Sauvage Elixir"), un code ou un nom
+  // complet departage toujours, et le comportement historique (mot le plus long) reste inchange.
+  function produitsAmbigus(text) {
+    const t = String(text || "").toLowerCase();
+    const scores = [];
+    buildProductIndex().forEach((entry) => {
+      const sc = scoreProduit(entry, t);
+      if (sc.hits.length) scores.push({ id: entry.id, sig: sc.hits.slice().sort().join("|"), score: sc.score });
+    });
+    if (scores.length < 2) return null;
+    const max = Math.max.apply(null, scores.map((x) => x.score));
+    const top = scores.filter((x) => x.score === max);
+    if (top.length < 2 || !top.every((x) => x.sig === top[0].sig)) return null;
+    return top.map((x) => x.id);
   }
 
   function matchCouleur(text) {
@@ -1006,6 +1039,20 @@ function createCatalogEngine(merchantKey, options) {
     const produitReconnu = matchProduct(text);
     const couleurReconnue = matchCouleur(text);
     const tailleReconnue = matchTaille(text);
+
+    const ambigus = produitReconnu ? produitsAmbigus(text) : null;
+    if (ambigus) {
+      const noms = ambigus.map((id) => state.catalog.filter((p) => p.id === id)[0].nom);
+      const affiche = noms.slice(0, 10).join(", ") + (noms.length > 10 ? "…" : "");
+      session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+      trace.entites = { "Réponse client": text, "Articles correspondants": noms.join(" | ") };
+      trace.action = "Plusieurs articles correspondent (" + noms.length + ") — le client doit préciser lequel";
+      logTrace(session, trace);
+      return sh.t(session,
+        "Plusieurs articles correspondent : " + affiche + ". Lequel souhaitez-vous ? Indiquez son code ou son nom complet.",
+        "Several items match: " + affiche + ". Which one would you like? Please reply with its code or full name."
+      );
+    }
 
     if (!produitReconnu && !couleurReconnue && !tailleReconnue && session.productId && (parseNegative(text) || parseWantsSomethingElse(text))) {
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;

@@ -1649,6 +1649,19 @@ Deux défauts trouvés en rejouant le parcours client dans le Simulateur (catalo
 
 Aucune migration. Fichiers modifiés : `conversation.js` et `server.js`. Test : `test_etape52_telephone_couleur.js`.
 
+## Étape 53 — Nom d'article ambigu : le bot demande lequel (nouveau)
+
+Quand le client écrit un nom qui correspond à **plusieurs articles de la même façon** (« Sauvage » pour H09, L02 et
+L05 ; « My Way » pour F13 et F19 ; « Armani »), le bot choisissait le premier de la liste sans rien dire, et le client
+pouvait commander le mauvais parfum. Il répond maintenant : « Plusieurs articles correspondent : … Lequel
+souhaitez-vous ? Indiquez son code ou son nom complet. » (et son équivalent anglais).
+
+Le choix est aussi plus juste : l'article dont **le plus de mots** correspondent l'emporte (« Sauvage Élixir » donne
+L02 et non plus H09) ; un morceau du nom complet suffit (« Dior Vol 2 » donne H09, « Vol 1 » donne L05) ; un code
+(« L05 ») ou un nom complet est toujours reconnu sans question. Le panier en cours est conservé. Les noms uniques
+(« Invictus ») ne posent aucune question. Aucune migration, aucun réglage. Fichier modifié : `conversation.js`.
+Test : `test_etape53_articles_ambigus.js`.
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1665,6 +1678,7 @@ Aucune migration. Fichiers modifiés : `conversation.js` et `server.js`. Test : 
 
 - Étape 49 : `conversation.js` (récapitulatif avec téléphone, étape de correction, `updateOrderContact`), `server.js` (bouton Modifier, route `PUT /api/:id/commandes/:orderId/coordonnees`, journal) et `public/admin.html` (bouton « Corriger tél./adresse », textes FR/EN).
 - Étape 50 : `server.js` (`compacterTexteMenuCatalogue` : corps du menu catalogue sans la liste de tous les articles quand le catalogue dépasse 8 articles, message d'accueil du marchand à la place).
+- Étape 53 : `conversation.js` (`scoreProduit`, `matchProduct` par score, `produitsAmbigus` et question de précision).
 - Étape 52 : `conversation.js` (`REGEX_TELEPHONE` avec séparateurs, `normaliserTelephone`, `joindreVariante`) et `server.js` (`libelleVarianteClient` dans les listes WhatsApp).
 - Étape 51 : `server.js` (`compacterReponseSimulateur` : le Simulateur applique le même allègement du texte du catalogue que WhatsApp).
 - Étape 48 : `server.js` (accord/retrait à chaud du second volet, création hybride, Simulateur par le routeur, journal), `hybride.js` (réinitialisation d'un numéro), `conversation.js` et `conversationService.js` (le Simulateur accepte les options du routeur) et `public/admin.html` (onglets fusionnés, tableau de bord combiné, Simulateur à boutons, bloc « Second volet », création hybride, IzyFacture du volet principal).
