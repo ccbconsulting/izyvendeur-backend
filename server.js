@@ -3365,7 +3365,7 @@ app.post("/webhook", async (req, res) => {
       const estCatalogue = marchand.engine.type === "catalogue";
       const items = construireItemsListe(marchand);
       const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
-      const rows = construireLignesListe(items, offset, etatPourLangue);
+      const rows = construireLignesListe(items, offset, etatPourLangue, estCatalogue ? [] : lignesMonRendezVous(marchand, from, etatPourLangue));
       const texteCorps = estCatalogue
         ? tW(etatPourLangue, "Voici la suite de nos articles :", "Here are more of our items:")
         : tW(etatPourLangue, "Voici la suite de nos services :", "Here are more of our services:");
@@ -3426,6 +3426,23 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
+    // Etape 63 - clic sur « Mon rendez-vous » : pure navigation (aucun changement d'etat de la conversation) ; on
+    // propose Annuler / Reporter / Contacter un conseiller. Le clic sur l'un de ces boutons passe ensuite par le
+    // moteur comme si la cliente avait ecrit « annuler mon rendez-vous » / « reporter mon rendez-vous ».
+    if (idInteractifClique === ID_MON_RDV && marchand.engine.type === "service") {
+      const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
+      const texteCorps = tW(etatPourLangue, "Que souhaitez-vous faire de votre rendez-vous ?", "What would you like to do with your appointment?");
+      db.logConversationMessage(merchantId, from, "client", tW(etatPourLangue, "Mon rendez-vous", "My appointment")).catch(() => {});
+      const envoye = await envoyerBoutonsWhatsApp(from, phoneNumberId, texteCorps, [
+        { id: ID_RDV_ANNULER, title: tW(etatPourLangue, "Annuler", "Cancel") },
+        { id: ID_RDV_REPORTER, title: tW(etatPourLangue, "Reporter", "Reschedule") },
+        { id: ID_HUMAIN, title: tW(etatPourLangue, "Contacter un conseiller", "Contact an advisor") }
+      ]).catch(() => false);
+      if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
+      else await envoyerMessageWhatsApp(from, texteCorps + "\n" + tW(etatPourLangue, "Écrivez « annuler » ou « reporter ».", "Write \"cancel\" or \"reschedule\"."), phoneNumberId);
+      return;
+    }
+
     // Un clic sur une liste/un bouton (voir essayerEnvoyerMenuInteractif plus bas) arrive comme
     // message.type === "interactive" plutot que du texte libre - on le traduit en texte equivalent AVANT
     // de l'envoyer au moteur de conversation, qui n'a besoin de rien savoir de plus (meme logique de
@@ -3476,6 +3493,8 @@ app.post("/webhook", async (req, res) => {
     }
 
     // Reprise (client revenu dans un volet en plein parcours) : on rejoue sa derniere question telle quelle.
+    // Etape 63 : une annulation demandee par le BOUTON « Annuler » du menu doit etre confirmee (Oui/Non).
+    if (idInteractifClique === ID_RDV_ANNULER) optionsMoteur = Object.assign({}, optionsMoteur, { confirmerAnnulation: true });
     let reponse = reponseDeReprise !== null ? reponseDeReprise : marchand.engine.handleMessage(from, texteMoteur, optionsMoteur);
     if (reponse && suffixeReponse) reponse += suffixeReponse;
 
@@ -3521,6 +3540,12 @@ const ID_OUI = "IZY_OUI";
 const ID_NON = "IZY_NON";
 const ID_MODIFIER = "IZY_MODIFIER"; // Etape 49 : bouton "Modifier" de la confirmation de commande
 const PREFIXE_CRENEAU = "IZY_SLOT_";
+// Etape 63 : menu « Mon rendez-vous » (volet service) - ligne de la liste des services, boutons Annuler/Reporter,
+// et liste cliquable pour choisir parmi plusieurs rendez-vous (le clic = le numero, comme les creneaux).
+const ID_MON_RDV = "IZY_MON_RDV";
+const ID_RDV_ANNULER = "IZY_RDV_ANNULER";
+const ID_RDV_REPORTER = "IZY_RDV_REPORTER";
+const PREFIXE_RDV_CHOIX = "IZY_RDVCHOIX_";
 const PREFIXE_VOIR_PLUS = "IZY_PLUS_";
 // Panier multi-articles (moteur catalogue uniquement) : voir conversation.js (sh.demandeVoirPanier, stage
 // "viewing_cart") et essayerEnvoyerMenuInteractif plus bas.
@@ -3602,6 +3627,16 @@ function construireCategoriesCatalogue(marchand) {
 // `prefixeVoirPlus` (optionnel, defaut PREFIXE_VOIR_PLUS) : quel prefixe d'id utiliser pour la ligne "Voir
 // plus ▸" - necessaire pour distinguer, cote webhook, la pagination du catalogue complet de celle d'une
 // categorie ou de la liste des categories elle-meme (chacune rebatit une page differente au clic).
+// Etape 63 : ligne « Mon rendez-vous » de la liste des services - UNIQUEMENT pour un moteur service et une cliente
+// qui a au moins un rendez-vous a venir (sinon elle n'aurait aucun sens et prendrait une des 10 places).
+function lignesMonRendezVous(marchand, telephone, etat) {
+  try {
+    if (!marchand || !marchand.engine || marchand.engine.type !== "service" || typeof marchand.engine.nbRdvsAVenir !== "function") return [];
+    if (!(marchand.engine.nbRdvsAVenir(telephone) > 0)) return [];
+    return [{ id: ID_MON_RDV, title: tW(etat, "Mon rendez-vous", "My appointment"), description: tW(etat, "Annuler ou reporter", "Cancel or reschedule") }];
+  } catch (e) { return []; }
+}
+
 function construireLignesListe(items, offset, etat, lignesSupplementaires, prefixeVoirPlus) {
   const supplementaires = lignesSupplementaires || [];
   const placesReservees = 1 + supplementaires.length; // "Contacter un conseiller" + lignes supplementaires
@@ -3687,6 +3722,9 @@ function resoudreTexteInteractif(marchand, interactive) {
   if (id === ID_OUI) return "oui";
   if (id === ID_NON) return "non";
   if (id === ID_MODIFIER) return "modifier";
+  if (id === ID_RDV_ANNULER) return "annuler mon rendez-vous"; // Etape 63
+  if (id === ID_RDV_REPORTER) return "reporter mon rendez-vous";
+  if (id.indexOf(PREFIXE_RDV_CHOIX) === 0) return String(Number(id.slice(PREFIXE_RDV_CHOIX.length)) + 1); // position 1-based dans la liste
   if (id === ID_PANIER) return "voir mon panier";
   if (id === ID_AUTRE_ARTICLE) return "autre chose";
   if (id === ID_PANIER_CONTINUER) return "continuer mes achats";
@@ -3804,7 +3842,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
     const items = construireItemsListe(marchand);
     if (!items.length) return false;
-    const rows = construireLignesListe(items, 0, etat);
+    const rows = construireLignesListe(items, 0, etat, estCatalogue ? [] : lignesMonRendezVous(marchand, destinataire, etat));
 
     return envoyerListeWhatsApp(
       destinataire,
@@ -3900,6 +3938,20 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
       { id: ID_OUI, title: tW(etat, "Oui", "Yes") },
       { id: ID_NON, title: tW(etat, "Non", "No") }
     ]);
+  }
+
+  // Etape 63 : confirmation d'une annulation demandee par le menu (boutons Oui/Non explicites).
+  if (etat.stage === "awaiting_annulation_confirm") {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: ID_OUI, title: tW(etat, "Oui, annuler", "Yes, cancel") },
+      { id: ID_NON, title: tW(etat, "Non, le garder", "No, keep it") }
+    ]);
+  }
+
+  // Etape 63 : plusieurs rendez-vous a venir -> liste cliquable (au lieu d'une liste numerotee a retaper).
+  if (etat.stage === "awaiting_rdv_choice" && etat.rdvChoix && etat.rdvChoix.length) {
+    const rows = etat.rdvChoix.slice(0, 9).map((r, i) => ({ id: PREFIXE_RDV_CHOIX + i, title: tronquerTexte(r.ref, 24), description: tronquerTexte(r.detail, 72) }));
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Choisir", "Choose"), [{ title: tW(etat, "Vos rendez-vous", "Your appointments"), rows }]);
   }
 
   if (etat.stage === "awaiting_slot_choice" && etat.proposedSlots && etat.proposedSlots.length) {

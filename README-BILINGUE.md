@@ -2222,3 +2222,14 @@ Fichiers modifiés : `conversationService.js`, `server.js`, `public/admin.html`.
 **Textes modifiés.** Réponse « non » au récapitulatif : « ce créneau n'est pas réservé… » (avant : « votre rendez-vous reste enregistré »).
 
 Fichiers modifiés : `conversationService.js`, `server.js`, `public/admin.html`. Aucune migration, aucune nouvelle variable d'environnement, aucun nouveau modèle Meta. Les rendez-vous « Nouvelle » déjà présents en base cessent simplement de bloquer leur créneau au déploiement.
+
+## Étape 63 — Menu WhatsApp « Mon rendez-vous » (annuler / reporter sans rien taper)
+
+**Ligne dans la liste des services.** Pour un marchand « service » (et le volet rendez-vous d'un marchand hybride), la liste « Voir les services » affiche une ligne « Mon rendez-vous » (EN : « My appointment », description « Annuler ou reporter ») **uniquement si la cliente a au moins un rendez-vous à venir** (statut « Non confirmé » ou « Confirmé »). Sans rendez-vous, la liste est inchangée. La ligne occupe une des 10 places d'une liste WhatsApp : elle figure sur chaque page (« Voir plus » inclus) et le nombre de services par page est réduit d'un en conséquence.
+
+**Boutons.** Un clic sur « Mon rendez-vous » envoie trois boutons : « Annuler », « Reporter » et « Contacter un conseiller ». Ce clic ne modifie rien. Ensuite :
+- **Reporter** suit exactement le parcours de l'Étape 61 (l'ancien rendez-vous reste confirmé tant que le nouveau n'est pas confirmé).
+- **Annuler** demande d'abord une confirmation par deux boutons (« Oui, annuler » / « Non, le garder »), car un bouton se touche plus facilement par erreur qu'un message ne s'écrit. Après « Oui », le rendez-vous est annulé et l'alerte « rdv_modifie » part vers la gérante comme avant ; après « Non », il est conservé. Un message écrit (« annuler mon rendez-vous ») reste direct, sans confirmation, comme avant.
+- **Plusieurs rendez-vous à venir :** au lieu d'une liste numérotée à retaper, la cliente reçoit une **liste cliquable** (RDV-0002 — Pédicure — Lundi 19/10 à 09h…) et touche celui qu'elle veut. Le texte numéroté reste envoyé en repli si les menus ne s'affichent pas.
+
+Tout est bilingue FR/EN selon la langue de la conversation. Fichiers modifiés : `conversationService.js` (nouvelle étape `awaiting_annulation_confirm`, méthode `nbRdvsAVenir`, liste `rdvChoix` dans l'état de session) et `server.js`. Aucune migration, aucune variable d'environnement, aucun nouveau modèle Meta, aucun changement dans /admin. Le Simulateur de /admin n'affiche toujours pas les boutons et listes cliquables (texte brut du moteur).

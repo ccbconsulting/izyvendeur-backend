@@ -262,6 +262,9 @@ function createServiceEngine(merchantKey, options) {
       reportApptId: null,
       intentionRdv: null,
       choixRdvIds: null,
+      // Etape 63 : annulation demandee depuis le menu WhatsApp « Mon rendez-vous » -> confirmation obligatoire.
+      confirmerAnnulation: false,
+      annulationApptId: null,
       // true UNIQUEMENT quand la reponse de CE tour est un "quel service vous interesse ?" - voir
       // getEtatSession() plus bas, utilise par server.js pour decider d'envoyer une liste WhatsApp
       // cliquable plutot qu'un texte simple.
@@ -909,7 +912,9 @@ function createServiceEngine(merchantKey, options) {
       const appt = choisi !== null ? rdvParId(choisi) : null;
       if (appt) {
         const intention = session.intentionRdv;
-        session.choixRdvIds = null; session.intentionRdv = null;
+        const avecConfirmation = session.confirmerAnnulation;
+        session.choixRdvIds = null; session.intentionRdv = null; session.confirmerAnnulation = false;
+        if (intention === "annuler" && avecConfirmation) return demanderConfirmationAnnulation(session, appt);
         return appliquerIntentionRdv(session, intention, appt);
       }
       if (parseNegative(text) || parseWantsSomethingElse(text)) {
@@ -919,6 +924,26 @@ function createServiceEngine(merchantKey, options) {
       return sh.t(session,
         "Je n'ai pas compris. Répondez par le numéro du rendez-vous concerné (1 à " + ids.length + "), ou « non » pour ne rien changer.",
         "I didn't understand. Reply with the number of the appointment (1 to " + ids.length + "), or \"no\" to change nothing."
+      );
+    }
+
+    if (session.stage === "awaiting_annulation_confirm") {
+      const appt = session.annulationApptId ? rdvParId(session.annulationApptId) : null;
+      if (!appt || ACTIFS_STATUSES_RDV.indexOf(appt.statut) === -1) {
+        resetSession(session);
+        return sh.t(session, "Ce rendez-vous n'est plus à venir : rien à annuler.", "That appointment is no longer upcoming: nothing to cancel.");
+      }
+      if (parseAffirmative(text)) return appliquerIntentionRdv(session, "annuler", appt);
+      if (parseNegative(text) || parseWantsSomethingElse(text)) {
+        resetSession(session);
+        return sh.t(session,
+          "Très bien, votre rendez-vous " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO), session) + ") est conservé.",
+          "Alright, your appointment " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO), session) + ") is kept."
+        );
+      }
+      return sh.t(session,
+        "Je n'ai pas compris. Souhaitez-vous annuler votre rendez-vous " + orderRef(appt) + " ? Répondez par oui ou non.",
+        "I didn't understand. Do you want to cancel your appointment " + orderRef(appt) + "? Please reply yes or no."
       );
     }
 
@@ -1069,7 +1094,25 @@ function createServiceEngine(merchantKey, options) {
       .sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
   }
 
-  function gererAnnulationOuReport(session, intention) {
+  // Etape 63 : un bouton « Annuler » du menu est plus facile a toucher par erreur qu'un message ecrit : on demande
+  // donc une confirmation (Oui/Non) avant d'annuler. Un message ecrit (« annuler mon rendez-vous ») reste direct.
+  function demanderConfirmationAnnulation(session, appt) {
+    session.stage = "awaiting_annulation_confirm";
+    session.annulationApptId = appt.id;
+    return sh.t(session,
+      "Confirmez-vous l'annulation de votre rendez-vous " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO), session) + ") ? (oui / non)",
+      "Do you confirm the cancellation of your appointment " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO), session) + ")? (yes / no)"
+    );
+  }
+
+  // Nombre de rendez-vous a venir (non traites) d'un client : sert a server.js pour n'afficher la ligne
+  // « Mon rendez-vous » du menu que si elle a un sens.
+  function nbRdvsAVenir(telephone) {
+    if (!state || !telephone) return 0;
+    return rdvsAVenirDuClient(telephone).length;
+  }
+
+  function gererAnnulationOuReport(session, intention, confirmer) {
     // Un report deja en cours (nouveau creneau provisoire) est abandonne : on repart de l'etat reel des rendez-vous.
     abandonnerReportEnCours(session);
     resetSession(session);
@@ -1080,12 +1123,16 @@ function createServiceEngine(merchantKey, options) {
         "I can't find any upcoming appointment linked to this number. Would you like to book a new one? Which service are you interested in?"
       );
     }
-    if (prochains.length === 1) return appliquerIntentionRdv(session, intention, prochains[0]);
+    if (prochains.length === 1) {
+      if (intention === "annuler" && confirmer) return demanderConfirmationAnnulation(session, prochains[0]);
+      return appliquerIntentionRdv(session, intention, prochains[0]);
+    }
 
     // Plusieurs rendez-vous a venir (Etape 61) : on demande lequel, au lieu de decider a la place du client.
     session.stage = "awaiting_rdv_choice";
     session.intentionRdv = intention;
     session.choixRdvIds = prochains.slice(0, 5).map((a) => a.id);
+    session.confirmerAnnulation = intention === "annuler" && !!confirmer;
     const liste = prochains.slice(0, 5).map((a, i) => (i + 1) + ". " + orderRef(a) + " — " + a.service + " — " + formatSlot(new Date(a.dateISO), session)).join("\n");
     return sh.t(session,
       "Vous avez plusieurs rendez-vous à venir :\n" + liste + "\n\nLequel souhaitez-vous " + (intention === "annuler" ? "annuler" : "déplacer") + " ? (répondez par le numéro)",
@@ -1239,7 +1286,7 @@ function createServiceEngine(merchantKey, options) {
     let reponse;
     ignorerApptId = session.reportApptId || null;
     try {
-      reponse = intentionRdv ? gererAnnulationOuReport(session, intentionRdv) : processMessage(session, text);
+      reponse = intentionRdv ? gererAnnulationOuReport(session, intentionRdv, !!(opts && opts.confirmerAnnulation)) : processMessage(session, text);
     } finally {
       ignorerApptId = null;
     }
@@ -1306,6 +1353,10 @@ function createServiceEngine(merchantKey, options) {
       pretPourChoix: !!s.pretPourChoix,
       proposedSlots: s.proposedSlots || null,
       proposedSlotsLabels: (s.proposedSlots || []).map((d) => libelleCourtCreneau(d, s)),
+      // Etape 63 : choix entre plusieurs rendez-vous (liste cliquable) - [{ ref, detail }] dans l'ordre des numeros.
+      rdvChoix: s.stage === "awaiting_rdv_choice" && s.choixRdvIds
+        ? s.choixRdvIds.map((id) => rdvParId(id)).filter(Boolean).map((a) => ({ ref: orderRef(a), detail: a.service + " — " + formatSlot(new Date(a.dateISO), s) }))
+        : null,
       langue: sh.langueSession(s)
     } : null;
   }
@@ -1666,6 +1717,7 @@ function createServiceEngine(merchantKey, options) {
     getConversationsEnAttente,
     repondreConversationHumain,
     getEtatSession,
+    nbRdvsAVenir,
     definirLangueSession,
     reponseDeReprise,
     estEnPauseHumain,
