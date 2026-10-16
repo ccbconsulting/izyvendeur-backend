@@ -1704,7 +1704,7 @@ tant que la source est « intégrée ».
   factures intégrées restent encaissables et annulables dans IzyVendeur** (leurs reçus et avoirs continuent d'alimenter
   le journal intégré, marqués `posterieurBascule`).
 
-**Limites connues (à connaître avant usage).**
+**Limites connues à l'Étape 56 (plusieurs sont levées à l'Étape 57 ci-dessous : TVA, remboursement, Caisse POS, récupération automatique).**
 - Les montants sont TTC ; aucune TVA n'est calculée ni ventilée.
 - La facture est une page HTML imprimable (PDF depuis le navigateur), pas un PDF généré ni un document envoyé par
   WhatsApp : le client reçoit un lien.
@@ -1721,6 +1721,52 @@ Fichiers modifiés : `facturation.js` (nouveau), `server.js`, `public/admin.html
 (HTTP : sécurité du choix de source, facture/paiement/avoir/dépense, journal, bascule, journal d'audit) et
 `test_etape54_facturation_interne_playwright.js` (/admin : ce que voit chaque rôle, parcours complet, bascule, anglais).
 
+## Étape 57 — Quatre limites levées : remboursement, Caisse au comptant, TVA optionnelle, clé comptable (nouveau)
+
+**1) Remboursement après un avoir.** Quand un avoir porte sur une facture déjà encaissée, la facture indique « à rembourser » et
+un bouton **Rembourser** apparaît (montant vide = tout le trop-perçu, mode, référence). Chaque remboursement a son numéro
+`RB-AAAA-NNNN` (jamais réutilisé), ne peut pas dépasser le trop-perçu, est réservé aux rôles propriétaire / super-administrateur /
+Facturation (le comptable reste en lecture seule) et apparaît dans le journal (`type: "remboursement"`, journal `TR`, mode et
+référence). « Payé » devient « payé net » (encaissé moins rendu). Route : `POST /api/:id/facturation/factures/:fid/remboursement`.
+
+**2) Ventes de la Caisse POS au comptant dans le journal.** Chaque vente POS postérieure à l'activation de la facturation
+intégrée devient une ligne `vente_comptant` (id `<marchand>:POS-0007`, client « Vente en boutique », mode : espèces, om, momo,
+chèque, carte → `banque`). Jamais de double comptage : une vente POS annulée produit **une seule** ligne
+`vente_comptant_annulation` (id `…:ANN`, datée du jour de l'annulation) ; une vente POS que l'on facture ensuite est remplacée par
+la facture (encaissée automatiquement avec le mode de la vente) et la vente comptant reçoit sa ligne d'annulation « remplacée par
+une facture ». Les ventes POS antérieures à l'activation ne sont pas exportées.
+
+**3) TVA optionnelle et mentions légales.** Désactivée par défaut, réglable par le propriétaire ou le super-administrateur
+(panneau « TVA et mentions légales » de l'onglet Facturation) : taux (0 à 30 %, 19,25 % proposé), NIU, RCCM, adresse, téléphone.
+Les montants restent TTC ; HT et TVA sont déduits, et **le taux est figé sur chaque facture à son émission** (changer le taux
+ne touche pas les anciennes factures ; les factures antérieures à l'activation n'ont pas de TVA). TVA des avoirs au prorata ; TVA
+déductible saisissable sur les dépenses ; tuiles « TVA collectée (nette) » et « TVA déductible » ; lignes HT/TVA et mentions
+légales sur la page publique de la facture. Le journal gagne les champs `montantHT`, `tva`, `tauxTva` (null si non applicable) et
+trois colonnes CSV. **À faire valider par votre comptable** (arrondi : la TVA est calculée sur le total de la facture, pas ligne
+par ligne).
+
+**4) Clé comptable (lecture seule) pour IzyCompta.** **Super-administrateur uniquement** : bloc « Clé comptable (IzyCompta) » de
+*Mon compte* du marchand (visible seulement si le marchand a la facturation intégrée). Générer / régénérer / révoquer ; la clé
+(`izc_` + 48 hex) n'est affichée **qu'une fois** à sa création et n'est conservée que sous forme d'empreinte SHA-256 (non
+récupérable ensuite, y compris par vous). Lecture : `GET https://izyvendeur.app/api/compta/<marchand>/journal` avec l'en-tête
+`Authorization: Bearer izc_…`, mêmes paramètres que le journal (`du`, `au`, `format=csv`, `sep=semicolon`) plus **`apres=<date ISO>`**
+(uniquement les lignes créées après cet instant : import incrémental). Accès CORS ouvert (une page HTML locale peut appeler),
+`Cache-Control: no-store`, réponse 401 identique pour toute clé invalide, révoquée ou marchand suspendu / sans facturation
+intégrée, **429 après 20 échecs en 10 minutes pour une même adresse IP**. Le marchand et ses employés n'ont ni la clé, ni la
+route de gestion (403), et la génération/révocation n'apparaît pas dans leur journal d'audit.
+
+**Limites restantes.**
+- Pas de PDF généré ni d'envoi du document par WhatsApp : le client reçoit un lien vers la page imprimable (fenêtre de 24 h et
+  modèle de message à prévoir pour un vrai envoi).
+- La justification d'une dépense reste un numéro de pièce, pas un fichier joint.
+- Après la bascule vers IzyFacture, la numérotation `FAC-` reste celle d'IzyFacture (dépend de ce projet).
+- Annuler puis réactiver une vente POS après un export ne retire pas la ligne `:ANN` déjà exportée.
+- TVA calculée sur le total de la facture (pas ligne par ligne) ; mentions légales à valider avec un comptable.
+
+Tests : `test_etape57_remboursement_pos_tva_cle.js` (HTTP : remboursements, Caisse comptant, TVA, clé comptable, limitation de
+débit, droits) et `test_etape57_remboursement_pos_tva_cle_playwright.js` (/admin : ce que voit chaque rôle, bloc clé réservé
+au super-administrateur, FR/EN).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1735,6 +1781,7 @@ Fichiers modifiés : `facturation.js` (nouveau), `server.js`, `public/admin.html
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 57 : `facturation.js` (remboursements `RB-`, TVA figée par facture, ventes POS au comptant, clé comptable hachée, filtre `apres`), `server.js` (route `POST …/remboursement`, `GET /api/compta/:id/journal` par clé Bearer avec CORS et limitation de débit, routes de gestion de la clé réservées au super-administrateur, paramètres TVA/identité, pages publiques avec TVA et mentions légales) et `public/admin.html` (bouton Rembourser, panneau TVA, tuiles, bloc « Clé comptable » réservé au super-administrateur, textes FR/EN).
 - Étapes 54 à 56 : `facturation.js` (nouveau : factures, avoirs, paiements, dépenses, journal normalisé), `server.js` (choix de la source et bascule réservés au super-administrateur, routes `/api/:id/facturation/*`, pages publiques `/f/…`, aiguillage du pont facturation selon la source, rôles `facturation` et `comptable`) et `public/admin.html` (bloc « Source de facturation », onglet Facturation, rôles, textes FR/EN).
 - Étape 49 : `conversation.js` (récapitulatif avec téléphone, étape de correction, `updateOrderContact`), `server.js` (bouton Modifier, route `PUT /api/:id/commandes/:orderId/coordonnees`, journal) et `public/admin.html` (bouton « Corriger tél./adresse », textes FR/EN).
 - Étape 50 : `server.js` (`compacterTexteMenuCatalogue` : corps du menu catalogue sans la liste de tous les articles quand le catalogue dépasse 8 articles, message d'accueil du marchand à la place).

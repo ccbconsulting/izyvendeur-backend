@@ -743,7 +743,7 @@ app.get("/admin", (req, res) => {
 // Actions reservees au super-administrateur : jamais montrees au marchand (il ne doit pas voir ces options).
 const ACTIONS_SUPERADMIN_SEULEMENT = new Set([
   "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees", "module_secondaire_modifie",
-  "facturation_source_modifiee", "facturation_bascule"
+  "facturation_source_modifiee", "facturation_bascule", "cle_comptable_generee", "cle_comptable_revoquee"
 ]);
 
 const LIBELLES_ACTIONS_AUDIT = {
@@ -761,6 +761,9 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/facturation/factures": "facture_interne_creee",
   "POST /api/:id/facturation/factures/:fid/paiement": "paiement_interne_enregistre",
   "POST /api/:id/facturation/factures/:fid/avoir": "avoir_interne_cree",
+  "POST /api/:id/facturation/factures/:fid/remboursement": "remboursement_interne_enregistre",
+  "POST /api/:id/facturation/cle-comptable": "cle_comptable_generee",
+  "DELETE /api/:id/facturation/cle-comptable": "cle_comptable_revoquee",
   "POST /api/:id/facturation/depenses": "depense_creee",
   "POST /api/:id/facturation/depenses/:did/annuler": "depense_annulee",
   "PUT /api/:id/izyfacture/parametres": "izyfacture_parametres_modifies",
@@ -831,7 +834,7 @@ function detailAuditRequete(code, req) {
     case "module_secondaire_modifie": return { moduleSecondaire: b.moduleSecondaire || null };
     case "facturation_source_modifiee": return { source: b.source || null };
     case "facturation_bascule": return {};
-    case "paiement_interne_enregistre": case "avoir_interne_cree": return { facture: p.fid, montant: b.montant != null ? Number(b.montant) || null : null };
+    case "paiement_interne_enregistre": case "avoir_interne_cree": case "remboursement_interne_enregistre": return { facture: p.fid, montant: b.montant != null ? Number(b.montant) || null : null };
     case "depense_creee": return { categorie: b.categorie || null, montant: Number(b.montant) || null };
     case "depense_annulee": return { depense: p.did };
     case "facture_interne_creee": return { lignes: Array.isArray(b.lignes) ? b.lignes.length : null };
@@ -1517,11 +1520,12 @@ async function tenterFacturationInterne(entry, order) {
     return;
   }
   const ref = rdv ? izyfacture.externalRefPourRendezVous(entry.merchant.id, order.id) : izyfacture.externalRefPourCommande(entry.merchant.id, order.id);
-  const nom = rdv && order.clientNom ? order.clientNom : (order.telephone ? "Client WhatsApp " + order.telephone : "Client IzyVendeur");
+  const pos = !rdv && order.source === "pos";
+  const nom = rdv && order.clientNom ? order.clientNom : (order.telephone ? "Client WhatsApp " + order.telephone : (pos ? "Client comptoir" : "Client IzyVendeur"));
   const r = entry.facturation.creerFacture({
     client: { nom, telephone: order.telephone || null },
     lignes: lignesFactureInterne(entry, order),
-    notes: (rdv ? "Rendez-vous WhatsApp " : "Commande WhatsApp ") + ref,
+    notes: (rdv ? "Rendez-vous WhatsApp " : (pos ? "Vente en boutique " : "Commande WhatsApp ")) + ref,
     origine: { type: rdv ? "rdv" : "commande", id: order.id },
     externalRef: ref,
     creePar: "automatique"
@@ -1531,7 +1535,15 @@ async function tenterFacturationInterne(entry, order) {
     console.error(`[${entry.merchant.id}] Échec de facturation intégrée (${libelleObjetFacture(entry, order)}) : ${r.erreur}`);
     return;
   }
-  const f = r.facture;
+  let f = r.facture;
+  // Vente de la Caisse POS : deja encaissee au comptoir, donc la facture est reglee d'emblee (meme mode de
+  // paiement), et la vente au comptant du journal est annulee au profit de la facture (jamais comptee 2 fois).
+  if (pos && !r.duplicate) {
+    const MODE = { especes: "especes", om: "om", momo: "momo", carte: "banque", cheque: "cheque" };
+    const pay = entry.facturation.enregistrerPaiement(f.id, { montant: f.total, methode: MODE[order.modePaiement] || "especes", reference: order.referencePaiement || ("POS-" + String(order.id).padStart(4, "0")), creePar: "caisse" });
+    if (!pay.erreur) f = pay.facture;
+    entry.facturation.noterEvenementPos(order.id, "remplacee");
+  }
   entry.engine.enregistrerEtatIzyFacture(order.id, {
     factureSource: "interne",
     izyfactureStatut: "facturee",
@@ -1637,11 +1649,16 @@ app.get("/api/:id/facturation", protegerAcces, (req, res) => {
     autoFacturation: c.autoFacturation === true,
     dateBascule: c.dateBascule || null,
     factures, depenses,
+    tva: { actif: !!(c.tva && c.tva.actif), taux: c.tva ? c.tva.taux : 19.25 },
+    identite: c.identite || { niu: "", rccm: "", adresse: "", telephone: "" },
     totaux: {
       factureNet: factures.reduce((s, f) => s + f.net, 0),
-      encaisse: factures.reduce((s, f) => s + f.paye, 0),
+      encaisse: factures.reduce((s, f) => s + (f.paye - f.rembourse), 0),
       soldeOuvert: factures.reduce((s, f) => s + f.solde, 0),
-      depenses: depenses.filter((d) => !d.annulee).reduce((s, d) => s + d.montant, 0)
+      aRembourser: factures.reduce((s, f) => s + f.aRembourser, 0),
+      depenses: depenses.filter((d) => !d.annulee).reduce((s, d) => s + d.montant, 0),
+      tvaCollectee: factures.reduce((s, f) => s + (f.tvaNette || 0), 0),
+      tvaDeductible: depenses.filter((d) => !d.annulee).reduce((s, d) => s + (d.tvaDeductible || 0), 0)
     },
     methodes: METHODES_PAIEMENT, categories: CATEGORIES_DEPENSE
   });
@@ -1681,11 +1698,20 @@ app.post("/api/:id/facturation/factures/:fid/avoir", protegerAcces, (req, res) =
   res.json({ facture: vueFactureAPI(r.facture), avoir: r.avoir.numero });
 });
 
+app.post("/api/:id/facturation/factures/:fid/remboursement", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, true); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.facturation.enregistrerRemboursement(req.params.fid, { montant: b.montant, methode: b.methode, reference: b.reference, creePar: nomActeur(req) });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  refleterSurObjetOrigine(entry, r.facture);
+  res.json({ facture: vueFactureAPI(r.facture), remboursement: r.remboursement.numero });
+});
+
 app.post("/api/:id/facturation/depenses", protegerAcces, (req, res) => {
   const entry = entreeFacturation(req, res, true); if (!entry) return;
   if (sourceFacturation(entry) !== "interne") return res.status(403).json({ erreur: "La facturation intégrée n'est plus active pour ce marchand." });
   const b = req.body || {};
-  const r = entry.facturation.creerDepense({ date: b.date, categorie: b.categorie, montant: b.montant, methode: b.methode, fournisseur: b.fournisseur, note: b.note, justificatif: b.justificatif, creePar: nomActeur(req) });
+  const r = entry.facturation.creerDepense({ date: b.date, categorie: b.categorie, montant: b.montant, tvaDeductible: b.tvaDeductible, methode: b.methode, fournisseur: b.fournisseur, note: b.note, justificatif: b.justificatif, creePar: nomActeur(req) });
   if (r.erreur) return res.status(400).json({ erreur: r.erreur });
   res.status(201).json(r.depense);
 });
@@ -1699,19 +1725,98 @@ app.post("/api/:id/facturation/depenses/:did/annuler", protegerAcces, (req, res)
 });
 
 // Journal normalise : lu par IzyCompta (ou telecharge par le comptable). JSON par defaut, CSV avec ?format=csv.
-// Filtres facultatifs ?du=AAAA-MM-JJ&au=AAAA-MM-JJ. Chaque ligne a un `id` unique et stable (anti-doublon).
-app.get("/api/:id/facturation/journal", protegerAcces, (req, res) => {
-  const entry = entreeFacturation(req, res, false); if (!entry) return;
+// Filtres facultatifs ?du=AAAA-MM-JJ&au=AAAA-MM-JJ&apres=<instant ISO> (import incremental). Chaque ligne a un
+// `id` unique et stable (anti-doublon). Etape 57 : y figurent aussi les ventes de la Caisse POS (au comptant).
+function ventesPosDuMarchand(entry) {
+  const cat = entry.moteurs && entry.moteurs.catalogue;
+  return cat ? cat.getOrders().filter((o) => o.source === "pos") : [];
+}
+function filtreJournalDepuisRequete(req) {
   const motif = /^\d{4}-\d{2}-\d{2}$/;
   const du = motif.test(String(req.query.du || "")) ? String(req.query.du) : null;
   const au = motif.test(String(req.query.au || "")) ? String(req.query.au) : null;
+  const apresBrut = String(req.query.apres || "");
+  const apres = apresBrut && !isNaN(new Date(apresBrut).getTime()) ? new Date(apresBrut).toISOString() : null;
+  return { du, au, apres };
+}
+function repondreJournalFacturation(entry, req, res) {
+  const filtre = filtreJournalDepuisRequete(req);
+  const ext = { ventesPos: ventesPosDuMarchand(entry) };
   if (String(req.query.format || "").toLowerCase() === "csv") {
+    const sep = String(req.query.sep || "") === ";" || String(req.query.sep || "").toLowerCase() === "semicolon" ? ";" : ",";
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="journal-${req.params.id}.csv"`);
-    return res.send(entry.facturation.journalCsv({ du, au }, String(req.query.sep || "") === ";" || String(req.query.sep || "").toLowerCase() === "semicolon" ? ";" : ","));
+    return res.send(entry.facturation.journalCsv(filtre, sep, ext));
   }
   const c = entry.facturation.config();
-  res.json({ marchand: req.params.id, source: "izyvendeur-interne", devise: "XAF", dateBascule: c.dateBascule || null, basculeLe: c.basculeLe || null, ecritures: entry.facturation.journal({ du, au }) });
+  const ecritures = entry.facturation.journal(filtre, ext);
+  res.json({ marchand: req.params.id, source: "izyvendeur-interne", devise: "XAF", dateBascule: c.dateBascule || null, basculeLe: c.basculeLe || null, tva: c.tva ? { actif: !!c.tva.actif, taux: c.tva.taux } : null, nbEcritures: ecritures.length, ecritures });
+}
+app.get("/api/:id/facturation/journal", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, false); if (!entry) return;
+  repondreJournalFacturation(entry, req, res);
+});
+
+// ---- Acces d'IzyCompta par CLE COMPTABLE (Etape 57) : lecture seule du journal, sans connexion /admin ----
+// Cle generee/revoquee par le SUPER-ADMINISTRATEUR seul (routes plus bas). Jeton porte dans l'en-tete
+// Authorization: Bearer izc_... (jamais dans l'URL), stocke uniquement sous forme d'empreinte SHA-256. Les
+// reponses ne donnent aucun indice sur la raison d'un refus (cle fausse, revoquee, marchand inconnu ou
+// suspendu : toujours le meme 401), et les echecs repetes depuis une meme adresse sont ralentis (429).
+const echecsCleComptable = new Map(); // ip -> { n, debut }
+const FENETRE_ECHECS_MS = 10 * 60 * 1000, MAX_ECHECS = 20;
+function trop_d_echecs(ip) {
+  const e = echecsCleComptable.get(ip);
+  if (!e) return false;
+  if (Date.now() - e.debut > FENETRE_ECHECS_MS) { echecsCleComptable.delete(ip); return false; }
+  return e.n >= MAX_ECHECS;
+}
+function noterEchecCle(ip) {
+  const e = echecsCleComptable.get(ip);
+  if (!e || Date.now() - e.debut > FENETRE_ECHECS_MS) echecsCleComptable.set(ip, { n: 1, debut: Date.now() });
+  else e.n++;
+}
+function enTetesCorsCompta(res) {
+  // Pas de cookies ici (jeton en en-tete) : l'ouverture a toute origine ne donne rien a un site tiers sans la cle.
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Max-Age", "600");
+  res.setHeader("Cache-Control", "no-store");
+}
+app.options("/api/compta/:id/journal", (req, res) => { enTetesCorsCompta(res); res.status(204).end(); });
+app.get("/api/compta/:id/journal", (req, res) => {
+  enTetesCorsCompta(res);
+  const ip = req.ip || "inconnue";
+  if (trop_d_echecs(ip)) return res.status(429).json({ erreur: "Trop de tentatives. Réessayez plus tard." });
+  const entete = String(req.headers.authorization || "");
+  const jeton = /^Bearer\s+(\S+)$/i.test(entete) ? entete.replace(/^Bearer\s+/i, "") : "";
+  const entry = engines[req.params.id];
+  const ok = !!(entry && entry.facturation && entry.merchant.actif !== false && facturationInterneVisible(entry) && entry.facturation.verifierCleComptable(jeton));
+  if (!ok) { noterEchecCle(ip); return res.status(401).json({ erreur: "Clé comptable invalide ou révoquée." }); }
+  repondreJournalFacturation(entry, req, res);
+});
+
+// Gestion de la cle : SUPER-ADMINISTRATEUR UNIQUEMENT (le marchand ne peut ni la voir, ni la creer, ni la revoquer).
+app.get("/api/:id/facturation/cle-comptable", protegerAcces, (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  res.json(entry.facturation.etatCleComptable());
+});
+app.post("/api/:id/facturation/cle-comptable", protegerAcces, (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (!facturationInterneVisible(entry)) return res.status(409).json({ erreur: "Ce marchand n'a pas de facturation intégrée : il n'y a pas de journal à lire." });
+  const jeton = entry.facturation.genererCleComptable(req.auth.adminUser);
+  res.locals.audit = { detail: { indice: jeton.slice(-4) } };
+  console.log(`[${req.params.id}] Clé comptable générée par ${req.auth.adminUser} (fin ${jeton.slice(-4)}).`);
+  res.status(201).json({ cle: jeton, etat: entry.facturation.etatCleComptable(), url: "/api/compta/" + req.params.id + "/journal" });
+});
+app.delete("/api/:id/facturation/cle-comptable", protegerAcces, (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  entry.facturation.revoquerCleComptable();
+  console.log(`[${req.params.id}] Clé comptable révoquée par ${req.auth.adminUser}.`);
+  res.json(entry.facturation.etatCleComptable());
 });
 
 // Reglage reserve au proprietaire/super-administrateur : facturation automatique (integree).
@@ -1719,9 +1824,12 @@ app.put("/api/:id/facturation/parametres", protegerAcces, (req, res) => {
   const entry = getMarchandOu404(req, res); if (!entry) return;
   if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   if (sourceFacturation(entry) !== "interne") return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  const auto = (req.body || {}).autoFacturation;
-  if (auto === undefined) return res.status(400).json({ erreur: "Rien à modifier." });
-  res.json({ autoFacturation: entry.facturation.modifierConfig({ autoFacturation: !!auto }).autoFacturation });
+  const b = req.body || {};
+  if (b.autoFacturation === undefined && !b.tva && !b.identite) return res.status(400).json({ erreur: "Rien à modifier." });
+  const r = entry.facturation.definirParametres({ autoFacturation: b.autoFacturation, tva: b.tva, identite: b.identite });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  const c = r.config;
+  res.json({ autoFacturation: c.autoFacturation === true, tva: { actif: !!c.tva.actif, taux: c.tva.taux }, identite: c.identite });
 });
 
 // ---- Choix de la source : SUPER-ADMINISTRATEUR UNIQUEMENT ----
@@ -1805,17 +1913,19 @@ app.post("/api/:id/facturation/bascule", protegerAcces, async (req, res) => {
 // ---- Pages publiques imprimables (facture, recu) : acces par jeton aleatoire de 128 bits, sans connexion ----
 function echapperHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 const MOTS_PAGE = {
-  fr: { facture: "Facture", recu: "Reçu", avoir: "Avoir", date: "Date", client: "Client", designation: "Désignation", qte: "Qté", pu: "Prix unitaire", total: "Total", paye: "Payé", solde: "Solde à payer", paiements: "Paiements", avoirs: "Avoirs", imprimer: "Imprimer / Enregistrer en PDF", ttc: "Montants en FCFA, toutes taxes comprises.", methode: { especes: "Espèces", om: "Orange Money", momo: "MTN MoMo", banque: "Virement", cheque: "Chèque", autre: "Autre" }, statut: { issued: "Émise", partially_paid: "Partiellement payée", paid: "Payée", avoir: "Annulée (avoir)" }, recuPour: "Reçu pour la facture", montantRecu: "Montant reçu", mode: "Mode de paiement", reference: "Référence", merci: "Merci pour votre confiance." },
-  en: { facture: "Invoice", recu: "Receipt", avoir: "Credit note", date: "Date", client: "Customer", designation: "Description", qte: "Qty", pu: "Unit price", total: "Total", paye: "Paid", solde: "Balance due", paiements: "Payments", avoirs: "Credit notes", imprimer: "Print / Save as PDF", ttc: "Amounts in FCFA, taxes included.", methode: { especes: "Cash", om: "Orange Money", momo: "MTN MoMo", banque: "Bank transfer", cheque: "Cheque", autre: "Other" }, statut: { issued: "Issued", partially_paid: "Partially paid", paid: "Paid", avoir: "Cancelled (credit note)" }, recuPour: "Receipt for invoice", montantRecu: "Amount received", mode: "Payment method", reference: "Reference", merci: "Thank you for your business." }
+  fr: { facture: "Facture", recu: "Reçu", avoir: "Avoir", date: "Date", client: "Client", designation: "Désignation", qte: "Qté", pu: "Prix unitaire", total: "Total", paye: "Payé", solde: "Solde à payer", ht: "Total HT", tva: "TVA", remboursements: "Remboursements", paiements: "Paiements", avoirs: "Avoirs", imprimer: "Imprimer / Enregistrer en PDF", ttc: "Montants en FCFA, toutes taxes comprises.", methode: { especes: "Espèces", om: "Orange Money", momo: "MTN MoMo", banque: "Virement", cheque: "Chèque", autre: "Autre" }, statut: { issued: "Émise", partially_paid: "Partiellement payée", paid: "Payée", avoir: "Annulée (avoir)" }, recuPour: "Reçu pour la facture", montantRecu: "Montant reçu", mode: "Mode de paiement", reference: "Référence", merci: "Merci pour votre confiance." },
+  en: { facture: "Invoice", recu: "Receipt", avoir: "Credit note", date: "Date", client: "Customer", designation: "Description", qte: "Qty", pu: "Unit price", total: "Total", paye: "Paid", solde: "Balance due", ht: "Total excl. tax", tva: "VAT", remboursements: "Refunds", paiements: "Payments", avoirs: "Credit notes", imprimer: "Print / Save as PDF", ttc: "Amounts in FCFA, taxes included.", methode: { especes: "Cash", om: "Orange Money", momo: "MTN MoMo", banque: "Bank transfer", cheque: "Cheque", autre: "Other" }, statut: { issued: "Issued", partially_paid: "Partially paid", paid: "Paid", avoir: "Cancelled (credit note)" }, recuPour: "Receipt for invoice", montantRecu: "Amount received", mode: "Payment method", reference: "Reference", merci: "Thank you for your business." }
 };
 function fcfa(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA"; }
 function dateAffichee(iso, lang) { return new Date(iso).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { timeZone: "Africa/Douala" }); }
 
 function enTetePage(titre, entry) {
   const m = entry.merchant;
+  const idt = (entry.facturation && entry.facturation.config().identite) || {};
+  const ligneIdentite = [idt.adresse, idt.telephone, idt.niu ? "NIU : " + idt.niu : "", idt.rccm ? "RCCM : " + idt.rccm : ""].filter(Boolean).map(echapperHtml).join(" — ");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${echapperHtml(titre)}</title>
 <style>body{font-family:Arial,Helvetica,sans-serif;color:#222;max-width:760px;margin:24px auto;padding:0 16px}h1{font-size:1.5em;margin:0}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:2px solid #222;padding-bottom:10px;margin-bottom:14px}.top img{max-height:64px}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}td.n,th.n{text-align:right;white-space:nowrap}.tot{font-weight:bold}.badge{display:inline-block;padding:2px 10px;border-radius:10px;background:#eee;font-size:.85em}.note{color:#666;font-size:.85em;margin-top:18px}button{padding:8px 14px;margin-top:10px;cursor:pointer}@media print{button{display:none}body{margin:0}}</style></head><body>
-<div class="top"><div><strong style="font-size:1.2em">${echapperHtml(m.nom)}</strong></div>${m.logoUrl ? `<img src="${echapperHtml(m.logoUrl)}" alt="">` : ""}</div>`;
+<div class="top"><div><strong style="font-size:1.2em">${echapperHtml(m.nom)}</strong>${ligneIdentite ? `<div style="font-size:.85em;color:#555">${ligneIdentite}</div>` : ""}</div>${m.logoUrl ? `<img src="${echapperHtml(m.logoUrl)}" alt="">` : ""}</div>`;
 }
 
 function pageFacture(entry, f, lang) {
@@ -1825,6 +1935,9 @@ function pageFacture(entry, f, lang) {
   h += `<p><strong>${w.client} :</strong> ${echapperHtml(f.client.nom)}${f.client.telephone ? " — " + echapperHtml(f.client.telephone) : ""}</p>`;
   h += `<table><tr><th>${w.designation}</th><th class="n">${w.qte}</th><th class="n">${w.pu}</th><th class="n">${w.total}</th></tr>`;
   f.lignes.forEach((l) => { h += `<tr><td>${echapperHtml(l.designation)}</td><td class="n">${l.quantite}</td><td class="n">${fcfa(l.prixUnitaire)}</td><td class="n">${fcfa(l.total)}</td></tr>`; });
+  if (f.tauxTva != null) {
+    h += `<tr><td colspan="3" class="n">${w.ht}</td><td class="n">${fcfa(f.montantHT)}</td></tr><tr><td colspan="3" class="n">${w.tva} ${f.tauxTva} %</td><td class="n">${fcfa(f.montantTva)}</td></tr>`;
+  }
   h += `<tr class="tot"><td colspan="3" class="n">${w.total}</td><td class="n">${fcfa(f.total)}</td></tr></table>`;
   if (f.avoirs.length) {
     h += `<h3>${w.avoirs}</h3><table>` + f.avoirs.map((a) => `<tr><td>${echapperHtml(a.numero)} — ${echapperHtml(a.motif)}</td><td>${echapperHtml(dateAffichee(a.date, lang))}</td><td class="n">- ${fcfa(a.montant)}</td></tr>`).join("") + "</table>";
@@ -1832,7 +1945,10 @@ function pageFacture(entry, f, lang) {
   if (f.paiements.length) {
     h += `<h3>${w.paiements}</h3><table>` + f.paiements.map((p) => `<tr><td>${echapperHtml(p.recuNumero)}</td><td>${echapperHtml(dateAffichee(p.date, lang))}</td><td>${echapperHtml(w.methode[p.methode] || p.methode)}</td><td class="n"><a href="/f/${echapperHtml(f.token)}/recu/${p.id}${lang === "en" ? "?lang=en" : ""}">${fcfa(p.montant)}</a></td></tr>`).join("") + "</table>";
   }
-  h += `<p class="tot">${w.paye} : ${fcfa(f.paye)} &nbsp;|&nbsp; ${w.solde} : ${fcfa(f.solde)}</p>`;
+  if ((f.remboursements || []).length) {
+    h += `<h3>${w.remboursements}</h3><table>` + f.remboursements.map((r) => `<tr><td>${echapperHtml(r.numero)}</td><td>${echapperHtml(dateAffichee(r.date, lang))}</td><td>${echapperHtml(w.methode[r.methode] || r.methode)}</td><td class="n">- ${fcfa(r.montant)}</td></tr>`).join("") + "</table>";
+  }
+  h += `<p class="tot">${w.paye} : ${fcfa(f.paye - f.rembourse)} &nbsp;|&nbsp; ${w.solde} : ${fcfa(f.solde)}</p>`;
   h += `<p class="note">${w.ttc} ${f.notes ? echapperHtml(f.notes) : ""}</p><button onclick="window.print()">${w.imprimer}</button></body></html>`;
   return h;
 }
@@ -2350,6 +2466,9 @@ app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
   const order = entry.engine.updateOrderStatus(req.params.orderId, statut, raisonAnnulation, entry.merchant.optionNotificationsStatut === true);
   if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
   res.json(order);
+
+  // Etape 57 : une vente de la Caisse POS annulee est retenue pour le journal (ligne d'annulation datee).
+  if (order.source === "pos" && order.statut === "Annulée" && entry.facturation) entry.facturation.noterEvenementPos(order.id, "annulee");
 
   // Pont IzyFacture - APRES avoir repondu (jamais bloquant pour la commande, voir doc API-IZYVENDEUR.md
   // section 9, regle 1) : facturation automatique a la confirmation, avoir automatique a l'annulation d'une
@@ -3916,6 +4035,8 @@ async function tenterFacturationCommande(entry, order) {
       izyfactureErreur: null
     });
     console.log(`[${entry.merchant.id}] Facture IzyFacture ${reponse.invoice.number} créée pour ${libelleObjetFacture(entry, order)}${reponse.duplicate ? " (déjà existante, aucun doublon)" : ""}.`);
+    // Etape 57 : une vente POS facturee chez IzyFacture ne doit plus compter comme vente au comptant du journal intégré.
+    if (order.source === "pos" && entry.facturation) entry.facturation.noterEvenementPos(order.id, "remplacee");
     // Notification client (doc, section 9 point 4) uniquement pour une facture NOUVELLEMENT creee
     // (reponse.duplicate === false) - un reessai manuel (bouton /admin) ou automatique sur une commande deja
     // facturee renvoie la meme facture (anti-doublon externalRef, voir izyfacture.js) et ne doit pas

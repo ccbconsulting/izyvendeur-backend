@@ -282,6 +282,40 @@ const I18N = {
     factStatut_paid: "Payée",
     factStatut_avoir: "Annulée (avoir)",
     factARembourser: "à rembourser : {montant}",
+    factTotalARembourser: "À rembourser aux clients",
+    factTotalTvaCollectee: "TVA collectée (nette)",
+    factTotalTvaDeductible: "TVA déductible",
+    factTva: "TVA",
+    btnFactRemboursement: "Rembourser",
+    promptRemboursementMontant: "Montant à rembourser en FCFA (laisser vide = tout le trop-perçu) :",
+    promptRemboursementMode: "Mode de remboursement (especes, om, momo, banque, cheque) :",
+    promptRemboursementRef: "Référence (facultatif) :",
+    alertRemboursementEnregistre: "Remboursement {numero} enregistré.",
+    factParamsTitre: "TVA et mentions légales",
+    factParamsNote: "La TVA est facultative et désactivée par défaut. Les montants restent TTC ; le taux est figé sur chaque facture au moment de son émission. À valider avec votre comptable.",
+    factTvaActif: "Appliquer la TVA sur les nouvelles factures",
+    factTvaTaux: "Taux (%)",
+    factNiu: "NIU",
+    factRccm: "RCCM",
+    factAdresse: "Adresse",
+    factTelEntreprise: "Téléphone de l'entreprise",
+    btnFactParams: "Enregistrer",
+    alertFactParamsOk: "Paramètres enregistrés.",
+    factTvaDeductibleChamp: "TVA déductible (FCFA)",
+    h3CleComptable: "Clé comptable (IzyCompta)",
+    noteCleComptable: "Clé en lecture seule permettant à IzyCompta de récupérer le journal de ce marchand sans téléchargement. Elle n'est affichée qu'une seule fois, à sa création. Réservé au super-administrateur : ne la communiquez qu'au comptable concerné.",
+    cleEtatAucune: "Aucune clé active.",
+    cleEtatActive: "Clé active (se termine par {indice}), créée le {date} par {par}. Dernier accès : {acces}.",
+    cleJamais: "jamais",
+    btnCleGenerer: "Générer une clé",
+    btnCleRegenerer: "Régénérer (l'ancienne cesse de fonctionner)",
+    btnCleRevoquer: "Révoquer",
+    confirmCleRegenerer: "L'ancienne clé cessera de fonctionner immédiatement. Continuer ?",
+    confirmCleRevoquer: "Révoquer la clé ? IzyCompta ne pourra plus lire le journal.",
+    cleAffichageUnique: "Copiez cette clé maintenant : elle ne sera plus jamais affichée.",
+    cleUrlLabel: "Adresse à renseigner dans IzyCompta :",
+    btnCleCopier: "Copier",
+    alertCleCopiee: "Clé copiée.",
     btnFactPaiement: "Paiement",
     btnFactAvoir: "Avoir",
     promptAvoirMontant: "Montant de l'avoir en FCFA (laisser vide = tout le reste à créditer) :",
@@ -1028,6 +1062,40 @@ const I18N = {
     factStatut_paid: "Paid",
     factStatut_avoir: "Cancelled (credit note)",
     factARembourser: "to refund: {montant}",
+    factTotalARembourser: "To refund to customers",
+    factTotalTvaCollectee: "VAT collected (net)",
+    factTotalTvaDeductible: "Deductible VAT",
+    factTva: "VAT",
+    btnFactRemboursement: "Refund",
+    promptRemboursementMontant: "Amount to refund in FCFA (leave empty = the whole overpayment):",
+    promptRemboursementMode: "Refund method (especes, om, momo, banque, cheque):",
+    promptRemboursementRef: "Reference (optional):",
+    alertRemboursementEnregistre: "Refund {numero} recorded.",
+    factParamsTitre: "VAT and legal mentions",
+    factParamsNote: "VAT is optional and off by default. Amounts stay VAT-inclusive; the rate is frozen on each invoice when issued. Please validate with your accountant.",
+    factTvaActif: "Apply VAT to new invoices",
+    factTvaTaux: "Rate (%)",
+    factNiu: "Tax ID (NIU)",
+    factRccm: "Trade register (RCCM)",
+    factAdresse: "Address",
+    factTelEntreprise: "Company phone",
+    btnFactParams: "Save",
+    alertFactParamsOk: "Settings saved.",
+    factTvaDeductibleChamp: "Deductible VAT (FCFA)",
+    h3CleComptable: "Accounting key (IzyCompta)",
+    noteCleComptable: "Read-only key that lets IzyCompta pull this merchant's journal without a download. It is shown only once, when created. Super-administrator only: share it only with the accountant concerned.",
+    cleEtatAucune: "No active key.",
+    cleEtatActive: "Active key (ends with {indice}), created on {date} by {par}. Last access: {acces}.",
+    cleJamais: "never",
+    btnCleGenerer: "Generate a key",
+    btnCleRegenerer: "Regenerate (the old one stops working)",
+    btnCleRevoquer: "Revoke",
+    confirmCleRegenerer: "The old key will stop working immediately. Continue?",
+    confirmCleRevoquer: "Revoke the key? IzyCompta will no longer be able to read the journal.",
+    cleAffichageUnique: "Copy this key now: it will never be shown again.",
+    cleUrlLabel: "Address to enter in IzyCompta:",
+    btnCleCopier: "Copy",
+    alertCleCopiee: "Key copied.",
     btnFactPaiement: "Payment",
     btnFactAvoir: "Credit note",
     promptAvoirMontant: "Credit note amount in FCFA (leave empty = the whole remaining amount):",
@@ -3801,6 +3869,8 @@ async function renderFacturation() {
   const gestionnaire = moi.role === "marchand" || moi.role === "superadmin";
   const optMode = d.methodes.map((m) => "<option value='" + m + "'>" + esc(t("factMode_" + m)) + "</option>").join("");
   const optCat = d.categories.map((c) => "<option value='" + c + "'>" + esc(t("factCat_" + c)) + "</option>").join("");
+  const tvaActive = !!(d.tva && d.tva.actif);
+  const idn = d.identite || {};
   const tuile = (lib, val) => "<div class='tuile' style='flex:1;min-width:150px;padding:10px;'><div class='raison'>" + esc(lib) + "</div><strong>" + esc(facturationMontant(val)) + "</strong></div>";
 
   let h = "<h3>" + t("factTitre") + "</h3>";
@@ -3808,9 +3878,16 @@ async function renderFacturation() {
   else if (!peutEcrire) h += "<p class='raison'>" + t("factLectureSeule") + "</p>";
   h += "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;'>" +
     tuile(t("factTotalFacture"), d.totaux.factureNet) + tuile(t("factTotalEncaisse"), d.totaux.encaisse) +
-    tuile(t("factTotalSolde"), d.totaux.soldeOuvert) + tuile(t("factTotalDepenses"), d.totaux.depenses) + "</div>";
+    tuile(t("factTotalSolde"), d.totaux.soldeOuvert) + tuile(t("factTotalDepenses"), d.totaux.depenses) +
+    (d.totaux.aRembourser > 0 ? tuile(t("factTotalARembourser"), d.totaux.aRembourser) : "") +
+    (tvaActive ? tuile(t("factTotalTvaCollectee"), d.totaux.tvaCollectee) + tuile(t("factTotalTvaDeductible"), d.totaux.tvaDeductible) : "") + "</div>";
   if (actif && gestionnaire) {
     h += "<label style='display:block;margin:8px 0;'><input type='checkbox' id='champFactAuto'" + (d.autoFacturation ? " checked" : "") + " /> " + t("factAutoLabel") + "</label>";
+    h += "<div id='blocFactParams' class='tuile' style='padding:10px;border-radius:6px;margin:10px 0;'><strong>" + t("factParamsTitre") + "</strong><p class='raison'>" + t("factParamsNote") + "</p>" +
+      "<label><input type='checkbox' id='pTvaActif'" + (tvaActive ? " checked" : "") + " /> " + t("factTvaActif") + "</label> <label>" + t("factTvaTaux") + "</label> <input id='pTvaTaux' type='number' min='0' max='30' step='0.01' value='" + esc(String(d.tva ? d.tva.taux : 19.25)) + "' style='width:90px;' />" +
+      "<div style='margin-top:6px;'><label>" + t("factNiu") + "</label> <input id='pNiu' value='" + esc(idn.niu || "") + "' /> <label>" + t("factRccm") + "</label> <input id='pRccm' value='" + esc(idn.rccm || "") + "' /></div>" +
+      "<div style='margin-top:6px;'><label>" + t("factAdresse") + "</label> <input id='pAdresse' value='" + esc(idn.adresse || "") + "' style='width:40%;' /> <label>" + t("factTelEntreprise") + "</label> <input id='pTelEnt' value='" + esc(idn.telephone || "") + "' /></div>" +
+      "<div style='margin-top:8px;'><button id='btnFactParams' class='principal'>" + t("btnFactParams") + "</button></div></div>";
   }
 
   if (ecriture) {
@@ -3825,16 +3902,17 @@ async function renderFacturation() {
   h += "<h3>" + t("factListe") + "</h3>";
   if (!d.factures.length) h += "<p class='raison'>" + t("factAucune") + "</p>";
   else {
-    h += "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("factClientCol") + "</th><th>" + t("factTotal") + "</th><th>" + t("factPaye") + "</th><th>" + t("factSolde") + "</th><th>" + t("theadStatut") + "</th><th></th></tr>" +
-      d.factures.map((f) => "<tr><td><a href='" + esc(f.url) + "' target='_blank' rel='noopener'>" + esc(f.numero) + "</a></td><td>" + esc(f.date) + "</td><td>" + esc(f.client.nom) + "</td><td>" + esc(facturationMontant(f.net)) + "</td><td>" + esc(facturationMontant(f.paye)) + "</td><td>" + esc(facturationMontant(f.solde)) + "</td><td>" + esc(t("factStatut_" + f.statut)) + (f.aRembourser ? " <span class='raison'>(" + esc(t("factARembourser", { montant: facturationMontant(f.aRembourser) })) + ")</span>" : "") + "</td><td>" +
+    h += "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("factClientCol") + "</th><th>" + t("factTotal") + "</th>" + (tvaActive ? "<th>" + t("factTva") + "</th>" : "") + "<th>" + t("factPaye") + "</th><th>" + t("factSolde") + "</th><th>" + t("theadStatut") + "</th><th></th></tr>" +
+      d.factures.map((f) => "<tr><td><a href='" + esc(f.url) + "' target='_blank' rel='noopener'>" + esc(f.numero) + "</a></td><td>" + esc(f.date) + "</td><td>" + esc(f.client.nom) + "</td><td>" + esc(facturationMontant(f.net)) + "</td>" + (tvaActive ? "<td>" + (f.tauxTva ? esc(facturationMontant(f.tvaNette)) : "—") + "</td>" : "") + "<td>" + esc(facturationMontant(f.paye - (f.rembourse || 0))) + "</td><td>" + esc(facturationMontant(f.solde)) + "</td><td>" + esc(t("factStatut_" + f.statut)) + (f.aRembourser ? " <span class='raison'>(" + esc(t("factARembourser", { montant: facturationMontant(f.aRembourser) })) + ")</span>" : "") + "</td><td>" +
         (peutEcrire && f.statut !== "avoir" && f.solde > 0 ? "<button data-fpaiement='" + f.id + "'>" + t("btnFactPaiement") + "</button> " : "") +
-        (peutEcrire && f.statut !== "avoir" ? "<button data-favoir='" + f.id + "'>" + t("btnFactAvoir") + "</button>" : "") +
+        (peutEcrire && f.statut !== "avoir" ? "<button data-favoir='" + f.id + "'>" + t("btnFactAvoir") + "</button> " : "") +
+        (peutEcrire && f.aRembourser > 0 ? "<button data-frembours='" + f.id + "'>" + t("btnFactRemboursement") + "</button>" : "") +
         "</td></tr>").join("") + "</table>";
   }
 
   h += "<h3>" + t("factDepenses") + "</h3>";
   if (ecriture) {
-    h += "<div><label>" + t("factDate") + "</label> <input id='dDate' type='date' /> <label>" + t("factCategorie") + "</label> <select id='dCat'>" + optCat + "</select> <label>" + t("factMontant") + "</label> <input id='dMontant' type='number' min='1' style='width:110px;' /> <label>" + t("factMode") + "</label> <select id='dMode'>" + optMode + "</select></div>" +
+    h += "<div><label>" + t("factDate") + "</label> <input id='dDate' type='date' /> <label>" + t("factCategorie") + "</label> <select id='dCat'>" + optCat + "</select> <label>" + t("factMontant") + "</label> <input id='dMontant' type='number' min='1' style='width:110px;' /> <label>" + t("factMode") + "</label> <select id='dMode'>" + optMode + "</select>" + (tvaActive ? " <label>" + t("factTvaDeductibleChamp") + "</label> <input id='dTva' type='number' min='0' style='width:100px;' />" : "") + "</div>" +
       "<div style='margin-top:6px;'><label>" + t("factFournisseur") + "</label> <input id='dFourn' /> <label>" + t("factNote") + "</label> <input id='dNote' /> <label>" + t("factJustificatif") + "</label> <input id='dJust' /></div>" +
       "<div style='margin-top:8px;'><button id='btnCreerDepense' class='principal'>" + t("btnCreerDepense") + "</button></div>";
   }
@@ -3865,6 +3943,33 @@ async function renderFacturation() {
     try { await api("/api/" + marchandActif.id + "/facturation/parametres", { method: "PUT", body: JSON.stringify({ autoFacturation: auto.checked }) }); }
     catch (e) { alert(t("erreurPrefixe") + e.message); auto.checked = !auto.checked; }
   };
+  const bParams = document.getElementById("btnFactParams");
+  if (bParams) bParams.onclick = async () => {
+    try {
+      await api("/api/" + marchandActif.id + "/facturation/parametres", { method: "PUT", body: JSON.stringify({
+        tva: { actif: document.getElementById("pTvaActif").checked, taux: Number(document.getElementById("pTvaTaux").value) },
+        identite: { niu: document.getElementById("pNiu").value, rccm: document.getElementById("pRccm").value, adresse: document.getElementById("pAdresse").value, telephone: document.getElementById("pTelEnt").value } }) });
+      alert(t("alertFactParamsOk"));
+      rerendre();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-frembours]"), (btn) => {
+    btn.onclick = async () => {
+      const saisie = prompt(t("promptRemboursementMontant"));
+      if (saisie === null) return;
+      const saisieMode = prompt(t("promptRemboursementMode"), "especes");
+      if (saisieMode === null) return;
+      const reference = prompt(t("promptRemboursementRef")) || undefined;
+      const corps = { methode: normaliserMethodePaiement(saisieMode), reference };
+      const nb = parseInt(String(saisie).replace(/[^0-9]/g, ""), 10);
+      if (nb > 0) corps.montant = nb;
+      try {
+        const r = await api("/api/" + marchandActif.id + "/facturation/factures/" + btn.dataset.frembours + "/remboursement", { method: "POST", body: JSON.stringify(corps) });
+        alert(t("alertRemboursementEnregistre", { numero: r.remboursement }));
+        rerendre();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  });
   const bF = document.getElementById("btnCreerFacture");
   if (bF) bF.onclick = async () => {
     const dess = zone.querySelectorAll(".fLigDes"), qtes = zone.querySelectorAll(".fLigQte"), prix = zone.querySelectorAll(".fLigPrix");
@@ -3910,7 +4015,7 @@ async function renderFacturation() {
   const bD = document.getElementById("btnCreerDepense");
   if (bD) bD.onclick = async () => {
     try {
-      await api("/api/" + marchandActif.id + "/facturation/depenses", { method: "POST", body: JSON.stringify({ date: document.getElementById("dDate").value || undefined, categorie: document.getElementById("dCat").value, montant: Number(document.getElementById("dMontant").value), methode: document.getElementById("dMode").value, fournisseur: document.getElementById("dFourn").value, note: document.getElementById("dNote").value, justificatif: document.getElementById("dJust").value }) });
+      await api("/api/" + marchandActif.id + "/facturation/depenses", { method: "POST", body: JSON.stringify({ date: document.getElementById("dDate").value || undefined, categorie: document.getElementById("dCat").value, montant: Number(document.getElementById("dMontant").value), methode: document.getElementById("dMode").value, tvaDeductible: document.getElementById("dTva") && document.getElementById("dTva").value !== "" ? Number(document.getElementById("dTva").value) : undefined, fournisseur: document.getElementById("dFourn").value, note: document.getElementById("dNote").value, justificatif: document.getElementById("dJust").value }) });
       alert(t("alertDepenseCreee"));
       rerendre();
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
@@ -4900,6 +5005,7 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaissePos'" + (marchandActif.optionCaissePos ? " checked" : "") + " /> " + t("labelOptionCaissePos") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
     blocSourceFacturationHtml() +
+    blocCleComptableHtml() +
     blocModuleSecondaireHtml();
 }
 
@@ -4921,6 +5027,52 @@ function blocSourceFacturationHtml() {
     "<button id='btnSauverSourceFacturation' class='principal'>" + t("btnAppliquerSource") + "</button>" +
     (src === "interne" ? " <button id='btnPreparerBascule'>" + t("btnPreparerBascule") + "</button>" : "") +
     "<div id='zoneBascule'></div>";
+}
+// ---------------- Cle comptable (Etape 57) : SUPER-ADMINISTRATEUR UNIQUEMENT ----------------
+// Bloc affiche uniquement dans « Mon compte » du super-administrateur ; le serveur refuse de toute facon
+// generation, lecture d'etat et revocation a tout autre role (403). La cle n'est montree qu'a sa creation.
+function blocCleComptableHtml() {
+  if (!moi || moi.role !== "superadmin" || !marchandActif.facturationInterneVisible) return "";
+  return "<h3>" + t("h3CleComptable") + "</h3><p class='raison'>" + t("noteCleComptable") + "</p>" +
+    "<div id='zoneCleComptable'><div class='chargement'>" + t("chargement") + "</div></div>";
+}
+async function brancherBlocCleComptable() {
+  const zone = document.getElementById("zoneCleComptable");
+  if (!zone) return;
+  const idMarchand = marchandActif.id;
+  const base = "/api/" + idMarchand + "/facturation/cle-comptable";
+  let cleAffichee = null;
+  const dessiner = async () => {
+    let etat;
+    try { etat = await api(base); } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+    let h = "<p id='cleEtat'>" + (etat.active ? esc(t("cleEtatActive", { indice: etat.indice, date: String(etat.creeLe || "").slice(0, 10), par: etat.creePar || "—", acces: etat.dernierAcces ? String(etat.dernierAcces).slice(0, 16).replace("T", " ") : t("cleJamais") })) : esc(t("cleEtatAucune"))) + "</p>";
+    if (cleAffichee) {
+      h += "<div class='tuile avertissement' style='padding:10px;border-radius:6px;margin:8px 0;'><p><strong>" + t("cleAffichageUnique") + "</strong></p>" +
+        "<input id='champCleAffichee' readonly style='width:90%;font-family:monospace;' value='" + esc(cleAffichee.cle) + "' /> <button id='btnCleCopier'>" + t("btnCleCopier") + "</button>" +
+        "<p>" + t("cleUrlLabel") + " <code>" + esc(location.origin + cleAffichee.url) + "</code></p></div>";
+    }
+    h += "<button id='btnCleGenerer' class='principal'>" + t(etat.active ? "btnCleRegenerer" : "btnCleGenerer") + "</button>" +
+      (etat.active ? " <button id='btnCleRevoquer'>" + t("btnCleRevoquer") + "</button>" : "");
+    zone.innerHTML = h;
+    const copier = document.getElementById("btnCleCopier");
+    if (copier) copier.onclick = async () => {
+      const champ = document.getElementById("champCleAffichee");
+      try { await navigator.clipboard.writeText(champ.value); } catch (e) { champ.select(); document.execCommand("copy"); }
+      alert(t("alertCleCopiee"));
+    };
+    document.getElementById("btnCleGenerer").onclick = async () => {
+      if (etat.active && !confirm(t("confirmCleRegenerer"))) return;
+      try { cleAffichee = await api(base, { method: "POST", body: "{}" }); await dessiner(); }
+      catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+    const rev = document.getElementById("btnCleRevoquer");
+    if (rev) rev.onclick = async () => {
+      if (!confirm(t("confirmCleRevoquer"))) return;
+      try { await api(base, { method: "DELETE" }); cleAffichee = null; await dessiner(); }
+      catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  };
+  await dessiner();
 }
 function brancherBlocSourceFacturation() {
   const bSource = document.getElementById("btnSauverSourceFacturation");
@@ -5003,6 +5155,7 @@ function brancherBlocModuleSecondaire() {
 function brancherBlocOptionsPayantes() {
   brancherBlocModuleSecondaire();
   brancherBlocSourceFacturation();
+  brancherBlocCleComptable();
   document.getElementById("btnSauverOptionsPayantes").onclick = async () => {
     try {
       await api("/api/marchands/" + marchandActif.id + "/options-payantes", {

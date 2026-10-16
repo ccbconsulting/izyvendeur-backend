@@ -20,6 +20,7 @@ const crypto = require("crypto");
 const db = require("./db");
 
 const SOURCE_JOURNAL = "izyvendeur-interne";
+const crypto2 = require("crypto");
 const METHODES = ["especes", "om", "momo", "banque", "cheque", "autre"];
 const CATEGORIES_DEPENSE = ["achat_marchandises", "transport", "loyer", "salaires", "electricite_eau", "telecom", "publicite", "entretien", "taxes", "autre"];
 
@@ -36,12 +37,34 @@ function entier(v) {
 
 function etatInitial() {
   return {
-    config: { interne: false, autoFacturation: false, dateActivation: null, dateBascule: null, basculeLe: null, basculePar: null },
+    config: configParDefaut(),
     compteurs: {},
     factures: [],
     depenses: [],
-    prochainId: { facture: 1, depense: 1, paiement: 1, avoir: 1 }
+    // Ventes de la Caisse POS : date a laquelle une vente a ete annulee ou "remplacee" par une facture (voir
+    // noterEvenementPos) - le journal en a besoin pour ne jamais compter deux fois la meme vente.
+    evenementsPos: {},
+    prochainId: { facture: 1, depense: 1, paiement: 1, avoir: 1, remboursement: 1 }
   };
+}
+
+function configParDefaut() {
+  return {
+    interne: false, autoFacturation: false, dateActivation: null, dateBascule: null, basculeLe: null, basculePar: null,
+    // Etape 57 : TVA OPTIONNELLE (desactivee par defaut : beaucoup de petits marchands ne sont pas assujettis).
+    // Les prix des lignes restent TTC ; avec la TVA active, on en deduit HT et TVA au taux fige sur la facture.
+    tva: { actif: false, taux: 19.25, depuis: null },
+    // Mentions d'identification affichees sur la facture (a faire valider par le comptable du marchand).
+    identite: { niu: "", rccm: "", adresse: "", telephone: "" },
+    // Cle de lecture du journal pour IzyCompta (jamais stockee en clair : seulement son empreinte SHA-256).
+    cleComptable: null
+  };
+}
+
+// Decompose un montant TTC en HT + TVA (arrondi a l'entier de FCFA, la TVA est la difference).
+function ventiler(ttc, taux) {
+  const ht = Math.round(ttc / (1 + taux / 100));
+  return { ht, tva: ttc - ht };
 }
 
 function creerMoteurFacturation(merchantKey, options) {
@@ -53,6 +76,10 @@ function creerMoteurFacturation(merchantKey, options) {
     state = await db.initMerchantState(cleEtat, etatInitial);
     const base = etatInitial();
     if (!state.config) state.config = base.config;
+    // Retro-compatibilite (etat enregistre avant l'Etape 57) : valeurs de depart pour les nouveaux champs.
+    const defaut = configParDefaut();
+    Object.keys(defaut).forEach((k) => { if (state.config[k] === undefined) state.config[k] = defaut[k]; });
+    if (!state.evenementsPos) state.evenementsPos = {};
     if (!state.compteurs) state.compteurs = {};
     if (!state.factures) state.factures = [];
     if (!state.depenses) state.depenses = [];
@@ -81,18 +108,24 @@ function creerMoteurFacturation(merchantKey, options) {
   // ---- Calculs derives (jamais stockes : un seul endroit de verite) ----
   function totalPaye(f) { return f.paiements.reduce((s, p) => s + p.montant, 0); }
   function totalAvoirs(f) { return f.avoirs.reduce((s, a) => s + a.montant, 0); }
+  function totalRembourse(f) { return (f.remboursements || []).reduce((s, r) => s + r.montant, 0); }
   function vue(f) {
     const paye = totalPaye(f);
+    const rembourse = totalRembourse(f);
+    const payeNet = paye - rembourse; // encaisse, deduction faite de ce qui a ete rendu au client
     const avoirs = totalAvoirs(f);
     const net = f.total - avoirs;
-    const solde = Math.max(0, net - paye);
-    const aRembourser = Math.max(0, paye - net);
+    const solde = Math.max(0, net - payeNet);
+    const aRembourser = Math.max(0, payeNet - net);
     let statut;
     if (avoirs >= f.total) statut = "avoir";
     else if (solde === 0) statut = "paid";
-    else if (paye > 0) statut = "partially_paid";
+    else if (payeNet > 0) statut = "partially_paid";
     else statut = "issued";
-    return Object.assign({}, f, { paye, totalAvoirs: avoirs, net, solde, aRembourser, statut });
+    // TVA nette = TVA de la facture moins la TVA des avoirs (calculee au meme taux).
+    const tvaAvoirs = f.tauxTva != null ? f.avoirs.reduce((s, a) => s + ventiler(a.montant, f.tauxTva).tva, 0) : 0;
+    const tvaNette = f.tauxTva != null ? f.montantTva - tvaAvoirs : null;
+    return Object.assign({}, f, { remboursements: f.remboursements || [], paye, rembourse, payeNet, totalAvoirs: avoirs, net, solde, aRembourser, statut, tvaNette });
   }
 
   function nettoyerTexte(v, max) { return String(v == null ? "" : v).trim().slice(0, max); }
@@ -140,8 +173,15 @@ function creerMoteurFacturation(merchantKey, options) {
       externalRef: p.externalRef || null,
       creePar: nettoyerTexte(p.creePar, 80) || null,
       paiements: [],
-      avoirs: []
+      avoirs: [],
+      remboursements: [],
+      // TVA (Etape 57) : fixee a la creation, ne change plus ensuite meme si le taux du marchand change.
+      tauxTva: null, montantHT: null, montantTva: null
     };
+    if (state.config.tva && state.config.tva.actif) {
+      const v = ventiler(total, state.config.tva.taux);
+      f.tauxTva = state.config.tva.taux; f.montantHT = v.ht; f.montantTva = v.tva;
+    }
     state.factures.push(f);
     sauver();
     return { facture: vue(f), duplicate: false };
@@ -196,6 +236,45 @@ function creerMoteurFacturation(merchantKey, options) {
     return { facture: vue(f), avoir };
   }
 
+  // Remboursement d'un client (Etape 57) : n'est possible que s'il a paye PLUS que ce qu'il doit apres avoir(s).
+  // Ne supprime rien : s'ajoute a la facture et sort dans le journal comme une sortie de tresorerie.
+  function enregistrerRemboursement(factureId, p) {
+    const f = trouver(factureId);
+    if (!f) return { erreur: "Facture introuvable.", statut: 404 };
+    const v = vue(f);
+    if (!(v.aRembourser > 0)) return { erreur: "Rien à rembourser sur cette facture.", statut: 400 };
+    const montant = entier(p.montant === undefined || p.montant === null || p.montant === "" ? v.aRembourser : p.montant);
+    if (!(montant > 0)) return { erreur: "Montant de remboursement invalide.", statut: 400 };
+    if (montant > v.aRembourser) return { erreur: "Le remboursement dépasse le montant à rembourser (" + v.aRembourser + " FCFA).", statut: 400 };
+    const methode = nettoyerTexte(p.methode || "especes", 20).toLowerCase();
+    if (METHODES.indexOf(methode) === -1) return { erreur: "Mode de paiement inconnu : " + methode + ".", statut: 400 };
+    const maintenant = new Date().toISOString();
+    const r = {
+      id: idSuivant("remboursement"),
+      numero: numeroSuivant("RB", maintenant),
+      montant, methode,
+      reference: nettoyerTexte(p.reference, 80) || null,
+      date: maintenant,
+      creePar: nettoyerTexte(p.creePar, 80) || null
+    };
+    if (!f.remboursements) f.remboursements = [];
+    f.remboursements.push(r);
+    sauver();
+    return { facture: vue(f), remboursement: r };
+  }
+
+  // Ventes de la Caisse POS : une vente POS est une vente AU COMPTANT dans le journal. Si elle est ensuite
+  // annulee, ou "remplacee" par une facture (integree ou IzyFacture), on retient la date une seule fois pour
+  // que le journal emette UNE ligne d'annulation datee - jamais de vente comptee deux fois.
+  function noterEvenementPos(orderId, type) {
+    const cle = String(orderId);
+    if (!state.evenementsPos[cle]) state.evenementsPos[cle] = {};
+    const champ = type === "remplacee" ? "remplaceeLe" : "annuleeLe";
+    if (state.evenementsPos[cle][champ]) return;
+    state.evenementsPos[cle][champ] = new Date().toISOString();
+    sauver();
+  }
+
   function listeFactures() { return state.factures.map(vue).sort((a, b) => b.id - a.id); }
   function factureParId(id) { const f = trouver(id); return f ? vue(f) : null; }
   function factureParToken(token) {
@@ -209,6 +288,12 @@ function creerMoteurFacturation(merchantKey, options) {
   function creerDepense(p) {
     const montant = entier(p.montant);
     if (!(montant > 0)) return { erreur: "Montant invalide : indiquez un nombre de FCFA supérieur à zéro." };
+    // TVA deductible (Etape 57) : seulement si le marchand a active la TVA ; part du montant TTC de la depense.
+    let tvaDeductible = 0;
+    if (state.config.tva && state.config.tva.actif && p.tvaDeductible !== undefined && p.tvaDeductible !== null && p.tvaDeductible !== "") {
+      tvaDeductible = entier(p.tvaDeductible);
+      if (!(tvaDeductible >= 0) || tvaDeductible > montant) return { erreur: "TVA déductible invalide (entre 0 et le montant de la dépense)." };
+    }
     const categorie = nettoyerTexte(p.categorie || "autre", 40);
     if (CATEGORIES_DEPENSE.indexOf(categorie) === -1) return { erreur: "Catégorie de dépense inconnue : " + categorie + "." };
     const methode = nettoyerTexte(p.methode || "especes", 20).toLowerCase();
@@ -223,6 +308,7 @@ function creerMoteurFacturation(merchantKey, options) {
       date, categorie, montant, methode,
       fournisseur: nettoyerTexte(p.fournisseur, 120) || null,
       note: nettoyerTexte(p.note, 300) || null,
+      tvaDeductible,
       justificatif: nettoyerTexte(p.justificatif, 120) || null, // simple reference de piece (pas de fichier)
       creeLe: maintenant,
       creePar: nettoyerTexte(p.creePar, 80) || null,
@@ -248,49 +334,75 @@ function creerMoteurFacturation(merchantKey, options) {
   // IzyCompta s'en sert pour ne jamais importer deux fois la meme ecriture (anti-doublon), meme si on
   // re-exporte plusieurs fois la meme periode. Les montants sont TTC en FCFA (XAF), positifs ; le sens
   // economique est porte par `type`.
-  function journal(filtre) {
+  const MOYEN_POS = { especes: "especes", om: "om", momo: "momo", carte: "banque", cheque: "cheque" };
+  // `ext.ventesPos` : commandes de la Caisse POS (fournies par server.js, qui seul connait le moteur des
+  // commandes). `filtre.apres` : ne renvoie que les ecritures creees apres cet instant (import incremental).
+  function journal(filtre, ext) {
     const du = filtre && filtre.du ? filtre.du : null;
     const au = filtre && filtre.au ? filtre.au : null;
+    const apres = filtre && filtre.apres ? filtre.apres : null;
     const bascule = state.config.basculeLe || null;
     const sortie = [];
     function ajouter(e) {
       if (du && e.date < du) return;
       if (au && e.date > au) return;
+      if (apres && !(e.creeLe > apres)) return;
+      if (e.montantHT === undefined) { e.montantHT = null; e.tva = null; e.tauxTva = null; }
       e.posterieurBascule = !!(bascule && e.creeLe > bascule);
       sortie.push(e);
     }
     for (const f0 of state.factures) {
       const f = vue(f0);
       const tiers = f.client.nom;
-      ajouter({ id: merchantKey + ":" + f.numero, type: "vente", journal: "VE", date: f.date, creeLe: f.creeLe, piece: f.numero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Facture " + f.numero + " — " + tiers, montant: f.total, moyen: null, categorie: null, origine: f.origine.type + (f.origine.id != null ? ":" + f.origine.id : "") });
+      ajouter({ id: merchantKey + ":" + f.numero, type: "vente", journal: "VE", date: f.date, creeLe: f.creeLe, piece: f.numero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Facture " + f.numero + " — " + tiers, montant: f.total, moyen: null, categorie: null, origine: f.origine.type + (f.origine.id != null ? ":" + f.origine.id : ""), montantHT: f.montantHT, tva: f.montantTva, tauxTva: f.tauxTva });
       for (const p of f.paiements) {
         ajouter({ id: merchantKey + ":" + p.recuNumero, type: "encaissement", journal: "TR", date: dateLocale(p.date), creeLe: p.date, piece: p.recuNumero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Encaissement " + p.recuNumero + " sur facture " + f.numero, montant: p.montant, moyen: p.methode, categorie: null, origine: "facture:" + f.numero });
       }
       for (const a of f.avoirs) {
-        ajouter({ id: merchantKey + ":" + a.numero, type: "avoir_vente", journal: "VE", date: dateLocale(a.date), creeLe: a.date, piece: a.numero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Avoir " + a.numero + " sur facture " + f.numero + " — " + a.motif, montant: a.montant, moyen: null, categorie: null, origine: "facture:" + f.numero });
+        ajouter({ id: merchantKey + ":" + a.numero, type: "avoir_vente", journal: "VE", date: dateLocale(a.date), creeLe: a.date, piece: a.numero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Avoir " + a.numero + " sur facture " + f.numero + " — " + a.motif, montant: a.montant, moyen: null, categorie: null, origine: "facture:" + f.numero, ...(f.tauxTva != null ? (() => { const v = ventiler(a.montant, f.tauxTva); return { montantHT: v.ht, tva: v.tva, tauxTva: f.tauxTva }; })() : {}) });
+      }
+      for (const r of f.remboursements || []) {
+        ajouter({ id: merchantKey + ":" + r.numero, type: "remboursement", journal: "TR", date: dateLocale(r.date), creeLe: r.date, piece: r.numero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Remboursement " + r.numero + " sur facture " + f.numero, montant: r.montant, moyen: r.methode, categorie: null, origine: "facture:" + f.numero });
       }
     }
     for (const d of state.depenses) {
       const tiers = d.fournisseur || "";
-      ajouter({ id: merchantKey + ":" + d.numero, type: "depense", journal: "AC", date: d.date, creeLe: d.creeLe, piece: d.numero, refFacture: null, tiers, telephoneTiers: null, libelle: "Dépense " + d.numero + " — " + d.categorie + (d.note ? " — " + d.note : ""), montant: d.montant, moyen: d.methode, categorie: d.categorie, origine: "depense" });
+      ajouter({ id: merchantKey + ":" + d.numero, type: "depense", journal: "AC", date: d.date, creeLe: d.creeLe, piece: d.numero, refFacture: null, tiers, telephoneTiers: null, libelle: "Dépense " + d.numero + " — " + d.categorie + (d.note ? " — " + d.note : ""), montant: d.montant, moyen: d.methode, categorie: d.categorie, origine: "depense", ...(d.tvaDeductible > 0 ? { montantHT: d.montant - d.tvaDeductible, tva: d.tvaDeductible, tauxTva: null } : {}) });
       if (d.annulee) {
         ajouter({ id: merchantKey + ":" + d.numero + ":ANN", type: "depense_annulation", journal: "AC", date: dateLocale(d.annuleeLe), creeLe: d.annuleeLe, piece: d.numero, refFacture: null, tiers, telephoneTiers: null, libelle: "Annulation de la dépense " + d.numero + " — " + d.motifAnnulation, montant: d.montant, moyen: d.methode, categorie: d.categorie, origine: "depense" });
+      }
+    }
+    // Ventes de la Caisse POS (Etape 57) : vente au comptant, depuis l'activation de la facturation integree.
+    const activation = state.config.dateActivation ? dateLocale(state.config.dateActivation) : null;
+    for (const o of (ext && ext.ventesPos) || []) {
+      if (activation && dateLocale(o.dateISO) < activation) continue;
+      const piece = "POS-" + String(o.id).padStart(4, "0");
+      const moyen = MOYEN_POS[o.modePaiement] || "especes";
+      const montant = Number(o.prix) || 0;
+      if (!(montant > 0)) continue;
+      const t = state.config.tva;
+      const tvaPos = t && t.actif && t.depuis && dateLocale(o.dateISO) >= t.depuis ? ventiler(montant, t.taux) : null;
+      ajouter({ id: merchantKey + ":" + piece, type: "vente_comptant", journal: "VE", date: dateLocale(o.dateISO), creeLe: o.dateISO, piece, refFacture: null, tiers: "Vente en boutique", telephoneTiers: null, libelle: "Vente en boutique " + piece, montant, moyen, categorie: null, origine: "pos:" + o.id, ...(tvaPos ? { montantHT: tvaPos.ht, tva: tvaPos.tva, tauxTva: t.taux } : {}) });
+      const ev = state.evenementsPos[String(o.id)] || {};
+      const quand = ev.remplaceeLe || ev.annuleeLe;
+      if (quand) {
+        ajouter({ id: merchantKey + ":" + piece + ":ANN", type: "vente_comptant_annulation", journal: "VE", date: dateLocale(quand), creeLe: quand, piece, refFacture: null, tiers: "Vente en boutique", telephoneTiers: null, libelle: ev.remplaceeLe ? "Annulation de la vente " + piece + " (remplacée par une facture)" : "Annulation de la vente " + piece, montant, moyen, categorie: null, origine: "pos:" + o.id, ...(tvaPos ? { montantHT: tvaPos.ht, tva: tvaPos.tva, tauxTva: t.taux } : {}) });
       }
     }
     sortie.sort((a, b) => (a.creeLe < b.creeLe ? -1 : a.creeLe > b.creeLe ? 1 : a.id < b.id ? -1 : 1));
     return sortie.map((e) => Object.assign({ source: SOURCE_JOURNAL, marchand: merchantKey, devise: "XAF" }, e));
   }
 
-  const COLONNES_CSV = ["id", "source", "marchand", "type", "journal", "date", "piece", "refFacture", "tiers", "libelle", "montant", "devise", "moyen", "categorie", "origine", "posterieurBascule"];
+  const COLONNES_CSV = ["id", "source", "marchand", "type", "journal", "date", "piece", "refFacture", "tiers", "libelle", "montant", "montantHT", "tva", "tauxTva", "devise", "moyen", "categorie", "origine", "posterieurBascule"];
   // `sep` : "," (defaut, format machine) ou ";" (Excel en francais ouvre un CSV a virgules sur UNE seule colonne).
-  function journalCsv(filtre, sep) {
+  function journalCsv(filtre, sep, ext) {
     const s0 = sep === ";" ? ";" : ",";
     const echapper = (v) => {
       const s = v == null ? "" : String(v);
       return /[";\n\r,]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
     const lignes = [COLONNES_CSV.join(s0)];
-    for (const e of journal(filtre)) lignes.push(COLONNES_CSV.map((c) => echapper(e[c])).join(s0));
+    for (const e of journal(filtre, ext)) lignes.push(COLONNES_CSV.map((c) => echapper(e[c])).join(s0));
     return "﻿" + lignes.join("\r\n") + "\r\n";
   }
 
@@ -301,6 +413,50 @@ function creerMoteurFacturation(merchantKey, options) {
     sauver();
     return config();
   }
+  // Parametres reglables par le proprietaire (jamais la source de facturation, reservee au super-administrateur).
+  function definirParametres(p) {
+    const c = state.config;
+    if (p.autoFacturation !== undefined) c.autoFacturation = !!p.autoFacturation;
+    if (p.tva && typeof p.tva === "object") {
+      const actif = !!p.tva.actif;
+      let taux = p.tva.taux === undefined || p.tva.taux === "" ? c.tva.taux : Number(p.tva.taux);
+      if (!(taux >= 0 && taux <= 30)) return { erreur: "Taux de TVA invalide (entre 0 et 30 %)." };
+      taux = Math.round(taux * 100) / 100;
+      if (actif && !c.tva.actif) c.tva.depuis = dateLocale();
+      c.tva.actif = actif; c.tva.taux = taux;
+    }
+    if (p.identite && typeof p.identite === "object") {
+      ["niu", "rccm", "adresse", "telephone"].forEach((k) => { if (p.identite[k] !== undefined) c.identite[k] = nettoyerTexte(p.identite[k], 160); });
+    }
+    sauver();
+    return { config: config() };
+  }
+
+  // ---- Cle comptable (Etape 57) : jeton de LECTURE du journal pour IzyCompta ----
+  const empreinte = (jeton) => crypto2.createHash("sha256").update(String(jeton)).digest("hex");
+  function genererCleComptable(par) {
+    const jeton = "izc_" + crypto2.randomBytes(24).toString("hex");
+    state.config.cleComptable = { hash: empreinte(jeton), indice: jeton.slice(-4), creeLe: new Date().toISOString(), creePar: nettoyerTexte(par, 80) || null, dernierAcces: null };
+    sauver();
+    return jeton; // renvoye UNE seule fois, jamais relisible ensuite
+  }
+  function verifierCleComptable(jeton) {
+    const k = state.config.cleComptable;
+    if (!k || typeof jeton !== "string" || jeton.length < 20 || jeton.length > 100) return false;
+    const a = Buffer.from(empreinte(jeton), "hex"), b = Buffer.from(k.hash, "hex");
+    const ok = a.length === b.length && crypto2.timingSafeEqual(a, b);
+    if (ok) {
+      const maintenant = Date.now();
+      if (!k.dernierAcces || maintenant - new Date(k.dernierAcces).getTime() > 60000) { k.dernierAcces = new Date(maintenant).toISOString(); sauver(); }
+    }
+    return ok;
+  }
+  function revoquerCleComptable() { state.config.cleComptable = null; sauver(); }
+  function etatCleComptable() {
+    const k = state.config.cleComptable;
+    return k ? { active: true, indice: k.indice, creeLe: k.creeLe, creePar: k.creePar, dernierAcces: k.dernierAcces } : { active: false };
+  }
+
   function aDesDonnees() { return state.factures.length > 0 || state.depenses.length > 0; }
 
   // Apercu avant bascule : derniers numeros emis par serie, factures dont le solde n'est pas nul.
@@ -324,6 +480,8 @@ function creerMoteurFacturation(merchantKey, options) {
 
   return {
     init, config, modifierConfig, aDesDonnees,
+    definirParametres, genererCleComptable, verifierCleComptable, revoquerCleComptable, etatCleComptable,
+    enregistrerRemboursement, noterEvenementPos,
     creerFacture, enregistrerPaiement, creerAvoir, listeFactures, factureParId, factureParToken, factureParExternalRef,
     creerDepense, annulerDepense, listeDepenses,
     journal, journalCsv, apercuBascule,
