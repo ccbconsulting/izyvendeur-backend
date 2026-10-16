@@ -70,6 +70,16 @@ function nomClientPourCommande(commande) {
 }
 
 function construireLignesPourCommande(commande) {
+  // Etape 59 : vente avec remise -> une ligne par article au PRIX NET (remise incluse), quantite 1, pour que le
+  // total envoye soit exact (l'API ne sait pas encore recevoir de remise) ; la remise est rappelee dans les notes.
+  if (commande.remise && commande.remise.montant > 0) {
+    return (commande.items || []).map((it) => {
+      let desc = it.produit || "Article";
+      const variante = [it.couleur, it.taille].filter(Boolean).join(" ");
+      if (variante) desc += " (" + variante + ")";
+      return { desc: (it.quantite || 1) + " x " + desc + " (remise incluse)", qty: 1, price: it.prix || 0 };
+    });
+  }
   return (commande.items || []).map((it) => {
     let desc = it.produit || "Article";
     const variante = [it.couleur, it.taille].filter(Boolean).join(" ");
@@ -103,7 +113,7 @@ async function facturerCommande(apiKey, merchantKey, commande) {
       externalId: commande.telephone ? String(commande.telephone).replace(/\D/g, "") : undefined
     },
     lines: construireLignesPourCommande(commande),
-    notes: "Commande WhatsApp " + externalRefPourCommande(merchantKey, commande.id)
+    notes: "Commande WhatsApp " + externalRefPourCommande(merchantKey, commande.id) + (commande.remise && commande.remise.montant > 0 ? " — Remise accordée : " + commande.remise.montant + " FCFA" : "")
   };
   return izf("POST", "/invoices", apiKey, corps);
 }

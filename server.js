@@ -22,6 +22,7 @@ const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
+const remisesLib = require("./remises");
 const { creerMoteurFacturation, METHODES: METHODES_PAIEMENT, CATEGORIES_DEPENSE } = require("./facturation");
 const cryptoUtil = require("./crypto-util");
 const { clientIp } = require("./clientip");
@@ -463,7 +464,7 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 // /api/:id/pos/vente plus bas) - marchand catalogue uniquement, et l'onglet lui-meme reste invisible tant
 // que le super-administrateur n'a pas debloque l'option payante "optionCaissePos" pour ce marchand (voir
 // PUT /api/marchands/:id/options-payantes), meme si l'employe a deja ce role.
-const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable"];
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable", "remises"];
 
 // ---------------- Session de connexion /admin (29 septembre 2026) ----------------
 // Remplace l'authentification HTTP Basic (popup native du navigateur - aucune notion de "session" ni de
@@ -521,7 +522,7 @@ function identifierCompte(utilisateur, motDePasse) {
     }
     for (const emp of (m.employes || [])) {
       if (emp.identifiant && utilisateur === emp.identifiant && motDePasseCorrespond(motDePasse, emp.motDePasseHash)) {
-        return { role: "employe", merchantId: id, adminUser: utilisateur, employeId: emp.id, roles: emp.roles || [] };
+        return { role: "employe", merchantId: id, adminUser: utilisateur, employeId: emp.id, roles: emp.roles || [], plafondRemise: emp.plafondRemise };
       }
     }
   }
@@ -561,7 +562,7 @@ function protegerAcces(req, res, next) {
     const entry = engines[payload.merchantId];
     const emp = entry && (entry.merchant.employes || []).find((e) => e.id === payload.employeId);
     if (emp && emp.identifiant === payload.adminUser) {
-      auth = { role: "employe", merchantId: payload.merchantId, adminUser: payload.adminUser, employeId: emp.id, roles: emp.roles || [] };
+      auth = { role: "employe", merchantId: payload.merchantId, adminUser: payload.adminUser, employeId: emp.id, roles: emp.roles || [], plafondRemise: emp.plafondRemise };
     }
   }
 
@@ -777,6 +778,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "DELETE /api/marchands/:id": "marchand_supprime",
   "PUT /api/:id/catalogue": "catalogue_modifie",
   "POST /api/:id/pos/vente": "vente_caisse",
+  "POST /api/:id/pos/vente/:orderId/facture": "facture_caisse_creee",
   "POST /api/:id/caisse/session/ouvrir": "caisse_ouverte",
   "POST /api/:id/caisse/session/fermer": "caisse_fermee",
   "POST /api/:id/catalogue/importer": "catalogue_importe",
@@ -822,7 +824,9 @@ function detailAuditRequete(code, req) {
     case "rendezvous_statut_modifie": return { rendezvous: p.apptId, statut: b.statut || null };
     case "facture_creee": case "paiement_facture_enregistre":
       return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
-    case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null };
+    case "vente_caisse_remise": return { tentative: "remise", motif: b.motifRemise || null };
+    case "facture_caisse_creee": return { vente: p.orderId };
+    case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null, plafondRemise: b.plafondRemise !== undefined ? b.plafondRemise : null };
     case "employe_modifie": {
       const emp = entry && (entry.merchant.employes || []).filter((e) => e.id === p.employeId)[0];
       return { employe: (emp && emp.nom) || p.employeId, roles: Array.isArray(b.roles) ? b.roles : null,
@@ -843,7 +847,8 @@ function detailAuditRequete(code, req) {
     case "client_attente_contacte": return { entree: p.entreeId };
     case "inventaire_instantane_supprime": return { instantane: p.snapshotId };
     case "catalogue_importe": return { fichier: req.file ? req.file.originalname : null };
-    case "vente_caisse": return { lignes: Array.isArray(b.lignes) ? b.lignes.length : null, modePaiement: b.modePaiement || null };
+    case "vente_caisse": return Object.assign({ lignes: Array.isArray(b.lignes) ? b.lignes.length : null, modePaiement: b.modePaiement || null },
+      (b.remiseGlobale || b.motifRemise || (Array.isArray(b.lignes) && b.lignes.some((l) => l && l.remise))) ? { tentativeRemise: true, motif: b.motifRemise || null } : {});
     case "parametres_modifies": case "infos_marchand_modifiees": case "izyfacture_parametres_modifies":
     case "services_modifies": case "logo_modifie": case "image_accueil_modifiee":
       return { champs: cleCorpsAudit(b) };
@@ -1036,7 +1041,7 @@ app.post("/api/connexion", (req, res) => {
   db.journalAjouter(Object.assign({ type: "connexion", action: "connexion_ok", statut: "ok", ip: ipAudit(req), userAgent: uaAudit(req) },
     descriptionActeurConnexion(auth)));
   ecrireCookieSession(res, { role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, employeId: auth.employeId || null });
-  res.json({ role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, roles: auth.roles || null });
+  res.json({ role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, roles: auth.roles || null, plafondRemise: auth.role === "employe" ? remisesLib.plafondEmploye(auth.plafondRemise) : null });
 });
 
 // Deconnexion : efface le cookie de session. Reussit toujours, meme sans cookie present ou deja expire -
@@ -1184,7 +1189,7 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
 // super-administrateur (acces a tout, gestion des marchands et de leurs identifiants) ou un marchand
 // (limite a ses propres donnees, peut seulement changer son propre mot de passe).
 app.get("/api/moi", protegerAcces, (req, res) => {
-  res.json({ role: req.auth.role, merchantId: req.auth.merchantId, adminUser: req.auth.adminUser, roles: req.auth.roles || null });
+  res.json({ role: req.auth.role, merchantId: req.auth.merchantId, adminUser: req.auth.adminUser, roles: req.auth.roles || null, plafondRemise: req.auth.role === "employe" ? remisesLib.plafondEmploye(req.auth.plafondRemise) : null });
 });
 
 // Creation, modification ou reinitialisation des identifiants de connexion d'un marchand.
@@ -1242,12 +1247,23 @@ app.put("/api/:id/identifiants", protegerAcces, async (req, res) => {
 // super-administrateur (voir estGestionnaireDuMarchand) ; un employe ne peut jamais gerer d'autres
 // employes, seulement changer son propre mot de passe (voir le PUT ci-dessous).
 
+// Etape 59 : le droit « remises » n'a de sens qu'avec la Caisse ou la Facturation ; plafond en % propre a l'employe.
+function erreurRolesRemises(roles) {
+  return roles.indexOf("remises") !== -1 && roles.indexOf("caisse") === -1 && roles.indexOf("facturation") === -1
+    ? "Le droit « Remises » doit s'accompagner du rôle Caisse ou Facturation." : null;
+}
+function lirePlafondRemise(v) {
+  if (v === undefined) return { valeur: undefined };
+  const n = Number(v);
+  if (v === null || v === "" || !Number.isFinite(n) || n < 0 || n > 100) return { erreur: "Plafond de remise invalide (entre 0 et 100 %)." };
+  return { valeur: Math.round(n * 100) / 100 };
+}
 app.get("/api/:id/employes", protegerAcces, (req, res) => {
   const id = req.params.id;
   if (!verifierPortee(req, res, id)) return;
   if (!estGestionnaireDuMarchand(req, id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   const entry = getMarchandOu404(req, res); if (!entry) return;
-  res.json((entry.merchant.employes || []).map((e) => ({ id: e.id, nom: e.nom, identifiant: e.identifiant, roles: e.roles || [] })));
+  res.json((entry.merchant.employes || []).map((e) => ({ id: e.id, nom: e.nom, identifiant: e.identifiant, roles: e.roles || [], plafondRemise: (e.roles || []).indexOf("remises") !== -1 ? remisesLib.plafondEmploye(e.plafondRemise) : null })));
 });
 
 app.post("/api/:id/employes", protegerAcces, async (req, res) => {
@@ -1256,7 +1272,9 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   if (!estGestionnaireDuMarchand(req, id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   const entry = getMarchandOu404(req, res); if (!entry) return;
 
-  const { nom, identifiant, motDePasse, roles } = req.body || {};
+  const { nom, identifiant, motDePasse, roles, plafondRemise } = req.body || {};
+  const plafondLu = lirePlafondRemise(plafondRemise);
+  if (plafondLu.erreur) return res.status(400).json({ erreur: plafondLu.erreur });
   if (!nom || !String(nom).trim()) return res.status(400).json({ erreur: "nom requis." });
   if (!identifiant || !String(identifiant).trim()) return res.status(400).json({ erreur: "identifiant requis." });
   if (!motDePasse || String(motDePasse).length < 6) return res.status(400).json({ erreur: "motDePasse requis (6 caractères minimum)." });
@@ -1268,6 +1286,11 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   );
   if (rolesIncompatibles.length) {
     return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
+  }
+  const erreurRemises = erreurRolesRemises(rolesDemandes);
+  if (erreurRemises) return res.status(400).json({ erreur: erreurRemises });
+  if (rolesDemandes.indexOf("remises") !== -1 && plafondLu.valeur === undefined) {
+    return res.status(400).json({ erreur: "Indiquez le plafond de remise de cet employé (0 à 100 %) : aucune remise n'est accordée par défaut." });
   }
 
   const idNormalise = String(identifiant).trim();
@@ -1282,13 +1305,14 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
     motDePasseHash: bcrypt.hashSync(String(motDePasse), 10),
     roles: rolesDemandes
   };
+  if (rolesDemandes.indexOf("remises") !== -1) employe.plafondRemise = plafondLu.valeur;
   const ajoute = await db.addEmploye(id, employe);
   if (!ajoute) return res.status(404).json({ erreur: "Marchand introuvable." });
   entry.merchant.employes = entry.merchant.employes || [];
   entry.merchant.employes.push(employe);
 
   console.log(`[${id}] Nouvel employé créé par ${req.auth.adminUser} : ${employe.identifiant} (${employe.roles.join(", ")}).`);
-  res.status(201).json({ id: employe.id, nom: employe.nom, identifiant: employe.identifiant, roles: employe.roles });
+  res.status(201).json({ id: employe.id, nom: employe.nom, identifiant: employe.identifiant, roles: employe.roles, plafondRemise: employe.plafondRemise !== undefined ? employe.plafondRemise : null });
 });
 
 // Modifie un employe existant :
@@ -1310,7 +1334,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
 
   if (req.auth.role === "employe") {
     if (req.auth.employeId !== employeId) return res.status(403).json({ erreur: "Vous ne pouvez modifier que votre propre compte." });
-    if (req.body && (req.body.nom !== undefined || req.body.roles !== undefined)) {
+    if (req.body && (req.body.nom !== undefined || req.body.roles !== undefined || req.body.plafondRemise !== undefined)) {
       return res.status(403).json({ erreur: "Seul le propriétaire du marchand peut changer le nom ou les rôles d'un compte employé." });
     }
     const { newPassword } = req.body || {};
@@ -1318,7 +1342,9 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
     motDePasseEnClair = String(newPassword);
     patch.motDePasseHash = bcrypt.hashSync(motDePasseEnClair, 10);
   } else if (estGestionnaireDuMarchand(req, id)) {
-    const { nom, roles, newPassword, genererMotDePasse } = req.body || {};
+    const { nom, roles, newPassword, genererMotDePasse, plafondRemise } = req.body || {};
+    const plafondLu = lirePlafondRemise(plafondRemise);
+    if (plafondLu.erreur) return res.status(400).json({ erreur: plafondLu.erreur });
     if (nom !== undefined) {
       if (!String(nom).trim()) return res.status(400).json({ erreur: "Le nom ne peut pas être vide." });
       patch.nom = String(nom).trim();
@@ -1332,8 +1358,12 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
       if (rolesIncompatibles.length) {
         return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
       }
+      const erreurRemises = erreurRolesRemises(rolesDemandes);
+      if (erreurRemises) return res.status(400).json({ erreur: erreurRemises });
       patch.roles = rolesDemandes;
     }
+    if (plafondLu.valeur !== undefined) patch.plafondRemise = plafondLu.valeur;
+    if (patch.roles && patch.roles.indexOf("remises") !== -1 && patch.plafondRemise === undefined && employeActuel.plafondRemise === undefined) return res.status(400).json({ erreur: "Indiquez le plafond de remise de cet employé (0 à 100 %) : aucune remise n'est accordée par défaut." });
     if (genererMotDePasse) {
       motDePasseEnClair = genererMotDePasseAleatoire();
       patch.motDePasseHash = bcrypt.hashSync(motDePasseEnClair, 10);
@@ -1353,7 +1383,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
   Object.assign(employeActuel, maj);
 
   console.log(`[${id}] Compte employé '${employeId}' mis à jour par ${req.auth.adminUser}.`);
-  res.json({ id: maj.id, nom: maj.nom, identifiant: maj.identifiant, roles: maj.roles, nouveauMotDePasse: motDePasseEnClair || undefined });
+  res.json({ id: maj.id, nom: maj.nom, identifiant: maj.identifiant, roles: maj.roles, plafondRemise: maj.plafondRemise !== undefined ? maj.plafondRemise : null, nouveauMotDePasse: motDePasseEnClair || undefined });
 });
 
 app.delete("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
@@ -1503,17 +1533,25 @@ function urlPubliqueFacture(token) {
   return base.replace(/\/+$/, "") + "/f/" + token;
 }
 
+// Etape 59 : controle du droit d'accorder une remise (proprietaire / super-administrateur : sans plafond ;
+// employe : role « remises » + plafond en % qui lui est propre).
+function controleRemise(req, pourcentEffectif) {
+  return remisesLib.verifierDroit(req.auth, estGestionnaireDuMarchand(req, req.params.id), pourcentEffectif);
+}
+
 function lignesFactureInterne(entry, order) {
   if (estRendezVous(entry)) return [{ designation: order.service || "Prestation", quantite: 1, prixUnitaire: Number(order.prix) || 0 }];
   return (order.items || []).map((it) => {
     let d = it.produit || "Article";
     const variante = [it.couleur, it.taille].filter((x) => x && x !== "-" && x !== "—" && x !== "–").join(" ");
     if (variante) d += " (" + variante + ")";
-    return { designation: d, quantite: it.quantite || 1, prixUnitaire: it.prixUnitaire || 0 };
+    const l = { designation: d, quantite: it.quantite || 1, prixUnitaire: it.prixUnitaire || 0 };
+    if (it.remiseLigne > 0) l.remise = { type: "montant", valeur: it.remiseLigne };
+    return l;
   });
 }
 
-async function tenterFacturationInterne(entry, order) {
+async function tenterFacturationInterne(entry, order, options) {
   const rdv = estRendezVous(entry);
   if (order.izyfactureFactureId && order.factureSource === "interne") return; // deja facturee
   if (rdv && !(Number(order.prix) > 0)) {
@@ -1522,10 +1560,14 @@ async function tenterFacturationInterne(entry, order) {
   }
   const ref = rdv ? izyfacture.externalRefPourRendezVous(entry.merchant.id, order.id) : izyfacture.externalRefPourCommande(entry.merchant.id, order.id);
   const pos = !rdv && order.source === "pos";
-  const nom = rdv && order.clientNom ? order.clientNom : (order.telephone ? "Client WhatsApp " + order.telephone : (pos ? "Client comptoir" : "Client IzyVendeur"));
+  const cl = (pos && options && options.client) || {};
+  const nom = (cl.nom && String(cl.nom).trim()) || (rdv && order.clientNom ? order.clientNom : (order.telephone ? "Client WhatsApp " + order.telephone : (pos ? "Client comptoir" : "Client IzyVendeur")));
   const r = entry.facturation.creerFacture({
-    client: { nom, telephone: order.telephone || null },
+    client: { nom, telephone: cl.telephone || order.telephone || null, niu: cl.niu || null, adresse: cl.adresse || null },
     lignes: lignesFactureInterne(entry, order),
+    remiseGlobale: order.remise && order.remise.globale ? { type: "montant", valeur: order.remise.globale.montant } : null,
+    motifRemise: order.remise ? order.remise.motif : null,
+    remiseAccordePar: order.remise ? order.remise.accordePar : null,
     notes: (rdv ? "Rendez-vous WhatsApp " : (pos ? "Vente en boutique " : "Commande WhatsApp ")) + ref,
     origine: { type: rdv ? "rdv" : "commande", id: order.id },
     externalRef: ref,
@@ -1665,12 +1707,44 @@ app.get("/api/:id/facturation", protegerAcces, (req, res) => {
   });
 });
 
+// Etape 59 : articles proposables dans la facture libre (catalogue et/ou services du marchand). Reserve au role
+// « facturation » : un employe de facturation n'a pas besoin du role « catalogue » pour piocher dans la liste.
+app.get("/api/:id/facturation/articles", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, true); if (!entry) return;
+  const moteurs = entry.moteurs || {};
+  const cat = moteurs.catalogue || (entry.engine && entry.engine.type === "catalogue" ? entry.engine : null);
+  const svc = moteurs.service || (entry.engine && entry.engine.type === "service" ? entry.engine : null);
+  const articles = [];
+  if (cat) {
+    for (const p of cat.getCatalog() || []) {
+      for (const v of p.variantes || []) {
+        const decl = [v.couleur, v.taille].filter((x) => x && String(x).trim()).join(" ");
+        articles.push({ type: "produit", libelle: p.nom + (decl ? " (" + decl + ")" : ""), prix: Number(v.prix) || 0 });
+      }
+    }
+  }
+  if (svc) {
+    for (const s of svc.getServices() || []) articles.push({ type: "service", libelle: s.nom, prix: Number(s.prix) || 0 });
+  }
+  res.json(articles.filter((a) => a.prix >= 0));
+});
+
 app.post("/api/:id/facturation/factures", protegerAcces, (req, res) => {
   const entry = entreeFacturation(req, res, true); if (!entry) return;
   if (sourceFacturation(entry) !== "interne") return res.status(403).json({ erreur: "La facturation intégrée n'est plus active pour ce marchand." });
   const b = req.body || {};
-  const r = entry.facturation.creerFacture({ client: b.client, lignes: b.lignes, notes: b.notes, origine: { type: "libre", id: null }, creePar: nomActeur(req) });
+  // Etape 59 : remises (par ligne et/ou globale) soumises au droit « remises » et au plafond de l'employe.
+  const aRemise = (b.remiseGlobale && Number(b.remiseGlobale.valeur) > 0) || (Array.isArray(b.lignes) && b.lignes.some((l) => l && l.remise && Number(l.remise.valeur) > 0));
+  if (aRemise) {
+    const lignesBrutes = Array.isArray(b.lignes) ? b.lignes.map((l) => ({ brut: (Number(l && l.quantite) || 0) * (Number(l && l.prixUnitaire) || 0), remise: l && l.remise })) : [];
+    const c = remisesLib.appliquer(lignesBrutes, b.remiseGlobale);
+    if (c.erreur) return res.status(400).json({ erreur: c.erreur });
+    const refus = controleRemise(req, c.pourcentEffectif);
+    if (refus) return res.status(refus.statut).json({ erreur: refus.erreur });
+  }
+  const r = entry.facturation.creerFacture({ client: b.client, lignes: b.lignes, notes: b.notes, remiseGlobale: b.remiseGlobale, motifRemise: b.motifRemise, remiseAccordePar: nomActeur(req), origine: { type: "libre", id: null }, creePar: nomActeur(req) });
   if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.locals.audit = { detail: Object.assign({ facture: r.facture.numero, total: r.facture.total }, r.facture.remiseTotale > 0 ? { remise: r.facture.remiseTotale, motif: r.facture.motifRemise } : {}) };
   res.status(201).json(vueFactureAPI(r.facture));
 });
 
@@ -1914,8 +1988,8 @@ app.post("/api/:id/facturation/bascule", protegerAcces, async (req, res) => {
 // ---- Pages publiques imprimables (facture, recu) : acces par jeton aleatoire de 128 bits, sans connexion ----
 function echapperHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 const MOTS_PAGE = {
-  fr: { facture: "Facture", recu: "Reçu", avoir: "Avoir", date: "Date", client: "Client", designation: "Désignation", qte: "Qté", pu: "Prix unitaire", total: "Total", paye: "Payé", solde: "Solde à payer", ht: "Total HT", tva: "TVA", remboursements: "Remboursements", paiements: "Paiements", avoirs: "Avoirs", imprimer: "Imprimer / Enregistrer en PDF", ttc: "Montants en FCFA, toutes taxes comprises.", methode: { especes: "Espèces", om: "Orange Money", momo: "MTN MoMo", banque: "Virement", cheque: "Chèque", autre: "Autre" }, statut: { issued: "Émise", partially_paid: "Partiellement payée", paid: "Payée", avoir: "Annulée (avoir)" }, recuPour: "Reçu pour la facture", montantRecu: "Montant reçu", mode: "Mode de paiement", reference: "Référence", merci: "Merci pour votre confiance." },
-  en: { facture: "Invoice", recu: "Receipt", avoir: "Credit note", date: "Date", client: "Customer", designation: "Description", qte: "Qty", pu: "Unit price", total: "Total", paye: "Paid", solde: "Balance due", ht: "Total excl. tax", tva: "VAT", remboursements: "Refunds", paiements: "Payments", avoirs: "Credit notes", imprimer: "Print / Save as PDF", ttc: "Amounts in FCFA, taxes included.", methode: { especes: "Cash", om: "Orange Money", momo: "MTN MoMo", banque: "Bank transfer", cheque: "Cheque", autre: "Other" }, statut: { issued: "Issued", partially_paid: "Partially paid", paid: "Paid", avoir: "Cancelled (credit note)" }, recuPour: "Receipt for invoice", montantRecu: "Amount received", mode: "Payment method", reference: "Reference", merci: "Thank you for your business." }
+  fr: { facture: "Facture", recu: "Reçu", avoir: "Avoir", date: "Date", client: "Client", designation: "Désignation", qte: "Qté", pu: "Prix unitaire", total: "Total", paye: "Payé", solde: "Solde à payer", ht: "Total HT", tva: "TVA", remise: "Remise", sousTotal: "Sous-total", remiseGlobale: "Remise globale", niu: "NIU", remboursements: "Remboursements", paiements: "Paiements", avoirs: "Avoirs", imprimer: "Imprimer / Enregistrer en PDF", ttc: "Montants en FCFA, toutes taxes comprises.", methode: { especes: "Espèces", om: "Orange Money", momo: "MTN MoMo", banque: "Virement", cheque: "Chèque", autre: "Autre" }, statut: { issued: "Émise", partially_paid: "Partiellement payée", paid: "Payée", avoir: "Annulée (avoir)" }, recuPour: "Reçu pour la facture", montantRecu: "Montant reçu", mode: "Mode de paiement", reference: "Référence", merci: "Merci pour votre confiance." },
+  en: { facture: "Invoice", recu: "Receipt", avoir: "Credit note", date: "Date", client: "Customer", designation: "Description", qte: "Qty", pu: "Unit price", total: "Total", paye: "Paid", solde: "Balance due", ht: "Total excl. tax", tva: "VAT", remise: "Discount", sousTotal: "Subtotal", remiseGlobale: "Overall discount", niu: "Tax ID", remboursements: "Refunds", paiements: "Payments", avoirs: "Credit notes", imprimer: "Print / Save as PDF", ttc: "Amounts in FCFA, taxes included.", methode: { especes: "Cash", om: "Orange Money", momo: "MTN MoMo", banque: "Bank transfer", cheque: "Cheque", autre: "Other" }, statut: { issued: "Issued", partially_paid: "Partially paid", paid: "Paid", avoir: "Cancelled (credit note)" }, recuPour: "Receipt for invoice", montantRecu: "Amount received", mode: "Payment method", reference: "Reference", merci: "Thank you for your business." }
 };
 function fcfa(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA"; }
 function dateAffichee(iso, lang) { return new Date(iso).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { timeZone: "Africa/Douala" }); }
@@ -1933,9 +2007,15 @@ function pageFacture(entry, f, lang) {
   const w = MOTS_PAGE[lang];
   let h = enTetePage(w.facture + " " + f.numero, entry);
   h += `<h1>${w.facture} ${echapperHtml(f.numero)}</h1><p>${w.date} : ${echapperHtml(dateAffichee(f.creeLe, lang))} &nbsp; <span class="badge">${echapperHtml(w.statut[f.statut] || f.statut)}</span></p>`;
-  h += `<p><strong>${w.client} :</strong> ${echapperHtml(f.client.nom)}${f.client.telephone ? " — " + echapperHtml(f.client.telephone) : ""}</p>`;
+  h += `<p><strong>${w.client} :</strong> ${echapperHtml(f.client.nom)}${f.client.telephone ? " — " + echapperHtml(f.client.telephone) : ""}${f.client.niu ? " — " + w.niu + " : " + echapperHtml(f.client.niu) : ""}${f.client.adresse ? "<br>" + echapperHtml(f.client.adresse) : ""}</p>`;
   h += `<table><tr><th>${w.designation}</th><th class="n">${w.qte}</th><th class="n">${w.pu}</th><th class="n">${w.total}</th></tr>`;
-  f.lignes.forEach((l) => { h += `<tr><td>${echapperHtml(l.designation)}</td><td class="n">${l.quantite}</td><td class="n">${fcfa(l.prixUnitaire)}</td><td class="n">${fcfa(l.total)}</td></tr>`; });
+  f.lignes.forEach((l) => {
+    const rl = l.remiseLigne > 0 ? `<div style="font-size:.8em;color:#555">${w.remise} : - ${fcfa(l.remiseLigne)}${l.remiseSpec && l.remiseSpec.type === "pourcent" ? " (" + l.remiseSpec.valeur + " %)" : ""}</div>` : "";
+    h += `<tr><td>${echapperHtml(l.designation)}${rl}</td><td class="n">${l.quantite}</td><td class="n">${fcfa(l.prixUnitaire)}</td><td class="n">${fcfa(l.total)}</td></tr>`;
+  });
+  if (f.remiseGlobale) {
+    h += `<tr><td colspan="3" class="n">${w.sousTotal}</td><td class="n">${fcfa(f.sousTotal)}</td></tr><tr><td colspan="3" class="n">${w.remiseGlobale}${f.remiseGlobale.type === "pourcent" ? " " + f.remiseGlobale.valeur + " %" : ""}</td><td class="n">- ${fcfa(f.remiseGlobale.montant)}</td></tr>`;
+  }
   if (f.tauxTva != null) {
     h += `<tr><td colspan="3" class="n">${w.ht}</td><td class="n">${fcfa(f.montantHT)}</td></tr><tr><td colspan="3" class="n">${w.tva} ${f.tauxTva} %</td><td class="n">${fcfa(f.montantTva)}</td></tr>`;
   }
@@ -2078,8 +2158,27 @@ app.post("/api/:id/commandes/:orderId/izyfacture/facturer", protegerAcces, async
   const refus = refusFacturationManuelle(entry, order, "facturer");
   if (refus) return res.status(refus.status).json({ erreur: refus.erreur });
   if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
-  await tenterFacturationCommande(entry, order);
+  await tenterFacturationCommande(entry, order, { client: (req.body || {}).client });
   res.json(entry.engine.getOrderById(req.params.orderId));
+});
+
+// Etape 59 : « le client veut une facture » apres une vente de la Caisse. Accessible au caissier (role
+// « caisse ») comme a l'onglet Commandes ; ne concerne QUE les ventes POS. Nom, telephone, NIU et adresse du
+// client sont facultatifs (sans nom : « Client comptoir »). Idempotent : refaire l'appel ne cree pas de doublon.
+app.post("/api/:id/pos/vente/:orderId/facture", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, ["caisse", "commandes"]); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const order = entry.engine.getOrderById(req.params.orderId);
+  if (!order) return res.status(404).json({ erreur: "Vente introuvable." });
+  if (order.source !== "pos") return res.status(400).json({ erreur: "Cette route ne concerne que les ventes de la Caisse." });
+  if (order.statut === "Annulée") return res.status(400).json({ erreur: "Cette vente est annulée : impossible de la facturer." });
+  const refus = refusFacturationManuelle(entry, order, "facturer");
+  if (refus) return res.status(refus.status).json({ erreur: refus.erreur });
+  await tenterFacturationCommande(entry, order, { client: (req.body || {}).client });
+  const maj = entry.engine.getOrderById(req.params.orderId);
+  if (maj.izyfactureStatut === "erreur") return res.status(502).json({ erreur: maj.izyfactureErreur || "La facture n'a pas pu être créée." });
+  res.locals.audit = { detail: { vente: "POS-" + String(maj.id).padStart(4, "0"), facture: maj.izyfactureNumero || null } };
+  res.json(maj);
 });
 
 // Bouton "Enregistrer un paiement" (27-28 sept 2026, /admin onglet Commandes) - POST
@@ -2232,9 +2331,19 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  const { lignes, modePaiement, referencePaiement } = req.body || {};
-  const resultat = entry.engine.creerVentePos({ lignes, modePaiement, referencePaiement, caissier: req.auth.adminUser });
-  if (resultat.erreur) return res.status(400).json({ erreur: resultat.erreur });
+  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise } = req.body || {};
+  const resultat = entry.engine.creerVentePos({
+    lignes, modePaiement, referencePaiement, caissier: req.auth.adminUser, remiseGlobale, motifRemise,
+    verifierRemise: (info) => controleRemise(req, info.pourcentEffectif)
+  });
+  if (resultat.erreur) return res.status(resultat.statut || 400).json({ erreur: resultat.erreur });
+  // Etape 59 : seules les ventes avec remise sont tracees dans le journal d'audit (pas chaque vente).
+  const rm = resultat.order.remise;
+  // Chaque vente reste journalisee comme avant (« vente_caisse ») ; une vente avec remise ajoute une ligne dediee
+  // « vente_caisse_remise » (brut, remise, pourcentage, motif) pour retrouver facilement les remises accordees.
+  if (rm) {
+    res.locals.auditExtra = [{ action: "vente_caisse_remise", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), brut: resultat.order.prixBrut, remise: rm.montant, pourcent: rm.pourcentEffectif, motif: rm.motif } }];
+  }
   res.status(201).json(resultat.order);
 });
 
@@ -4023,10 +4132,10 @@ function appelFacturer(entry, cle, order) {
     : izyfacture.facturerCommande(cle, entry.merchant.id, order);
 }
 
-async function tenterFacturationCommande(entry, order) {
+async function tenterFacturationCommande(entry, order, options) {
   // Etape 54 : la source de facturation (integree ou IzyFacture) est decidee par le super-administrateur ;
   // une commande deja facturee par le module integre reste geree par lui, meme apres une bascule.
-  if (sourceDeLObjet(entry, order) === "interne") return tenterFacturationInterne(entry, order);
+  if (sourceDeLObjet(entry, order) === "interne") return tenterFacturationInterne(entry, order, options);
   if (!entry.merchant.izyfactureApiKey) return;
   // Un rendez-vous sans prix (service gratuit/prix 0) n'a rien a facturer : on le dit clairement plutot que
   // d'envoyer une facture a zero a IzyFacture (erreur non reessayable, visible dans /admin).

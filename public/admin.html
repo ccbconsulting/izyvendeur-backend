@@ -110,6 +110,7 @@
   #ecranConnexion input { width: 100%; }
   #ecranConnexion button.principal { width: 100%; }
   #ecranConnexion .erreur { padding: 0; margin-top: 12px; min-height: 1.2em; }
+@media print { .no-print { display: none !important; } }
 </style>
 </head>
 <body>
@@ -237,6 +238,45 @@ const I18N = {
     ongletFacturation: "Facturation",
     roleFacturation: "Facturation (factures, paiements, dépenses)",
     roleComptable: "Comptable (lecture et export)",
+    roleRemises: "Remises (accorder des remises, dans la limite de son plafond)",
+    labelPlafondRemise: "Plafond (%)",
+    notePlafondRemise: "Plafond de remise : pourcentage maximal que cet employé peut accorder seul sur une vente ou une facture. Aucune remise n'est accordée par défaut : le plafond est à saisir. Vous (propriétaire) n'avez aucune limite. Le rôle Remises exige aussi le rôle Caisse ou Facturation.",
+    alertPlafondInvalide: "Indiquez le plafond de remise de cet employé : un nombre entre 0 et 100 (aucune remise par défaut).",
+    remiseLigneLabel: "Remise",
+    remiseGlobaleLabel: "Remise globale",
+    remiseMotifLabel: "Motif de la remise (obligatoire)",
+    remiseMotifPlaceholder: "Ex. : client fidèle, article défraîchi, geste commercial",
+    remiseMotifObligatoire: "Indiquez le motif de la remise.",
+    remisePlafondInfo: "Votre plafond de remise : {plafond} %.",
+    remiseBrut: "Total brut",
+    remiseTotale: "Remise totale",
+    remiseNet: "Net à payer",
+    remiseSurRecu: "Remise ({motif})",
+    remiseSurLigne: "dont remise : {montant} FCFA",
+    factAjouterLigne: "Ajouter une ligne",
+    factRetirerLigne: "Retirer cette ligne",
+    factArticlePlaceholder: "Taper ou choisir un article / service",
+    factNiuClient: "NIU du client",
+    factAdresseClient: "Adresse du client",
+    factTotalAFacturer: "Total à facturer",
+    btnClientVeutFacture: "Le client veut une facture",
+    factureClientTitre: "Facture pour le client",
+    factureClientNote: "Tous les champs sont facultatifs. Sans nom, la facture est établie au nom de « Client comptoir ». Elle est automatiquement marquée réglée avec le mode de paiement de la vente.",
+    btnCreerFactureClient: "Créer la facture",
+    btnFactureAnnuler: "Annuler",
+    btnFactureFermer: "Fermer",
+    factureClientCree: "Facture {numero} créée et réglée.",
+    factureLienLabel: "Lien de la facture",
+    btnCopierLien: "Copier le lien",
+    btnOuvrirFacture: "Ouvrir / imprimer la facture",
+    lienCopie: "Lien copié.",
+    factureQrNote: "Le client peut scanner ce code pour afficher sa facture sur son téléphone.",
+    act_vente_caisse_remise: "Vente en caisse avec remise",
+    act_facture_interne_creee: "Facture intégrée créée",
+    act_facture_caisse_creee: "Facture établie pour une vente de caisse",
+    rcsTuileRemises: "Remises accordées",
+    rcsColRemises: "Remises",
+    rcsPdfRemises: "Remises accordées",
     h3SourceFacturation: "Source de facturation",
     noteSourceFacturation: "Une seule source par marchand, choisie par vous seul : aucune, facturation intégrée à IzyVendeur, ou pont vers IzyFacture. Le passage de la facturation intégrée vers IzyFacture est à sens unique (bascule).",
     srcAucune: "Aucune facturation",
@@ -1065,6 +1105,45 @@ const I18N = {
     ongletFacturation: "Invoicing",
     roleFacturation: "Invoicing (invoices, payments, expenses)",
     roleComptable: "Accountant (read and export)",
+    roleRemises: "Discounts (grant discounts, up to their ceiling)",
+    labelPlafondRemise: "Ceiling (%)",
+    notePlafondRemise: "Discount ceiling: the highest percentage this employee may grant alone on a sale or an invoice. No discount is granted by default: the ceiling must be entered. You (the owner) have no limit. The Discounts role also requires the Register or Invoicing role.",
+    alertPlafondInvalide: "Enter this employee's discount ceiling: a number between 0 and 100 (no discount by default).",
+    remiseLigneLabel: "Discount",
+    remiseGlobaleLabel: "Overall discount",
+    remiseMotifLabel: "Reason for the discount (required)",
+    remiseMotifPlaceholder: "E.g. loyal customer, slightly damaged item, goodwill gesture",
+    remiseMotifObligatoire: "Please give the reason for the discount.",
+    remisePlafondInfo: "Your discount ceiling: {plafond} %.",
+    remiseBrut: "Gross total",
+    remiseTotale: "Total discount",
+    remiseNet: "Net to pay",
+    remiseSurRecu: "Discount ({motif})",
+    remiseSurLigne: "of which discount: {montant} FCFA",
+    factAjouterLigne: "Add a line",
+    factRetirerLigne: "Remove this line",
+    factArticlePlaceholder: "Type or pick an item / service",
+    factNiuClient: "Customer tax ID (NIU)",
+    factAdresseClient: "Customer address",
+    factTotalAFacturer: "Total to invoice",
+    btnClientVeutFacture: "The customer wants an invoice",
+    factureClientTitre: "Invoice for the customer",
+    factureClientNote: "All fields are optional. Without a name, the invoice is issued to \"Walk-in customer\". It is automatically marked as paid with the sale's payment method.",
+    btnCreerFactureClient: "Create the invoice",
+    btnFactureAnnuler: "Cancel",
+    btnFactureFermer: "Close",
+    factureClientCree: "Invoice {numero} created and settled.",
+    factureLienLabel: "Invoice link",
+    btnCopierLien: "Copy the link",
+    btnOuvrirFacture: "Open / print the invoice",
+    lienCopie: "Link copied.",
+    factureQrNote: "The customer can scan this code to see their invoice on their phone.",
+    act_vente_caisse_remise: "Register sale with discount",
+    act_facture_interne_creee: "Built-in invoice created",
+    act_facture_caisse_creee: "Invoice issued for a register sale",
+    rcsTuileRemises: "Discounts granted",
+    rcsColRemises: "Discounts",
+    rcsPdfRemises: "Discounts granted",
     h3SourceFacturation: "Invoicing source",
     noteSourceFacturation: "One source per merchant, chosen by you alone: none, invoicing built into IzyVendeur, or the IzyFacture bridge. Moving from built-in invoicing to IzyFacture is one-way (cutover).",
     srcAucune: "No invoicing",
@@ -2193,8 +2272,12 @@ function colonneFactureActive() { return sourceFacturationAdmin() !== "aucune"; 
 // integre est (ou a ete) utilise par ce marchand, sinon on ne les propose meme pas.
 function rolesDisponibles() {
   const base = rolesDisponiblesBase();
-  if (!marchandActif.facturationInterneVisible) return base;
-  return base.concat([["facturation", t("roleFacturation")], ["comptable", t("roleComptable")]]);
+  let r = base;
+  if (marchandActif.facturationInterneVisible) r = r.concat([["facturation", t("roleFacturation")], ["comptable", t("roleComptable")]]);
+  // Etape 59 : le droit d'accorder des remises (avec plafond) n'a de sens que s'il y a une Caisse ou une
+  // facturation integree ; c'est le proprietaire / super-administrateur qui le donne a chaque employe.
+  if (base.some((x) => x[0] === "caisse") || marchandActif.facturationInterneVisible) r = r.concat([["remises", t("roleRemises")]]);
+  return r;
 }
 function rolesDisponiblesBase() {
   // "tableaudebord" est desormais independant de "parametres" (depuis le 25 septembre 2026) : couvre
@@ -2881,6 +2964,43 @@ let caisseModePaiement = "especes";
 // telephone, numero de cheque...) - obligatoire pour tout mode autre que "especes" (29 sept 2026). Remise a
 // zero uniquement apres un encaissement reussi, comme le reste de l'etat de la vente en cours.
 let caisseReferencePaiement = "";
+// Etape 59 : remise globale (saisie brute) et motif de la vente en cours ; les remises par ligne vivent sur
+// chaque ligne du panier (it.remVal / it.remType).
+let caisseRemiseGlobale = { type: "pourcent", valeur: "" };
+let caisseMotifRemise = "";
+
+// Droit d'accorder des remises : proprietaire et super-administrateur toujours ; un employe seulement avec
+// le role « remises » (le serveur controle de toute facon le role ET le plafond, ce n'est qu'un confort).
+function peutAccorderRemises() { return moi.role !== "employe" || (moi.roles || []).indexOf("remises") !== -1; }
+function specRemiseSaisie(valeur, type) {
+  const v = Number(String(valeur == null ? "" : valeur).replace(",", "."));
+  return v > 0 ? { type: type === "montant" ? "montant" : "pourcent", valeur: v } : null;
+}
+function remiseLocale(base, spec) {
+  if (!spec || !(Number(spec.valeur) > 0)) return 0;
+  const v = Number(spec.valeur);
+  if (spec.type === "pourcent") return Math.min(base, Math.round(base * Math.min(v, 100) / 100));
+  return Math.min(base, Math.round(v));
+}
+// Apercu (le serveur recalcule et fait foi) : lignes = [{ brut, remise }], globale = spec ou null.
+function apercuRemises(lignes, globale) {
+  let brut = 0, rl = 0;
+  lignes.forEach((l) => { brut += l.brut; rl += remiseLocale(l.brut, l.remise); });
+  const sous = brut - rl;
+  const rg = remiseLocale(sous, globale);
+  return { brut, remiseLignes: rl, sousTotal: sous, remiseGlobale: rg, remiseTotale: rl + rg, total: sous - rg };
+}
+function optionsTypeRemise(courant) {
+  return "<option value='pourcent'" + (courant !== "montant" ? " selected" : "") + ">%</option><option value='montant'" + (courant === "montant" ? " selected" : "") + ">FCFA</option>";
+}
+function recapRemisesHtml(a) {
+  if (!(a.remiseTotale > 0)) return "";
+  const f = (n) => n.toLocaleString(localeCourante()) + " FCFA";
+  return "<div class='raison'>" + t("remiseBrut") + " : " + f(a.brut) + " — " + t("remiseTotale") + " : −" + f(a.remiseTotale) + " — <strong>" + t("remiseNet") + " : " + f(a.total) + "</strong></div>";
+}
+function infoPlafondHtml() {
+  return moi.role === "employe" ? "<p class='raison'>" + t("remisePlafondInfo", { plafond: moi.plafondRemise != null ? moi.plafondRemise : 10 }) + "</p>" : "";
+}
 
 async function renderCaisse() {
   const zone = document.getElementById("contenuOnglet");
@@ -2927,7 +3047,7 @@ async function renderCaisse() {
     const dejaAu = existante ? existante.quantite : 0;
     if (dejaAu + 1 > l.stockVirtuel) { alert(t("caisseStockInsuffisant", { n: l.stockVirtuel })); return; }
     if (existante) existante.quantite += 1;
-    else caissePanier.push({ productId: l.productId, produit: l.produit, couleur: l.couleur, taille: l.taille, prixUnitaire: l.prix, quantite: 1, stockVirtuel: l.stockVirtuel });
+    else caissePanier.push({ productId: l.productId, produit: l.produit, couleur: l.couleur, taille: l.taille, prixUnitaire: l.prix, quantite: 1, stockVirtuel: l.stockVirtuel, remVal: "", remType: "pourcent" });
     redraw();
   }
 
@@ -2941,8 +3061,24 @@ async function renderCaisse() {
     redraw();
   }
 
-  function totalPanier() {
-    return caissePanier.reduce((s, it) => s + it.prixUnitaire * it.quantite, 0);
+  const remiseDe = (it) => specRemiseSaisie(it.remVal, it.remType);
+  const remiseGlobaleSaisie = () => specRemiseSaisie(caisseRemiseGlobale.valeur, caisseRemiseGlobale.type);
+  function apercuPanier() {
+    return apercuRemises(caissePanier.map((it) => ({ brut: it.prixUnitaire * it.quantite, remise: peutAccorderRemises() ? remiseDe(it) : null })), peutAccorderRemises() ? remiseGlobaleSaisie() : null);
+  }
+  function totalPanier() { return apercuPanier().total; }
+  // Met a jour les montants affiches SANS reconstruire le DOM (sinon le champ en cours de saisie perd le focus).
+  function majTotauxCaisse() {
+    const a = apercuPanier();
+    caissePanier.forEach((it, i) => {
+      const c = zone.querySelector("[data-caisse-ligne-total='" + i + "']");
+      const brut = it.prixUnitaire * it.quantite;
+      if (c) c.textContent = (brut - remiseLocale(brut, peutAccorderRemises() ? remiseDe(it) : null)).toLocaleString(localeCourante()) + " FCFA";
+    });
+    const h = document.getElementById("caisseTotalNet");
+    if (h) h.textContent = t("caisseTotalLabel") + " " + a.total.toLocaleString(localeCourante()) + " FCFA";
+    const rec = document.getElementById("caisseRecapRemise");
+    if (rec) rec.innerHTML = recapRemisesHtml(a);
   }
 
   // Filtrage live SANS reconstruire tout le DOM (meme principe que la recherche du Catalogue, Etape 30) :
@@ -2989,15 +3125,25 @@ async function renderCaisse() {
             ? "<table class='table-donnees'><tr><th>" + t("theadArticles") + "</th><th>" + t("caisseQuantiteLabel") + "</th><th>" + t("theadTotal") + "</th><th></th></tr>" +
               caissePanier.map((it, i) =>
                 "<tr>" +
-                  "<td>" + esc(it.produit) + "<br/><span class='raison'>" + esc(it.couleur) + " " + esc(it.taille) + "</span></td>" +
+                  "<td>" + esc(it.produit) + "<br/><span class='raison'>" + esc(it.couleur) + " " + esc(it.taille) + "</span>" +
+                    (peutAccorderRemises()
+                      ? "<div style='margin-top:4px;white-space:nowrap;'><input type='number' min='0' step='any' data-caisse-rem-val='" + i + "' value=\"" + esc(String(it.remVal || "")) + "\" placeholder=\"" + esc(t("remiseLigneLabel")) + "\" style='width:80px;' /> <select data-caisse-rem-type='" + i + "'>" + optionsTypeRemise(it.remType) + "</select></div>"
+                      : "") + "</td>" +
                   "<td style='white-space:nowrap;'><button data-caisse-moins='" + i + "'>−</button> " + it.quantite + " <button data-caisse-plus='" + i + "'>+</button></td>" +
-                  "<td>" + (it.prixUnitaire * it.quantite).toLocaleString(localeCourante()) + " FCFA</td>" +
+                  "<td data-caisse-ligne-total='" + i + "'>" + (it.prixUnitaire * it.quantite - remiseLocale(it.prixUnitaire * it.quantite, peutAccorderRemises() ? remiseDe(it) : null)).toLocaleString(localeCourante()) + " FCFA</td>" +
                   "<td><button data-caisse-retirer='" + i + "' class='danger'>×</button></td>" +
                 "</tr>"
               ).join("") +
               "</table>"
             : "<p class='raison'>" + t("caissePanierVide") + "</p>") +
-          "<h3 style='margin-top:16px;'>" + t("caisseTotalLabel") + " " + totalPanier().toLocaleString(localeCourante()) + " FCFA</h3>" +
+          (peutAccorderRemises() && caissePanier.length
+            ? "<div id='blocRemiseCaisse' style='margin-top:12px;padding:10px;border:1px dashed #bbb;border-radius:8px;'>" + infoPlafondHtml() +
+                "<label>" + t("remiseGlobaleLabel") + "</label> <input type='number' min='0' step='any' id='caisseRemGlobVal' value=\"" + esc(String(caisseRemiseGlobale.valeur || "")) + "\" style='width:90px;' /> <select id='caisseRemGlobType'>" + optionsTypeRemise(caisseRemiseGlobale.type) + "</select>" +
+                "<div style='margin-top:6px;'><label>" + t("remiseMotifLabel") + "</label><input id='caisseMotifRemise' value=\"" + esc(caisseMotifRemise) + "\" placeholder=\"" + esc(t("remiseMotifPlaceholder")) + "\" style='width:100%;box-sizing:border-box;' /></div>" +
+              "</div>"
+            : "") +
+          "<div id='caisseRecapRemise' style='margin-top:8px;'>" + recapRemisesHtml(apercuPanier()) + "</div>" +
+          "<h3 id='caisseTotalNet' style='margin-top:16px;'>" + t("caisseTotalLabel") + " " + totalPanier().toLocaleString(localeCourante()) + " FCFA</h3>" +
           "<label style='display:block; margin-top:10px;'>" + t("caisseModePaiementLabel") + "</label>" +
           "<div style='display:flex; gap:10px; margin:8px 0 16px; flex-wrap:wrap;'>" +
             ["especes", "om", "momo", "carte", "cheque"].map((m) =>
@@ -3030,6 +3176,18 @@ async function renderCaisse() {
     Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-retirer]"), (btn) => {
       btn.onclick = () => { caissePanier.splice(Number(btn.dataset.caisseRetirer), 1); redraw(); };
     });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-rem-val]"), (inp) => {
+      inp.addEventListener("input", () => { caissePanier[Number(inp.dataset.caisseRemVal)].remVal = inp.value; majTotauxCaisse(); });
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-rem-type]"), (sel) => {
+      sel.addEventListener("change", () => { caissePanier[Number(sel.dataset.caisseRemType)].remType = sel.value; majTotauxCaisse(); });
+    });
+    const champRemGlobVal = document.getElementById("caisseRemGlobVal");
+    if (champRemGlobVal) champRemGlobVal.addEventListener("input", () => { caisseRemiseGlobale.valeur = champRemGlobVal.value; majTotauxCaisse(); });
+    const champRemGlobType = document.getElementById("caisseRemGlobType");
+    if (champRemGlobType) champRemGlobType.addEventListener("change", () => { caisseRemiseGlobale.type = champRemGlobType.value; majTotauxCaisse(); });
+    const champMotifRemise = document.getElementById("caisseMotifRemise");
+    if (champMotifRemise) champMotifRemise.addEventListener("input", () => { caisseMotifRemise = champMotifRemise.value; });
     Array.prototype.forEach.call(zone.querySelectorAll("input[name='caisseModePaiement']"), (radio) => {
       radio.onchange = () => { caisseModePaiement = radio.value; redraw(); };
     });
@@ -3053,20 +3211,33 @@ async function renderCaisse() {
           alert(t("caisseReferencePaiementObligatoire"));
           return;
         }
+        const avecRemises = peutAccorderRemises();
+        const aperc = apercuPanier();
+        if (avecRemises && aperc.remiseTotale > 0 && !caisseMotifRemise.trim()) { alert(t("remiseMotifObligatoire")); return; }
         btnEncaisser.disabled = true;
         try {
+          const globale = avecRemises ? remiseGlobaleSaisie() : null;
           const commande = await api("/api/" + marchandActif.id + "/pos/vente", {
             method: "POST",
             body: JSON.stringify({
-              lignes: caissePanier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite })),
+              lignes: caissePanier.map((it) => {
+                const l = { productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite };
+                const rem = avecRemises ? remiseDe(it) : null;
+                if (rem) l.remise = rem;
+                return l;
+              }),
               modePaiement: caisseModePaiement,
-              referencePaiement: caisseReferencePaiement.trim()
+              referencePaiement: caisseReferencePaiement.trim(),
+              remiseGlobale: globale || undefined,
+              motifRemise: avecRemises && aperc.remiseTotale > 0 ? caisseMotifRemise.trim() : undefined
             })
           });
           caissePanier = [];
           caisseTexteRecherche = "";
           caisseModePaiement = "especes";
           caisseReferencePaiement = "";
+          caisseRemiseGlobale = { type: "pourcent", valeur: "" };
+          caisseMotifRemise = "";
           afficherRecuCaisse(commande);
         } catch (e) {
           alert(t("erreurPrefixe") + e.message);
@@ -3086,6 +3257,9 @@ async function renderCaisse() {
 // necessaire pour cette V1) imprime bien UNIQUEMENT le reçu, pas le reste de l'interface /admin.
 function afficherRecuCaisse(commande) {
   const zone = document.getElementById("contenuOnglet");
+  const f = (n) => (n || 0).toLocaleString(localeCourante()) + " FCFA";
+  const rm = commande.remise && commande.remise.montant > 0 ? commande.remise : null;
+  const peutFacturer = colonneFactureActive() && commande.id != null && !commande.izyfactureFactureId;
   zone.innerHTML =
     "<div id='recuCaisse'>" +
       "<h2>" + t("caisseVenteReussieTitre") + "</h2>" +
@@ -3094,19 +3268,109 @@ function afficherRecuCaisse(commande) {
       "<p><strong>" + t("caisseRecuVendeur") + " :</strong> " + esc(commande.caissier || "") + "</p>" +
       "<table class='table-donnees'><tr><th>" + t("theadArticles") + "</th><th>" + t("caisseQuantiteLabel") + "</th><th>" + t("theadTotal") + "</th></tr>" +
         (commande.items || []).map((it) =>
-          "<tr><td>" + esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ")</td><td>" + it.quantite + "</td><td>" + (it.prix || 0).toLocaleString(localeCourante()) + " FCFA</td></tr>"
+          "<tr><td>" + esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ")" +
+            (it.remiseLigne > 0 ? "<br/><span class='raison'>" + esc(t("remiseSurLigne", { montant: it.remiseLigne.toLocaleString(localeCourante()) })) + "</span>" : "") +
+          "</td><td>" + it.quantite + "</td><td>" + f(it.prixBrut != null ? it.prixBrut : it.prix) + "</td></tr>"
         ).join("") +
       "</table>" +
-      "<h3>" + t("caisseTotalLabel") + " " + (commande.prix || 0).toLocaleString(localeCourante()) + " FCFA</h3>" +
+      (rm ? "<p>" + t("remiseBrut") + " : " + f(commande.prixBrut) + "</p><p>" + esc(t("remiseSurRecu", { motif: rm.motif || "" })) + " : −" + f(rm.montant) + "</p>" : "") +
+      "<h3>" + t("caisseTotalLabel") + " " + f(commande.prix) + "</h3>" +
       "<p>" + t("caisseModePaiementLabel") + " : " + t("caisseMode_" + commande.modePaiement) + "</p>" +
       (commande.referencePaiement ? "<p>" + t("caisseReferencePaiementLabel") + " : " + esc(commande.referencePaiement) + "</p>" : "") +
     "</div>" +
-    "<div style='margin-top:16px;'>" +
+    "<div class='no-print' style='margin-top:16px;'>" +
       "<button id='btnImprimerRecu'>" + t("btnImprimerRecu") + "</button> " +
+      (peutFacturer ? "<button id='btnClientFacture'>" + t("btnClientVeutFacture") + "</button> " : "") +
       "<button id='btnNouvelleVenteCaisse' class='principal'>" + t("btnNouvelleVente") + "</button>" +
-    "</div>";
+    "</div>" +
+    "<div id='zoneFactureClient' class='no-print' style='margin-top:14px;'></div>";
   document.getElementById("btnImprimerRecu").onclick = () => window.print();
   document.getElementById("btnNouvelleVenteCaisse").onclick = () => renderCaisse();
+  const bf = document.getElementById("btnClientFacture");
+  if (bf) bf.onclick = () => { bf.disabled = true; ouvrirFactureClientPos(commande.id, document.getElementById("zoneFactureClient"), {}); };
+}
+
+// Facture a la demande d'une vente de la Caisse (Etape 59) : le client la demande APRES avoir paye. Tous les champs
+// sont facultatifs ; la facture reprend les lignes et les remises de la vente, est reglee d'emblee (meme mode de
+// paiement) et remplace la ligne « vente au comptant » du journal (jamais comptee deux fois). Utilisee par le
+// recu de caisse ET par l'onglet Commandes (dialogue). `options` : { onFermer } -> bouton Annuler / Fermer.
+function ouvrirFactureClientPos(orderId, conteneur, options) {
+  options = options || {};
+  conteneur.innerHTML =
+    "<div class='tuile' style='padding:12px;border-radius:8px;'>" +
+      "<h3 style='margin-top:0;'>" + t("factureClientTitre") + "</h3>" +
+      "<p class='raison'>" + t("factureClientNote") + "</p>" +
+      "<label>" + t("factClient") + "</label><input id='fcNom' style='width:100%;box-sizing:border-box;' />" +
+      "<label>" + t("factTelephone") + "</label><input id='fcTel' style='width:100%;box-sizing:border-box;' />" +
+      "<label>" + t("factNiuClient") + "</label><input id='fcNiu' style='width:100%;box-sizing:border-box;' />" +
+      "<label>" + t("factAdresseClient") + "</label><input id='fcAdresse' style='width:100%;box-sizing:border-box;' />" +
+      "<div style='margin-top:10px;'><button id='fcCreer' class='principal'>" + t("btnCreerFactureClient") + "</button>" +
+        (options.onFermer ? " <button id='fcAnnuler'>" + t("btnFactureAnnuler") + "</button>" : "") + "</div>" +
+    "</div>";
+  const annuler = document.getElementById("fcAnnuler");
+  if (annuler) annuler.onclick = () => options.onFermer();
+  document.getElementById("fcCreer").onclick = async () => {
+    const btn = document.getElementById("fcCreer");
+    btn.disabled = true;
+    const client = {
+      nom: document.getElementById("fcNom").value.trim(), telephone: document.getElementById("fcTel").value.trim(),
+      niu: document.getElementById("fcNiu").value.trim(), adresse: document.getElementById("fcAdresse").value.trim()
+    };
+    try {
+      const order = await api("/api/" + marchandActif.id + "/pos/vente/" + encodeURIComponent(orderId) + "/facture", { method: "POST", body: JSON.stringify({ client }) });
+      afficherResultatFactureClient(conteneur, order, options);
+    } catch (e) {
+      alert(t("erreurPrefixe") + e.message);
+      btn.disabled = false;
+    }
+  };
+}
+
+function afficherResultatFactureClient(conteneur, order, options) {
+  let lien = order.izyfactureUrlVerification || "";
+  try { if (lien) lien = new URL(lien, location.origin).href; } catch (e) { /* lien laisse tel quel */ }
+  conteneur.innerHTML =
+    "<div class='tuile' style='padding:12px;border-radius:8px;'>" +
+      "<p><strong>" + esc(t("factureClientCree", { numero: order.izyfactureNumero || "" })) + "</strong></p>" +
+      (lien
+        ? "<p class='raison'>" + t("factureLienLabel") + " : <a id='fcLien' href=\"" + esc(lien) + "\" target='_blank' rel='noopener'>" + esc(lien) + "</a></p>" +
+          "<div id='fcQr' style='margin:8px 0;'></div><p class='raison'>" + t("factureQrNote") + "</p>" +
+          "<div><button id='fcCopier'>" + t("btnCopierLien") + "</button> <button id='fcOuvrir' class='principal'>" + t("btnOuvrirFacture") + "</button>" +
+            (options && options.onFermer ? " <button id='fcFermer'>" + t("btnFactureFermer") + "</button>" : "") + "</div>"
+        : (options && options.onFermer ? "<div><button id='fcFermer'>" + t("btnFactureFermer") + "</button></div>" : "")) +
+    "</div>";
+  if (lien) {
+    try {
+      const q = qrcode(0, "M");
+      q.addData(lien);
+      q.make();
+      document.getElementById("fcQr").innerHTML = q.createSvgTag(4, 8);
+    } catch (e) { /* QR facultatif : le lien reste affiche */ }
+    document.getElementById("fcCopier").onclick = async () => {
+      try { await navigator.clipboard.writeText(lien); alert(t("lienCopie")); }
+      catch (e) { prompt(t("factureLienLabel"), lien); }
+    };
+    document.getElementById("fcOuvrir").onclick = () => window.open(lien, "_blank");
+  }
+  const fermer = document.getElementById("fcFermer");
+  if (fermer) fermer.onclick = () => options.onFermer();
+}
+
+// Dialogue flottant (onglet Commandes) autour du meme formulaire ; `apres` est rappele a la fermeture.
+function ouvrirDialogueFactureClient(orderId, apres) {
+  const fond = document.createElement("div");
+  fond.className = "no-print";
+  fond.style.cssText = "position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9999;";
+  const boite = document.createElement("div");
+  boite.style.cssText = "background:#fff;border-radius:10px;padding:14px;max-width:480px;width:92%;max-height:90vh;overflow:auto;";
+  fond.appendChild(boite);
+  document.body.appendChild(fond);
+  ouvrirFactureClientPos(orderId, boite, { onFermer: () => { fond.remove(); if (apres) apres(); } });
+}
+function brancherFacturePos(zone, rerendre) {
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-posfacture]"), (btn) => {
+    btn.onclick = () => ouvrirDialogueFactureClient(btn.dataset.posfacture, rerendre);
+  });
 }
 
 // Session de caisse : ouverture/fermeture + billetage (29 sept 2026). Construit UNE table de billetage
@@ -3321,7 +3585,11 @@ function celluleIzyfacture(o, estRdv) {
     badge = "<span style='color:#999;'>—</span>";
   } else {
     badge = "<span style='color:#999;'>" + esc(t("badgeIzyfactureAucune")) + "</span>";
-    bouton = "<button data-izyfacturer='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnIzyfactureFacturer")) + "</button>";
+    // Vente de la Caisse (Etape 59) : on recueille d'abord les coordonnees du client (formulaire), au lieu du
+    // clic direct des commandes WhatsApp qui ont deja leur telephone.
+    bouton = o.source === "pos" && !estRdv
+      ? "<button data-posfacture='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnClientVeutFacture")) + "</button>"
+      : "<button data-izyfacturer='" + o.id + "' style='margin-top:4px;'>" + esc(t("btnIzyfactureFacturer")) + "</button>";
   }
   return "<div>" + badge + "</div>" + (bouton ? "<div>" + bouton + "</div>" : "");
 }
@@ -3456,6 +3724,7 @@ async function renderCommandes() {
   });
 
   brancherBoutonsIzyfacture(zone, "commandes", renderCommandes);
+  brancherFacturePos(zone, renderCommandes);
 }
 
 // Boutons "Facturer"/"Réessayer" et "Enregistrer un paiement" du pont IzyFacture, partages par l'onglet
@@ -3965,6 +4234,10 @@ async function renderFacturation() {
   const actif = d.interneActif === true;
   const ecriture = peutEcrire && actif;
   const gestionnaire = moi.role === "marchand" || moi.role === "superadmin";
+  // Articles proposables (catalogue et/ou services) pour remplir designation + prix d'un clic ; facultatif.
+  let articles = [];
+  if (ecriture) { try { articles = await api("/api/" + marchandActif.id + "/facturation/articles"); } catch (e) { articles = []; } }
+  const avecRemises = ecriture && peutAccorderRemises();
   const optMode = d.methodes.map((m) => "<option value='" + m + "'>" + esc(t("factMode_" + m)) + "</option>").join("");
   const optCat = d.categories.map((c) => "<option value='" + c + "'>" + esc(t("factCat_" + c)) + "</option>").join("");
   const tvaActive = !!(d.tva && d.tva.actif);
@@ -3991,8 +4264,16 @@ async function renderFacturation() {
   if (ecriture) {
     h += "<h3>" + t("factNouvelleFacture") + "</h3>" +
       "<div><label>" + t("factClient") + "</label> <input id='fNom' /> <label>" + t("factTelephone") + "</label> <input id='fTel' /></div>" +
-      "<table class='table-donnees'><tr><th>" + t("factDesignation") + "</th><th>" + t("factQte") + "</th><th>" + t("factPrixUnit") + "</th></tr>" +
-      [0, 1, 2].map((i) => "<tr><td><input class='fLigDes' /></td><td><input class='fLigQte' type='number' min='1' value='1' style='width:70px;' /></td><td><input class='fLigPrix' type='number' min='0' style='width:110px;' /></td></tr>").join("") + "</table>" +
+      "<div style='margin-top:6px;'><label>" + t("factNiuClient") + "</label> <input id='fNiu' /> <label>" + t("factAdresseClient") + "</label> <input id='fAdr' style='width:40%;' /></div>" +
+      "<datalist id='listeArticlesFact'>" + articles.map((a) => "<option value=\"" + esc(a.libelle) + "\"></option>").join("") + "</datalist>" +
+      "<table class='table-donnees' id='tabLignesFacture'><tr><th>" + t("factDesignation") + "</th><th>" + t("factQte") + "</th><th>" + t("factPrixUnit") + "</th>" + (avecRemises ? "<th>" + t("remiseLigneLabel") + "</th>" : "") + "<th>" + t("theadTotal") + "</th><th></th></tr></table>" +
+      "<div style='margin-top:6px;'><button type='button' id='btnAjouterLigneFact'>" + t("factAjouterLigne") + "</button></div>" +
+      (avecRemises
+        ? "<div style='margin-top:10px;padding:10px;border:1px dashed #bbb;border-radius:8px;'>" + infoPlafondHtml() +
+            "<label>" + t("remiseGlobaleLabel") + "</label> <input type='number' min='0' step='any' id='fRemGlobVal' style='width:90px;' /> <select id='fRemGlobType'>" + optionsTypeRemise("pourcent") + "</select>" +
+            "<div style='margin-top:6px;'><label>" + t("remiseMotifLabel") + "</label><input id='fMotifRemise' placeholder=\"" + esc(t("remiseMotifPlaceholder")) + "\" style='width:100%;box-sizing:border-box;' /></div></div>"
+        : "") +
+      "<div id='recapFacture' style='margin-top:8px;'></div>" +
       "<div><label>" + t("factNotes") + "</label> <input id='fNotes' style='width:60%;' /></div>" +
       "<div style='margin-top:8px;'><button id='btnCreerFacture' class='principal'>" + t("btnCreerFacture") + "</button></div>";
   }
@@ -4068,13 +4349,85 @@ async function renderFacturation() {
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   });
+  // Lignes de la facture libre : autant qu'on veut (bouton « Ajouter une ligne »), total en direct, et choix
+  // d'un article du catalogue / d'un service qui remplit la designation et le prix (modifiables).
+  const tabLignes = document.getElementById("tabLignesFacture");
+  const lireLignesFacture = () => Array.prototype.slice.call(tabLignes.rows, 1).map((tr) => ({
+    tr,
+    des: tr.querySelector(".fLigDes").value.trim(),
+    qte: Number(tr.querySelector(".fLigQte").value),
+    prix: Number(tr.querySelector(".fLigPrix").value),
+    remVal: avecRemises ? tr.querySelector(".fLigRemVal").value : "",
+    remType: avecRemises ? tr.querySelector(".fLigRemType").value : "pourcent"
+  }));
+  const specGlobaleFacture = () => avecRemises ? specRemiseSaisie(document.getElementById("fRemGlobVal").value, document.getElementById("fRemGlobType").value) : null;
+  function recalculerFacture() {
+    const L = lireLignesFacture();
+    const entrees = L.map((l) => ({ brut: l.des && l.qte > 0 && l.prix >= 0 ? l.qte * l.prix : 0, remise: avecRemises ? specRemiseSaisie(l.remVal, l.remType) : null }));
+    const a = apercuRemises(entrees, specGlobaleFacture());
+    L.forEach((l, i) => { l.tr.querySelector(".fLigTotal").textContent = (entrees[i].brut - remiseLocale(entrees[i].brut, entrees[i].remise)).toLocaleString(localeCourante()) + " FCFA"; });
+    const rec = document.getElementById("recapFacture");
+    rec.innerHTML = (a.remiseTotale > 0 ? recapRemisesHtml(a) : "") + "<div><strong>" + t("factTotalAFacturer") + " : " + a.total.toLocaleString(localeCourante()) + " FCFA</strong></div>";
+    return a;
+  }
+  function ajouterLigneFacture() {
+    const tr = tabLignes.insertRow(-1);
+    tr.innerHTML =
+      "<td><input class='fLigDes' list='listeArticlesFact' placeholder=\"" + esc(t("factArticlePlaceholder")) + "\" style='min-width:220px;' /></td>" +
+      "<td><input class='fLigQte' type='number' min='1' value='1' style='width:70px;' /></td>" +
+      "<td><input class='fLigPrix' type='number' min='0' style='width:110px;' /></td>" +
+      (avecRemises ? "<td style='white-space:nowrap;'><input class='fLigRemVal' type='number' min='0' step='any' style='width:70px;' /> <select class='fLigRemType'>" + optionsTypeRemise("pourcent") + "</select></td>" : "") +
+      "<td class='fLigTotal'>0 FCFA</td>" +
+      "<td><button type='button' class='fLigSuppr danger' title=\"" + esc(t("factRetirerLigne")) + "\">×</button></td>";
+    return tr;
+  }
+  if (tabLignes) {
+    tabLignes.addEventListener("input", (ev) => {
+      if (ev.target.classList.contains("fLigDes")) {
+        const trouve = articles.filter((a) => a.libelle === ev.target.value)[0];
+        if (trouve) {
+          const tr = ev.target.closest("tr");
+          tr.querySelector(".fLigPrix").value = trouve.prix;
+          const q = tr.querySelector(".fLigQte");
+          if (!(Number(q.value) >= 1)) q.value = 1;
+        }
+      }
+      recalculerFacture();
+    });
+    tabLignes.addEventListener("change", () => recalculerFacture());
+    tabLignes.addEventListener("click", (ev) => {
+      if (!ev.target.classList.contains("fLigSuppr")) return;
+      const tr = ev.target.closest("tr");
+      if (tabLignes.rows.length <= 2) { // derniere ligne : on la vide au lieu de la retirer
+        tr.querySelector(".fLigDes").value = ""; tr.querySelector(".fLigQte").value = 1; tr.querySelector(".fLigPrix").value = "";
+        if (avecRemises) tr.querySelector(".fLigRemVal").value = "";
+      } else tr.remove();
+      recalculerFacture();
+    });
+    document.getElementById("btnAjouterLigneFact").onclick = () => { ajouterLigneFacture().querySelector(".fLigDes").focus(); recalculerFacture(); };
+    ["fRemGlobVal", "fRemGlobType"].forEach((id) => { const el = document.getElementById(id); if (el) { el.addEventListener("input", recalculerFacture); el.addEventListener("change", recalculerFacture); } });
+    for (let i = 0; i < 3; i++) ajouterLigneFacture();
+    recalculerFacture();
+  }
   const bF = document.getElementById("btnCreerFacture");
   if (bF) bF.onclick = async () => {
-    const dess = zone.querySelectorAll(".fLigDes"), qtes = zone.querySelectorAll(".fLigQte"), prix = zone.querySelectorAll(".fLigPrix");
     const lignes = [];
-    for (let i = 0; i < dess.length; i++) if (dess[i].value.trim()) lignes.push({ designation: dess[i].value.trim(), quantite: Number(qtes[i].value), prixUnitaire: Number(prix[i].value) });
+    lireLignesFacture().forEach((l) => {
+      if (!l.des) return;
+      const ligne = { designation: l.des, quantite: l.qte, prixUnitaire: l.prix };
+      const rem = avecRemises ? specRemiseSaisie(l.remVal, l.remType) : null;
+      if (rem) ligne.remise = rem;
+      lignes.push(ligne);
+    });
+    const apercu = recalculerFacture();
+    if (avecRemises && apercu.remiseTotale > 0 && !document.getElementById("fMotifRemise").value.trim()) { alert(t("remiseMotifObligatoire")); return; }
+    const globale = specGlobaleFacture();
     try {
-      const f = await api("/api/" + marchandActif.id + "/facturation/factures", { method: "POST", body: JSON.stringify({ client: { nom: document.getElementById("fNom").value, telephone: document.getElementById("fTel").value }, lignes, notes: document.getElementById("fNotes").value }) });
+      const f = await api("/api/" + marchandActif.id + "/facturation/factures", { method: "POST", body: JSON.stringify({
+        client: { nom: document.getElementById("fNom").value, telephone: document.getElementById("fTel").value, niu: document.getElementById("fNiu").value, adresse: document.getElementById("fAdr").value },
+        lignes, notes: document.getElementById("fNotes").value,
+        remiseGlobale: globale || undefined,
+        motifRemise: avecRemises && apercu.remiseTotale > 0 ? document.getElementById("fMotifRemise").value.trim() : undefined }) });
       alert(t("alertFactureCreee", { numero: f.numero }));
       rerendre();
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
@@ -4591,7 +4944,7 @@ function contenuPdfRapportCaisse(r) {
       { titre: t("rcsPdfSynthese"), lignes: [
         t("rcsTuileVentes") + " : " + T.nbVentes, t("rcsTuileNet") + " : " + nombrePdf(T.net) + " FCFA",
         t("rcsTuileAnnule") + " : " + T.nbAnnulees + " / " + nombrePdf(T.montantAnnule) + " FCFA", t("rcsTuilePanier") + " : " + nombrePdf(T.panierMoyen) + " FCFA",
-        t("rcsTuileArticles") + " : " + T.nbArticles, t("rcsTuileEcart") + " : " + nombrePdf(r.ecarts.totalEcart) + " FCFA" ] },
+        t("rcsTuileArticles") + " : " + T.nbArticles, t("rcsTuileEcart") + " : " + nombrePdf(r.ecarts.totalEcart) + " FCFA" ].concat(T.remises > 0 ? [t("rcsPdfRemises") + " : " + nombrePdf(T.remises) + " FCFA (" + T.pourcentRemises + " %), " + T.nbVentesRemisees] : []) },
       { titre: t("rcsParMode"), lignes: r.parMode.filter((m) => m.nb || m.nbAnnulees).map((m) => t("rcsMode_" + m.mode) + " : " + m.nb + " / " + nombrePdf(m.montant) + " FCFA" + (m.nbAnnulees ? " (" + t("rcsTuileAnnule") + " " + nombrePdf(m.montantAnnule) + ")" : "")), texteVide: t("rcsAucuneVente") },
       { titre: t("rcsParJour"), lignes: jours.map((j) => t("rcsPdfLigneJour", { date: j.date, nb: j.nb, net: nombrePdf(j.net), annule: nombrePdf(j.annule) })), texteVide: t("rcsAucuneVente") },
       { titre: t("rcsParCaissier"), lignes: r.parCaissier.map((c) => c.caissier + " : " + c.nb + " / " + nombrePdf(c.net) + " FCFA"), texteVide: t("rcsAucuneVente") },
@@ -4630,7 +4983,8 @@ async function renderRapportCaisse() {
     const T = rap.totaux;
     let h = "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;'>" +
       tuile(t("rcsTuileVentes"), String(T.nbVentes)) + tuile(t("rcsTuileNet"), formaterNb(T.net) + " FCFA") + tuile(t("rcsTuileAnnule"), T.nbAnnulees + " / " + formaterNb(T.montantAnnule) + " FCFA") +
-      tuile(t("rcsTuilePanier"), formaterNb(T.panierMoyen) + " FCFA") + tuile(t("rcsTuileArticles"), String(T.nbArticles)) + tuile(t("rcsTuileEcart"), formaterNb(rap.ecarts.totalEcart) + " FCFA") + "</div>";
+      tuile(t("rcsTuilePanier"), formaterNb(T.panierMoyen) + " FCFA") + tuile(t("rcsTuileArticles"), String(T.nbArticles)) + tuile(t("rcsTuileEcart"), formaterNb(rap.ecarts.totalEcart) + " FCFA") +
+      (T.remises > 0 ? tuile(t("rcsTuileRemises"), formaterNb(T.remises) + " FCFA (" + T.pourcentRemises + " %) · " + T.nbVentesRemisees) : "") + "</div>";
     if (T.nbFacturees) h += "<p class='raison'>" + esc(t("rcsInfoFacturees", { n: T.nbFacturees })) + "</p>";
     h += "<h3>" + t("rcsParMode") + "</h3>";
     h += T.nbVentes || T.nbAnnulees
@@ -4645,8 +4999,8 @@ async function renderRapportCaisse() {
       : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
     h += "<h3>" + t("rcsParCaissier") + "</h3>";
     h += rap.parCaissier.length
-      ? "<table class='table-donnees' id='rcsTabCaissier'><tr><th>" + t("rcsCaissier") + "</th><th>" + t("rcsColNb") + "</th><th>" + t("rcsColTotal") + "</th><th>" + t("rcsColAnnule") + "</th></tr>" +
-        rap.parCaissier.map((c) => "<tr><td>" + esc(c.caissier) + "</td><td>" + c.nb + "</td><td>" + formaterNb(c.net) + " FCFA</td><td>" + (c.nbAnnulees ? c.nbAnnulees + " / " + formaterNb(c.annule) + " FCFA" : "—") + "</td></tr>").join("") + "</table>"
+      ? "<table class='table-donnees' id='rcsTabCaissier'><tr><th>" + t("rcsCaissier") + "</th><th>" + t("rcsColNb") + "</th><th>" + t("rcsColTotal") + "</th>" + (T.remises > 0 ? "<th>" + t("rcsColRemises") + "</th>" : "") + "<th>" + t("rcsColAnnule") + "</th></tr>" +
+        rap.parCaissier.map((c) => "<tr><td>" + esc(c.caissier) + "</td><td>" + c.nb + "</td><td>" + formaterNb(c.net) + " FCFA</td>" + (T.remises > 0 ? "<td>" + (c.remises ? c.nbRemises + " / " + formaterNb(c.remises) + " FCFA" : "—") + "</td>" : "") + "<td>" + (c.nbAnnulees ? c.nbAnnulees + " / " + formaterNb(c.annule) + " FCFA" : "—") + "</td></tr>").join("") + "</table>"
       : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
     h += "<h3>" + t("rcsArticles") + "</h3>";
     h += rap.articles.length
@@ -5725,12 +6079,28 @@ async function renderEmployes() {
   const employes = await api("/api/" + marchandActif.id + "/employes");
   const roles = rolesDisponibles();
 
-  function casesRoles(prefixe, rolesActuels) {
+  function casesRoles(prefixe, rolesActuels, plafond) {
     return roles.map(([cle, libelle]) =>
-      "<label style='display:block;font-weight:400;margin:2px 0;'>" +
+      "<div>" +
+      "<label style='display:inline-block;font-weight:400;margin:2px 0;'>" +
         "<input type='checkbox' data-role-prefixe='" + prefixe + "' data-role-cle='" + cle + "'" + ((rolesActuels || []).indexOf(cle) !== -1 ? " checked" : "") + " /> " + esc(libelle) +
-      "</label>"
-    ).join("");
+      "</label>" +
+      (cle === "remises"
+        ? " <span style='font-weight:400;'>" + esc(t("labelPlafondRemise")) + " <input type='number' min='0' max='100' step='0.5' style='width:80px;' data-plafond-prefixe='" + prefixe + "' value='" + (plafond != null ? plafond : "") + "' placeholder='%' /></span>"
+        : "") +
+      "</div>"
+    ).join("") + (roles.some((x) => x[0] === "remises") ? "<p class='raison'>" + t("notePlafondRemise") + "</p>" : "");
+  }
+
+  // Plafond saisi pour un employe (ou pour le formulaire de creation, prefixe "nouv") : sans objet si le role
+  // « remises » n'est pas coche ; sinon un nombre entre 0 et 100.
+  function lirePlafond(prefixe, rolesChoisis) {
+    if (rolesChoisis.indexOf("remises") === -1) return { ok: true };
+    const champ = zone.querySelector("[data-plafond-prefixe='" + prefixe + "']");
+    const brut = champ ? String(champ.value).trim().replace(",", ".") : "";
+    const v = Number(brut);
+    if (brut === "" || !Number.isFinite(v) || v < 0 || v > 100) return { ok: false };
+    return { ok: true, valeur: v };
   }
 
   function rolesCoches(prefixe) {
@@ -5749,7 +6119,7 @@ async function renderEmployes() {
             "<input data-emp='" + e.id + "' data-champ='nom' value=\"" + esc(e.nom) + "\" placeholder=\"" + esc(t("labelNom")) + "\" />" +
             "<span class='raison' style='align-self:center;'>" + t("labelIdentifiantNonModifiable", { id: esc(e.identifiant) }) + "</span>" +
           "</div>" +
-          "<div>" + casesRoles(e.id, e.roles) + "</div>" +
+          "<div>" + casesRoles(e.id, e.roles, e.plafondRemise) + "</div>" +
           "<div style='margin-top:8px;'>" +
             "<button data-emp-sauver='" + e.id + "'>" + t("enregistrer") + "</button> " +
             "<button data-emp-mdp='" + e.id + "'>" + t("btnGenererNouveauMdp") + "</button> " +
@@ -5771,8 +6141,10 @@ async function renderEmployes() {
         const rolesChoisis = rolesCoches(empId);
         if (!nom) { alert(t("alertNomVide")); return; }
         if (!rolesChoisis.length) { alert(t("alertAuMoinsUnAcces")); return; }
+        const pl = lirePlafond(empId, rolesChoisis);
+        if (!pl.ok) { alert(t("alertPlafondInvalide")); return; }
         try {
-          await api("/api/" + marchandActif.id + "/employes/" + empId, { method: "PUT", body: JSON.stringify({ nom, roles: rolesChoisis }) });
+          await api("/api/" + marchandActif.id + "/employes/" + empId, { method: "PUT", body: JSON.stringify(Object.assign({ nom, roles: rolesChoisis }, pl.valeur !== undefined ? { plafondRemise: pl.valeur } : {})) });
           renderEmployes();
         } catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
@@ -5803,8 +6175,10 @@ async function renderEmployes() {
       if (!nom || !identifiant || !motDePasse) { alert(t("alertChampsRequisEmploye")); return; }
       if (motDePasse.length < 6) { alert(t("alertMdp6Caracteres")); return; }
       if (!rolesChoisis.length) { alert(t("alertAuMoinsUnAcces")); return; }
+      const pl = lirePlafond("nouv", rolesChoisis);
+      if (!pl.ok) { alert(t("alertPlafondInvalide")); return; }
       try {
-        await api("/api/" + marchandActif.id + "/employes", { method: "POST", body: JSON.stringify({ nom, identifiant, motDePasse, roles: rolesChoisis }) });
+        await api("/api/" + marchandActif.id + "/employes", { method: "POST", body: JSON.stringify(Object.assign({ nom, identifiant, motDePasse, roles: rolesChoisis }, pl.valeur !== undefined ? { plafondRemise: pl.valeur } : {})) });
         alert(t("alertCompteEmployeCree", { id: identifiant, mdp: motDePasse }));
         renderEmployes();
       } catch (e) { alert(t("erreurPrefixe") + e.message); }

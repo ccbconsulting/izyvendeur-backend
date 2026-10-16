@@ -10,6 +10,7 @@
 // melanger les clients ou le stock de deux marchands differents, meme s'ils ecrivent au meme moment.
 
 const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, DEFAULT_AUTO_CONFIRM_MESSAGE_EN, SEED_CATALOG } = require("./catalog");
+const remisesLib = require("./remises");
 const db = require("./db");
 const sh = require("./shared");
 const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
@@ -1975,7 +1976,7 @@ function createCatalogEngine(merchantKey, options) {
 
   // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
   // jamais un article decompte puis un autre refuse en cours de route.
-  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier }) {
+  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise }) {
     if (!state) return { erreur: "Marchand introuvable." };
     if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Aucun article dans la vente." };
     if (MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
@@ -2007,18 +2008,33 @@ function createCatalogEngine(merchantKey, options) {
       if (quantite > disponible) {
         return { erreur: "Stock insuffisant pour \"" + p.nom + "\" (" + joindreVariante(" ", v.couleur, v.taille) + ") : " + disponible + " disponible(s)." };
       }
-      items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, prixUnitaire: v.prix, prix: v.prix * quantite, _variant: v });
+      items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, prixUnitaire: v.prix, prix: v.prix * quantite, _variant: v, _remise: ligne.remise });
     }
+
+    // Remises (Etape 59) : calculees AVANT de toucher au stock. Le net de la vente reste le seul montant
+    // qui compte ailleurs (rapports, journal comptable) ; le brut et le detail des remises sont conserves.
+    const calcul = remisesLib.appliquer(items.map((it) => ({ brut: it.prixUnitaire * it.quantite, remise: it._remise })), remiseGlobale);
+    if (calcul.erreur) return { erreur: calcul.erreur };
+    let motifNettoye = null;
+    if (calcul.remiseTotale > 0) {
+      motifNettoye = remisesLib.motifValide(motifRemise);
+      if (!motifNettoye) return { erreur: "Indiquez le motif de la remise." };
+      const refus = typeof verifierRemise === "function" ? verifierRemise({ pourcentEffectif: calcul.pourcentEffectif, montant: calcul.remiseTotale }) : null;
+      if (refus) return { erreur: refus.erreur, statut: refus.statut || 403 };
+    }
+    items.forEach((it, i) => { it.prixBrut = calcul.lignes[i].brut; it.remiseLigne = calcul.lignes[i].remiseLigne; it.prix = calcul.lignes[i].final; });
 
     // Decremente reellement le stock, seulement maintenant que TOUTES les lignes ci-dessus sont validees.
     items.forEach((it) => { it._variant.stockReel = Math.max(0, it._variant.stockReel - it.quantite); });
 
-    const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, prixUnitaire: it.prixUnitaire, prix: it.prix }));
+    const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, prixUnitaire: it.prixUnitaire, prixBrut: it.prixBrut, remiseLigne: it.remiseLigne, prix: it.prix }));
     const order = {
       id: state.nextId++,
       dateISO: new Date().toISOString(),
       items: itemsPublics,
-      prix: itemsTotal(itemsPublics),
+      prix: calcul.total,
+      prixBrut: calcul.brutTotal,
+      remise: calcul.remiseTotale > 0 ? { montant: calcul.remiseTotale, pourcentEffectif: calcul.pourcentEffectif, lignes: calcul.remiseLignes, globale: calcul.remiseGlobale, motif: motifNettoye, accordePar: caissier || null } : null,
       telephone: null,
       adresse: null,
       modeLivraison: "sur_place",

@@ -17,6 +17,7 @@
 // ne sont jamais reutilises.
 
 const crypto = require("crypto");
+const remisesLib = require("./remises");
 const db = require("./db");
 
 const SOURCE_JOURNAL = "izyvendeur-interne";
@@ -125,7 +126,8 @@ function creerMoteurFacturation(merchantKey, options) {
     // TVA nette = TVA de la facture moins la TVA des avoirs (calculee au meme taux).
     const tvaAvoirs = f.tauxTva != null ? f.avoirs.reduce((s, a) => s + ventiler(a.montant, f.tauxTva).tva, 0) : 0;
     const tvaNette = f.tauxTva != null ? f.montantTva - tvaAvoirs : null;
-    return Object.assign({}, f, { remboursements: f.remboursements || [], paye, rembourse, payeNet, totalAvoirs: avoirs, net, solde, aRembourser, statut, tvaNette });
+    const remiseTotale = f.remiseTotale || 0;
+    return Object.assign({}, f, { brutTotal: f.brutTotal != null ? f.brutTotal : f.total, sousTotal: f.sousTotal != null ? f.sousTotal : f.total, remiseTotale, remiseGlobale: f.remiseGlobale || null, remboursements: f.remboursements || [], paye, rembourse, payeNet, totalAvoirs: avoirs, net, solde, aRembourser, statut, tvaNette });
   }
 
   function nettoyerTexte(v, max) { return String(v == null ? "" : v).trim().slice(0, max); }
@@ -141,7 +143,7 @@ function creerMoteurFacturation(merchantKey, options) {
       if (!designation) return { erreur: "Chaque ligne doit avoir une désignation." };
       if (!(quantite > 0)) return { erreur: "Quantité invalide sur « " + designation + " »." };
       if (!(prixUnitaire >= 0)) return { erreur: "Prix invalide sur « " + designation + " »." };
-      sortie.push({ designation, quantite, prixUnitaire, total: quantite * prixUnitaire });
+      sortie.push({ designation, quantite, prixUnitaire, total: quantite * prixUnitaire, remise: l && l.remise ? l.remise : null });
     }
     return { lignes: sortie };
   }
@@ -152,7 +154,17 @@ function creerMoteurFacturation(merchantKey, options) {
   function creerFacture(p) {
     const net = nettoyerLignes(p.lignes);
     if (net.erreur) return { erreur: net.erreur };
-    const total = net.lignes.reduce((s, l) => s + l.total, 0);
+    // Remises (Etape 59) : par ligne et/ou globale ; le total de la facture est le NET, seul montant qui compte
+    // ensuite (paiements, avoirs, TVA, journal). Le brut et le detail restent sur la facture.
+    const calcul = remisesLib.appliquer(net.lignes.map((l) => ({ brut: l.total, remise: l.remise })), p.remiseGlobale);
+    if (calcul.erreur) return { erreur: calcul.erreur };
+    let motifRemise = null;
+    if (calcul.remiseTotale > 0) {
+      motifRemise = remisesLib.motifValide(p.motifRemise);
+      if (!motifRemise) return { erreur: "Indiquez le motif de la remise." };
+    }
+    net.lignes.forEach((l, i) => { l.prixBrut = l.total; l.remiseLigne = calcul.lignes[i].remiseLigne; l.remiseSpec = calcul.lignes[i].remiseLigneSpec; l.total = calcul.lignes[i].net; delete l.remise; });
+    const total = calcul.total;
     if (!(total > 0)) return { erreur: "Le total de la facture doit être supérieur à zéro." };
     if (p.externalRef) {
       const existante = state.factures.find((f) => f.externalRef === p.externalRef);
@@ -165,8 +177,14 @@ function creerMoteurFacturation(merchantKey, options) {
       token: crypto.randomBytes(16).toString("hex"),
       creeLe: maintenant,
       date: dateLocale(maintenant),
-      client: { nom: nettoyerTexte(p.client && p.client.nom, 120) || "Client", telephone: nettoyerTexte(p.client && p.client.telephone, 30) || null },
+      client: { nom: nettoyerTexte(p.client && p.client.nom, 120) || "Client", telephone: nettoyerTexte(p.client && p.client.telephone, 30) || null, niu: nettoyerTexte(p.client && p.client.niu, 40) || null, adresse: nettoyerTexte(p.client && p.client.adresse, 200) || null },
       lignes: net.lignes,
+      brutTotal: calcul.brutTotal,
+      sousTotal: calcul.sousTotal,
+      remiseGlobale: calcul.remiseGlobale,
+      remiseTotale: calcul.remiseTotale,
+      motifRemise,
+      remiseAccordePar: calcul.remiseTotale > 0 ? (nettoyerTexte(p.remiseAccordePar || p.creePar, 80) || null) : null,
       total,
       notes: nettoyerTexte(p.notes, 500) || null,
       origine: { type: (p.origine && p.origine.type) || "libre", id: p.origine && p.origine.id != null ? p.origine.id : null },
@@ -348,13 +366,14 @@ function creerMoteurFacturation(merchantKey, options) {
       if (au && e.date > au) return;
       if (apres && !(e.creeLe > apres)) return;
       if (e.montantHT === undefined) { e.montantHT = null; e.tva = null; e.tauxTva = null; }
+      if (e.remise === undefined) e.remise = null;
       e.posterieurBascule = !!(bascule && e.creeLe > bascule);
       sortie.push(e);
     }
     for (const f0 of state.factures) {
       const f = vue(f0);
       const tiers = f.client.nom;
-      ajouter({ id: merchantKey + ":" + f.numero, type: "vente", journal: "VE", date: f.date, creeLe: f.creeLe, piece: f.numero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Facture " + f.numero + " — " + tiers, montant: f.total, moyen: null, categorie: null, origine: f.origine.type + (f.origine.id != null ? ":" + f.origine.id : ""), montantHT: f.montantHT, tva: f.montantTva, tauxTva: f.tauxTva });
+      ajouter({ id: merchantKey + ":" + f.numero, type: "vente", journal: "VE", date: f.date, creeLe: f.creeLe, piece: f.numero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Facture " + f.numero + " — " + tiers, montant: f.total, moyen: null, categorie: null, origine: f.origine.type + (f.origine.id != null ? ":" + f.origine.id : ""), montantHT: f.montantHT, tva: f.montantTva, tauxTva: f.tauxTva, remise: f.remiseTotale > 0 ? f.remiseTotale : null });
       for (const p of f.paiements) {
         ajouter({ id: merchantKey + ":" + p.recuNumero, type: "encaissement", journal: "TR", date: dateLocale(p.date), creeLe: p.date, piece: p.recuNumero, refFacture: f.numero, tiers, telephoneTiers: f.client.telephone, libelle: "Encaissement " + p.recuNumero + " sur facture " + f.numero, montant: p.montant, moyen: p.methode, categorie: null, origine: "facture:" + f.numero });
       }
@@ -382,7 +401,7 @@ function creerMoteurFacturation(merchantKey, options) {
       if (!(montant > 0)) continue;
       const t = state.config.tva;
       const tvaPos = t && t.actif && t.depuis && dateLocale(o.dateISO) >= t.depuis ? ventiler(montant, t.taux) : null;
-      ajouter({ id: merchantKey + ":" + piece, type: "vente_comptant", journal: "VE", date: dateLocale(o.dateISO), creeLe: o.dateISO, piece, refFacture: null, tiers: "Vente en boutique", telephoneTiers: null, libelle: "Vente en boutique " + piece, montant, moyen, categorie: null, origine: "pos:" + o.id, ...(tvaPos ? { montantHT: tvaPos.ht, tva: tvaPos.tva, tauxTva: t.taux } : {}) });
+      ajouter({ id: merchantKey + ":" + piece, type: "vente_comptant", journal: "VE", date: dateLocale(o.dateISO), creeLe: o.dateISO, piece, refFacture: null, tiers: "Vente en boutique", telephoneTiers: null, libelle: "Vente en boutique " + piece, montant, moyen, categorie: null, origine: "pos:" + o.id, remise: o.remise && o.remise.montant > 0 ? o.remise.montant : null, ...(tvaPos ? { montantHT: tvaPos.ht, tva: tvaPos.tva, tauxTva: t.taux } : {}) });
       const ev = state.evenementsPos[String(o.id)] || {};
       const quand = ev.remplaceeLe || ev.annuleeLe;
       if (quand) {
@@ -393,7 +412,7 @@ function creerMoteurFacturation(merchantKey, options) {
     return sortie.map((e) => Object.assign({ source: SOURCE_JOURNAL, marchand: merchantKey, devise: "XAF" }, e));
   }
 
-  const COLONNES_CSV = ["id", "source", "marchand", "type", "journal", "date", "piece", "refFacture", "tiers", "libelle", "montant", "montantHT", "tva", "tauxTva", "devise", "moyen", "categorie", "origine", "posterieurBascule"];
+  const COLONNES_CSV = ["id", "source", "marchand", "type", "journal", "date", "piece", "refFacture", "tiers", "libelle", "montant", "montantHT", "tva", "tauxTva", "remise", "devise", "moyen", "categorie", "origine", "posterieurBascule"];
   // `sep` : "," (defaut, format machine) ou ";" (Excel en francais ouvre un CSV a virgules sur UNE seule colonne).
   function journalCsv(filtre, sep, ext) {
     const s0 = sep === ";" ? ";" : ",";

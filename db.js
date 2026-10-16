@@ -508,6 +508,7 @@ async function updateEmploye(merchantId, employeId, patch) {
   if (!emp) return null;
   if (patch.nom !== undefined) emp.nom = patch.nom;
   if (patch.roles !== undefined) emp.roles = patch.roles;
+  if (patch.plafondRemise !== undefined) emp.plafondRemise = patch.plafondRemise;
   if (patch.motDePasseHash !== undefined) emp.motDePasseHash = patch.motDePasseHash;
   await insertMerchant(m);
   return emp;

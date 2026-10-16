@@ -1802,6 +1802,62 @@ Fichiers : `rapportCaisse.js` (nouveau), `server.js`, `public/admin.html`. Tests
 modes, jours, caissiers, articles, sessions, minuit du Cameroun, bornes de période, droits, CSV, lecture seule) et
 `test_etape58_rapport_caisse_playwright.js` (/admin : choix de période, filtre, raccourcis, erreur de période, CSV, vrai PDF, employés, anglais).
 
+## Étape 59 — Remises (Caisse et facturation), facture libre sans limite de lignes, facture à la demande (nouveau)
+
+**1. Remises.** Deux niveaux, sur la Caisse **et** sur la facture libre : une remise **par ligne** et/ou une remise **globale**, chacune
+en **pourcentage** ou en **montant (FCFA)**. Le **motif est obligatoire** dès qu'il y a une remise, et le net à payer doit rester d'**au
+moins 1 FCFA** (100 % est refusé). Le total s'affiche en direct (brut, remise totale, net). Les montants sont des FCFA entiers ; la remise
+globale est répartie **au prorata** sur les lignes (au plus grand reste) pour que la somme des lignes nettes égale exactement le total :
+les rapports par article, le tableau de bord et le journal comptable continuent de s'additionner juste, sans rien changer d'autre.
+
+**2. Qui peut accorder une remise (point de sécurité demandé).** C'est **le propriétaire du marchand ou le super-administrateur seul** qui
+donne ce droit, dans l'onglet **Employés**, à la création ou à la modification du profil : rôle **« Remises »** + **plafond en %** propre à
+chaque employé, **à saisir obligatoirement** (aucune remise n'est accordée par défaut : sans rôle, ou plafond 0, aucune remise possible). Le rôle exige aussi « Caisse » ou « Facturation » (sinon refus 400). Contrôle **côté serveur** :
+- le propriétaire et le super-administrateur : aucune limite ;
+- un employé **sans** le rôle : aucun champ de remise à l'écran, et toute tentative directe sur l'API est refusée (403) ;
+- un employé avec le rôle : refus (403) si le pourcentage **effectif sur le total** (lignes + globale) dépasse son plafond ;
+- un employé ne peut jamais relever son propre plafond ni se donner le rôle (403) ; le marchand ne voit aucune option réservée au
+  super-administrateur.
+Pas de validation « sur place » par un supérieur pour l'instant (possible plus tard). Chaque vente remisée ajoute une ligne
+`vente_caisse_remise` au journal des modifications (brut, remise, %, motif, qui l'a accordée) ; les tentatives refusées sont journalisées
+(statut refusé). Les ventes sans remise gardent leur ligne `vente_caisse` habituelle. Le motif est **interne** : il n'apparaît pas sur la
+facture vue par le client.
+
+**3. Où se voient les remises.** Reçu de caisse (brut, remise avec motif, net) ; facture et page publique (sous-total, remise globale,
+remise par ligne) ; **Rapport de caisse** (tuile « Remises accordées » avec %, colonne par caissier, détail des ventes, CSV : colonnes
+`remise;motifRemise;remisePar` ajoutées au détail des ventes) ; **journal comptable** (champ `remise`, et colonne `remise` du CSV juste
+après `tauxTva`). Les factures et ventes d'avant l'Étape 59 restent lisibles (remise 0).
+
+**4. Facture libre sans limite de lignes.** Fini les 3 lignes fixes : bouton **Ajouter une ligne**, « × » pour retirer, total en direct.
+Chaque ligne propose la **liste des articles du catalogue** (une ligne par variante) et des **services** : on tape ou on choisit, la
+désignation et le prix se remplissent et restent modifiables. Aucun mouvement de stock (une facture libre ne touche pas au stock).
+Nouveaux champs client : **NIU** et **adresse**. Maximum serveur inchangé : 100 lignes. Nouvelle route `GET /api/:id/facturation/articles`
+(rôle « facturation »).
+
+**5. « Le client veut une facture » (facture à la demande).** Après une vente de caisse, bouton sur l'écran du reçu **et** dans
+l'onglet Commandes (ventes « Boutique »). Formulaire facultatif : nom, téléphone, NIU, adresse (sans nom : « Client comptoir »). La
+facture reprend les lignes **et les remises** de la vente, est **réglée d'emblée** avec le mode de paiement de la vente, et remplace la ligne
+« vente au comptant » du journal (jamais comptée deux fois). On obtient le **lien** de la facture avec boutons *Copier le lien* et
+*Ouvrir / imprimer*, et un **QR code** que le client peut scanner. Pas de facture automatique pour chaque vente (une option par marchand
+pourra l'ajouter plus tard). Route : `POST /api/:id/pos/vente/:orderId/facture` (corps `{ client: { nom, telephone, niu, adresse } }`,
+rôle « caisse » ou « commandes », idempotente : un second appel ne crée pas de seconde facture). Vente annulée ou venue de WhatsApp : refusée.
+
+**Limites connues.**
+- Pont **IzyFacture** : l'API ne connaît pas (encore) de champ de remise ; une vente remisée est donc envoyée en **une ligne par
+  article au prix net** (« 2 x Robe wax (remise incluse) », quantité 1), avec la remise rappelée dans les notes. Le NIU et l'adresse du
+  client ne sont pas transmis à IzyFacture (seulement dans la facturation intégrée).
+- Remises : pas de codes promo, pas de fidélité, pas de remise automatique sur les commandes WhatsApp (hors de cette étape).
+- Une vente de caisse annulée reste comptée dans le théorique de la session (comportement existant) ; le rapport de caisse la signale
+  à part.
+- Pas de PDF réel envoyé par WhatsApp, pas de justificatif joint aux dépenses (inchangé).
+
+Fichiers : `remises.js` (nouveau), `conversation.js`, `facturation.js`, `server.js`, `db.js`, `izyfacture.js`, `rapportCaisse.js`,
+`public/admin.html`. Tests : `test_etape59_remises.js` (HTTP : calcul, ventes remisées ligne/globale/%/montant, motif, net minimum, droits
+propriétaire / super-administrateur / employé avec ou sans rôle / plafond exact, gestion des employés, audit, rapport de caisse, journal
+comptable, facture libre à 30 lignes, liste d'articles, facture à la demande, idempotence, pont IzyFacture) et
+`test_etape59_remises_playwright.js` (/admin : plafond dans Employés, remises en direct à la caisse, reçu, formulaire, lien et QR,
+Commandes, facture libre, employés sans droit, anglais).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1816,6 +1872,7 @@ modes, jours, caissiers, articles, sessions, minuit du Cameroun, bornes de péri
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 59 : `remises.js` (NOUVEAU : calcul des remises ligne/globale, répartition au prorata, droit et plafond), `conversation.js` (`creerVentePos` avec remises et contrôle du droit avant de toucher au stock), `facturation.js` (remises par ligne et globale, NIU/adresse du client, champ `remise` du journal et du CSV), `server.js` (rôle `remises` et plafond par employé, contrôle serveur, audit, `POST …/pos/vente/:orderId/facture`, `GET …/facturation/articles`), `db.js` (plafond de l'employé), `izyfacture.js` (lignes au prix net pour une vente remisée), `rapportCaisse.js` (remises dans le rapport et le CSV) et `public/admin.html` (Employés : rôle et plafond ; Caisse : remises en direct, reçu, facture à la demande avec lien et QR ; facture libre à lignes illimitées avec choix d'articles ; Commandes ; Rapport de caisse ; textes FR/EN).
 - Étape 58 : `rapportCaisse.js` (NOUVEAU : rapport de caisse par période, exports CSV), `server.js` (route `GET /api/:id/caisse/rapport`) et `public/admin.html` (onglet Rapport de caisse, PDF, textes FR/EN).
 - Étape 57 : `facturation.js` (remboursements `RB-`, TVA figée par facture, ventes POS au comptant, clé comptable hachée, filtre `apres`), `server.js` (route `POST …/remboursement`, `GET /api/compta/:id/journal` par clé Bearer avec CORS et limitation de débit, routes de gestion de la clé réservées au super-administrateur, paramètres TVA/identité, pages publiques avec TVA et mentions légales) et `public/admin.html` (bouton Rembourser, panneau TVA, tuiles, bloc « Clé comptable » réservé au super-administrateur, textes FR/EN).
 - Étapes 54 à 56 : `facturation.js` (nouveau : factures, avoirs, paiements, dépenses, journal normalisé), `server.js` (choix de la source et bascule réservés au super-administrateur, routes `/api/:id/facturation/*`, pages publiques `/f/…`, aiguillage du pont facturation selon la source, rôles `facturation` et `comptable`) et `public/admin.html` (bloc « Source de facturation », onglet Facturation, rôles, textes FR/EN).

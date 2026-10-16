@@ -57,9 +57,9 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
 
   const parMode = {}; MODES.forEach((m) => { parMode[m] = { mode: m, nb: 0, montant: 0, nbAnnulees: 0, montantAnnule: 0 }; });
   const parJour = {}, parCaissier = {}, articles = {};
-  const totaux = { nbVentes: 0, brut: 0, nbAnnulees: 0, montantAnnule: 0, net: 0, nbArticles: 0, nbFacturees: 0 };
+  const totaux = { nbVentes: 0, brut: 0, nbAnnulees: 0, montantAnnule: 0, net: 0, nbArticles: 0, nbFacturees: 0, nbVentesRemisees: 0, remises: 0, brutAvantRemise: 0 };
   const jour = (d) => parJour[d] || (parJour[d] = { date: d, nb: 0, net: 0, nbAnnulees: 0, annule: 0, especes: 0, om: 0, momo: 0, carte: 0, cheque: 0 });
-  const cais = (c) => { const k = c || "—"; return parCaissier[k] || (parCaissier[k] = { caissier: k, nb: 0, net: 0, nbAnnulees: 0, annule: 0 }); };
+  const cais = (c) => { const k = c || "—"; return parCaissier[k] || (parCaissier[k] = { caissier: k, nb: 0, net: 0, nbAnnulees: 0, annule: 0, nbRemises: 0, remises: 0, brutAvantRemise: 0 }); };
 
   const detail = ventes.map((o) => {
     const montant = Number(o.prix) || 0;
@@ -74,6 +74,9 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
       J.nbAnnulees++; J.annule += montant; C.nbAnnulees++; C.annule += montant;
     } else {
       totaux.nbVentes++; totaux.net += montant;
+      const remiseMontant = o.remise && o.remise.montant > 0 ? o.remise.montant : 0;
+      totaux.brutAvantRemise += montant + remiseMontant; C.brutAvantRemise += montant + remiseMontant;
+      if (remiseMontant) { totaux.nbVentesRemisees++; totaux.remises += remiseMontant; C.nbRemises++; C.remises += remiseMontant; }
       parMode[mode].nb++; parMode[mode].montant += montant;
       J.nb++; J.net += montant; J[mode] += montant; C.nb++; C.net += montant;
       if (o.izyfactureNumero) totaux.nbFacturees++;
@@ -87,13 +90,14 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
     return {
       id: o.id, piece: "POS-" + String(o.id).padStart(4, "0"), date: d, heure: heureLocale(o.dateISO),
       sessionId: o.sessionCaisseId != null ? o.sessionCaisseId : null, caissier: o.caissier || null,
-      mode, reference: o.referencePaiement || null, montant, statut: annulee ? "annulee" : "valide",
+      mode, reference: o.referencePaiement || null, montant, remise: o.remise && o.remise.montant > 0 ? o.remise.montant : 0, motifRemise: o.remise ? o.remise.motif : null, remisePar: o.remise ? o.remise.accordePar : null, statut: annulee ? "annulee" : "valide",
       raisonAnnulation: annulee ? (o.raisonAnnulation || null) : null,
       facture: o.izyfactureNumero || null,
       articles: (o.items || []).map((it) => (Number(it.quantite) || 0) + " x " + libelleArticle(it)).join(" ; ")
     };
   });
   totaux.panierMoyen = totaux.nbVentes ? Math.round(totaux.net / totaux.nbVentes) : 0;
+  totaux.pourcentRemises = totaux.brutAvantRemise ? Math.round(totaux.remises * 10000 / totaux.brutAvantRemise) / 100 : 0;
 
   // Sessions ouvertes pendant la periode (jour d'ouverture), du caissier filtre le cas echeant.
   const annuleesParSession = {};
@@ -141,8 +145,8 @@ function csv(rapport, vue, sep) {
   };
   let colonnes, lignes;
   if (vue === "ventes") {
-    colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "statut", "raisonAnnulation", "facture", "articles"];
-    lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.statut, v.raisonAnnulation, v.facture, v.articles]);
+    colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "remise", "motifRemise", "remisePar", "statut", "raisonAnnulation", "facture", "articles"];
+    lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.remise, v.motifRemise, v.remisePar, v.statut, v.raisonAnnulation, v.facture, v.articles]);
   } else if (vue === "sessions") {
     colonnes = ["session", "caissier", "statut", "ouverture", "fermeture", "fondInitial", "ventesEspeces", "montantTheorique", "montantCompte", "ecart", "raisonEcart", "especesAnnulees"];
     lignes = rapport.sessions.map((x) => [x.id, x.caissier, x.statut, x.dateOuverture, x.dateFermeture, x.fondInitial, x.totalVentesEspeces, x.montantTheorique, x.montantCompte, x.ecart, x.raisonEcart, x.especesAnnulees]);
