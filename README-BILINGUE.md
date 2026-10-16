@@ -2192,3 +2192,7 @@ Commandes, facture libre, employés sans droit, anglais).
 
 Testez ensuite en envoyant "hello" ou "hi" à votre numéro WhatsApp bot (message de bienvenue bilingue),
 et en ouvrant /admin pour essayer le bouton FR/EN en haut de l'écran.
+
+## Étape 60 — Accueil « Bienvenue chez <nom du marchand> » (marchands service)
+
+Après le choix de la langue, le bot d'un marchand de type service répond maintenant « Bonjour ! Bienvenue chez <nom du marchand>. Quel service vous intéresse ? » (EN : « Hello! Welcome to <name>. Which service are you interested in? »), suivi de la liste des services. Le nom est celui du marchand dans /admin (Mon compte / liste des marchands) : renommer le marchand change l'accueil immédiatement. Fichiers modifiés : `conversationService.js` et `server.js` (aucune migration, aucune nouvelle variable d'environnement). Cet accueil s'applique aux marchands service et au volet rendez-vous des marchands hybrides ; le catalogue garde son message d'accueil personnalisé existant.

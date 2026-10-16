@@ -314,6 +314,8 @@ function vuePourRequete(req, entry, permission) {
 // marchand change de numero/notification apres coup.
 function creerOptionsEngine(merchantKey) {
   return {
+    // Etape 60 : nom commercial du marchand pour l'accueil du moteur rendez-vous ("Bienvenue chez <nom>").
+    nomMarchand: () => { const e = engines[merchantKey]; return (e && e.merchant && e.merchant.nom) || ""; },
     envoyer: async (destinataire, texte) => {
       const entry = engines[merchantKey];
       if (!entry) return;

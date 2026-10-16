@@ -150,6 +150,9 @@ function createServiceEngine(merchantKey, options) {
   const conversationsHumain = {}; // memoire seulement (comme `sessions`) - voir shared.js
   const envoyer = (options && options.envoyer) || (async () => {});
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
+  // Etape 60 : nom commercial du marchand, lu a chaque usage (il peut etre renomme dans /admin) pour
+  // personnaliser l'accueil ("Bienvenue chez <nom>"). Sans l'option (tests, ancien appelant) : accueil inchange.
+  const nomMarchandOption = (options && options.nomMarchand) || (() => "");
   // Etape 44 : envoi d'un RAPPEL de rendez-vous au client. Contrairement a `envoyer` (qui ne signale jamais
   // un refus de WhatsApp), `options.envoyerRappel(telephone, texteLibre, { langue, parametres })` renvoie
   // { ok, canal, erreur } : texte libre d'abord (gratuit, mais refuse par WhatsApp hors de la fenetre de 24 h
@@ -863,7 +866,12 @@ function createServiceEngine(merchantKey, options) {
     const serviceIds = matchServicesMultiple(text);
     if (!serviceIds.length) {
       session.pretPourChoix = true;
-      return messageChoixService(session, "Bonjour ! Quel service vous intéresse ?", "Hello! Which service are you interested in?");
+      const nomAccueil = String(nomMarchandOption() || "").trim();
+      return nomAccueil
+        ? messageChoixService(session,
+            "Bonjour ! Bienvenue chez " + nomAccueil + ". Quel service vous intéresse ?",
+            "Hello! Welcome to " + nomAccueil + ". Which service are you interested in?")
+        : messageChoixService(session, "Bonjour ! Quel service vous intéresse ?", "Hello! Which service are you interested in?");
     }
     session.serviceIds = serviceIds;
     session.serviceId = serviceIds.join("+");
