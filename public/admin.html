@@ -281,6 +281,54 @@ const I18N = {
     factStatut_partially_paid: "Partiellement payée",
     factStatut_paid: "Payée",
     factStatut_avoir: "Annulée (avoir)",
+    ongletRapportCaisse: "Rapport de caisse",
+    rcsTitre: "Rapport de caisse",
+    rcsNote: "Choisissez une période libre. Une vente compte pour le jour où elle a été encaissée (heure du Cameroun) ; une session compte pour le jour de son ouverture. Les ventes annulées sont comptées à part et jamais dans le net.",
+    rcsPeriode: "Période",
+    rcsDu: "Du",
+    rcsAu: "Au",
+    rcsCaissier: "Caissier",
+    rcsTousCaissiers: "Tous les caissiers",
+    rcsGenerer: "Afficher le rapport",
+    rcsPresetAujourdhui: "Aujourd'hui",
+    rcsPresetHier: "Hier",
+    rcsPreset7: "7 derniers jours",
+    rcsPresetMois: "Ce mois-ci",
+    rcsPresetMoisPrec: "Mois dernier",
+    rcsPresetAnnee: "Cette année",
+    rcsPresetPerso: "Plage personnalisée",
+    rcsPdf: "Télécharger en PDF",
+    rcsCsv: "Télécharger en CSV (Excel)",
+    rcsVueSynthese: "Synthèse par jour",
+    rcsVueVentes: "Détail des ventes",
+    rcsVueSessions: "Sessions et écarts",
+    rcsTuileVentes: "Ventes",
+    rcsTuileNet: "Encaissé (net)",
+    rcsTuileAnnule: "Annulé",
+    rcsTuilePanier: "Panier moyen",
+    rcsTuileArticles: "Articles vendus",
+    rcsTuileEcart: "Écart cumulé des caisses",
+    rcsParMode: "Par mode de paiement",
+    rcsParJour: "Par jour",
+    rcsParCaissier: "Par caissier",
+    rcsArticles: "Articles vendus",
+    rcsSessions: "Sessions de caisse",
+    rcsAucuneVente: "Aucune vente sur cette période.",
+    rcsAucuneSession: "Aucune session ouverte sur cette période.",
+    rcsMode_especes: "Espèces", rcsMode_om: "Orange Money", rcsMode_momo: "MTN MoMo", rcsMode_carte: "Carte", rcsMode_cheque: "Chèque",
+    rcsColDate: "Date", rcsColNb: "Ventes", rcsColTotal: "Total net", rcsColAnnule: "Annulé", rcsColMode: "Mode", rcsColPart: "Part",
+    rcsColArticle: "Article", rcsColQte: "Qté", rcsColMontant: "Montant",
+    rcsColSession: "Session", rcsColOuverture: "Ouverture", rcsColFermeture: "Fermeture", rcsColFond: "Fond de caisse", rcsColTheorique: "Théorique", rcsColCompte: "Compté", rcsColEcart: "Écart", rcsColRaison: "Raison", rcsColAnnulesEsp: "Espèces annulées depuis",
+    rcsSessionEnCours: "en cours",
+    rcsNoteSessions: "Le théorique est figé à la fermeture (fond + ventes en espèces de la session, annulées comprises à ce moment-là). La dernière colonne signale les ventes en espèces annulées ensuite.",
+    rcsInfoFacturees: "{n} vente(s) de la période ont ensuite été facturées (elles restent des ventes de caisse ici).",
+    rcsPdfGenere: "Généré le {date}",
+    rcsPdfPeriode: "Période : du {du} au {au}",
+    rcsPdfCaissier: "Caissier : {nom}",
+    rcsPdfSynthese: "Synthèse",
+    rcsPdfLigneJour: "{date} : {nb} vente(s), {net} FCFA (annulé {annule} FCFA)",
+    rcsPdfLigneSession: "Session {id} ({caissier}) : fond {fond}, théorique {theo}, compté {compte}, écart {ecart} FCFA",
+    rcsErreurPeriode: "Période invalide : ",
     factARembourser: "à rembourser : {montant}",
     factTotalARembourser: "À rembourser aux clients",
     factTotalTvaCollectee: "TVA collectée (nette)",
@@ -1061,6 +1109,54 @@ const I18N = {
     factStatut_partially_paid: "Partially paid",
     factStatut_paid: "Paid",
     factStatut_avoir: "Cancelled (credit note)",
+    ongletRapportCaisse: "Cash report",
+    rcsTitre: "Cash report",
+    rcsNote: "Pick any period. A sale counts on the day it was collected (Cameroon time); a session counts on the day it was opened. Cancelled sales are shown separately and never in the net.",
+    rcsPeriode: "Period",
+    rcsDu: "From",
+    rcsAu: "To",
+    rcsCaissier: "Cashier",
+    rcsTousCaissiers: "All cashiers",
+    rcsGenerer: "Show report",
+    rcsPresetAujourdhui: "Today",
+    rcsPresetHier: "Yesterday",
+    rcsPreset7: "Last 7 days",
+    rcsPresetMois: "This month",
+    rcsPresetMoisPrec: "Last month",
+    rcsPresetAnnee: "This year",
+    rcsPresetPerso: "Custom range",
+    rcsPdf: "Download as PDF",
+    rcsCsv: "Download as CSV (Excel)",
+    rcsVueSynthese: "Daily summary",
+    rcsVueVentes: "Sales detail",
+    rcsVueSessions: "Sessions and discrepancies",
+    rcsTuileVentes: "Sales",
+    rcsTuileNet: "Collected (net)",
+    rcsTuileAnnule: "Cancelled",
+    rcsTuilePanier: "Average basket",
+    rcsTuileArticles: "Items sold",
+    rcsTuileEcart: "Total till discrepancy",
+    rcsParMode: "By payment method",
+    rcsParJour: "By day",
+    rcsParCaissier: "By cashier",
+    rcsArticles: "Items sold",
+    rcsSessions: "Cash sessions",
+    rcsAucuneVente: "No sale in this period.",
+    rcsAucuneSession: "No session opened in this period.",
+    rcsMode_especes: "Cash", rcsMode_om: "Orange Money", rcsMode_momo: "MTN MoMo", rcsMode_carte: "Card", rcsMode_cheque: "Cheque",
+    rcsColDate: "Date", rcsColNb: "Sales", rcsColTotal: "Net total", rcsColAnnule: "Cancelled", rcsColMode: "Method", rcsColPart: "Share",
+    rcsColArticle: "Item", rcsColQte: "Qty", rcsColMontant: "Amount",
+    rcsColSession: "Session", rcsColOuverture: "Opened", rcsColFermeture: "Closed", rcsColFond: "Opening float", rcsColTheorique: "Expected", rcsColCompte: "Counted", rcsColEcart: "Discrepancy", rcsColRaison: "Reason", rcsColAnnulesEsp: "Cash cancelled since",
+    rcsSessionEnCours: "open",
+    rcsNoteSessions: "Expected is frozen at closing (float + the session's cash sales, cancelled ones included at that time). The last column flags cash sales cancelled afterwards.",
+    rcsInfoFacturees: "{n} sale(s) in the period were later invoiced (they remain till sales here).",
+    rcsPdfGenere: "Generated on {date}",
+    rcsPdfPeriode: "Period: {du} to {au}",
+    rcsPdfCaissier: "Cashier: {nom}",
+    rcsPdfSynthese: "Summary",
+    rcsPdfLigneJour: "{date}: {nb} sale(s), {net} FCFA (cancelled {annule} FCFA)",
+    rcsPdfLigneSession: "Session {id} ({caissier}): float {fond}, expected {theo}, counted {compte}, discrepancy {ecart} FCFA",
+    rcsErreurPeriode: "Invalid period: ",
     factARembourser: "to refund: {montant}",
     factTotalARembourser: "To refund to customers",
     factTotalTvaCollectee: "VAT collected (net)",
@@ -2162,6 +2258,7 @@ function construireOnglets() {
     ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue", "catalogue"],
     ["commandes", t("ongletCommandes"), renderCommandes, "commandes", "catalogue"],
     marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse", "catalogue"] : null,
+    marchandActif.optionCaissePos ? ["rapportcaisse", t("ongletRapportCaisse"), renderRapportCaisse, ["caisse", "rapports"], "catalogue"] : null,
     ["rapports", t("ongletRapports"), renderRapports, "rapports", "catalogue"],
     ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire", "catalogue"],
     ["parametres", t("ongletParametresCatalogueHyb"), renderParametresCatalogue, "parametres", "catalogue"]
@@ -2208,6 +2305,7 @@ function construireOnglets() {
         // debloquee - invisible pour TOUT LE MONDE, y compris le proprietaire du marchand, contrairement
         // aux autres onglets ci-dessous qui ne dependent que du role de l'utilisateur connecte.
         marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse"] : null,
+        marchandActif.optionCaissePos ? ["rapportcaisse", t("ongletRapportCaisse"), renderRapportCaisse, ["caisse", "rapports"]] : null,
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", t("ongletRapports"), renderRapports, "rapports"],
         ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire"],
@@ -4458,6 +4556,134 @@ function brancherDeplierVentes(zone) {
     const ligne = zone.querySelector("tr[data-article-vendu='" + i + "']");
     if (ligne) { ligne.style.cursor = "pointer"; ligne.onclick = basculer; }
   });
+}
+
+// ---------------- Rapport de caisse (Etape 58) : periode libre, filtre caissier, exports CSV et PDF ----------------
+function formaterNb(n) { return Number(n || 0).toLocaleString(localeCourante()); }
+function decalerJour(iso, n) { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function plagePreset(preset, aujourdhui) {
+  const an = aujourdhui.slice(0, 4), mois = aujourdhui.slice(0, 7);
+  if (preset === "hier") { const h = decalerJour(aujourdhui, -1); return [h, h]; }
+  if (preset === "7") return [decalerJour(aujourdhui, -6), aujourdhui];
+  if (preset === "mois") return [mois + "-01", aujourdhui];
+  if (preset === "moisprec") {
+    const fin = decalerJour(mois + "-01", -1);
+    return [fin.slice(0, 7) + "-01", fin];
+  }
+  if (preset === "annee") return [an + "-01-01", aujourdhui];
+  return [aujourdhui, aujourdhui];
+}
+function requeteRapportCaisse(du, au, caissier, extra) {
+  const q = ["du=" + encodeURIComponent(du), "au=" + encodeURIComponent(au)];
+  if (caissier) q.push("caissier=" + encodeURIComponent(caissier));
+  return "/api/" + marchandActif.id + "/caisse/rapport?" + q.join("&") + (extra ? "&" + extra : "");
+}
+function contenuPdfRapportCaisse(r) {
+  const sous = [t("rcsPdfPeriode", { du: r.du, au: r.au })];
+  if (r.caissier) sous.push(t("rcsPdfCaissier", { nom: r.caissier }));
+  sous.push(t("rcsPdfGenere", { date: new Date(r.genererLe).toLocaleString(localeCourante()) }));
+  const T = r.totaux;
+  const jours = r.parJour.filter((j) => j.nb || j.nbAnnulees);
+  return {
+    titre: t("rcsTitre") + " - " + (marchandActif.nom || marchandActif.id),
+    sousTitres: sous,
+    sections: [
+      { titre: t("rcsPdfSynthese"), lignes: [
+        t("rcsTuileVentes") + " : " + T.nbVentes, t("rcsTuileNet") + " : " + nombrePdf(T.net) + " FCFA",
+        t("rcsTuileAnnule") + " : " + T.nbAnnulees + " / " + nombrePdf(T.montantAnnule) + " FCFA", t("rcsTuilePanier") + " : " + nombrePdf(T.panierMoyen) + " FCFA",
+        t("rcsTuileArticles") + " : " + T.nbArticles, t("rcsTuileEcart") + " : " + nombrePdf(r.ecarts.totalEcart) + " FCFA" ] },
+      { titre: t("rcsParMode"), lignes: r.parMode.filter((m) => m.nb || m.nbAnnulees).map((m) => t("rcsMode_" + m.mode) + " : " + m.nb + " / " + nombrePdf(m.montant) + " FCFA" + (m.nbAnnulees ? " (" + t("rcsTuileAnnule") + " " + nombrePdf(m.montantAnnule) + ")" : "")), texteVide: t("rcsAucuneVente") },
+      { titre: t("rcsParJour"), lignes: jours.map((j) => t("rcsPdfLigneJour", { date: j.date, nb: j.nb, net: nombrePdf(j.net), annule: nombrePdf(j.annule) })), texteVide: t("rcsAucuneVente") },
+      { titre: t("rcsParCaissier"), lignes: r.parCaissier.map((c) => c.caissier + " : " + c.nb + " / " + nombrePdf(c.net) + " FCFA"), texteVide: t("rcsAucuneVente") },
+      { titre: t("rcsArticles"), lignes: r.articles.slice(0, 30).map((a) => a.article + " : " + a.quantite + " / " + nombrePdf(a.montant) + " FCFA"), texteVide: t("rcsAucuneVente") },
+      { titre: t("rcsSessions"), lignes: r.sessions.map((x) => t("rcsPdfLigneSession", { id: x.id, caissier: x.caissier || "-", fond: nombrePdf(x.fondInitial), theo: x.montantTheorique == null ? "-" : nombrePdf(x.montantTheorique), compte: x.montantCompte == null ? "-" : nombrePdf(x.montantCompte), ecart: x.ecart == null ? "-" : nombrePdf(x.ecart) }) + (x.raisonEcart ? " - " + x.raisonEcart : "")), texteVide: t("rcsAucuneSession") }
+    ]
+  };
+}
+async function renderRapportCaisse() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  let r;
+  try { r = await api("/api/" + marchandActif.id + "/caisse/rapport"); }
+  catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+  const aujourdhui = r.au; // sans parametre, le serveur renvoie la journee du Cameroun
+  let courant = r;
+  const presets = [["aujourdhui", "rcsPresetAujourdhui"], ["hier", "rcsPresetHier"], ["7", "rcsPreset7"], ["mois", "rcsPresetMois"], ["moisprec", "rcsPresetMoisPrec"], ["annee", "rcsPresetAnnee"], ["perso", "rcsPresetPerso"]];
+  zone.innerHTML =
+    "<h2>" + t("rcsTitre") + "</h2><p class='raison'>" + t("rcsNote") + "</p>" +
+    "<div class='controles-rapport'>" +
+      "<div><label>" + t("rcsPeriode") + "</label><select id='rcsPreset'>" + presets.map((x) => "<option value='" + x[0] + "'>" + esc(t(x[1])) + "</option>").join("") + "</select></div>" +
+      "<div><label>" + t("rcsDu") + "</label><input type='date' id='rcsDu' value='" + r.du + "' /></div>" +
+      "<div><label>" + t("rcsAu") + "</label><input type='date' id='rcsAu' value='" + r.au + "' /></div>" +
+      "<div><label>" + t("rcsCaissier") + "</label><select id='rcsCaissier'><option value=''>" + t("rcsTousCaissiers") + "</option>" + r.caissiers.map((c) => "<option value=\"" + esc(c) + "\">" + esc(c) + "</option>").join("") + "</select></div>" +
+      "<div><button id='rcsGenerer' class='principal'>" + t("rcsGenerer") + "</button></div>" +
+    "</div>" +
+    "<div class='controles-rapport' style='margin-top:6px;'>" +
+      "<div><button id='rcsPdf'>" + t("rcsPdf") + "</button></div>" +
+      "<div><select id='rcsVueCsv'><option value='synthese'>" + t("rcsVueSynthese") + "</option><option value='ventes'>" + t("rcsVueVentes") + "</option><option value='sessions'>" + t("rcsVueSessions") + "</option></select> <button id='rcsCsv'>" + t("rcsCsv") + "</button></div>" +
+    "</div>" +
+    "<div id='rcsResultat'></div>";
+
+  const tuile = (lib, val) => "<div class='tuile' style='flex:1;min-width:150px;padding:10px;'><div class='raison'>" + esc(lib) + "</div><strong>" + esc(val) + "</strong></div>";
+  function dessiner(rap) {
+    courant = rap;
+    const T = rap.totaux;
+    let h = "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;'>" +
+      tuile(t("rcsTuileVentes"), String(T.nbVentes)) + tuile(t("rcsTuileNet"), formaterNb(T.net) + " FCFA") + tuile(t("rcsTuileAnnule"), T.nbAnnulees + " / " + formaterNb(T.montantAnnule) + " FCFA") +
+      tuile(t("rcsTuilePanier"), formaterNb(T.panierMoyen) + " FCFA") + tuile(t("rcsTuileArticles"), String(T.nbArticles)) + tuile(t("rcsTuileEcart"), formaterNb(rap.ecarts.totalEcart) + " FCFA") + "</div>";
+    if (T.nbFacturees) h += "<p class='raison'>" + esc(t("rcsInfoFacturees", { n: T.nbFacturees })) + "</p>";
+    h += "<h3>" + t("rcsParMode") + "</h3>";
+    h += T.nbVentes || T.nbAnnulees
+      ? "<table class='table-donnees' id='rcsTabMode'><tr><th>" + t("rcsColMode") + "</th><th>" + t("rcsColNb") + "</th><th>" + t("rcsColTotal") + "</th><th>" + t("rcsColPart") + "</th><th>" + t("rcsColAnnule") + "</th></tr>" +
+        rap.parMode.map((m) => "<tr><td>" + esc(t("rcsMode_" + m.mode)) + "</td><td>" + m.nb + "</td><td>" + formaterNb(m.montant) + " FCFA</td><td>" + (T.net ? Math.round(m.montant * 100 / T.net) : 0) + " %</td><td>" + (m.nbAnnulees ? m.nbAnnulees + " / " + formaterNb(m.montantAnnule) + " FCFA" : "—") + "</td></tr>").join("") + "</table>"
+      : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
+    h += "<h3>" + t("rcsParJour") + "</h3>";
+    const jours = rap.parJour.length > 31 ? rap.parJour.filter((j) => j.nb || j.nbAnnulees) : rap.parJour;
+    h += jours.length
+      ? "<table class='table-donnees' id='rcsTabJour'><tr><th>" + t("rcsColDate") + "</th><th>" + t("rcsColNb") + "</th>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => "<th>" + esc(t("rcsMode_" + m)) + "</th>").join("") + "<th>" + t("rcsColTotal") + "</th><th>" + t("rcsColAnnule") + "</th></tr>" +
+        jours.map((j) => "<tr><td>" + esc(j.date) + "</td><td>" + j.nb + "</td>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => "<td>" + formaterNb(j[m]) + "</td>").join("") + "<td><strong>" + formaterNb(j.net) + "</strong></td><td>" + (j.nbAnnulees ? j.nbAnnulees + " / " + formaterNb(j.annule) : "—") + "</td></tr>").join("") + "</table>"
+      : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
+    h += "<h3>" + t("rcsParCaissier") + "</h3>";
+    h += rap.parCaissier.length
+      ? "<table class='table-donnees' id='rcsTabCaissier'><tr><th>" + t("rcsCaissier") + "</th><th>" + t("rcsColNb") + "</th><th>" + t("rcsColTotal") + "</th><th>" + t("rcsColAnnule") + "</th></tr>" +
+        rap.parCaissier.map((c) => "<tr><td>" + esc(c.caissier) + "</td><td>" + c.nb + "</td><td>" + formaterNb(c.net) + " FCFA</td><td>" + (c.nbAnnulees ? c.nbAnnulees + " / " + formaterNb(c.annule) + " FCFA" : "—") + "</td></tr>").join("") + "</table>"
+      : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
+    h += "<h3>" + t("rcsArticles") + "</h3>";
+    h += rap.articles.length
+      ? "<table class='table-donnees' id='rcsTabArticles'><tr><th>" + t("rcsColArticle") + "</th><th>" + t("rcsColQte") + "</th><th>" + t("rcsColMontant") + "</th></tr>" +
+        rap.articles.map((a) => "<tr><td>" + esc(a.article) + "</td><td>" + a.quantite + "</td><td>" + formaterNb(a.montant) + " FCFA</td></tr>").join("") + "</table>"
+      : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
+    h += "<h3>" + t("rcsSessions") + "</h3>";
+    h += rap.sessions.length
+      ? "<p class='raison'>" + t("rcsNoteSessions") + "</p><table class='table-donnees' id='rcsTabSessions'><tr><th>" + t("rcsColSession") + "</th><th>" + t("rcsCaissier") + "</th><th>" + t("rcsColOuverture") + "</th><th>" + t("rcsColFermeture") + "</th><th>" + t("rcsColFond") + "</th><th>" + t("rcsColTheorique") + "</th><th>" + t("rcsColCompte") + "</th><th>" + t("rcsColEcart") + "</th><th>" + t("rcsColAnnulesEsp") + "</th></tr>" +
+        rap.sessions.map((x) => "<tr><td>#" + x.id + "</td><td>" + esc(x.caissier || "") + "</td><td>" + esc(new Date(x.dateOuverture).toLocaleString(localeCourante())) + "</td><td>" + (x.dateFermeture ? esc(new Date(x.dateFermeture).toLocaleString(localeCourante())) : "<em>" + t("rcsSessionEnCours") + "</em>") + "</td><td>" + formaterNb(x.fondInitial) + "</td><td>" + (x.montantTheorique == null ? "—" : formaterNb(x.montantTheorique)) + "</td><td>" + (x.montantCompte == null ? "—" : formaterNb(x.montantCompte)) + "</td><td>" + (x.ecart == null ? "—" : "<strong>" + formaterNb(x.ecart) + "</strong>") + (x.raisonEcart ? "<div class='raison'>" + esc(x.raisonEcart) + "</div>" : "") + "</td><td>" + (x.especesAnnulees ? formaterNb(x.especesAnnulees) : "—") + "</td></tr>").join("") + "</table>"
+      : "<p class='raison'>" + t("rcsAucuneSession") + "</p>";
+    document.getElementById("rcsResultat").innerHTML = h;
+  }
+  const lire = () => ({ du: document.getElementById("rcsDu").value, au: document.getElementById("rcsAu").value, caissier: document.getElementById("rcsCaissier").value });
+  async function charger() {
+    const q = lire();
+    try { dessiner(await api(requeteRapportCaisse(q.du, q.au, q.caissier))); }
+    catch (e) { document.getElementById("rcsResultat").innerHTML = "<p class='erreur'>" + t("rcsErreurPeriode") + esc(e.message) + "</p>"; }
+  }
+  document.getElementById("rcsPreset").onchange = () => {
+    const v = document.getElementById("rcsPreset").value;
+    if (v === "perso") return;
+    const pl = plagePreset(v, aujourdhui);
+    document.getElementById("rcsDu").value = pl[0]; document.getElementById("rcsAu").value = pl[1];
+    charger();
+  };
+  ["rcsDu", "rcsAu"].forEach((id) => { document.getElementById(id).onchange = () => { document.getElementById("rcsPreset").value = "perso"; }; });
+  document.getElementById("rcsCaissier").onchange = charger;
+  document.getElementById("rcsGenerer").onclick = charger;
+  document.getElementById("rcsCsv").onclick = () => {
+    const q = lire();
+    window.open(requeteRapportCaisse(q.du, q.au, q.caissier, "format=csv&vue=" + document.getElementById("rcsVueCsv").value + (estHybrideAdmin() ? "&volet=catalogue" : "")), "_blank");
+  };
+  document.getElementById("rcsPdf").onclick = () => {
+    genererEtTelechargerPdf(() => contenuPdfRapportCaisse(courant), "rapport-caisse_" + courant.du + "_" + courant.au + ".pdf");
+  };
+  dessiner(r);
 }
 
 async function renderRapports() {

@@ -1767,6 +1767,41 @@ Tests : `test_etape57_remboursement_pos_tva_cle.js` (HTTP : remboursements, Cais
 débit, droits) et `test_etape57_remboursement_pos_tva_cle_playwright.js` (/admin : ce que voit chaque rôle, bloc clé réservé
 au super-administrateur, FR/EN).
 
+## Étape 58 — Rapport de caisse sur période libre (nouveau)
+
+**Principe.** Nouvel onglet **Rapport de caisse** (visible dès que l'option Caisse POS est active), à côté de l'onglet Caisse. On
+choisit une période libre : raccourcis (aujourd'hui, hier, 7 derniers jours, ce mois-ci, mois dernier, cette année) ou plage
+personnalisée du/au (366 jours au maximum), avec un filtre facultatif par caissier. Accès : propriétaire, super-administrateur,
+employés ayant le rôle « Caisse » ou « Rapports ».
+
+**Contenu.** Ventes, encaissé net, ventes annulées (à part, jamais dans le net), panier moyen, articles vendus, écart cumulé des
+caisses ; tableaux **par mode de paiement** (espèces, Orange Money, MTN MoMo, carte, chèque, avec la part de chaque mode), **par
+jour** (tous les jours de la période, avec le détail par mode), **par caissier**, **articles vendus**, et **sessions de caisse**
+(fond de caisse, montant théorique, montant compté, écart et raison, espèces annulées depuis).
+
+**Exports.** *Télécharger en PDF* (synthèse, par mode, par jour, par caissier, articles, sessions) ; *Télécharger en CSV (Excel)*
+au choix : synthèse par jour (avec ligne TOTAL), détail des ventes (une ligne par vente : n° POS, date, heure, session, caissier,
+mode, référence de paiement, montant, statut, raison d'annulation, facture, articles) ou sessions et écarts. Séparateur
+point-virgule pour Excel en français (`sep=comma` pour la virgule). Route : `GET /api/:id/caisse/rapport?du=AAAA-MM-JJ&au=AAAA-MM-JJ[&caissier=…][&format=csv&vue=synthese|ventes|sessions]`
+(JSON sans `format`). Le rapport est en lecture seule : il ne modifie rien.
+
+**Règles de lecture.**
+- Une vente compte pour le jour de son encaissement **à l'heure du Cameroun (UTC+1)** : une vente à 23 h 30 UTC est déjà du lendemain. Une
+  session compte pour le jour de son ouverture.
+- Une vente POS ensuite **facturée** reste une vente de caisse ici (l'argent est passé par la caisse) et est signalée ; c'est le
+  journal comptable qui la remplace par la facture.
+- Le montant théorique d'une session est celui figé à la fermeture (fond + ventes en espèces de la session, **annulées comprises à ce
+  moment-là**, comportement existant inchangé). La colonne « Espèces annulées depuis » signale les ventes en espèces annulées
+  ensuite, pour pouvoir reconstituer un écart.
+
+**Limites.** Le rapport ne tient pas encore le détail des remboursements d'espèces faits au comptoir ; les annulations sont datées du
+jour de la vente (la commande ne conserve pas la date de l'annulation) ; PDF généré dans le navigateur (nécessite le chargement de
+l'outil PDF, comme les autres PDF de l'application).
+
+Fichiers : `rapportCaisse.js` (nouveau), `server.js`, `public/admin.html`. Tests : `test_etape58_rapport_caisse.js` (HTTP : totaux,
+modes, jours, caissiers, articles, sessions, minuit du Cameroun, bornes de période, droits, CSV, lecture seule) et
+`test_etape58_rapport_caisse_playwright.js` (/admin : choix de période, filtre, raccourcis, erreur de période, CSV, vrai PDF, employés, anglais).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1781,6 +1816,7 @@ au super-administrateur, FR/EN).
 
 ## Fichiers modifiés dans ce zip
 
+- Étape 58 : `rapportCaisse.js` (NOUVEAU : rapport de caisse par période, exports CSV), `server.js` (route `GET /api/:id/caisse/rapport`) et `public/admin.html` (onglet Rapport de caisse, PDF, textes FR/EN).
 - Étape 57 : `facturation.js` (remboursements `RB-`, TVA figée par facture, ventes POS au comptant, clé comptable hachée, filtre `apres`), `server.js` (route `POST …/remboursement`, `GET /api/compta/:id/journal` par clé Bearer avec CORS et limitation de débit, routes de gestion de la clé réservées au super-administrateur, paramètres TVA/identité, pages publiques avec TVA et mentions légales) et `public/admin.html` (bouton Rembourser, panneau TVA, tuiles, bloc « Clé comptable » réservé au super-administrateur, textes FR/EN).
 - Étapes 54 à 56 : `facturation.js` (nouveau : factures, avoirs, paiements, dépenses, journal normalisé), `server.js` (choix de la source et bascule réservés au super-administrateur, routes `/api/:id/facturation/*`, pages publiques `/f/…`, aiguillage du pont facturation selon la source, rôles `facturation` et `comptable`) et `public/admin.html` (bloc « Source de facturation », onglet Facturation, rôles, textes FR/EN).
 - Étape 49 : `conversation.js` (récapitulatif avec téléphone, étape de correction, `updateOrderContact`), `server.js` (bouton Modifier, route `PUT /api/:id/commandes/:orderId/coordonnees`, journal) et `public/admin.html` (bouton « Corriger tél./adresse », textes FR/EN).

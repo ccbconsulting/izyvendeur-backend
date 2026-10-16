@@ -21,6 +21,7 @@ const sh = require("./shared");
 const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
 const izyfacture = require("./izyfacture");
+const rapportCaisse = require("./rapportCaisse");
 const { creerMoteurFacturation, METHODES: METHODES_PAIEMENT, CATEGORIES_DEPENSE } = require("./facturation");
 const cryptoUtil = require("./crypto-util");
 const { clientIp } = require("./clientip");
@@ -2260,6 +2261,27 @@ app.get("/api/:id/caisse/sessions", protegerAcces, (req, res) => {
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
   res.json(entry.engine.getSessionsCaisse());
+});
+
+// Etape 58 : rapport de caisse sur une PERIODE LIBRE (du/au, 366 jours maximum), filtre caissier facultatif.
+// JSON par defaut ; ?format=csv&vue=synthese|ventes|sessions (&sep=comma pour la virgule, sinon point-virgule
+// pour Excel en francais). Acces : proprietaire, super-administrateur, employes "caisse" ou "rapports".
+app.get("/api/:id/caisse/rapport", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, ["caisse", "rapports"]); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const r = rapportCaisse.genererRapportCaisse({
+    marchand: req.params.id, commandes: entry.engine.getOrders(), sessions: entry.engine.getSessionsCaisse(),
+    du: req.query.du, au: req.query.au, caissier: req.query.caissier
+  });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  if (String(req.query.format || "").toLowerCase() === "csv") {
+    const vue = rapportCaisse.VUES_CSV.indexOf(String(req.query.vue || "synthese")) !== -1 ? String(req.query.vue || "synthese") : "synthese";
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="rapport-caisse-${vue}-${r.du}_${r.au}.csv"`);
+    return res.send(rapportCaisse.csv(r, vue, String(req.query.sep || "") === "comma" ? "," : ";"));
+  }
+  res.json(r);
 });
 
 app.post("/api/:id/caisse/session/ouvrir", protegerAcces, (req, res) => {
