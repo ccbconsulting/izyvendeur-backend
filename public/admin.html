@@ -662,6 +662,24 @@ const I18N = {
     aucuneCorrespondanceFiltre: "Aucune commande ne correspond à ce filtre.",
     aucuneCommande: "Aucune commande pour l'instant.",
     promptRaisonAnnulation: "Raison de l'annulation (optionnel) :",
+    btnModifierRdv: "Modifier",
+    titreDeplacerRdv: "Déplacer le rendez-vous {ref}",
+    labelNouvelleDate: "Nouvelle date",
+    labelNouvelleHeure: "Nouvelle heure",
+    labelPraticienRdv: "Praticien",
+    labelHorsHoraires: "Autoriser hors horaires d'ouverture",
+    btnConfirmerDeplacement: "Déplacer",
+    btnFermerDialogue: "Fermer",
+    noteDeplacementClient: "La cliente n'est pas prévenue automatiquement : pensez à la contacter pour l'informer du nouvel horaire.",
+    msgRdvDeplace: "Rendez-vous déplacé.",
+    rdvRemplace: "Remplace {ref}",
+    rdvDeplaceDepuis: "Déplacé (avant : {date})",
+    btnImporterServices: "Importer un fichier services (CSV)",
+    btnModeleServices: "Télécharger le modèle CSV",
+    noteImportServices: "Colonnes : Nom, Durée (minutes), Prix. Les services déjà présents (même nom) sont ignorés ; rien n'est écrasé.",
+    msgImportServicesResultat: "Import terminé : {ajoutes} service(s) ajouté(s).",
+    act_services_importes: "Services importés (fichier)",
+    act_rendezvous_deplace: "Rendez-vous déplacé",
     statutNouvelle: "Nouvelle",
     statutConfirmee: "Confirmée",
     statutCommandee: "Commandée",
@@ -1529,6 +1547,24 @@ const I18N = {
     aucuneCorrespondanceFiltre: "No orders match this filter.",
     aucuneCommande: "No orders yet.",
     promptRaisonAnnulation: "Cancellation reason (optional):",
+    btnModifierRdv: "Edit",
+    titreDeplacerRdv: "Move appointment {ref}",
+    labelNouvelleDate: "New date",
+    labelNouvelleHeure: "New time",
+    labelPraticienRdv: "Practitioner",
+    labelHorsHoraires: "Allow outside opening hours",
+    btnConfirmerDeplacement: "Move",
+    btnFermerDialogue: "Close",
+    noteDeplacementClient: "The customer is not notified automatically: remember to contact her about the new time.",
+    msgRdvDeplace: "Appointment moved.",
+    rdvRemplace: "Replaces {ref}",
+    rdvDeplaceDepuis: "Moved (was: {date})",
+    btnImporterServices: "Import a services file (CSV)",
+    btnModeleServices: "Download the CSV template",
+    noteImportServices: "Columns: Name, Duration (minutes), Price. Services already present (same name) are skipped; nothing is overwritten.",
+    msgImportServicesResultat: "Import finished: {ajoutes} service(s) added.",
+    act_services_importes: "Services imported (file)",
+    act_rendezvous_deplace: "Appointment moved",
     statutNouvelle: "New",
     statutConfirmee: "Confirmed",
     statutCommandee: "Ordered",
@@ -4012,7 +4048,13 @@ async function renderServices() {
       ).join("") +
       "</table>" +
       "<button id='btnAjouterService'>" + t("btnAjouterService") + "</button> " +
-      "<button id='btnSauverServices' class='principal'>" + t("enregistrer") + "</button>";
+      "<button id='btnSauverServices' class='principal'>" + t("enregistrer") + "</button>" +
+      "<div class='bloc-import-services' style='margin-top:16px;'>" +
+        "<p class='raison'>" + t("noteImportServices") + "</p>" +
+        "<input type='file' accept='.csv,text/csv' id='champFichierImportServices' /> " +
+        "<button id='btnImporterServices'>" + t("btnImporterServices") + "</button> " +
+        "<button id='btnModeleServices'>" + t("btnModeleServices") + "</button>" +
+      "</div>";
 
     Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
       inp.addEventListener("input", () => {
@@ -4027,6 +4069,35 @@ async function renderServices() {
     document.getElementById("btnAjouterService").onclick = () => {
       local.push({ id: "s" + Date.now(), nom: t("nouveauService"), dureeMinutes: 30, prix: 0 });
       redraw();
+    };
+    document.getElementById("btnModeleServices").onclick = () => {
+      const modele = "\uFEFFNom;Durée (minutes);Prix\nCoupe femme;45;3000\nManucure;30;5000\n";
+      const lien = document.createElement("a");
+      lien.href = URL.createObjectURL(new Blob([modele], { type: "text/csv;charset=utf-8" }));
+      lien.download = "modele_import_services.csv";
+      document.body.appendChild(lien); lien.click(); lien.remove();
+    };
+    // Import en masse : fusion cote serveur (jamais d'ecrasement), puis rechargement complet de l'onglet.
+    document.getElementById("btnImporterServices").onclick = async () => {
+      const btn = document.getElementById("btnImporterServices");
+      const fichier = document.getElementById("champFichierImportServices").files[0];
+      if (!fichier) { alert(t("alertChoisirFichierImport")); return; }
+      const donnees = new FormData();
+      donnees.append("fichier", fichier);
+      btn.disabled = true;
+      try {
+        const reponse = await fetch("/api/" + marchandActif.id + "/services/importer", { method: "POST", body: donnees });
+        const j = await reponse.json();
+        if (!reponse.ok) throw new Error(j.erreur || reponse.statusText);
+        let message = t("msgImportServicesResultat", { ajoutes: j.ajoutes });
+        if (j.doublonsIgnores && j.doublonsIgnores.length) message += t("msgImportDoublons", { n: j.doublonsIgnores.length, noms: j.doublonsIgnores.join(", ") });
+        if (j.erreurs && j.erreurs.length) message += t("msgImportErreurs", { n: j.erreurs.length, details: j.erreurs.join(" / ") });
+        alert(message);
+        renderServices();
+      } catch (e) {
+        alert(t("erreurPrefixe") + e.message);
+        btn.disabled = false;
+      }
     };
     document.getElementById("btnSauverServices").onclick = async () => {
       try {
@@ -4060,8 +4131,12 @@ async function renderRendezvous() {
     "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadDateHeure") + "</th><th>" + t("theadService") + "</th><th>" + t("theadPraticien") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadPrix") + "</th><th>" + t("theadStatut") + "</th><th>" + t("theadRappel") + "</th>" + (avecFacture ? "<th>" + t("theadFacture") + "</th>" : "") + "</tr>" +
     (tri.length ? tri.map((a) =>
       "<tr>" +
-        "<td>RDV-" + String(a.id).padStart(4, "0") + "</td>" +
-        "<td>" + esc(new Date(a.dateISO).toLocaleString(localeCourante())) + "</td>" +
+        "<td>RDV-" + String(a.id).padStart(4, "0") +
+          (a.remplaceId ? "<div class='raison'>" + esc(t("rdvRemplace", { ref: "RDV-" + String(a.remplaceId).padStart(4, "0") })) + "</div>" : "") + "</td>" +
+        "<td>" + esc(new Date(a.dateISO).toLocaleString(localeCourante())) +
+          (a.historiqueDeplacements && a.historiqueDeplacements.length
+            ? "<div class='raison'>" + esc(t("rdvDeplaceDepuis", { date: new Date(a.historiqueDeplacements[a.historiqueDeplacements.length - 1].deISO).toLocaleString(localeCourante()) })) + "</div>" : "") +
+        "</td>" +
         "<td>" + esc(a.service) + "</td>" +
         "<td>" + esc(a.praticienNom || "—") + "</td>" +
         "<td>" + esc(a.clientNom) + "</td>" +
@@ -4069,6 +4144,7 @@ async function renderRendezvous() {
         "<td>" + (a.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
         "<td><select data-rdv='" + a.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === a.statut ? " selected" : "") + ">" + esc(libelleStatutRdv(s)) + "</option>").join("") + "</select>" +
           (a.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(a.raisonAnnulation) + "</div>" : "") +
+          ((a.statut === "Nouvelle" || a.statut === "Confirmé") ? "<div><button class='btnModifierRdv' data-modifier-rdv='" + a.id + "'>" + esc(t("btnModifierRdv")) + "</button></div>" : "") +
         "</td>" +
         "<td class='cellule-rappel' data-rdv-rappel='" + a.id + "'>" + badgeRappel(a) + "</td>" +
         (avecFacture ? "<td class='cellule-facture' data-rdv-facture='" + a.id + "'>" + celluleIzyfacture(a, true) + "</td>" : "") +
@@ -4085,7 +4161,57 @@ async function renderRendezvous() {
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     });
   });
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-modifier-rdv]"), (btn) => {
+    btn.onclick = () => {
+      const a = rdvs.filter((x) => String(x.id) === btn.dataset.modifierRdv)[0];
+      if (a) ouvrirDialogueDeplacerRdv(a, renderRendezvous);
+    };
+  });
   brancherBoutonsIzyfacture(zone, "rendezvous", renderRendezvous);
+}
+
+// Etape 61 : dialogue « Déplacer le rendez-vous » (date/heure dans le fuseau du marchand, praticien si plusieurs).
+async function ouvrirDialogueDeplacerRdv(a, apres) {
+  let ctx = { fuseau: "Africa/Douala", praticiens: [] };
+  try { ctx = await api("/api/" + marchandActif.id + "/rendezvous-contexte"); } catch (e) { /* defauts */ }
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: ctx.fuseau, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(a.dateISO));
+  const g = (k) => (parts.filter((p) => p.type === k)[0] || { value: "" }).value;
+  const dateVal = g("year") + "-" + g("month") + "-" + g("day");
+  const heureVal = g("hour") + ":" + g("minute");
+  const fond = document.createElement("div");
+  fond.className = "no-print";
+  fond.style.cssText = "position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9999;";
+  const boite = document.createElement("div");
+  boite.style.cssText = "background:#fff;border-radius:10px;padding:16px;max-width:420px;width:92%;max-height:90vh;overflow:auto;";
+  boite.innerHTML =
+    "<h3 style='margin-top:0'>" + esc(t("titreDeplacerRdv", { ref: "RDV-" + String(a.id).padStart(4, "0") })) + "</h3>" +
+    "<p class='raison'>" + esc(a.service) + " — " + esc(a.clientNom || "") + "</p>" +
+    "<label>" + t("labelNouvelleDate") + "</label><input type='date' id='dpDate' value='" + dateVal + "' />" +
+    "<label>" + t("labelNouvelleHeure") + "</label><input type='time' id='dpHeure' value='" + heureVal + "' />" +
+    (ctx.praticiens.length > 1
+      ? "<label>" + t("labelPraticienRdv") + "</label><select id='dpPraticien'>" +
+          ctx.praticiens.map((p) => "<option value='" + esc(p.id) + "'" + (p.id === a.praticienId ? " selected" : "") + ">" + esc(p.nom || p.id) + "</option>").join("") + "</select>"
+      : "") +
+    "<label style='display:block;margin-top:8px;'><input type='checkbox' id='dpHors' /> " + t("labelHorsHoraires") + "</label>" +
+    "<p class='raison'>" + t("noteDeplacementClient") + "</p>" +
+    "<div id='dpErreur' class='rappel-echec' style='margin:6px 0;'></div>" +
+    "<div><button id='dpOk' class='principal'>" + t("btnConfirmerDeplacement") + "</button> <button id='dpFermer'>" + t("btnFermerDialogue") + "</button></div>";
+  fond.appendChild(boite);
+  document.body.appendChild(fond);
+  document.getElementById("dpFermer").onclick = () => fond.remove();
+  document.getElementById("dpOk").onclick = async () => {
+    const corps = { date: document.getElementById("dpDate").value, heure: document.getElementById("dpHeure").value, horsHoraires: document.getElementById("dpHors").checked };
+    const sel = document.getElementById("dpPraticien");
+    if (sel) corps.praticienId = sel.value;
+    try {
+      await api("/api/" + marchandActif.id + "/rendezvous/" + a.id + "/deplacer", { method: "PUT", body: JSON.stringify(corps) });
+      fond.remove();
+      alert(t("msgRdvDeplace"));
+      if (apres) apres();
+    } catch (e) {
+      document.getElementById("dpErreur").textContent = e.message;
+    }
+  };
 }
 
 async function renderParametresService() {

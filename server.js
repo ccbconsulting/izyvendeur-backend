@@ -183,6 +183,18 @@ const TEMPLATES_ALERTE_MARCHAND = {
       "Nouveau rendez-vous confirmé " + params[0] + " :\n" + params[1] + "\nCréneau : " + params[2] +
       "\nPrix : " + params[3] + "\nClient : " + params[4] + "\nTéléphone : " + params[5] +
       "\n\nConsultez /admin, onglet Rendez-vous, pour le suivre."
+  },
+  // Etape 61 : alerte quand une CLIENTE annule ou deplace son rendez-vous (WhatsApp). Un seul modele Meta pour les
+  // deux cas, nomme EXACTEMENT "izyvendeur_alerte_rdv_change" (langue fr), 7 variables dans cet ordre.
+  rdv_modifie: {
+    nom: "izyvendeur_alerte_rdv_change",
+    langue: "fr",
+    // params: [reference, serviceEtPraticien, action ("annulé par la cliente"/"déplacé par la cliente"), ancienCreneau, nouveauCreneau, clientNom, telephoneClient]
+    parametresNoms: ["reference", "service", "action", "ancien_creneau", "nouveau_creneau", "client_nom", "telephone_client"],
+    texteLibreRepli: (params) =>
+      "Rendez-vous " + params[0] + " (" + params[1] + ") " + params[2] + ".\nAncien créneau : " + params[3] +
+      "\nNouveau créneau : " + params[4] + "\nClient : " + params[5] + ", téléphone " + params[6] +
+      "\n\nConsultez /admin, onglet Rendez-vous."
   }
 };
 
@@ -789,6 +801,8 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/commandes/:orderId/statut": "commande_statut_modifie",
   "PUT /api/:id/commandes/:orderId/coordonnees": "commande_coordonnees_modifiees",
   "PUT /api/:id/services": "services_modifies",
+  "POST /api/:id/services/importer": "services_importes",
+  "PUT /api/:id/rendezvous/:apptId/deplacer": "rendezvous_deplace",
   "PUT /api/:id/rendezvous/:apptId/statut": "rendezvous_statut_modifie",
   "PUT /api/:id/parametres": "parametres_modifies",
   "PUT /api/:id/notification": "notification_modifiee",
@@ -824,6 +838,8 @@ function detailAuditRequete(code, req) {
     case "commande_statut_modifie": return { commande: p.orderId, statut: b.statut || null };
     case "commande_coordonnees_modifiees": return { commande: p.orderId, champs: [b.telephone != null ? "telephone" : null, b.adresse != null ? "adresse" : null].filter(Boolean) };
     case "rendezvous_statut_modifie": return { rendezvous: p.apptId, statut: b.statut || null };
+    case "rendezvous_deplace": return { rendezvous: p.apptId, date: b.date || null, heure: b.heure || null };
+    case "services_importes": return { fichier: req.file ? req.file.originalname : null };
     case "facture_creee": case "paiement_facture_enregistre":
       return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
     case "vente_caisse_remise": return { tentative: "remise", motif: b.motifRemise || null };
@@ -2633,6 +2649,76 @@ app.put("/api/:id/services", protegerAcces, (req, res) => {
   const nouveau = entry.engine.updateServices(req.body);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
   res.json(nouveau);
+});
+
+// Etape 61 : import en masse des services depuis un fichier CSV (meme principe que le catalogue). Colonnes (ordre
+// libre, casse et accents ignores) : "Nom", "Duree" (minutes, 5 a 720) et "Prix" (FCFA), les trois obligatoires.
+// Separateur virgule OU point-virgule. Fusionne TOUJOURS avec les services deja enregistres (n'ecrase rien) et
+// ignore tout nom deja present (comparaison insensible a la casse), pour qu'un fichier renvoye deux fois ne
+// cree pas de doublons.
+function sansAccents(t) { return String(t == null ? "" : t).normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+app.post("/api/:id/services/importer", protegerAcces, uploadFichierCatalogue.single("fichier"), (req, res) => {
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"fichier\" attendu)." });
+  const texte = req.file.buffer.toString("utf8").replace(/^\uFEFF/, "");
+  const lignes = texte.split(/\r\n|\n|\r/).filter((l) => l.trim() !== "");
+  if (!lignes.length) return res.status(400).json({ erreur: "Fichier vide." });
+  if (lignes.length > 301) return res.status(400).json({ erreur: "Fichier trop long (300 services maximum par import)." });
+  const separateur = lignes[0].indexOf(";") !== -1 ? ";" : ",";
+  const entetes = parserLigneCsv(lignes[0], separateur).map((h) => sansAccents(h).toLowerCase());
+  const idx = (motCle) => entetes.findIndex((h) => h.indexOf(motCle) !== -1);
+  const iNom = idx("nom"), iDuree = idx("duree"), iPrix = idx("prix");
+  if (iNom === -1 || iDuree === -1 || iPrix === -1) {
+    return res.status(400).json({ erreur: "Colonnes attendues introuvables (\"Nom\", \"Durée (minutes)\" et \"Prix\")." });
+  }
+  const actuels = entry.engine.getServices();
+  const vus = new Set(actuels.map((x) => String(x.nom || "").trim().toLowerCase()));
+  const nouveaux = [], doublons = [], erreurs = [];
+  const base = Date.now();
+  for (let i = 1; i < lignes.length; i++) {
+    const champs = parserLigneCsv(lignes[i], separateur);
+    const nom = (champs[iNom] || "").trim();
+    if (!nom) continue;
+    if (nom.length > 80) { erreurs.push("ligne " + (i + 1) + " (" + nom.slice(0, 30) + "…) : nom trop long (80 caractères maximum)"); continue; }
+    const duree = parseInt(String(champs[iDuree] || "").replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(duree) || duree < 5 || duree > 720) { erreurs.push("ligne " + (i + 1) + " (" + nom + ") : durée invalide (5 à 720 minutes)"); continue; }
+    const prix = parserPrixFcfa(champs[iPrix]);
+    if (prix == null) { erreurs.push("ligne " + (i + 1) + " (" + nom + ") : prix invalide"); continue; }
+    const cle = nom.toLowerCase();
+    if (vus.has(cle)) { if (doublons.indexOf(nom) === -1) doublons.push(nom); continue; }
+    vus.add(cle);
+    nouveaux.push({ id: "s" + base + "_" + nouveaux.length, nom, dureeMinutes: duree, prix });
+  }
+  if (!nouveaux.length) return res.json({ ajoutes: 0, doublonsIgnores: doublons, erreurs });
+  const liste = entry.engine.updateServices(actuels.concat(nouveaux));
+  res.json({ ajoutes: nouveaux.length, doublonsIgnores: doublons, erreurs, services: liste });
+});
+
+// Etape 61 : contexte minimal pour le dialogue « Déplacer » (fuseau du marchand, praticiens) - sous la permission
+// "rendezvous" : un employe qui gere les rendez-vous n'a pas forcement le droit de lire tous les Parametres.
+app.get("/api/:id/rendezvous-contexte", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  const r = (entry.engine.getSettings && entry.engine.getSettings()) || {};
+  res.json({
+    fuseau: sh.fuseauValide(r.fuseau) ? r.fuseau : sh.FUSEAU_PAR_DEFAUT,
+    praticiens: (Array.isArray(r.praticiens) ? r.praticiens : []).map((x) => ({ id: x.id, nom: x.nom }))
+  });
+});
+
+// Etape 61 : la gerante deplace un rendez-vous (nouvelle date/heure, dans le fuseau du marchand).
+app.put("/api/:id/rendezvous/:apptId/deplacer", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  const { date, heure, praticienId, horsHoraires } = req.body || {};
+  const r = entry.engine.deplacerAppointment(req.params.apptId, {
+    date, heure, praticienId: praticienId || null, horsHoraires: horsHoraires === true,
+    par: (req.auth && req.auth.adminUser) || null
+  });
+  if (r.erreur === "introuvable") return res.status(404).json({ erreur: r.message });
+  if (r.erreur) return res.status(400).json({ erreur: r.message, code: r.erreur });
+  res.json(r.appt);
 });
 
 app.get("/api/:id/rendezvous", protegerAcces, (req, res) => {

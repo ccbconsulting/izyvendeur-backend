@@ -153,6 +153,10 @@ function createServiceEngine(merchantKey, options) {
   // Etape 60 : nom commercial du marchand, lu a chaque usage (il peut etre renomme dans /admin) pour
   // personnaliser l'accueil ("Bienvenue chez <nom>"). Sans l'option (tests, ancien appelant) : accueil inchange.
   const nomMarchandOption = (options && options.nomMarchand) || (() => "");
+  // Etape 61 : id du rendez-vous qu'un client est en train de DEPLACER. Pendant le traitement de son message,
+  // ce rendez-vous ne bloque pas sa propre place (un client qui decale de 10h a 10h30 un soin d'1 h ne doit pas
+  // se heurter a lui-meme). Pose juste avant chaque calcul de disponibilite, remis a null en fin de tour.
+  let ignorerApptId = null;
   // Etape 44 : envoi d'un RAPPEL de rendez-vous au client. Contrairement a `envoyer` (qui ne signale jamais
   // un refus de WhatsApp), `options.envoyerRappel(telephone, texteLibre, { langue, parametres })` renvoie
   // { ok, canal, erreur } : texte libre d'abord (gratuit, mais refuse par WhatsApp hors de la fenetre de 24 h
@@ -249,6 +253,10 @@ function createServiceEngine(merchantKey, options) {
       proposedSlots: null,
       clientNom: null,
       pendingAppointmentId: null,
+      // Etape 61 : rendez-vous en cours de deplacement, et choix entre plusieurs rendez-vous.
+      reportApptId: null,
+      intentionRdv: null,
+      choixRdvIds: null,
       // true UNIQUEMENT quand la reponse de CE tour est un "quel service vous interesse ?" - voir
       // getEtatSession() plus bas, utilise par server.js pour decider d'envoyer une liste WhatsApp
       // cliquable plutot qu'un texte simple.
@@ -494,6 +502,7 @@ function createServiceEngine(merchantKey, options) {
     const occupePar = (id) => state.appointments.some((a) => {
       if (a.source === "simulateur") return false; // jamais d'impact du Simulateur sur les vrais creneaux
       if (RESERVING_STATUSES_RDV.indexOf(a.statut) === -1) return false;
+      if (ignorerApptId !== null && a.id === ignorerApptId) return false;
       if ((a.praticienId || "_unique") !== id) return false;
       const aStart = new Date(a.dateISO).getTime();
       const aEnd = aStart + (a.dureeMinutes || dureeMinutes) * 60000;
@@ -607,6 +616,9 @@ function createServiceEngine(merchantKey, options) {
       telephone: session.fromPhone,
       statut: "Nouvelle",
       raisonAnnulation: null,
+      // Etape 61 : id du rendez-vous que celui-ci REMPLACE (report par le client) ; l'ancien n'est annule qu'a la
+      // confirmation du nouveau (voir awaiting_confirmation).
+      remplaceId: session.reportApptId || null,
       // Langue de la conversation (Etape 45) : le rappel automatique est envoye dans cette langue.
       langue: sh.langueSession(session),
       // Rappel automatique la veille (voir envoyerRappelsDuJour) - `rappelEnvoye` ne passe a true qu'une
@@ -705,6 +717,12 @@ function createServiceEngine(merchantKey, options) {
   function bookSlot(session, slotStart, service, praticienId) {
     session.pendingSlotISO = slotStart.toISOString();
     session.pendingPraticienId = praticienId || null;
+    const ancienRdv = session.reportApptId ? rdvParId(session.reportApptId) : null;
+    if (ancienRdv && ancienRdv.clientNom) {
+      // Report (Etape 61) : le nom est celui du rendez-vous d'origine, inutile de le redemander.
+      session.clientNom = ancienRdv.clientNom;
+      return finaliserReservation(session, true);
+    }
     session.stage = "awaiting_client_name";
     // Le nom du praticien n'apparait que si le marchand en a configure plusieurs - pour un seul (ou aucun
     // configure), la mention serait un bruit inutile puisque le client n'a de toute facon aucun choix.
@@ -725,60 +743,11 @@ function createServiceEngine(merchantKey, options) {
     );
   }
 
-  function processMessage(session, text) {
-    // Reinitialise a chaque tour - seuls les 3 points de retour "quel service vous interesse ?" plus bas
-    // le repassent a true juste avant de renvoyer leur texte (voir freshSession() ci-dessus).
-    session.pretPourChoix = false;
-
-    if (session.stage === "awaiting_datetime") {
-      const autresServices = matchServicesMultiple(text);
-      const memeService = autresServices.length && autresServices.slice().sort().join("+") === (session.serviceIds || []).slice().sort().join("+");
-      if (autresServices.length && !memeService) {
-        resetSession(session);
-        return processMessage(session, text);
-      }
-      const praticienDemande = matchPraticien(text);
-      if (praticienDemande) session.praticienId = praticienDemande;
-      if (parseNegative(text) || parseWantsSomethingElse(text)) {
-        resetSession(session);
-        session.pretPourChoix = true;
-        return messageChoixService(session, "Pas de souci ! Quel service vous intéresse ?", "No problem! Which service are you interested in?");
-      }
-      const service = serviceActuel(session);
-      return handleDateTimeAttempt(session, text, service);
-    }
-
-    if (session.stage === "awaiting_slot_choice") {
-      const choisi = matchSlotChoice(text, session.proposedSlots);
-      const service = serviceActuel(session);
-      if (choisi) {
-        return bookSlot(session, choisi, service, session.praticienId || choisirPraticienLibre(choisi, service.dureeMinutes));
-      }
-      if (parseNegative(text) || parseWantsSomethingElse(text)) {
-        resetSession(session);
-        session.pretPourChoix = true;
-        return messageChoixService(session, "Pas de souci ! Quel service vous intéresse ?", "No problem! Which service are you interested in?");
-      }
-      const autresServices = matchServicesMultiple(text);
-      const memeService = autresServices.length && autresServices.slice().sort().join("+") === (session.serviceIds || []).slice().sort().join("+");
-      if (autresServices.length && !memeService) {
-        resetSession(session);
-        return processMessage(session, text);
-      }
-      // Le client tente peut-etre un autre jour/heure plutot que l'une des propositions - on retente.
-      const nouvelleTentative = handleDateTimeAttempt(session, text, service);
-      if (session.stage !== "awaiting_slot_choice" || session.proposedSlots) return nouvelleTentative;
-      return sh.t(session,
-        "Je n'ai pas compris votre choix. Répondez par l'heure souhaitée (ex : 10h) ou par son numéro (1, 2, 3).",
-        "I didn't understand your choice. Reply with the time you'd like (e.g. 10am) or its number (1, 2, 3)."
-      );
-    }
-
-    if (session.stage === "awaiting_client_name") {
-      const nom = text.trim().slice(0, 80);
-      if (!nom) return sh.t(session, "Merci d'indiquer le nom à noter pour ce rendez-vous.", "Please tell me the name to put this appointment under.");
-      session.clientNom = nom;
-
+  // Cree le rendez-vous "Nouvelle" a partir d'un creneau choisi et d'un nom connu, et renvoie le recapitulatif a
+  // confirmer. `report` (Etape 61) = le client DEPLACE un rendez-vous existant : pas d'anti-inondation (le
+  // nombre de rendez-vous ne change pas) et le recapitulatif precise que l'ancien sera annule a la confirmation.
+  function finaliserReservation(session, report) {
+    if (!report) {
       // Anti-inondation : base sur la date de CREATION du rendez-vous (createdAtISO), pas sur la date
       // du creneau reserve (dateISO, toujours dans le futur) — sinon la fenetre glissante ne se
       // declencherait jamais.
@@ -795,36 +764,179 @@ function createServiceEngine(merchantKey, options) {
           "You already have " + recentCount + " appointments awaiting confirmation. Please confirm or cancel one of them before booking a new one — our team is available if you need help."
         );
       }
+    }
 
-      const service = serviceActuel(session);
-      const slotStart = new Date(session.pendingSlotISO);
-      if (!isSlotFreePour(slotStart, service.dureeMinutes, session.pendingPraticienId)) {
-        // Un autre client a pris ce creneau entre-temps (course tres rare mais possible) : on repropose.
-        session.pendingSlotISO = null;
-        return handleDateTimeAttempt(session, "", service) || sh.t(session,
-          "Ce créneau vient d'être pris par quelqu'un d'autre, quel autre jour/heure vous conviendrait ?",
-          "That slot has just been taken by someone else, which other day/time would suit you?"
-        );
-      }
-      const appt = createAppointment(session, slotStart, service);
-      session.pendingAppointmentId = appt.id;
-      session.stage = "awaiting_confirmation";
-      return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + sh.t(session,
-        " Voici le récapitulatif de votre rendez-vous (" + orderRef(appt) + ") :\n" +
-          "• " + service.nom + " — " + formatSlot(slotStart, session) + " — " + formatFcfa(service.prix) + (appt.praticienNom ? " — avec " + appt.praticienNom : "") + "\n" +
-          "Au nom de : " + session.clientNom + "\n\nConfirmez-vous ce rendez-vous ? (oui / non)",
-        " Here is the summary of your appointment (" + orderRef(appt) + "):\n" +
-          "• " + service.nom + " — " + formatSlot(slotStart, session) + " — " + formatFcfa(service.prix) + (appt.praticienNom ? " — with " + appt.praticienNom : "") + "\n" +
-          "Under the name: " + session.clientNom + "\n\nDo you confirm this appointment? (yes / no)"
+    const service = serviceActuel(session);
+    const slotStart = new Date(session.pendingSlotISO);
+    if (!isSlotFreePour(slotStart, service.dureeMinutes, session.pendingPraticienId)) {
+      // Un autre client a pris ce creneau entre-temps (course tres rare mais possible) : on repropose.
+      session.pendingSlotISO = null;
+      return handleDateTimeAttempt(session, "", service) || sh.t(session,
+        "Ce créneau vient d'être pris par quelqu'un d'autre, quel autre jour/heure vous conviendrait ?",
+        "That slot has just been taken by someone else, which other day/time would suit you?"
       );
+    }
+    const appt = createAppointment(session, slotStart, service);
+    session.pendingAppointmentId = appt.id;
+    session.stage = "awaiting_confirmation";
+    const ancien = appt.remplaceId ? rdvParId(appt.remplaceId) : null;
+    const noteRemplace = ancien
+      ? sh.t(session,
+          "\nIl remplace votre rendez-vous " + orderRef(ancien) + " (" + formatSlot(new Date(ancien.dateISO), session) + "), qui ne sera annulé qu'une fois ce nouveau rendez-vous confirmé.",
+          "\nIt replaces your appointment " + orderRef(ancien) + " (" + formatSlot(new Date(ancien.dateISO), session) + "), which will only be cancelled once this new appointment is confirmed.")
+      : "";
+    return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + sh.t(session,
+      " Voici le récapitulatif de votre " + (ancien ? "nouveau " : "") + "rendez-vous (" + orderRef(appt) + ") :\n" +
+        "• " + service.nom + " — " + formatSlot(slotStart, session) + " — " + formatFcfa(service.prix) + (appt.praticienNom ? " — avec " + appt.praticienNom : "") + "\n" +
+        "Au nom de : " + session.clientNom + noteRemplace + "\n\nConfirmez-vous ce rendez-vous ? (oui / non)",
+      " Here is the summary of your " + (ancien ? "new " : "") + "appointment (" + orderRef(appt) + "):\n" +
+        "• " + service.nom + " — " + formatSlot(slotStart, session) + " — " + formatFcfa(service.prix) + (appt.praticienNom ? " — with " + appt.praticienNom : "") + "\n" +
+        "Under the name: " + session.clientNom + noteRemplace + "\n\nDo you confirm this appointment? (yes / no)"
+    );
+  }
+
+  function rdvParId(id) {
+    return state.appointments.filter((a) => a.id === Number(id))[0] || null;
+  }
+
+  // Le client renonce a deplacer son rendez-vous (« non », « autre chose ») : l'ancien reste TEL QUEL.
+  function messageReportAbandonne(session) {
+    const ancien = session.reportApptId ? rdvParId(session.reportApptId) : null;
+    abandonnerReportEnCours(session);
+    resetSession(session);
+    if (!ancien) return null;
+    return sh.t(session,
+      "Très bien, votre rendez-vous " + orderRef(ancien) + " (" + ancien.service + ", " + formatSlot(new Date(ancien.dateISO), session) + ") est conservé.",
+      "Alright, your appointment " + orderRef(ancien) + " (" + ancien.service + ", " + formatSlot(new Date(ancien.dateISO), session) + ") is kept as it is."
+    );
+  }
+
+  // Si un nouveau rendez-vous provisoire ("Nouvelle", lie a un report) existe deja, il est annule : l'ancien reste.
+  function abandonnerReportEnCours(session) {
+    if (!session.reportApptId || !session.pendingAppointmentId) return;
+    const nouveau = rdvParId(session.pendingAppointmentId);
+    if (nouveau && nouveau.statut === "Nouvelle" && nouveau.remplaceId === session.reportApptId) {
+      applyStatusChange(nouveau, "Annulé", "Report abandonné par le client");
+    }
+  }
+
+  // Alerte la gerante (en francais, quelle que soit la langue du client) quand une CLIENTE annule ou deplace un
+  // rendez-vous. Jamais pour un rendez-vous du Simulateur.
+  function alerterRdvModifie(action, ancien, nouveau) {
+    if (!ancien || ancien.source === "simulateur") return;
+    notifierMarchand("rdv_modifie", [
+      orderRef(ancien),
+      ancien.service + (ancien.praticienNom ? " (avec " + ancien.praticienNom + ")" : ""),
+      action === "annule" ? "annulé par la cliente" : "déplacé par la cliente",
+      formatSlot(new Date(ancien.dateISO), null),
+      nouveau ? formatSlot(new Date(nouveau.dateISO), null) : "aucun (annulation)",
+      ancien.clientNom || "—",
+      ancien.telephone || "—"
+    ]).catch((erreur) =>
+      console.error("[" + merchantKey + "] Echec de la notification marchand (rendez-vous " + action + ") :", erreur)
+    );
+  }
+
+  function processMessage(session, text) {
+    // Reinitialise a chaque tour - seuls les 3 points de retour "quel service vous interesse ?" plus bas
+    // le repassent a true juste avant de renvoyer leur texte (voir freshSession() ci-dessus).
+    session.pretPourChoix = false;
+
+    if (session.stage === "awaiting_rdv_choice") {
+      // Plusieurs rendez-vous a venir (Etape 61) : le client designe celui qu'il veut annuler/deplacer.
+      const ids = session.choixRdvIds || [];
+      let choisi = null;
+      const brut = String(text || "").trim();
+      const ref = brut.match(/rdv[\s-]*0*(\d+)/i);
+      if (ref && ids.indexOf(Number(ref[1])) !== -1) choisi = Number(ref[1]);
+      if (choisi === null) {
+        const num = brut.match(/^\D{0,12}(\d{1,2})\D{0,3}$/);
+        if (num && Number(num[1]) >= 1 && Number(num[1]) <= ids.length) choisi = ids[Number(num[1]) - 1];
+      }
+      const appt = choisi !== null ? rdvParId(choisi) : null;
+      if (appt) {
+        const intention = session.intentionRdv;
+        session.choixRdvIds = null; session.intentionRdv = null;
+        return appliquerIntentionRdv(session, intention, appt);
+      }
+      if (parseNegative(text) || parseWantsSomethingElse(text)) {
+        resetSession(session);
+        return sh.t(session, "Très bien, vos rendez-vous restent inchangés.", "Alright, your appointments stay as they are.");
+      }
+      return sh.t(session,
+        "Je n'ai pas compris. Répondez par le numéro du rendez-vous concerné (1 à " + ids.length + "), ou « non » pour ne rien changer.",
+        "I didn't understand. Reply with the number of the appointment (1 to " + ids.length + "), or \"no\" to change nothing."
+      );
+    }
+
+    if (session.stage === "awaiting_datetime") {
+      const autresServices = matchServicesMultiple(text);
+      const memeService = autresServices.length && autresServices.slice().sort().join("+") === (session.serviceIds || []).slice().sort().join("+");
+      if (autresServices.length && !memeService && !session.reportApptId) {
+        resetSession(session);
+        return processMessage(session, text);
+      }
+      const praticienDemande = matchPraticien(text);
+      if (praticienDemande) session.praticienId = praticienDemande;
+      if (parseNegative(text) || parseWantsSomethingElse(text)) {
+        if (session.reportApptId) return messageReportAbandonne(session);
+        resetSession(session);
+        session.pretPourChoix = true;
+        return messageChoixService(session, "Pas de souci ! Quel service vous intéresse ?", "No problem! Which service are you interested in?");
+      }
+      const service = serviceActuel(session);
+      return handleDateTimeAttempt(session, text, service);
+    }
+
+    if (session.stage === "awaiting_slot_choice") {
+      const choisi = matchSlotChoice(text, session.proposedSlots);
+      const service = serviceActuel(session);
+      if (choisi) {
+        return bookSlot(session, choisi, service, session.praticienId || choisirPraticienLibre(choisi, service.dureeMinutes));
+      }
+      if (parseNegative(text) || parseWantsSomethingElse(text)) {
+        if (session.reportApptId) return messageReportAbandonne(session);
+        resetSession(session);
+        session.pretPourChoix = true;
+        return messageChoixService(session, "Pas de souci ! Quel service vous intéresse ?", "No problem! Which service are you interested in?");
+      }
+      const autresServices = matchServicesMultiple(text);
+      const memeService = autresServices.length && autresServices.slice().sort().join("+") === (session.serviceIds || []).slice().sort().join("+");
+      if (autresServices.length && !memeService && !session.reportApptId) {
+        resetSession(session);
+        return processMessage(session, text);
+      }
+      // Le client tente peut-etre un autre jour/heure plutot que l'une des propositions - on retente.
+      const nouvelleTentative = handleDateTimeAttempt(session, text, service);
+      if (session.stage !== "awaiting_slot_choice" || session.proposedSlots) return nouvelleTentative;
+      return sh.t(session,
+        "Je n'ai pas compris votre choix. Répondez par l'heure souhaitée (ex : 10h) ou par son numéro (1, 2, 3).",
+        "I didn't understand your choice. Reply with the time you'd like (e.g. 10am) or its number (1, 2, 3)."
+      );
+    }
+
+    if (session.stage === "awaiting_client_name") {
+      const nom = text.trim().slice(0, 80);
+      if (!nom) return sh.t(session, "Merci d'indiquer le nom à noter pour ce rendez-vous.", "Please tell me the name to put this appointment under.");
+      session.clientNom = nom;
+      return finaliserReservation(session, false);
     }
 
     if (session.stage === "awaiting_confirmation") {
       const appt = state.appointments.filter((a) => a.id === session.pendingAppointmentId)[0];
       if (appt && parseAffirmative(text)) {
         applyStatusChange(appt, "Confirmé");
+        // Etape 61 : report -> l'ancien rendez-vous n'est annule QU'ICI, une fois le nouveau confirme ; une seule
+        // alerte « déplacé » part vers la gerante (au lieu de « confirmé » + « annulé »).
+        const ancienRemplace = appt.remplaceId ? rdvParId(appt.remplaceId) : null;
+        if (ancienRemplace && RESERVING_STATUSES_RDV.indexOf(ancienRemplace.statut) !== -1) {
+          applyStatusChange(ancienRemplace, "Annulé", "Reporté par le client via WhatsApp (remplacé par " + orderRef(appt) + ")");
+          ancienRemplace.remplaceParId = appt.id;
+          saveState();
+          alerterRdvModifie("reporte", ancienRemplace, appt);
+        }
         // Cote marchand : toujours en francais (comme les autres alertes), quelle que soit la langue du client.
-        notifierMarchand("rdv_confirme", [
+        if (!ancienRemplace) notifierMarchand("rdv_confirme", [
           orderRef(appt),
           appt.service + (appt.praticienNom ? " (avec " + appt.praticienNom + ")" : ""),
           formatSlot(new Date(appt.dateISO), null),
@@ -841,6 +953,10 @@ function createServiceEngine(merchantKey, options) {
           : (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
         resetSession(session);
         return reply;
+      }
+      if (appt && appt.remplaceId && parseNegative(text)) {
+        // Report refuse au dernier moment : le nouveau creneau provisoire est annule, l'ancien rendez-vous reste.
+        return messageReportAbandonne(session);
       }
       if (appt && parseNegative(text)) {
         const reply = sh.t(session,
@@ -889,44 +1005,69 @@ function createServiceEngine(merchantKey, options) {
   // un stage dedie - un client qui ecrit "je veux annuler mon rendez-vous" du jour au lendemain, sans etre
   // en train de reserver, doit pouvoir le faire directement.
 
-  function gererAnnulationOuReport(session, intention) {
+  function rdvsAVenirDuClient(telephone) {
     const maintenant = new Date();
-    const prochains = state.appointments
-      .filter((a) => a.fromWhatsapp === session.fromPhone && RESERVING_STATUSES_RDV.indexOf(a.statut) !== -1 && new Date(a.dateISO) > maintenant)
+    return state.appointments
+      .filter((a) => a.fromWhatsapp === telephone && RESERVING_STATUSES_RDV.indexOf(a.statut) !== -1 && new Date(a.dateISO) > maintenant)
       .sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
-    const appt = prochains[0];
-    if (!appt) {
+  }
+
+  function gererAnnulationOuReport(session, intention) {
+    // Un report deja en cours (nouveau creneau provisoire) est abandonne : on repart de l'etat reel des rendez-vous.
+    abandonnerReportEnCours(session);
+    resetSession(session);
+    const prochains = rdvsAVenirDuClient(session.fromPhone);
+    if (!prochains.length) {
       return sh.t(session,
         "Je ne trouve pas de rendez-vous à venir associé à ce numéro. Souhaitez-vous en prendre un nouveau ? Quel service vous intéresse ?",
         "I can't find any upcoming appointment linked to this number. Would you like to book a new one? Which service are you interested in?"
       );
     }
+    if (prochains.length === 1) return appliquerIntentionRdv(session, intention, prochains[0]);
 
+    // Plusieurs rendez-vous a venir (Etape 61) : on demande lequel, au lieu de decider a la place du client.
+    session.stage = "awaiting_rdv_choice";
+    session.intentionRdv = intention;
+    session.choixRdvIds = prochains.slice(0, 5).map((a) => a.id);
+    const liste = prochains.slice(0, 5).map((a, i) => (i + 1) + ". " + orderRef(a) + " — " + a.service + " — " + formatSlot(new Date(a.dateISO), session)).join("\n");
+    return sh.t(session,
+      "Vous avez plusieurs rendez-vous à venir :\n" + liste + "\n\nLequel souhaitez-vous " + (intention === "annuler" ? "annuler" : "déplacer") + " ? (répondez par le numéro)",
+      "You have several upcoming appointments:\n" + liste + "\n\nWhich one would you like to " + (intention === "annuler" ? "cancel" : "move") + "? (reply with the number)"
+    );
+  }
+
+  function appliquerIntentionRdv(session, intention, appt) {
     if (intention === "annuler") {
       applyStatusChange(appt, "Annulé", "Annulé par le client via WhatsApp");
       resetSession(session);
+      alerterRdvModifie("annule", appt, null);
       return sh.t(session,
         "Votre rendez-vous " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO), session) + ") est annulé. N'hésitez pas à revenir si vous souhaitez reprendre un rendez-vous.",
         "Your appointment " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO), session) + ") has been cancelled. Feel free to come back if you'd like to book another one."
       );
     }
 
-    // "reporter" : on libere l'ancien creneau et on relance immediatement la prise de rendez-vous pour le
-    // meme service (et le meme praticien si un etait assigne), sans faire retaper le service au client.
-    applyStatusChange(appt, "Annulé", "Reporté par le client via WhatsApp");
-    const service = combinerServices(String(appt.serviceId || "").split("+")) || state.services.filter((s) => s.id === appt.serviceId)[0];
+    // "reporter" (Etape 61, sans risque) : l'ancien rendez-vous N'EST PAS annule ici. Il reste valable tant que le
+    // nouveau n'est pas confirme (voir awaiting_confirmation) ; si le client abandonne, rien n'est perdu.
     resetSession(session);
+    session.reportApptId = appt.id;
+    ignorerApptId = appt.id;
+    const service = combinerServices(String(appt.serviceId || "").split("+")) || state.services.filter((s) => s.id === appt.serviceId)[0];
+    const rappel = sh.t(session,
+      "Votre rendez-vous actuel : " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO), session) + "). Il reste valable tant que le nouveau n'est pas confirmé. ",
+      "Your current appointment: " + orderRef(appt) + " (" + appt.service + ", " + formatSlot(new Date(appt.dateISO), session) + "). It stays valid until the new one is confirmed. "
+    );
     if (!service) {
       session.pretPourChoix = true;
-      return messageChoixService(session,
-        "Votre ancien rendez-vous est annulé. Quel service souhaitez-vous pour le nouveau rendez-vous ?",
-        "Your previous appointment has been cancelled. Which service would you like for the new appointment?"
+      return rappel + messageChoixService(session,
+        "Quel service souhaitez-vous pour le nouveau rendez-vous ?",
+        "Which service would you like for the new appointment?"
       );
     }
     session.serviceIds = service.combo || [service.id];
     session.serviceId = session.serviceIds.join("+");
     if (appt.praticienId) session.praticienId = appt.praticienId;
-    return sh.t(session, "Votre ancien rendez-vous est annulé. ", "Your previous appointment has been cancelled. ") + handleDateTimeAttempt(session, "", service);
+    return rappel + handleDateTimeAttempt(session, "", service);
   }
 
   // `opts.sansJournalClient` (Etape 47, routeur hybride) : le texte ne vient pas tel quel du client (salutation
@@ -1038,7 +1179,13 @@ function createServiceEngine(merchantKey, options) {
     }
 
     const intentionRdv = sh.detecterIntentionRdv(text);
-    let reponse = intentionRdv ? gererAnnulationOuReport(session, intentionRdv) : processMessage(session, text);
+    let reponse;
+    ignorerApptId = session.reportApptId || null;
+    try {
+      reponse = intentionRdv ? gererAnnulationOuReport(session, intentionRdv) : processMessage(session, text);
+    } finally {
+      ignorerApptId = null;
+    }
 
     if (estPremierContact && reponse) {
       humanHintDonne[fromPhone] = true;
@@ -1355,6 +1502,71 @@ function createServiceEngine(merchantKey, options) {
     return appt;
   }
 
+  // Etape 61 : la GERANTE deplace un rendez-vous depuis /admin. `opts` = { date: "AAAA-MM-JJ", heure: "HH:MM"
+  // (heure murale du fuseau du marchand), praticienId?, horsHoraires?, par? }. Refuse un creneau passe, un jour
+  // ferme / hors horaires / dans la pause (sauf `horsHoraires`) et TOUJOURS un creneau deja occupe par un autre
+  // rendez-vous. Remet le rappel a zero (le rappel de la veille repart pour le nouvel horaire) et garde la trace.
+  function deplacerAppointment(apptId, opts) {
+    if (!state) return { erreur: "indisponible", message: "Service indisponible." };
+    opts = opts || {};
+    const appt = rdvParId(apptId);
+    if (!appt) return { erreur: "introuvable", message: "Rendez-vous introuvable." };
+    if (RESERVING_STATUSES_RDV.indexOf(appt.statut) === -1) {
+      return { erreur: "statut", message: "Seul un rendez-vous « Nouvelle » ou « Confirmé » peut être déplacé." };
+    }
+    const m = String(opts.date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const h = String(opts.heure || "").match(/^(\d{1,2}):(\d{2})$/);
+    if (!m || !h) return { erreur: "format", message: "Date (AAAA-MM-JJ) et heure (HH:MM) requises." };
+    const debut = sh.dateDepuisPartiesFuseau(Number(m[1]), Number(m[2]), Number(m[3]), Number(h[1]), Number(h[2]), fz());
+    const pp = sh.partiesFuseau(debut, fz());
+    if (pp.annee !== Number(m[1]) || pp.mois !== Number(m[2]) || pp.jour !== Number(m[3]) || pp.heure !== Number(h[1]) || pp.minute !== Number(h[2])) {
+      return { erreur: "format", message: "Date ou heure invalide." };
+    }
+    if (debut.getTime() <= Date.now()) return { erreur: "passe", message: "Le nouveau créneau doit être dans le futur." };
+    const duree = appt.dureeMinutes || 30;
+    const dateOnly = startOfDay(debut);
+
+    if (!opts.horsHoraires) {
+      const horaire = horaireDuJour(dateOnly);
+      if (!horaire || !horaire.ouvert) return { erreur: "ferme", message: "L'établissement est fermé ce jour-là (cochez « Autoriser hors horaires d'ouverture » pour forcer)." };
+      const ouvre = combineDateHeureStr(dateOnly, horaire.debut);
+      const ferme = combineDateHeureStr(dateOnly, horaire.fin);
+      if (debut.getTime() < ouvre.getTime() || debut.getTime() + duree * 60000 > ferme.getTime()) {
+        return { erreur: "horaires", message: "Hors des horaires d'ouverture de ce jour (" + horaire.debut + " – " + horaire.fin + ") : le soin doit se terminer avant la fermeture." };
+      }
+      if (chevauchePause(dateOnly, horaire, debut, duree)) {
+        return { erreur: "pause", message: "Ce créneau chevauche la pause (" + horaire.pauseDebut + " – " + horaire.pauseFin + ")." };
+      }
+    }
+
+    const praticiens = getPraticiens();
+    if (opts.praticienId && praticiens.length > 1 && !praticiens.some((x) => x.id === opts.praticienId)) {
+      return { erreur: "praticien", message: "Praticien inconnu." };
+    }
+    let praticienId = (praticiens.length > 1 ? (opts.praticienId || appt.praticienId) : null) || null;
+    ignorerApptId = appt.id;
+    try {
+      if (praticienId) {
+        if (!isSlotFreePour(debut, duree, praticienId)) return { erreur: "occupe", message: "Ce créneau est déjà occupé par un autre rendez-vous." };
+      } else {
+        if (!isSlotFreePour(debut, duree, null)) return { erreur: "occupe", message: "Ce créneau est déjà occupé par un autre rendez-vous." };
+        if (praticiens.length > 1) praticienId = choisirPraticienLibre(debut, duree);
+      }
+    } finally {
+      ignorerApptId = null;
+    }
+
+    const ancienISO = appt.dateISO;
+    appt.dateISO = debut.toISOString();
+    if (praticiens.length > 1) { appt.praticienId = praticienId || null; appt.praticienNom = praticienNomParId(praticienId); }
+    appt.rappelEnvoye = false; appt.rappelTentatives = 0; appt.rappelErreur = null; appt.rappelCanal = null;
+    appt.rappelDerniereTentativeISO = null; appt.rappelProchaineTentativeISO = null; appt.rappelEnvoyeISO = null;
+    if (!Array.isArray(appt.historiqueDeplacements)) appt.historiqueDeplacements = [];
+    appt.historiqueDeplacements.push({ deISO: ancienISO, versISO: appt.dateISO, leISO: new Date().toISOString(), par: opts.par || null });
+    saveState();
+    return { appt };
+  }
+
   // Lecture d'un rendez-vous par id (copie), y compris un rendez-vous du Simulateur : utilise par le pont
   // IzyFacture (server.js) qui doit relire l'etat courant apres chaque appel reseau.
   function getAppointmentById(apptId) {
@@ -1385,6 +1597,7 @@ function createServiceEngine(merchantKey, options) {
     getSettings,
     updateSettings,
     updateServices,
+    deplacerAppointment,
     updateAppointmentStatus,
     getConversationsEnAttente,
     repondreConversationHumain,
