@@ -717,7 +717,12 @@ const I18N = {
     theadClient: "Client",
     theadPrix: "Prix",
     aucunRendezvous: "Aucun rendez-vous pour l'instant.",
-    rdvNouvelle: "Nouvelle",
+    rdvNouvelle: "Non confirmé",
+    rdvNonBloque: "Créneau non réservé tant que la cliente n'a pas confirmé.",
+    btnRelancerWhatsapp: "Relancer sur WhatsApp",
+    filtreRdvTous: "Tous ({n})",
+    filtreRdvRelancer: "À relancer ({n})",
+    aucunRdvARelancer: "Aucun rendez-vous à relancer.",
     rdvConfirme: "Confirmé",
     rdvHonore: "Honoré",
     rdvAbsent: "Absent",
@@ -1602,7 +1607,12 @@ const I18N = {
     theadClient: "Client",
     theadPrix: "Price",
     aucunRendezvous: "No appointments yet.",
-    rdvNouvelle: "New",
+    rdvNouvelle: "Unconfirmed",
+    rdvNonBloque: "Slot not held until the client confirms.",
+    btnRelancerWhatsapp: "Follow up on WhatsApp",
+    filtreRdvTous: "All ({n})",
+    filtreRdvRelancer: "To follow up ({n})",
+    aucunRdvARelancer: "No appointment to follow up.",
     rdvConfirme: "Confirmed",
     rdvHonore: "Completed",
     rdvAbsent: "No-show",
@@ -4110,12 +4120,30 @@ async function renderServices() {
   redraw();
 }
 
+// Etape 62 : filtre « à relancer » (rendez-vous restés « Nouvelle » = la cliente n'a pas confirmé) et lien de
+// relance WhatsApp. Le lien s'ouvre dans le WhatsApp de la gérante : rien n'est envoyé par le bot, aucun coût Meta.
+let filtreRdvRelancer = false;
+function lienRelanceWhatsapp(a) {
+  const chiffres = String(a.fromWhatsapp || a.telephone || "").replace(/\D/g, "");
+  if (!chiffres) return "";
+  const en = a.langue === "en";
+  const nom = (a.clientNom || "").trim();
+  const quand = new Date(a.dateISO).toLocaleString(en ? "en-US" : "fr-FR", { dateStyle: "medium", timeStyle: "short" });
+  const lieu = (marchandActif && marchandActif.nom) ? (en ? " at " : " chez ") + marchandActif.nom : "";
+  const msg = en
+    ? "Hello" + (nom ? " " + nom : "") + ", you started booking " + a.service + " (" + quand + ")" + lieu + " but did not confirm. Would you like to confirm it or choose another time?"
+    : "Bonjour" + (nom ? " " + nom : "") + ", vous aviez commencé à réserver " + a.service + " (" + quand + ")" + lieu + " sans confirmer. Souhaitez-vous confirmer ce rendez-vous ou choisir un autre créneau ?";
+  return "https://wa.me/" + chiffres + "?text=" + encodeURIComponent(msg);
+}
+
 async function renderRendezvous() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const rdvs = await api("/api/" + marchandActif.id + "/rendezvous");
   const statuts = ["Nouvelle", "Confirmé", "Honoré", "Absent", "Annulé"];
-  const tri = rdvs.slice().reverse();
+  const nbARelancer = rdvs.filter((a) => a.statut === "Nouvelle").length;
+  if (!nbARelancer) filtreRdvRelancer = false;
+  const tri = rdvs.slice().reverse().filter((a) => !filtreRdvRelancer || a.statut === "Nouvelle");
   const nbRappelsEchec = rdvs.filter((a) => a.rappelStatut === "echec").length;
   const avecFacture = colonneFactureActive();
   // Etat du rappel automatique de la veille (Etape 44) : visible, pour qu'un echec ne passe jamais inapercu.
@@ -4127,6 +4155,9 @@ async function renderRendezvous() {
   }
   zone.innerHTML =
     "<h2>" + t("rendezvousTitre", { n: rdvs.length }) + "</h2>" +
+    (nbARelancer ? "<div class='no-print' style='margin:6px 0;display:flex;gap:8px;'>" +
+      "<button id='btnFiltreRdvTous' class='" + (filtreRdvRelancer ? "" : "principal") + "'>" + esc(t("filtreRdvTous", { n: rdvs.length })) + "</button>" +
+      "<button id='btnFiltreRdvRelancer' class='" + (filtreRdvRelancer ? "principal" : "") + "'>" + esc(t("filtreRdvRelancer", { n: nbARelancer })) + "</button></div>" : "") +
     (nbRappelsEchec ? "<div id='alerteRappels' class='rappel-echec' style='margin:8px 0;padding:8px;border:1px solid #c0392b;border-radius:6px;'>" + esc(t("rappelAlerteEchecs", { n: nbRappelsEchec })) + "</div>" : "") +
     "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadDateHeure") + "</th><th>" + t("theadService") + "</th><th>" + t("theadPraticien") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadPrix") + "</th><th>" + t("theadStatut") + "</th><th>" + t("theadRappel") + "</th>" + (avecFacture ? "<th>" + t("theadFacture") + "</th>" : "") + "</tr>" +
     (tri.length ? tri.map((a) =>
@@ -4144,12 +4175,13 @@ async function renderRendezvous() {
         "<td>" + (a.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
         "<td><select data-rdv='" + a.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === a.statut ? " selected" : "") + ">" + esc(libelleStatutRdv(s)) + "</option>").join("") + "</select>" +
           (a.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(a.raisonAnnulation) + "</div>" : "") +
+          (a.statut === "Nouvelle" ? "<div class='raison'>" + esc(t("rdvNonBloque")) + "</div>" + (lienRelanceWhatsapp(a) ? "<div><a class='btnRelancerRdv' data-relancer-rdv='" + a.id + "' href='" + esc(lienRelanceWhatsapp(a)) + "' target='_blank' rel='noopener noreferrer'>" + esc(t("btnRelancerWhatsapp")) + "</a></div>" : "") : "") +
           ((a.statut === "Nouvelle" || a.statut === "Confirmé") ? "<div><button class='btnModifierRdv' data-modifier-rdv='" + a.id + "'>" + esc(t("btnModifierRdv")) + "</button></div>" : "") +
         "</td>" +
         "<td class='cellule-rappel' data-rdv-rappel='" + a.id + "'>" + badgeRappel(a) + "</td>" +
         (avecFacture ? "<td class='cellule-facture' data-rdv-facture='" + a.id + "'>" + celluleIzyfacture(a, true) + "</td>" : "") +
       "</tr>"
-    ).join("") : "<tr><td colspan='" + (avecFacture ? 10 : 9) + "'>" + t("aucunRendezvous") + "</td></tr>") +
+    ).join("") : "<tr><td colspan='" + (avecFacture ? 10 : 9) + "'>" + t(filtreRdvRelancer ? "aucunRdvARelancer" : "aucunRendezvous") + "</td></tr>") +
     "</table>";
   Array.prototype.forEach.call(zone.querySelectorAll("select[data-rdv]"), (sel) => {
     sel.addEventListener("change", async () => {
@@ -4158,9 +4190,12 @@ async function renderRendezvous() {
       try {
         await api("/api/" + marchandActif.id + "/rendezvous/" + sel.dataset.rdv + "/statut", { method: "PUT", body: JSON.stringify({ statut: sel.value, raisonAnnulation: raison }) });
         renderRendezvous();
-      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); renderRendezvous(); }
     });
   });
+  const bTous = document.getElementById("btnFiltreRdvTous"), bRel = document.getElementById("btnFiltreRdvRelancer");
+  if (bTous) bTous.onclick = () => { filtreRdvRelancer = false; renderRendezvous(); };
+  if (bRel) bRel.onclick = () => { filtreRdvRelancer = true; renderRendezvous(); };
   Array.prototype.forEach.call(zone.querySelectorAll("[data-modifier-rdv]"), (btn) => {
     btn.onclick = () => {
       const a = rdvs.filter((x) => String(x.id) === btn.dataset.modifierRdv)[0];

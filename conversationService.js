@@ -75,9 +75,14 @@ function sansAccents(texte) {
 
 // Delai maximal/minimal des rappels et reessais (voir envoyerRappelsDuJour plus bas).
 
-// Un rendez-vous "Nouvelle" (pas encore confirme par le client) bloque deja le creneau, pour eviter
-// qu'un deuxieme client ne reserve la meme place pendant que le premier n'a pas encore repondu "oui".
-const RESERVING_STATUSES_RDV = ["Nouvelle", "Confirmé"];
+// Etape 62 : SEUL un rendez-vous "Confirmé" bloque un creneau. Un "Nouvelle" (le client n'a pas dit "oui") ne
+// bloque plus rien : il reste visible dans /admin comme un client a relancer. Le risque de course entre deux
+// clients sur le meme creneau est couvert par la reverification faite au moment du "oui" (voir
+// awaiting_confirmation) et lors du passage manuel a "Confirmé" (updateAppointmentStatus).
+const RESERVING_STATUSES_RDV = ["Confirmé"];
+// Rendez-vous "vivants" (a venir et pas encore traites) : peuvent etre annules/deplaces par le client ou deplaces
+// par la gerante, qu'ils aient ou non confirme.
+const ACTIFS_STATUSES_RDV = ["Nouvelle", "Confirmé"];
 
 // Garde-fou anti-inondation, identique en esprit a celui du moteur catalogue.
 const MAX_PENDING_APPOINTMENTS_PER_PHONE = 3;
@@ -795,6 +800,54 @@ function createServiceEngine(merchantKey, options) {
     );
   }
 
+  // Etape 62 : au "oui" du client, le creneau doit etre toujours libre (aucun AUTRE rendez-vous confirme dessus,
+  // l'ancien rendez-vous d'un report etant ignore par ignorerApptId). Si un autre praticien est libre, on lui
+  // reassigne le rendez-vous. Sinon : le rendez-vous provisoire est annule (motif lisible), et on repropose les
+  // creneaux les plus proches. Renvoie null si tout va bien, sinon le message a envoyer au client.
+  function verifierCreneauAvantConfirmation(session, appt) {
+    const debut = new Date(appt.dateISO);
+    const duree = appt.dureeMinutes || 30;
+    const now = new Date();
+    const dejaPasse = debut.getTime() <= now.getTime();
+    let libre = !dejaPasse && isSlotFreePour(debut, duree, appt.praticienId || null);
+    if (!dejaPasse && !libre && getPraticiens().length > 1) {
+      const autre = choisirPraticienLibre(debut, duree);
+      if (autre) {
+        appt.praticienId = autre;
+        appt.praticienNom = praticienNomParId(autre);
+        libre = true;
+      }
+    }
+    if (libre) return null;
+    applyStatusChange(appt, "Annulé", dejaPasse ? "Créneau dépassé avant la confirmation du client" : "Créneau pris par un autre client avant la confirmation");
+    session.pendingAppointmentId = null;
+    session.pendingSlotISO = null;
+    const service = serviceActuel(session) || { nom: appt.service, dureeMinutes: duree };
+    const praticienId = session.praticienId || null;
+    const dateOnly = startOfDay(debut.getTime() > now.getTime() ? debut : now);
+    let alternatives = freeSlotsForDay(dateOnly, duree, now, praticienId);
+    const cible = debut.getTime();
+    alternatives = alternatives.slice().sort((a, b) => Math.abs(a.getTime() - cible) - Math.abs(b.getTime() - cible)).slice(0, 3);
+    if (!alternatives.length) alternatives = nextAvailableFrom(ajouterJours(dateOnly, 1), duree, now, 3, praticienId);
+    const excuse = dejaPasse
+      ? sh.t(session, "Désolée, ce créneau est déjà passé. ", "Sorry, that time has already passed. ")
+      : sh.t(session, "Désolée, ce créneau vient d'être pris par quelqu'un d'autre avant votre confirmation. ", "Sorry, that slot has just been taken by someone else before you confirmed. ");
+    if (!alternatives.length) {
+      session.stage = "awaiting_datetime";
+      return excuse + sh.t(session,
+        "Quel autre jour et quelle heure vous conviendraient pour votre " + service.nom + " ?",
+        "Which other day and time would suit you for your " + service.nom + "?"
+      );
+    }
+    session.proposedSlots = alternatives;
+    session.stage = "awaiting_slot_choice";
+    const liste = alternatives.map((x, i) => (i + 1) + ". " + formatSlot(x, session)).join("\n");
+    return excuse + sh.t(session,
+      "Voici les créneaux les plus proches pour " + service.nom + " :\n" + liste + "\n\nLequel vous convient ? (répondez par l'heure ou le numéro)",
+      "Here are the closest available times for " + service.nom + ":\n" + liste + "\n\nWhich one suits you? (reply with the time or the number)"
+    );
+  }
+
   function rdvParId(id) {
     return state.appointments.filter((a) => a.id === Number(id))[0] || null;
   }
@@ -925,11 +978,15 @@ function createServiceEngine(merchantKey, options) {
     if (session.stage === "awaiting_confirmation") {
       const appt = state.appointments.filter((a) => a.id === session.pendingAppointmentId)[0];
       if (appt && parseAffirmative(text)) {
+        // Etape 62 : le creneau n'est reserve qu'au "oui". On reverifie qu'il est toujours libre (un autre client a
+        // pu le confirmer entre-temps) ; sinon on s'excuse et on propose d'autres creneaux.
+        const conflit = verifierCreneauAvantConfirmation(session, appt);
+        if (conflit) return conflit;
         applyStatusChange(appt, "Confirmé");
         // Etape 61 : report -> l'ancien rendez-vous n'est annule QU'ICI, une fois le nouveau confirme ; une seule
         // alerte « déplacé » part vers la gerante (au lieu de « confirmé » + « annulé »).
         const ancienRemplace = appt.remplaceId ? rdvParId(appt.remplaceId) : null;
-        if (ancienRemplace && RESERVING_STATUSES_RDV.indexOf(ancienRemplace.statut) !== -1) {
+        if (ancienRemplace && ACTIFS_STATUSES_RDV.indexOf(ancienRemplace.statut) !== -1) {
           applyStatusChange(ancienRemplace, "Annulé", "Reporté par le client via WhatsApp (remplacé par " + orderRef(appt) + ")");
           ancienRemplace.remplaceParId = appt.id;
           saveState();
@@ -960,8 +1017,8 @@ function createServiceEngine(merchantKey, options) {
       }
       if (appt && parseNegative(text)) {
         const reply = sh.t(session,
-          "Très bien, votre rendez-vous reste enregistré. Notre équipe reviendra vers vous pour le confirmer.",
-          "Alright, your appointment stays on record. Our team will get back to you to confirm it."
+          "Très bien, ce créneau n'est pas réservé. Vous pouvez reprendre rendez-vous quand vous voulez ; notre équipe pourra aussi vous recontacter.",
+          "Alright, that slot is not booked. You can book again whenever you like; our team may also get back to you."
         );
         resetSession(session);
         return reply;
@@ -1008,7 +1065,7 @@ function createServiceEngine(merchantKey, options) {
   function rdvsAVenirDuClient(telephone) {
     const maintenant = new Date();
     return state.appointments
-      .filter((a) => a.fromWhatsapp === telephone && RESERVING_STATUSES_RDV.indexOf(a.statut) !== -1 && new Date(a.dateISO) > maintenant)
+      .filter((a) => a.fromWhatsapp === telephone && ACTIFS_STATUSES_RDV.indexOf(a.statut) !== -1 && new Date(a.dateISO) > maintenant)
       .sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
   }
 
@@ -1498,6 +1555,13 @@ function createServiceEngine(merchantKey, options) {
     if (!state) return null;
     const appt = state.appointments.filter((a) => a.id === Number(apptId))[0];
     if (!appt) return null;
+    // Etape 62 : un rendez-vous a venir ne peut passer a "Confirmé" que si le creneau n'est pas deja pris par un
+    // AUTRE rendez-vous confirme (un "Nouvelle" ne bloquant plus rien, le conflit est possible).
+    if (newStatus === "Confirmé" && appt.statut !== "Confirmé" && appt.source !== "simulateur" && new Date(appt.dateISO).getTime() > Date.now()) {
+      if (!isSlotFreePour(new Date(appt.dateISO), appt.dureeMinutes || 30, appt.praticienId || null)) {
+        return { erreur: "occupe", message: "Ce créneau est déjà pris par un autre rendez-vous confirmé : déplacez ce rendez-vous (bouton Modifier) avant de le confirmer." };
+      }
+    }
     applyStatusChange(appt, newStatus, raisonAnnulation);
     return appt;
   }
@@ -1511,7 +1575,7 @@ function createServiceEngine(merchantKey, options) {
     opts = opts || {};
     const appt = rdvParId(apptId);
     if (!appt) return { erreur: "introuvable", message: "Rendez-vous introuvable." };
-    if (RESERVING_STATUSES_RDV.indexOf(appt.statut) === -1) {
+    if (ACTIFS_STATUSES_RDV.indexOf(appt.statut) === -1) {
       return { erreur: "statut", message: "Seul un rendez-vous « Nouvelle » ou « Confirmé » peut être déplacé." };
     }
     const m = String(opts.date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);

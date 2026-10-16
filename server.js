@@ -2737,6 +2737,7 @@ app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
   const statutAvant = avant ? avant.statut : null;
   const appt = entry.engine.updateAppointmentStatus(req.params.apptId, statut, raisonAnnulation);
   if (!appt) return res.status(404).json({ erreur: "Rendez-vous introuvable." });
+  if (appt.erreur) return res.status(409).json({ erreur: appt.message, code: appt.erreur });
   res.json(appt);
 
   // Pont IzyFacture (Etape 46) - APRES avoir repondu, jamais bloquant : facture a l'"Honoré" (la prestation a

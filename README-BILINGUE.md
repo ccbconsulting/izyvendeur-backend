@@ -2208,3 +2208,17 @@ Après le choix de la langue, le bot d'un marchand de type service répond maint
 **Import CSV des services.** Dans l'onglet Services : bouton d'import (comme pour le catalogue) et modèle CSV téléchargeable (colonnes `Nom;Durée (minutes);Prix`). L'import ajoute les nouveaux services, ignore les doublons (même nom) et n'écrase jamais l'existant. Route : `POST /api/:id/services/importer`, inscrite au journal (`services_importes`).
 
 Fichiers modifiés : `conversationService.js`, `server.js`, `public/admin.html`. Aucune migration, aucune nouvelle variable d'environnement. Avant de tester l'alerte en production : créer et faire approuver le modèle `izyvendeur_alerte_rdv_change` dans le WABA du marchand.
+
+## Étape 62 — Un rendez-vous « Nouvelle » ne bloque plus le créneau ; relance des non-confirmés
+
+**Règle.** Seul un rendez-vous « Confirmé » occupe un créneau. Un rendez-vous resté « Nouvelle » (la cliente n'a pas répondu « oui » au récapitulatif) ne bloque plus rien : une autre cliente peut prendre le même créneau. Il reste visible dans /admin comme cliente à relancer. Dans l'interface, ce statut s'affiche « Non confirmé » (EN : « Unconfirmed ») ; la valeur enregistrée reste « Nouvelle ».
+
+**Revérification au « oui ».** Quand la cliente confirme, le moteur revérifie que le créneau est toujours libre. S'il a été pris entre-temps par un autre rendez-vous confirmé, le bot s'excuse et propose les 3 créneaux les plus proches ; le rendez-vous provisoire est annulé avec le motif « Créneau pris par un autre client avant la confirmation » (aucune alerte n'est envoyée à la gérante). Si le marchand a plusieurs praticiens et qu'un autre est libre, le rendez-vous lui est réaffecté automatiquement. Dans un report, l'ancien rendez-vous reste confirmé tant que le nouveau n'est pas confirmé (inchangé depuis l'Étape 61).
+
+**Passage manuel à « Confirmé ».** Dans /admin > Rendez-vous, passer un rendez-vous à venir à « Confirmé » est refusé (HTTP 409, code `occupe`) si le créneau est déjà pris par un autre rendez-vous confirmé : le message invite à utiliser « Modifier » pour le déplacer d'abord. Annuler reste toujours possible.
+
+**Relance.** Boutons de filtre « Tous / À relancer (n) » dans l'onglet Rendez-vous ; sur chaque rendez-vous non confirmé, un bouton « Relancer sur WhatsApp » ouvre WhatsApp (wa.me) avec un message prêt, dans la langue de la cliente (nom, service, date). Le message part du WhatsApp de la gérante, quand elle clique sur « Envoyer » : aucun envoi par le bot, aucun coût Meta, aucun modèle à créer. Il s'écrit depuis un autre numéro que celui du bot (un numéro branché à l'API ne peut pas servir en même temps dans l'application WhatsApp).
+
+**Textes modifiés.** Réponse « non » au récapitulatif : « ce créneau n'est pas réservé… » (avant : « votre rendez-vous reste enregistré »).
+
+Fichiers modifiés : `conversationService.js`, `server.js`, `public/admin.html`. Aucune migration, aucune nouvelle variable d'environnement, aucun nouveau modèle Meta. Les rendez-vous « Nouvelle » déjà présents en base cessent simplement de bloquer leur créneau au déploiement.
