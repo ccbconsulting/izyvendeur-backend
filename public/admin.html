@@ -234,6 +234,81 @@ const I18N = {
     roleCatalogue: "Catalogue & stock",
     roleCommandes: "Commandes",
     roleCaisse: "Caisse",
+    ongletFacturation: "Facturation",
+    roleFacturation: "Facturation (factures, paiements, dépenses)",
+    roleComptable: "Comptable (lecture et export)",
+    h3SourceFacturation: "Source de facturation",
+    noteSourceFacturation: "Une seule source par marchand, choisie par vous seul : aucune, facturation intégrée à IzyVendeur, ou pont vers IzyFacture. Le passage de la facturation intégrée vers IzyFacture est à sens unique (bascule).",
+    srcAucune: "Aucune facturation",
+    srcInterne: "Facturation intégrée à IzyVendeur",
+    srcIzyfacture: "Pont vers IzyFacture",
+    btnAppliquerSource: "Appliquer",
+    alertSourceEnregistree: "Source de facturation mise à jour.",
+    noteBasculeFaite: "Ce marchand a basculé vers IzyFacture le {date}. Le retour à la facturation intégrée n'est pas possible.",
+    btnPreparerBascule: "Préparer la bascule vers IzyFacture…",
+    basculeTitre: "Aperçu de la bascule vers IzyFacture",
+    basculeStats: "{nbFactures} facture(s) intégrée(s), {nbDepenses} dépense(s). Derniers numéros émis : {numeros}.",
+    basculeOuvertes: "{n} facture(s) avec un solde ouvert, total {total} FCFA. Elles resteront encaissables dans IzyVendeur (reçus RV-…).",
+    basculeAuto: "La facturation automatique sera conservée (côté IzyFacture).",
+    basculeCleManquante: "La clé IzyFacture n'est pas enregistrée : enregistrez-la d'abord (Paramètres du marchand) avant de basculer.",
+    basculeConfirmCase: "Je comprends que cette opération est irréversible : les nouvelles factures iront dans IzyFacture et ce marchand ne pourra plus revenir à la facturation intégrée.",
+    btnConfirmerBascule: "Confirmer la bascule",
+    alertBasculeFaite: "Bascule effectuée. Les nouvelles factures sont désormais émises par IzyFacture.",
+    factTitre: "Facturation intégrée",
+    factBanniereBascule: "La facturation intégrée s'est arrêtée le {date} (bascule vers IzyFacture). Cet historique reste consultable ; les soldes restants peuvent encore être encaissés ici.",
+    factLectureSeule: "Lecture seule (rôle comptable) : consultation et export uniquement.",
+    factTotalFacture: "Facturé (net des avoirs)",
+    factTotalEncaisse: "Encaissé",
+    factTotalSolde: "Reste à encaisser",
+    factTotalDepenses: "Dépenses",
+    factAutoLabel: "Facturer automatiquement les commandes confirmées et les rendez-vous honorés",
+    factNouvelleFacture: "Nouvelle facture",
+    factClient: "Client",
+    factClientCol: "Client",
+    factTelephone: "Téléphone",
+    factDesignation: "Désignation",
+    factQte: "Qté",
+    factPrixUnit: "Prix unitaire (FCFA)",
+    factNotes: "Notes",
+    btnCreerFacture: "Créer la facture",
+    alertFactureCreee: "Facture {numero} créée.",
+    factListe: "Factures",
+    factAucune: "Aucune facture pour l'instant.",
+    factTotal: "Total",
+    factPaye: "Payé",
+    factSolde: "Solde",
+    factStatut_issued: "Émise",
+    factStatut_partially_paid: "Partiellement payée",
+    factStatut_paid: "Payée",
+    factStatut_avoir: "Annulée (avoir)",
+    factARembourser: "à rembourser : {montant}",
+    btnFactPaiement: "Paiement",
+    btnFactAvoir: "Avoir",
+    promptAvoirMontant: "Montant de l'avoir en FCFA (laisser vide = tout le reste à créditer) :",
+    promptAvoirMotif: "Motif de l'avoir :",
+    alertAvoirCree: "Avoir {numero} créé.",
+    factDepenses: "Dépenses",
+    factAucuneDepense: "Aucune dépense enregistrée.",
+    factDate: "Date",
+    factCategorie: "Catégorie",
+    factMontant: "Montant (FCFA)",
+    factMode: "Mode de paiement",
+    factFournisseur: "Fournisseur",
+    factNote: "Note",
+    factJustificatif: "N° de pièce (facultatif)",
+    btnCreerDepense: "Enregistrer la dépense",
+    alertDepenseCreee: "Dépense enregistrée.",
+    btnDepenseAnnuler: "Annuler",
+    promptDepenseMotif: "Motif de l'annulation (la dépense reste visible, barrée) :",
+    factDepenseAnnulee: "annulée",
+    factExport: "Export comptable (journal normalisé)",
+    factExportNote: "Chaque ligne porte un identifiant unique et stable : importer plusieurs fois la même période dans IzyCompta ne crée jamais de doublon.",
+    factDu: "Du",
+    factAu: "Au",
+    btnExportCsv: "Télécharger en CSV (Excel)",
+    btnExportJson: "Télécharger en JSON (import IzyCompta)",
+    factMode_especes: "Espèces", factMode_om: "Orange Money", factMode_momo: "MTN MoMo", factMode_banque: "Virement / banque", factMode_cheque: "Chèque", factMode_autre: "Autre",
+    factCat_achat_marchandises: "Achat de marchandises", factCat_transport: "Transport", factCat_loyer: "Loyer", factCat_salaires: "Salaires", factCat_electricite_eau: "Électricité / eau", factCat_telecom: "Téléphone / internet", factCat_publicite: "Publicité", factCat_entretien: "Entretien", factCat_taxes: "Taxes et impôts", factCat_autre: "Autre",
 
     ongletTableauDeBord: "Tableau de bord",
     ongletServices: "Services",
@@ -905,6 +980,81 @@ const I18N = {
     roleCatalogue: "Catalog & stock",
     roleCommandes: "Orders",
     roleCaisse: "Register",
+    ongletFacturation: "Invoicing",
+    roleFacturation: "Invoicing (invoices, payments, expenses)",
+    roleComptable: "Accountant (read and export)",
+    h3SourceFacturation: "Invoicing source",
+    noteSourceFacturation: "One source per merchant, chosen by you alone: none, invoicing built into IzyVendeur, or the IzyFacture bridge. Moving from built-in invoicing to IzyFacture is one-way (cutover).",
+    srcAucune: "No invoicing",
+    srcInterne: "Built-in IzyVendeur invoicing",
+    srcIzyfacture: "IzyFacture bridge",
+    btnAppliquerSource: "Apply",
+    alertSourceEnregistree: "Invoicing source updated.",
+    noteBasculeFaite: "This merchant switched to IzyFacture on {date}. Going back to built-in invoicing is not possible.",
+    btnPreparerBascule: "Prepare the switch to IzyFacture…",
+    basculeTitre: "Preview of the switch to IzyFacture",
+    basculeStats: "{nbFactures} built-in invoice(s), {nbDepenses} expense(s). Last numbers issued: {numeros}.",
+    basculeOuvertes: "{n} invoice(s) with an open balance, total {total} FCFA. They can still be collected in IzyVendeur (receipts RV-…).",
+    basculeAuto: "Automatic invoicing will be kept (on the IzyFacture side).",
+    basculeCleManquante: "The IzyFacture key is not saved: save it first (merchant Settings) before switching.",
+    basculeConfirmCase: "I understand this is irreversible: new invoices will go to IzyFacture and this merchant can no longer return to built-in invoicing.",
+    btnConfirmerBascule: "Confirm the switch",
+    alertBasculeFaite: "Switch done. New invoices are now issued by IzyFacture.",
+    factTitre: "Built-in invoicing",
+    factBanniereBascule: "Built-in invoicing ended on {date} (switched to IzyFacture). This history stays available; remaining balances can still be collected here.",
+    factLectureSeule: "Read-only (accountant role): viewing and export only.",
+    factTotalFacture: "Invoiced (net of credit notes)",
+    factTotalEncaisse: "Collected",
+    factTotalSolde: "Still to collect",
+    factTotalDepenses: "Expenses",
+    factAutoLabel: "Automatically invoice confirmed orders and completed appointments",
+    factNouvelleFacture: "New invoice",
+    factClient: "Customer",
+    factClientCol: "Customer",
+    factTelephone: "Phone",
+    factDesignation: "Description",
+    factQte: "Qty",
+    factPrixUnit: "Unit price (FCFA)",
+    factNotes: "Notes",
+    btnCreerFacture: "Create invoice",
+    alertFactureCreee: "Invoice {numero} created.",
+    factListe: "Invoices",
+    factAucune: "No invoice yet.",
+    factTotal: "Total",
+    factPaye: "Paid",
+    factSolde: "Balance",
+    factStatut_issued: "Issued",
+    factStatut_partially_paid: "Partially paid",
+    factStatut_paid: "Paid",
+    factStatut_avoir: "Cancelled (credit note)",
+    factARembourser: "to refund: {montant}",
+    btnFactPaiement: "Payment",
+    btnFactAvoir: "Credit note",
+    promptAvoirMontant: "Credit note amount in FCFA (leave empty = the whole remaining amount):",
+    promptAvoirMotif: "Reason for the credit note:",
+    alertAvoirCree: "Credit note {numero} created.",
+    factDepenses: "Expenses",
+    factAucuneDepense: "No expense recorded.",
+    factDate: "Date",
+    factCategorie: "Category",
+    factMontant: "Amount (FCFA)",
+    factMode: "Payment method",
+    factFournisseur: "Supplier",
+    factNote: "Note",
+    factJustificatif: "Document no. (optional)",
+    btnCreerDepense: "Save expense",
+    alertDepenseCreee: "Expense saved.",
+    btnDepenseAnnuler: "Cancel",
+    promptDepenseMotif: "Reason for cancelling (the expense stays visible, struck through):",
+    factDepenseAnnulee: "cancelled",
+    factExport: "Accounting export (normalised journal)",
+    factExportNote: "Every line carries a unique, stable identifier: importing the same period into IzyCompta several times never creates duplicates.",
+    factDu: "From",
+    factAu: "To",
+    btnExportCsv: "Download as CSV (Excel)",
+    btnExportJson: "Download as JSON (IzyCompta import)",
+    factMode_especes: "Cash", factMode_om: "Orange Money", factMode_momo: "MTN MoMo", factMode_banque: "Bank transfer", factMode_cheque: "Cheque", factMode_autre: "Other",
+    factCat_achat_marchandises: "Goods purchase", factCat_transport: "Transport", factCat_loyer: "Rent", factCat_salaires: "Salaries", factCat_electricite_eau: "Electricity / water", factCat_telecom: "Phone / internet", factCat_publicite: "Advertising", factCat_entretien: "Maintenance", factCat_taxes: "Taxes", factCat_autre: "Other",
 
     ongletTableauDeBord: "Dashboard",
     ongletServices: "Services",
@@ -1869,7 +2019,20 @@ function choisirMarchand(id) {
 // Roles assignables a un employe pour CE marchand (depend de son type — voir server.js,
 // ROLES_EMPLOYE_VALIDES). Utilise a la fois pour filtrer les onglets visibles (ci-dessous) et pour
 // construire les cases a cocher de l'onglet "Employés" (voir renderEmployes plus bas).
+// Etape 54 : source de facturation du marchand ("aucune"/"interne"/"izyfacture"), decidee par le
+// super-administrateur seul (le marchand n'en voit que le resultat, jamais le selecteur).
+function sourceFacturationAdmin() {
+  return marchandActif.sourceFacturation || (marchandActif.optionFacturationIzyfacture ? "izyfacture" : "aucune");
+}
+function colonneFactureActive() { return sourceFacturationAdmin() !== "aucune"; }
+// Roles "facturation" (ecriture) et "comptable" (lecture + export) : n'ont de sens que si le module
+// integre est (ou a ete) utilise par ce marchand, sinon on ne les propose meme pas.
 function rolesDisponibles() {
+  const base = rolesDisponiblesBase();
+  if (!marchandActif.facturationInterneVisible) return base;
+  return base.concat([["facturation", t("roleFacturation")], ["comptable", t("roleComptable")]]);
+}
+function rolesDisponiblesBase() {
   // "tableaudebord" est desormais independant de "parametres" (depuis le 25 septembre 2026) : couvre
   // uniquement le Tableau de bord (les deux types) - voir ROLES_EMPLOYE_VALIDES / construireOnglets()
   // ci-dessous. "parametres" ne couvre plus que les vrais réglages (onglet Paramètres + Mon compte).
@@ -1949,6 +2112,7 @@ function construireOnglets() {
           // Visible si le role « conversations » OU les deux roles operationnels (voir simulateurHybrideAutorise cote serveur).
           ["simulateur", t("ongletSimulateur"), renderSimulateur, (roles) => roles.indexOf("conversations") !== -1 || (roles.indexOf("catalogue") !== -1 && roles.indexOf("rendezvous") !== -1), null],
           ["conversations", t("ongletConversations"), renderConversations, "conversations", null],
+          marchandActif.facturationInterneVisible ? ["facturation", t("ongletFacturation"), renderFacturation, ["facturation", "comptable"], null] : null,
           ["employes", t("ongletEmployes"), renderEmployes, "gestion", null],
           ["journal", t("ongletJournal"), renderJournal, "gestion", null],
           ["compte", t("ongletCompte"), renderCompte, null, null]
@@ -1962,10 +2126,11 @@ function construireOnglets() {
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["rendezvous", "conversations"]],
         ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametresService"), renderParametresService, "parametres"],
+        marchandActif.facturationInterneVisible ? ["facturation", t("ongletFacturation"), renderFacturation, ["facturation", "comptable"]] : null,
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
         ["journal", t("ongletJournal"), renderJournal, "gestion"],
         ["compte", t("ongletCompte"), renderCompte, null]
-      ]
+      ].filter(Boolean)
     : [
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
         ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue"],
@@ -1980,6 +2145,7 @@ function construireOnglets() {
         ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire"],
         ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
+        marchandActif.facturationInterneVisible ? ["facturation", t("ongletFacturation"), renderFacturation, ["facturation", "comptable"]] : null,
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
         ["journal", t("ongletJournal"), renderJournal, "gestion"],
         ["compte", t("ongletCompte"), renderCompte, null]
@@ -3053,7 +3219,7 @@ async function renderCommandes() {
           "<label>" + t("labelAu") + "<input type='date' id='commandesInputAu' value='" + esc(commandesFiltrePlageAu) + "' /></label>"
         : "") +
     "</div>" +
-    "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadArticles") + "</th><th>" + t("theadNbArticles") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadModeCourt") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadAdresse") + "</th><th>" + t("theadStatut") + "</th>" + (marchandActif.optionFacturationIzyfacture ? "<th>" + t("theadFacture") + "</th>" : "") + "</tr>" +
+    "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("theadArticles") + "</th><th>" + t("theadNbArticles") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadModeCourt") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadAdresse") + "</th><th>" + t("theadStatut") + "</th>" + (colonneFactureActive() ? "<th>" + t("theadFacture") + "</th>" : "") + "</tr>" +
     (visibles.length ? visibles.map((o) =>
       "<tr>" +
         "<td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
@@ -3074,9 +3240,9 @@ async function renderCommandes() {
         "<td><select data-commande='" + o.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === o.statut ? " selected" : "") + ">" + esc(libelleStatutCommande(s)) + "</option>").join("") + "</select>" +
           (o.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(o.raisonAnnulation) + "</div>" : "") +
         "</td>" +
-        (marchandActif.optionFacturationIzyfacture ? "<td>" + celluleIzyfacture(o) + "</td>" : "") +
+        (colonneFactureActive() ? "<td>" + celluleIzyfacture(o) + "</td>" : "") +
       "</tr>"
-    ).join("") : "<tr><td colspan='" + (marchandActif.optionFacturationIzyfacture ? 10 : 9) + "'>" + (commandes.length ? t("aucuneCorrespondanceFiltre") : t("aucuneCommande")) + "</td></tr>") +
+    ).join("") : "<tr><td colspan='" + (colonneFactureActive() ? 10 : 9) + "'>" + (commandes.length ? t("aucuneCorrespondanceFiltre") : t("aucuneCommande")) + "</td></tr>") +
     "</table>";
 
   document.getElementById("commandesSelStatut").onchange = (e) => { commandesFiltreStatut = e.target.value; renderCommandes(); };
@@ -3340,7 +3506,7 @@ async function renderParametresCatalogue() {
   // "Facturation IzyFacture" est une option payante (voir blocOptionsPayantesHtml) : tant que le
   // super-administrateur ne l'a pas debloquee pour ce marchand, la route /izyfacture/parametres refuse
   // meme au proprietaire (403) - inutile de l'appeler, et le bloc entier reste invisible plus bas.
-  const izyfactureDebloquee = estGestionnaire && marchandActif.optionFacturationIzyfacture === true && izyfactureDansCetOnglet("catalogue");
+  const izyfactureDebloquee = estGestionnaire && sourceFacturationAdmin() === "izyfacture" && izyfactureDansCetOnglet("catalogue");
   const [parametres, izyfactureEtat] = await Promise.all([
     api("/api/" + marchandActif.id + "/parametres"),
     izyfactureDebloquee ? api("/api/" + marchandActif.id + "/izyfacture/parametres") : Promise.resolve(null)
@@ -3445,7 +3611,7 @@ async function renderRendezvous() {
   const statuts = ["Nouvelle", "Confirmé", "Honoré", "Absent", "Annulé"];
   const tri = rdvs.slice().reverse();
   const nbRappelsEchec = rdvs.filter((a) => a.rappelStatut === "echec").length;
-  const avecFacture = marchandActif.optionFacturationIzyfacture === true;
+  const avecFacture = colonneFactureActive();
   // Etat du rappel automatique de la veille (Etape 44) : visible, pour qu'un echec ne passe jamais inapercu.
   function badgeRappel(a) {
     if (a.rappelStatut === "envoye") return "<span class='rappel-ok'>" + esc(a.rappelCanal === "template" ? t("rappelEnvoyeTemplate") : t("rappelEnvoye")) + "</span>";
@@ -3491,7 +3657,7 @@ async function renderParametresService() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const estGestionnaireSvc = moi.role === "marchand" || moi.role === "superadmin";
-  const izyfactureDebloqueeSvc = estGestionnaireSvc && marchandActif.optionFacturationIzyfacture === true && izyfactureDansCetOnglet("service");
+  const izyfactureDebloqueeSvc = estGestionnaireSvc && sourceFacturationAdmin() === "izyfacture" && izyfactureDansCetOnglet("service");
   const [parametres, izyfactureEtatSvc] = await Promise.all([
     api("/api/" + marchandActif.id + "/parametres"),
     izyfactureDebloqueeSvc ? api("/api/" + marchandActif.id + "/izyfacture/parametres") : Promise.resolve(null)
@@ -3617,6 +3783,148 @@ function formaterDateHeure(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   return d.toLocaleDateString(localeCourante()) + " " + (langueAdmin === "en" ? "at" : "à") + " " + d.toLocaleTimeString(localeCourante(), { hour: "2-digit", minute: "2-digit" });
+}
+
+
+// ---------------- Onglet Facturation (Etapes 54-56) : facturation INTEGREE ----------------
+// Visible seulement si le super-administrateur a choisi la source « integree » pour ce marchand (ou si un
+// historique integre existe apres la bascule). Role « facturation » = ecriture ; « comptable » = lecture +
+// export (aucun bouton d'ecriture). Le serveur refait de toute facon chaque controle.
+function facturationMontant(n) { return Number(n || 0).toLocaleString(localeCourante()) + " FCFA"; }
+async function renderFacturation() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const d = await api("/api/" + marchandActif.id + "/facturation");
+  const peutEcrire = moi.role !== "employe" || (moi.roles || []).indexOf("facturation") !== -1;
+  const actif = d.interneActif === true;
+  const ecriture = peutEcrire && actif;
+  const gestionnaire = moi.role === "marchand" || moi.role === "superadmin";
+  const optMode = d.methodes.map((m) => "<option value='" + m + "'>" + esc(t("factMode_" + m)) + "</option>").join("");
+  const optCat = d.categories.map((c) => "<option value='" + c + "'>" + esc(t("factCat_" + c)) + "</option>").join("");
+  const tuile = (lib, val) => "<div class='tuile' style='flex:1;min-width:150px;padding:10px;'><div class='raison'>" + esc(lib) + "</div><strong>" + esc(facturationMontant(val)) + "</strong></div>";
+
+  let h = "<h3>" + t("factTitre") + "</h3>";
+  if (!actif) h += "<div class='tuile avertissement' style='padding:10px;border-radius:6px;margin:8px 0;'>" + esc(t("factBanniereBascule", { date: d.dateBascule || "—" })) + "</div>";
+  else if (!peutEcrire) h += "<p class='raison'>" + t("factLectureSeule") + "</p>";
+  h += "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;'>" +
+    tuile(t("factTotalFacture"), d.totaux.factureNet) + tuile(t("factTotalEncaisse"), d.totaux.encaisse) +
+    tuile(t("factTotalSolde"), d.totaux.soldeOuvert) + tuile(t("factTotalDepenses"), d.totaux.depenses) + "</div>";
+  if (actif && gestionnaire) {
+    h += "<label style='display:block;margin:8px 0;'><input type='checkbox' id='champFactAuto'" + (d.autoFacturation ? " checked" : "") + " /> " + t("factAutoLabel") + "</label>";
+  }
+
+  if (ecriture) {
+    h += "<h3>" + t("factNouvelleFacture") + "</h3>" +
+      "<div><label>" + t("factClient") + "</label> <input id='fNom' /> <label>" + t("factTelephone") + "</label> <input id='fTel' /></div>" +
+      "<table class='table-donnees'><tr><th>" + t("factDesignation") + "</th><th>" + t("factQte") + "</th><th>" + t("factPrixUnit") + "</th></tr>" +
+      [0, 1, 2].map((i) => "<tr><td><input class='fLigDes' /></td><td><input class='fLigQte' type='number' min='1' value='1' style='width:70px;' /></td><td><input class='fLigPrix' type='number' min='0' style='width:110px;' /></td></tr>").join("") + "</table>" +
+      "<div><label>" + t("factNotes") + "</label> <input id='fNotes' style='width:60%;' /></div>" +
+      "<div style='margin-top:8px;'><button id='btnCreerFacture' class='principal'>" + t("btnCreerFacture") + "</button></div>";
+  }
+
+  h += "<h3>" + t("factListe") + "</h3>";
+  if (!d.factures.length) h += "<p class='raison'>" + t("factAucune") + "</p>";
+  else {
+    h += "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("theadDateCourt") + "</th><th>" + t("factClientCol") + "</th><th>" + t("factTotal") + "</th><th>" + t("factPaye") + "</th><th>" + t("factSolde") + "</th><th>" + t("theadStatut") + "</th><th></th></tr>" +
+      d.factures.map((f) => "<tr><td><a href='" + esc(f.url) + "' target='_blank' rel='noopener'>" + esc(f.numero) + "</a></td><td>" + esc(f.date) + "</td><td>" + esc(f.client.nom) + "</td><td>" + esc(facturationMontant(f.net)) + "</td><td>" + esc(facturationMontant(f.paye)) + "</td><td>" + esc(facturationMontant(f.solde)) + "</td><td>" + esc(t("factStatut_" + f.statut)) + (f.aRembourser ? " <span class='raison'>(" + esc(t("factARembourser", { montant: facturationMontant(f.aRembourser) })) + ")</span>" : "") + "</td><td>" +
+        (peutEcrire && f.statut !== "avoir" && f.solde > 0 ? "<button data-fpaiement='" + f.id + "'>" + t("btnFactPaiement") + "</button> " : "") +
+        (peutEcrire && f.statut !== "avoir" ? "<button data-favoir='" + f.id + "'>" + t("btnFactAvoir") + "</button>" : "") +
+        "</td></tr>").join("") + "</table>";
+  }
+
+  h += "<h3>" + t("factDepenses") + "</h3>";
+  if (ecriture) {
+    h += "<div><label>" + t("factDate") + "</label> <input id='dDate' type='date' /> <label>" + t("factCategorie") + "</label> <select id='dCat'>" + optCat + "</select> <label>" + t("factMontant") + "</label> <input id='dMontant' type='number' min='1' style='width:110px;' /> <label>" + t("factMode") + "</label> <select id='dMode'>" + optMode + "</select></div>" +
+      "<div style='margin-top:6px;'><label>" + t("factFournisseur") + "</label> <input id='dFourn' /> <label>" + t("factNote") + "</label> <input id='dNote' /> <label>" + t("factJustificatif") + "</label> <input id='dJust' /></div>" +
+      "<div style='margin-top:8px;'><button id='btnCreerDepense' class='principal'>" + t("btnCreerDepense") + "</button></div>";
+  }
+  if (!d.depenses.length) h += "<p class='raison'>" + t("factAucuneDepense") + "</p>";
+  else {
+    h += "<table class='table-donnees'><tr><th>" + t("theadNumero") + "</th><th>" + t("factDate") + "</th><th>" + t("factCategorie") + "</th><th>" + t("factFournisseur") + "</th><th>" + t("factMontant") + "</th><th>" + t("factMode") + "</th><th></th></tr>" +
+      d.depenses.map((x) => "<tr" + (x.annulee ? " style='text-decoration:line-through;color:#888;'" : "") + "><td>" + esc(x.numero) + "</td><td>" + esc(x.date) + "</td><td>" + esc(t("factCat_" + x.categorie)) + "</td><td>" + esc(x.fournisseur || "") + "</td><td>" + esc(facturationMontant(x.montant)) + "</td><td>" + esc(t("factMode_" + x.methode)) + "</td><td>" +
+        (ecriture && !x.annulee ? "<button data-dannuler='" + x.id + "'>" + t("btnDepenseAnnuler") + "</button>" : (x.annulee ? esc(t("factDepenseAnnulee")) : "")) + "</td></tr>").join("") + "</table>";
+  }
+
+  h += "<h3>" + t("factExport") + "</h3><p class='raison'>" + t("factExportNote") + "</p>" +
+    "<div><label>" + t("factDu") + "</label> <input id='xDu' type='date' /> <label>" + t("factAu") + "</label> <input id='xAu' type='date' /> " +
+    "<button id='btnExportCsv'>" + t("btnExportCsv") + "</button> <button id='btnExportJson'>" + t("btnExportJson") + "</button></div>";
+  zone.innerHTML = h;
+
+  const rerendre = () => renderFacturation();
+  const exporter = (format) => {
+    const q = ["format=" + format];
+    if (format === "csv") q.push("sep=semicolon"); // Excel en francais attend le point-virgule
+    const du = document.getElementById("xDu").value, au = document.getElementById("xAu").value;
+    if (du) q.push("du=" + du); if (au) q.push("au=" + au);
+    window.open("/api/" + marchandActif.id + "/facturation/journal?" + q.join("&"), "_blank");
+  };
+  document.getElementById("btnExportCsv").onclick = () => exporter("csv");
+  document.getElementById("btnExportJson").onclick = () => exporter("json");
+  const auto = document.getElementById("champFactAuto");
+  if (auto) auto.onchange = async () => {
+    try { await api("/api/" + marchandActif.id + "/facturation/parametres", { method: "PUT", body: JSON.stringify({ autoFacturation: auto.checked }) }); }
+    catch (e) { alert(t("erreurPrefixe") + e.message); auto.checked = !auto.checked; }
+  };
+  const bF = document.getElementById("btnCreerFacture");
+  if (bF) bF.onclick = async () => {
+    const dess = zone.querySelectorAll(".fLigDes"), qtes = zone.querySelectorAll(".fLigQte"), prix = zone.querySelectorAll(".fLigPrix");
+    const lignes = [];
+    for (let i = 0; i < dess.length; i++) if (dess[i].value.trim()) lignes.push({ designation: dess[i].value.trim(), quantite: Number(qtes[i].value), prixUnitaire: Number(prix[i].value) });
+    try {
+      const f = await api("/api/" + marchandActif.id + "/facturation/factures", { method: "POST", body: JSON.stringify({ client: { nom: document.getElementById("fNom").value, telephone: document.getElementById("fTel").value }, lignes, notes: document.getElementById("fNotes").value }) });
+      alert(t("alertFactureCreee", { numero: f.numero }));
+      rerendre();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-fpaiement]"), (btn) => {
+    btn.onclick = async () => {
+      const saisie = prompt(t("promptMontantPaiement"));
+      if (saisie === null) return;
+      const montant = parseInt(String(saisie).replace(/[^0-9]/g, ""), 10);
+      if (!montant || montant <= 0) { alert(t("alertMontantPaiementInvalide")); return; }
+      const saisieMethode = prompt(t("promptMethodePaiement"), "especes");
+      if (saisieMethode === null) return;
+      const reference = prompt(t("promptReferencePaiement")) || undefined;
+      try {
+        const r = await api("/api/" + marchandActif.id + "/facturation/factures/" + btn.dataset.fpaiement + "/paiement", { method: "POST", body: JSON.stringify({ montant, methode: normaliserMethodePaiement(saisieMethode), reference }) });
+        alert(t("alertIzyfacturePaiementEnregistre", { numero: r.recu }));
+        rerendre();
+      } catch (e) { alert(t("alertIzyfacturePaiementEchec", { erreur: e.message })); }
+    };
+  });
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-favoir]"), (btn) => {
+    btn.onclick = async () => {
+      const saisie = prompt(t("promptAvoirMontant"));
+      if (saisie === null) return;
+      const motif = prompt(t("promptAvoirMotif")) || undefined;
+      const corps = { motif };
+      const nb = parseInt(String(saisie).replace(/[^0-9]/g, ""), 10);
+      if (nb > 0) corps.montant = nb;
+      try {
+        const r = await api("/api/" + marchandActif.id + "/facturation/factures/" + btn.dataset.favoir + "/avoir", { method: "POST", body: JSON.stringify(corps) });
+        alert(t("alertAvoirCree", { numero: r.avoir }));
+        rerendre();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  });
+  const bD = document.getElementById("btnCreerDepense");
+  if (bD) bD.onclick = async () => {
+    try {
+      await api("/api/" + marchandActif.id + "/facturation/depenses", { method: "POST", body: JSON.stringify({ date: document.getElementById("dDate").value || undefined, categorie: document.getElementById("dCat").value, montant: Number(document.getElementById("dMontant").value), methode: document.getElementById("dMode").value, fournisseur: document.getElementById("dFourn").value, note: document.getElementById("dNote").value, justificatif: document.getElementById("dJust").value }) });
+      alert(t("alertDepenseCreee"));
+      rerendre();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-dannuler]"), (btn) => {
+    btn.onclick = async () => {
+      const motif = prompt(t("promptDepenseMotif"));
+      if (motif === null) return;
+      try {
+        await api("/api/" + marchandActif.id + "/facturation/depenses/" + btn.dataset.dannuler + "/annuler", { method: "POST", body: JSON.stringify({ motif }) });
+        rerendre();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  });
 }
 
 async function renderConversations() {
@@ -4589,10 +4897,75 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionStockIllimite'" + (marchandActif.optionStockIllimite ? " checked" : "") + " /> " + t("labelOptionStockIllimite") + "</label>" +
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionLienCommande'" + (marchandActif.optionLienCommande ? " checked" : "") + " /> " + t("labelOptionLienCommande") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionNotifStatut'" + (marchandActif.optionNotificationsStatut ? " checked" : "") + " /> " + t("labelOptionNotifStatut") + "</label>" +
-    "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionFacturationIzyfacture'" + (marchandActif.optionFacturationIzyfacture ? " checked" : "") + " /> " + t("labelOptionFacturationIzyfacture") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaissePos'" + (marchandActif.optionCaissePos ? " checked" : "") + " /> " + t("labelOptionCaissePos") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
+    blocSourceFacturationHtml() +
     blocModuleSecondaireHtml();
+}
+
+// ---------------- Source de facturation (Etape 54) : SUPER-ADMINISTRATEUR UNIQUEMENT ----------------
+// Ce bloc n'est affiche que dans « Mon compte » du super-administrateur (blocOptionsPayantesHtml n'est appele
+// que dans cette branche) ; le serveur refuse de toute facon les routes correspondantes a tout autre role.
+function blocSourceFacturationHtml() {
+  if (!moi || moi.role !== "superadmin") return "";
+  const src = sourceFacturationAdmin();
+  const fait = !!marchandActif.dateBasculeFacturation;
+  let options;
+  if (src === "interne") options = [["interne", "srcInterne"], ["aucune", "srcAucune"]];
+  else if (fait) options = [["izyfacture", "srcIzyfacture"], ["aucune", "srcAucune"]];
+  else options = [["aucune", "srcAucune"], ["interne", "srcInterne"], ["izyfacture", "srcIzyfacture"]];
+  return "<h3>" + t("h3SourceFacturation") + "</h3>" +
+    "<p class='raison'>" + t("noteSourceFacturation") + "</p>" +
+    (fait ? "<p class='raison'><strong>" + esc(t("noteBasculeFaite", { date: marchandActif.dateBasculeFacturation })) + "</strong></p>" : "") +
+    "<select id='champSourceFacturation'>" + options.map((o) => "<option value='" + o[0] + "'" + (o[0] === src ? " selected" : "") + ">" + esc(t(o[1])) + "</option>").join("") + "</select> " +
+    "<button id='btnSauverSourceFacturation' class='principal'>" + t("btnAppliquerSource") + "</button>" +
+    (src === "interne" ? " <button id='btnPreparerBascule'>" + t("btnPreparerBascule") + "</button>" : "") +
+    "<div id='zoneBascule'></div>";
+}
+function brancherBlocSourceFacturation() {
+  const bSource = document.getElementById("btnSauverSourceFacturation");
+  if (!bSource) return;
+  bSource.onclick = async () => {
+    const cible = document.getElementById("champSourceFacturation").value;
+    if (cible === sourceFacturationAdmin()) return;
+    const idMarchand = marchandActif.id;
+    try {
+      await api("/api/" + idMarchand + "/facturation/source", { method: "PUT", body: JSON.stringify({ source: cible }) });
+      alert(t("alertSourceEnregistree"));
+      await demarrer();
+      if (marchands.some((m) => m.id === idMarchand)) choisirMarchand(idMarchand);
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  const bBascule = document.getElementById("btnPreparerBascule");
+  if (!bBascule) return;
+  bBascule.onclick = async () => {
+    const zone = document.getElementById("zoneBascule");
+    zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+    try {
+      const a = await api("/api/" + marchandActif.id + "/facturation/bascule/apercu");
+      const numeros = Object.keys(a.derniersNumeros).map((k) => a.derniersNumeros[k]).join(", ") || "—";
+      zone.innerHTML = "<div class='tuile avertissement' style='padding:10px;border-radius:6px;margin:10px 0;'>" +
+        "<p><strong>" + t("basculeTitre") + "</strong></p>" +
+        "<p>" + esc(t("basculeStats", { nbFactures: a.nbFactures, nbDepenses: a.nbDepenses, numeros })) + "</p>" +
+        (a.facturesOuvertes.length ? "<p>" + esc(t("basculeOuvertes", { n: a.facturesOuvertes.length, total: a.soldeOuvertTotal.toLocaleString(localeCourante()) })) + "</p><ul>" +
+          a.facturesOuvertes.slice(0, 15).map((f) => "<li>" + esc(f.numero) + " — " + esc(f.client) + " — " + f.solde.toLocaleString(localeCourante()) + " FCFA</li>").join("") + "</ul>" : "") +
+        (a.autoFacturation ? "<p>" + t("basculeAuto") + "</p>" : "") +
+        (a.cleIzyfactureEnregistree ? "" : "<p style='color:#b3261e;'><strong>" + t("basculeCleManquante") + "</strong></p>") +
+        "<label style='display:block;margin:8px 0;'><input type='checkbox' id='caseConfirmerBascule' /> " + t("basculeConfirmCase") + "</label>" +
+        "<button id='btnConfirmerBascule' class='principal'" + (a.cleIzyfactureEnregistree ? "" : " disabled") + ">" + t("btnConfirmerBascule") + "</button>" +
+      "</div>";
+      document.getElementById("btnConfirmerBascule").onclick = async () => {
+        if (!document.getElementById("caseConfirmerBascule").checked) { alert(t("basculeConfirmCase")); return; }
+        const idMarchand = marchandActif.id;
+        try {
+          await api("/api/" + idMarchand + "/facturation/bascule", { method: "POST", body: JSON.stringify({ confirmer: true }) });
+          alert(t("alertBasculeFaite"));
+          await demarrer();
+          if (marchands.some((m) => m.id === idMarchand)) choisirMarchand(idMarchand);
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
+      };
+    } catch (e) { zone.innerHTML = ""; alert(t("erreurPrefixe") + e.message); }
+  };
 }
 // Second volet d'un marchand hybride (Etape 48) : ce bloc n'existe que dans l'ecran « Mon compte » du
 // SUPER-ADMINISTRATEUR (blocOptionsPayantesHtml n'est appele que dans cette branche) ; le serveur refuse de
@@ -4629,6 +5002,7 @@ function brancherBlocModuleSecondaire() {
 }
 function brancherBlocOptionsPayantes() {
   brancherBlocModuleSecondaire();
+  brancherBlocSourceFacturation();
   document.getElementById("btnSauverOptionsPayantes").onclick = async () => {
     try {
       await api("/api/marchands/" + marchandActif.id + "/options-payantes", {
@@ -4637,7 +5011,6 @@ function brancherBlocOptionsPayantes() {
           optionStockIllimite: document.getElementById("champOptionStockIllimite").checked,
           optionLienCommande: document.getElementById("champOptionLienCommande").checked,
           optionNotificationsStatut: document.getElementById("champOptionNotifStatut").checked,
-          optionFacturationIzyfacture: document.getElementById("champOptionFacturationIzyfacture").checked,
           optionCaissePos: document.getElementById("champOptionCaissePos").checked
         })
       });

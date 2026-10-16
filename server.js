@@ -21,6 +21,7 @@ const sh = require("./shared");
 const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
 const izyfacture = require("./izyfacture");
+const { creerMoteurFacturation, METHODES: METHODES_PAIEMENT, CATEGORIES_DEPENSE } = require("./facturation");
 const cryptoUtil = require("./crypto-util");
 const { clientIp } = require("./clientip");
 const { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE } = require("./hybride");
@@ -240,6 +241,10 @@ async function construireEntree(m) {
     await moteurs[second].init();
   }
   const entree = { merchant: m, engine: moteurs[m.type], moteurs };
+  // Etape 54 : moteur de facturation integree (etat range sous "<id>__facturation", voir facturation.js).
+  // Toujours charge ; c'est la SOURCE choisie par le super-administrateur qui decide s'il sert ou non.
+  entree.facturation = creerMoteurFacturation(m.id);
+  await entree.facturation.init();
   if (modules.length > 1) entree.routeur = creerRouteurPourMarchand(m, moteurs);
   return entree;
 }
@@ -281,7 +286,7 @@ function estHybride(entry) { return !!(entry && entry.routeur); }
 // n'a pas, renvoie l'entree elle-meme (le controle de type de chaque route repond alors 400 comme avant).
 function vueEntree(entry, type) {
   if (!entry || !entry.moteurs || !entry.moteurs[type] || entry.engine.type === type) return entry;
-  return { merchant: entry.merchant, engine: entry.moteurs[type], moteurs: entry.moteurs, routeur: entry.routeur, volet: type };
+  return { merchant: entry.merchant, engine: entry.moteurs[type], moteurs: entry.moteurs, routeur: entry.routeur, volet: type, facturation: entry.facturation };
 }
 
 // Pour les routes /admin : quelle(s) vue(s) d'un marchand hybride une permission implique-t-elle ?
@@ -457,7 +462,7 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 // /api/:id/pos/vente plus bas) - marchand catalogue uniquement, et l'onglet lui-meme reste invisible tant
 // que le super-administrateur n'a pas debloque l'option payante "optionCaissePos" pour ce marchand (voir
 // PUT /api/marchands/:id/options-payantes), meme si l'employe a deja ce role.
-const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse"];
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable"];
 
 // ---------------- Session de connexion /admin (29 septembre 2026) ----------------
 // Remplace l'authentification HTTP Basic (popup native du navigateur - aucune notion de "session" ni de
@@ -737,7 +742,8 @@ app.get("/admin", (req, res) => {
 
 // Actions reservees au super-administrateur : jamais montrees au marchand (il ne doit pas voir ces options).
 const ACTIONS_SUPERADMIN_SEULEMENT = new Set([
-  "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees", "module_secondaire_modifie"
+  "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees", "module_secondaire_modifie",
+  "facturation_source_modifiee", "facturation_bascule"
 ]);
 
 const LIBELLES_ACTIONS_AUDIT = {
@@ -749,6 +755,14 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/actif": "marchand_actif_modifie",
   "PUT /api/marchands/:id/options-payantes": "options_payantes_modifiees",
   "PUT /api/marchands/:id/module-secondaire": "module_secondaire_modifie",
+  "PUT /api/:id/facturation/source": "facturation_source_modifiee",
+  "POST /api/:id/facturation/bascule": "facturation_bascule",
+  "PUT /api/:id/facturation/parametres": "facturation_parametres_modifies",
+  "POST /api/:id/facturation/factures": "facture_interne_creee",
+  "POST /api/:id/facturation/factures/:fid/paiement": "paiement_interne_enregistre",
+  "POST /api/:id/facturation/factures/:fid/avoir": "avoir_interne_cree",
+  "POST /api/:id/facturation/depenses": "depense_creee",
+  "POST /api/:id/facturation/depenses/:did/annuler": "depense_annulee",
   "PUT /api/:id/izyfacture/parametres": "izyfacture_parametres_modifies",
   "POST /api/:id/izyfacture/tester": "izyfacture_testee",
   "POST /api/:id/commandes/:orderId/izyfacture/facturer": "facture_creee",
@@ -815,6 +829,12 @@ function detailAuditRequete(code, req) {
     case "marchand_actif_modifie": return { actif: b.actif };
     case "options_payantes_modifiees": return { options: b };
     case "module_secondaire_modifie": return { moduleSecondaire: b.moduleSecondaire || null };
+    case "facturation_source_modifiee": return { source: b.source || null };
+    case "facturation_bascule": return {};
+    case "paiement_interne_enregistre": case "avoir_interne_cree": return { facture: p.fid, montant: b.montant != null ? Number(b.montant) || null : null };
+    case "depense_creee": return { categorie: b.categorie || null, montant: Number(b.montant) || null };
+    case "depense_annulee": return { depense: p.did };
+    case "facture_interne_creee": return { lignes: Array.isArray(b.lignes) ? b.lignes.length : null };
     case "reponse_manuelle_envoyee": return { telephone: p.telephone };
     case "client_attente_contacte": return { entree: p.entreeId };
     case "inventaire_instantane_supprime": return { instantane: p.snapshotId };
@@ -1092,6 +1112,13 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     // IzyFacture est configure pour ce marchand (voir /api/:id/izyfacture/parametres pour le detail,
     // reserve au proprietaire/super-administrateur).
     izyfactureConfiguree: !!e.merchant.izyfactureApiKey,
+    // Etape 54 : source de facturation choisie par le super-administrateur ("aucune"/"interne"/"izyfacture").
+    // Le marchand en voit seulement le RESULTAT (colonnes Facture, onglet Facturation) ; le selecteur et la
+    // bascule n'existent que dans l'interface du super-administrateur, et leurs routes lui sont reservees.
+    sourceFacturation: sourceFacturation(e),
+    facturationInterneVisible: facturationInterneVisible(e),
+    facturationInterneAuto: !!e.facturation && e.facturation.config().autoFacturation === true,
+    dateBasculeFacturation: e.facturation ? e.facturation.config().dateBascule || null : null,
     izyfactureAutoFacturation: e.merchant.izyfactureAutoFacturation === true,
     // Dernier echec de LIVRAISON reel d'une alerte, signale par Meta apres coup (voir POST /webhook,
     // traitement de "statuses", Etape 25) - distinct du resultat du bouton "Tester l'alerte maintenant"
@@ -1371,7 +1398,14 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (optionStockIllimite !== undefined) patch.optionStockIllimite = !!optionStockIllimite;
   if (optionLienCommande !== undefined) patch.optionLienCommande = !!optionLienCommande;
   if (optionNotificationsStatut !== undefined) patch.optionNotificationsStatut = !!optionNotificationsStatut;
-  if (optionFacturationIzyfacture !== undefined) patch.optionFacturationIzyfacture = !!optionFacturationIzyfacture;
+  if (optionFacturationIzyfacture !== undefined) {
+    // Etape 54 : une seule source de facturation a la fois. Activer IzyFacture alors que la facturation
+    // integree est active ne se fait que par la bascule (sens unique) - voir PUT /facturation/source.
+    if (optionFacturationIzyfacture && sourceFacturation(entry) === "interne") {
+      return res.status(409).json({ erreur: "La facturation intégrée est active : utilisez le choix de source (bascule) plutôt que cette case." });
+    }
+    patch.optionFacturationIzyfacture = !!optionFacturationIzyfacture;
+  }
   if (optionCaissePos !== undefined) patch.optionCaissePos = !!optionCaissePos;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
   const maj = await db.updateMerchantFields(req.params.id, patch);
@@ -1412,6 +1446,429 @@ app.put("/api/marchands/:id/module-secondaire", protegerAcces, async (req, res) 
   res.locals.audit = { detail: { avant, apres: demande } };
   console.log(`[${req.params.id}] Module secondaire modifié par ${req.auth.adminUser} : ${avant || "aucun"} -> ${demande || "aucun"}.`);
   res.json({ id: req.params.id, moduleSecondaire: demande, modules: modulesDuMarchand(entry.merchant) });
+});
+
+// ---------------- Facturation INTEGREE (Etapes 54-56) ----------------
+// Un marchand a UNE seule source de facturation a la fois, choisie par le SUPER-ADMINISTRATEUR seul :
+//   "aucune"     : pas de facturation (comportement d'origine)
+//   "interne"    : mini-module de facturation integre a IzyVendeur (facturation.js)
+//   "izyfacture" : pont vers l'application IzyFacture (champ existant optionFacturationIzyfacture)
+// Ni le marchand, ni ses employes, ne peuvent changer cette source ni voir les commandes qui la changent :
+// routes reservees a req.auth.role === "superadmin" (403 sinon) et actions masquees du journal du marchand
+// (ACTIONS_SUPERADMIN_SEULEMENT). Le passage "interne" -> "izyfacture" est a SENS UNIQUE : il passe par la
+// bascule (apercu + confirmation) et on ne revient jamais a "interne" ensuite.
+//
+// La source "interne" est portee par le moteur de facturation (config.interne) ; "izyfacture" par
+// merchant.optionFacturationIzyfacture ; les deux ne sont jamais vraies en meme temps (voir definirSource).
+
+function sourceFacturation(entry) {
+  if (entry.facturation && entry.facturation.config().interne) return "interne";
+  return entry.merchant.optionFacturationIzyfacture === true ? "izyfacture" : "aucune";
+}
+// L'onglet Facturation (et la lecture des pieces) reste disponible tant qu'il existe des donnees integrees,
+// meme apres la bascule : l'historique ne disparait jamais.
+function facturationInterneVisible(entry) {
+  return !!entry.facturation && (entry.facturation.config().interne || entry.facturation.aDesDonnees());
+}
+// Source qui a facture (ou facturera) CET objet : une commande deja facturee garde la source de sa facture.
+function sourceDeLObjet(entry, order) {
+  return order && order.izyfactureFactureId ? (order.factureSource || "izyfacture") : sourceFacturation(entry);
+}
+function facturationAutoActive(entry) {
+  return sourceFacturation(entry) === "interne" ? entry.facturation.config().autoFacturation === true : entry.merchant.izyfactureAutoFacturation === true;
+}
+// true si la facturation peut s'executer pour cet objet (utilise par les declenchements automatiques).
+function facturationPeutAgir(entry, order) {
+  const src = sourceDeLObjet(entry, order);
+  if (src === "interne") return !!entry.facturation;
+  return src === "izyfacture" && entry.merchant.optionFacturationIzyfacture === true && !!entry.merchant.izyfactureApiKey;
+}
+// Controle commun des routes manuelles "facturer"/"paiement" d'une commande ou d'un rendez-vous.
+// Renvoie null si tout est en ordre, sinon { status, erreur }.
+function refusFacturationManuelle(entry, order, action) {
+  if (action === "paiement" && order && order.factureSource === "interne" && entry.facturation) return null;
+  const src = sourceFacturation(entry);
+  if (src === "interne") return null;
+  if (src !== "izyfacture") return { status: 403, erreur: "Cette option n'est pas activée pour ce marchand." };
+  if (!entry.merchant.izyfactureApiKey) return { status: 400, erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." };
+  return null;
+}
+
+function urlPubliqueFacture(token) {
+  const base = process.env.DOMAINE_PUBLIC ? "https://" + process.env.DOMAINE_PUBLIC : (process.env.BASE_URL_PUBLIQUE || "https://izyvendeur.app");
+  return base.replace(/\/+$/, "") + "/f/" + token;
+}
+
+function lignesFactureInterne(entry, order) {
+  if (estRendezVous(entry)) return [{ designation: order.service || "Prestation", quantite: 1, prixUnitaire: Number(order.prix) || 0 }];
+  return (order.items || []).map((it) => {
+    let d = it.produit || "Article";
+    const variante = [it.couleur, it.taille].filter((x) => x && x !== "-" && x !== "—" && x !== "–").join(" ");
+    if (variante) d += " (" + variante + ")";
+    return { designation: d, quantite: it.quantite || 1, prixUnitaire: it.prixUnitaire || 0 };
+  });
+}
+
+async function tenterFacturationInterne(entry, order) {
+  const rdv = estRendezVous(entry);
+  if (order.izyfactureFactureId && order.factureSource === "interne") return; // deja facturee
+  if (rdv && !(Number(order.prix) > 0)) {
+    entry.engine.enregistrerEtatIzyFacture(order.id, { izyfactureStatut: "erreur", izyfactureErreur: "Prix du rendez-vous nul : rien à facturer." });
+    return;
+  }
+  const ref = rdv ? izyfacture.externalRefPourRendezVous(entry.merchant.id, order.id) : izyfacture.externalRefPourCommande(entry.merchant.id, order.id);
+  const nom = rdv && order.clientNom ? order.clientNom : (order.telephone ? "Client WhatsApp " + order.telephone : "Client IzyVendeur");
+  const r = entry.facturation.creerFacture({
+    client: { nom, telephone: order.telephone || null },
+    lignes: lignesFactureInterne(entry, order),
+    notes: (rdv ? "Rendez-vous WhatsApp " : "Commande WhatsApp ") + ref,
+    origine: { type: rdv ? "rdv" : "commande", id: order.id },
+    externalRef: ref,
+    creePar: "automatique"
+  });
+  if (r.erreur) {
+    entry.engine.enregistrerEtatIzyFacture(order.id, { izyfactureStatut: "erreur", izyfactureErreur: r.erreur });
+    console.error(`[${entry.merchant.id}] Échec de facturation intégrée (${libelleObjetFacture(entry, order)}) : ${r.erreur}`);
+    return;
+  }
+  const f = r.facture;
+  entry.engine.enregistrerEtatIzyFacture(order.id, {
+    factureSource: "interne",
+    izyfactureStatut: "facturee",
+    izyfactureFactureId: f.id,
+    izyfactureNumero: f.numero,
+    izyfactureUrlVerification: urlPubliqueFacture(f.token),
+    izyfactureErreur: null
+  });
+  console.log(`[${entry.merchant.id}] Facture intégrée ${f.numero} créée pour ${libelleObjetFacture(entry, order)}${r.duplicate ? " (déjà existante, aucun doublon)" : ""}.`);
+  if (!r.duplicate) {
+    try {
+      await notifierClientFactureCreee(entry, order, { number: f.numero, totals: { ttc: f.total }, verifyUrl: urlPubliqueFacture(f.token) });
+    } catch (e) {
+      console.error(`[${entry.merchant.id}] Échec de la notification client (facture intégrée) :`, e.message || e);
+    }
+  }
+}
+
+// Avoir integre : total (ce qui reste a creditier) pour une commande/un rendez-vous annule.
+function tenterAvoirInterne(entry, order, raison) {
+  if (!order.izyfactureFactureId) return;
+  const r = entry.facturation.creerAvoir(order.izyfactureFactureId, { motif: raison || (estRendezVous(entry) ? "Rendez-vous annulé" : "Commande annulée"), creePar: "automatique" });
+  if (r.erreur && !/déjà entièrement/.test(r.erreur)) {
+    console.error(`[${entry.merchant.id}] Échec d'avoir intégré (${libelleObjetFacture(entry, order)}) : ${r.erreur}`);
+    return;
+  }
+  const f = r.facture || entry.facturation.factureParId(order.izyfactureFactureId);
+  const dernierAvoir = f.avoirs[f.avoirs.length - 1];
+  entry.engine.enregistrerEtatIzyFacture(order.id, {
+    izyfactureStatut: "avoir",
+    izyfactureAvoirNumero: dernierAvoir ? dernierAvoir.numero : null,
+    izyfactureSolde: f.solde,
+    izyfactureErreur: null
+  });
+  console.log(`[${entry.merchant.id}] Avoir intégré ${dernierAvoir ? dernierAvoir.numero : ""} pour ${libelleObjetFacture(entry, order)}.`);
+}
+
+async function enregistrerPaiementInterne(entry, order, { montant, methode, reference }, creePar) {
+  const r = entry.facturation.enregistrerPaiement(order.izyfactureFactureId, { montant, methode, reference, creePar });
+  if (r.erreur) {
+    const erreur = new Error(r.erreur);
+    erreur.status = r.statut || 400;
+    throw erreur;
+  }
+  const historique = (order.izyfacturePaiements || []).concat([{ montant, methode, reference: reference || null, date: new Date().toISOString(), recuNumero: r.paiement.recuNumero }]);
+  entry.engine.enregistrerEtatIzyFacture(order.id, {
+    izyfactureFactureStatut: r.facture.statut === "paid" ? "paid" : "partially_paid",
+    izyfactureSolde: r.facture.solde,
+    izyfactureRecuNumero: r.paiement.recuNumero,
+    izyfacturePaiements: historique
+  });
+  console.log(`[${entry.merchant.id}] Paiement de ${montant} FCFA enregistré sur la facture intégrée ${r.facture.numero}, reçu ${r.paiement.recuNumero}.`);
+  try {
+    await notifierClientPaiementRecu(entry, order, montant, r.paiement.recuNumero);
+  } catch (e) {
+    console.error(`[${entry.merchant.id}] Échec de la notification client (paiement intégré) :`, e.message || e);
+  }
+}
+
+// Apres un paiement/avoir saisi depuis l'onglet Facturation : reflete l'etat sur la commande/le rendez-vous
+// d'origine, pour que la colonne "Facture" de Commandes/Rendez-vous reste a jour.
+function refleterSurObjetOrigine(entry, facture) {
+  const o = facture.origine || {};
+  const moteur = o.type === "commande" ? entry.moteurs.catalogue : o.type === "rdv" ? entry.moteurs.service : null;
+  if (!moteur || o.id == null) return;
+  const patch = { izyfactureSolde: facture.solde };
+  if (facture.statut === "paid" || facture.statut === "partially_paid") patch.izyfactureFactureStatut = facture.statut;
+  if (facture.paiements.length) {
+    const dernier = facture.paiements[facture.paiements.length - 1];
+    patch.izyfactureRecuNumero = dernier.recuNumero;
+    patch.izyfacturePaiements = facture.paiements.map((p) => ({ montant: p.montant, methode: p.methode, reference: p.reference, date: p.date, recuNumero: p.recuNumero }));
+  }
+  if (facture.statut === "avoir") {
+    patch.izyfactureStatut = "avoir";
+    patch.izyfactureAvoirNumero = facture.avoirs[facture.avoirs.length - 1].numero;
+  }
+  moteur.enregistrerEtatIzyFacture(o.id, patch);
+}
+
+function vueFactureAPI(f) {
+  return Object.assign({}, f, { url: urlPubliqueFacture(f.token), nbPaiements: f.paiements.length });
+}
+
+// -- Controle d'acces des routes /api/:id/facturation/* : lecture = "facturation" OU "comptable" (le
+// comptable ne peut JAMAIS ecrire), ecriture = "facturation". Proprietaire et super-administrateur : tout.
+function entreeFacturation(req, res, ecriture) {
+  const entry = getMarchandAutorise(req, res, ecriture ? ["facturation"] : ["facturation", "comptable"]);
+  if (!entry) return null;
+  if (!facturationInterneVisible(entry)) { res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." }); return null; }
+  return entry;
+}
+function nomActeur(req) { return req.auth.adminUser || "inconnu"; }
+
+app.get("/api/:id/facturation", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, false); if (!entry) return;
+  const fa = entry.facturation;
+  const factures = fa.listeFactures().map(vueFactureAPI);
+  const depenses = fa.listeDepenses();
+  const c = fa.config();
+  res.json({
+    source: sourceFacturation(entry),
+    interneActif: c.interne === true,
+    autoFacturation: c.autoFacturation === true,
+    dateBascule: c.dateBascule || null,
+    factures, depenses,
+    totaux: {
+      factureNet: factures.reduce((s, f) => s + f.net, 0),
+      encaisse: factures.reduce((s, f) => s + f.paye, 0),
+      soldeOuvert: factures.reduce((s, f) => s + f.solde, 0),
+      depenses: depenses.filter((d) => !d.annulee).reduce((s, d) => s + d.montant, 0)
+    },
+    methodes: METHODES_PAIEMENT, categories: CATEGORIES_DEPENSE
+  });
+});
+
+app.post("/api/:id/facturation/factures", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, true); if (!entry) return;
+  if (sourceFacturation(entry) !== "interne") return res.status(403).json({ erreur: "La facturation intégrée n'est plus active pour ce marchand." });
+  const b = req.body || {};
+  const r = entry.facturation.creerFacture({ client: b.client, lignes: b.lignes, notes: b.notes, origine: { type: "libre", id: null }, creePar: nomActeur(req) });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.status(201).json(vueFactureAPI(r.facture));
+});
+
+app.post("/api/:id/facturation/factures/:fid/paiement", protegerAcces, async (req, res) => {
+  const entry = entreeFacturation(req, res, true); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.facturation.enregistrerPaiement(req.params.fid, { montant: b.montant, methode: b.methode, reference: b.reference, creePar: nomActeur(req) });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  refleterSurObjetOrigine(entry, r.facture);
+  res.json({ facture: vueFactureAPI(r.facture), recu: r.paiement.recuNumero });
+  const o = r.facture.origine;
+  const obj = o.type === "commande" && entry.moteurs.catalogue ? entry.moteurs.catalogue.getOrderById(o.id)
+    : o.type === "rdv" && entry.moteurs.service ? entry.moteurs.service.getAppointmentById(o.id) : null;
+  if (obj) {
+    const vueObj = vueEntree(entry, o.type === "rdv" ? "service" : "catalogue");
+    notifierClientPaiementRecu(vueObj, obj, r.paiement.montant, r.paiement.recuNumero).catch((e) => console.error(`[${req.params.id}] Notification paiement :`, e.message || e));
+  }
+});
+
+app.post("/api/:id/facturation/factures/:fid/avoir", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, true); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.facturation.creerAvoir(req.params.fid, { montant: b.montant, motif: b.motif, creePar: nomActeur(req) });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  refleterSurObjetOrigine(entry, r.facture);
+  res.json({ facture: vueFactureAPI(r.facture), avoir: r.avoir.numero });
+});
+
+app.post("/api/:id/facturation/depenses", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, true); if (!entry) return;
+  if (sourceFacturation(entry) !== "interne") return res.status(403).json({ erreur: "La facturation intégrée n'est plus active pour ce marchand." });
+  const b = req.body || {};
+  const r = entry.facturation.creerDepense({ date: b.date, categorie: b.categorie, montant: b.montant, methode: b.methode, fournisseur: b.fournisseur, note: b.note, justificatif: b.justificatif, creePar: nomActeur(req) });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.status(201).json(r.depense);
+});
+
+app.post("/api/:id/facturation/depenses/:did/annuler", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, true); if (!entry) return;
+  if (sourceFacturation(entry) !== "interne") return res.status(403).json({ erreur: "La facturation intégrée n'est plus active pour ce marchand." });
+  const r = entry.facturation.annulerDepense(req.params.did, { motif: (req.body || {}).motif });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json(r.depense);
+});
+
+// Journal normalise : lu par IzyCompta (ou telecharge par le comptable). JSON par defaut, CSV avec ?format=csv.
+// Filtres facultatifs ?du=AAAA-MM-JJ&au=AAAA-MM-JJ. Chaque ligne a un `id` unique et stable (anti-doublon).
+app.get("/api/:id/facturation/journal", protegerAcces, (req, res) => {
+  const entry = entreeFacturation(req, res, false); if (!entry) return;
+  const motif = /^\d{4}-\d{2}-\d{2}$/;
+  const du = motif.test(String(req.query.du || "")) ? String(req.query.du) : null;
+  const au = motif.test(String(req.query.au || "")) ? String(req.query.au) : null;
+  if (String(req.query.format || "").toLowerCase() === "csv") {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="journal-${req.params.id}.csv"`);
+    return res.send(entry.facturation.journalCsv({ du, au }, String(req.query.sep || "") === ";" || String(req.query.sep || "").toLowerCase() === "semicolon" ? ";" : ","));
+  }
+  const c = entry.facturation.config();
+  res.json({ marchand: req.params.id, source: "izyvendeur-interne", devise: "XAF", dateBascule: c.dateBascule || null, basculeLe: c.basculeLe || null, ecritures: entry.facturation.journal({ du, au }) });
+});
+
+// Reglage reserve au proprietaire/super-administrateur : facturation automatique (integree).
+app.put("/api/:id/facturation/parametres", protegerAcces, (req, res) => {
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  if (sourceFacturation(entry) !== "interne") return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const auto = (req.body || {}).autoFacturation;
+  if (auto === undefined) return res.status(400).json({ erreur: "Rien à modifier." });
+  res.json({ autoFacturation: entry.facturation.modifierConfig({ autoFacturation: !!auto }).autoFacturation });
+});
+
+// ---- Choix de la source : SUPER-ADMINISTRATEUR UNIQUEMENT ----
+app.put("/api/:id/facturation/source", protegerAcces, async (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  const cible = String((req.body || {}).source || "");
+  if (["aucune", "interne", "izyfacture"].indexOf(cible) === -1) return res.status(400).json({ erreur: "source doit être 'aucune', 'interne' ou 'izyfacture'." });
+  const actuelle = sourceFacturation(entry);
+  const cfg = entry.facturation.config();
+  if (cible === actuelle) return res.json({ source: actuelle });
+  if (cible === "interne" && cfg.dateBascule) return res.status(409).json({ erreur: "Ce marchand a déjà basculé vers IzyFacture : le retour à la facturation intégrée est impossible (sens unique)." });
+  if (cible === "izyfacture" && actuelle === "interne") return res.status(409).json({ erreur: "Pour passer de la facturation intégrée à IzyFacture, utilisez la bascule (aperçu puis confirmation)." });
+  try {
+    if (cible === "interne") {
+      await db.updateMerchantFields(req.params.id, { optionFacturationIzyfacture: false });
+      entry.merchant.optionFacturationIzyfacture = false;
+      entry.facturation.modifierConfig({ interne: true, dateActivation: cfg.dateActivation || new Date().toISOString() });
+    } else if (cible === "izyfacture") {
+      await db.updateMerchantFields(req.params.id, { optionFacturationIzyfacture: true });
+      entry.merchant.optionFacturationIzyfacture = true;
+    } else { // aucune
+      if (actuelle === "interne") entry.facturation.modifierConfig({ interne: false });
+      if (entry.merchant.optionFacturationIzyfacture) {
+        await db.updateMerchantFields(req.params.id, { optionFacturationIzyfacture: false });
+        entry.merchant.optionFacturationIzyfacture = false;
+      }
+    }
+  } catch (erreur) {
+    console.error(`[${req.params.id}] Échec du changement de source de facturation :`, erreur);
+    return res.status(500).json({ erreur: "Impossible de modifier la source de facturation." });
+  }
+  res.locals.audit = { detail: { avant: actuelle, apres: cible } };
+  console.log(`[${req.params.id}] Source de facturation modifiée par ${req.auth.adminUser} : ${actuelle} -> ${cible}.`);
+  res.json({ source: sourceFacturation(entry) });
+});
+
+app.get("/api/:id/facturation/bascule/apercu", protegerAcces, (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (sourceFacturation(entry) !== "interne") return res.status(400).json({ erreur: "La bascule n'est possible que depuis la facturation intégrée." });
+  res.json(Object.assign({
+    cleIzyfactureEnregistree: !!entry.merchant.izyfactureApiKey,
+    autoFacturation: entry.facturation.config().autoFacturation === true
+  }, entry.facturation.apercuBascule()));
+});
+
+app.post("/api/:id/facturation/bascule", protegerAcces, async (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (sourceFacturation(entry) !== "interne") return res.status(400).json({ erreur: "La bascule n'est possible que depuis la facturation intégrée." });
+  if ((req.body || {}).confirmer !== true) return res.status(400).json({ erreur: "Confirmation requise : envoyez confirmer=true après avoir consulté l'aperçu. Cette opération est à sens unique." });
+  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Enregistrez d'abord la clé IzyFacture du marchand (Paramètres) avant de basculer." });
+  const cle = cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey);
+  if (!cle) return res.status(400).json({ erreur: "Clé IzyFacture illisible — réenregistrez-la avant de basculer." });
+  try {
+    await izyfacture.verifierCle(cle); // on ne bascule jamais vers une cle qui ne fonctionne pas
+  } catch (erreur) {
+    return res.status(statutReponseExterne(erreur)).json({ erreur: "Clé IzyFacture refusée : " + (erreur.message || "connexion impossible") + ". Bascule annulée." });
+  }
+  const apercu = entry.facturation.apercuBascule();
+  const auto = entry.facturation.config().autoFacturation === true;
+  const maintenant = new Date().toISOString();
+  try {
+    const patch = { optionFacturationIzyfacture: true };
+    if (auto) patch.izyfactureAutoFacturation = true; // la facturation automatique est conservee
+    const maj = await db.updateMerchantFields(req.params.id, patch);
+    if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+    entry.merchant.optionFacturationIzyfacture = true;
+    if (auto) entry.merchant.izyfactureAutoFacturation = true;
+    entry.facturation.modifierConfig({ interne: false, dateBascule: entry.facturation.dateLocale(maintenant), basculeLe: maintenant, basculePar: req.auth.adminUser });
+  } catch (erreur) {
+    console.error(`[${req.params.id}] Échec de la bascule :`, erreur);
+    return res.status(500).json({ erreur: "Impossible d'effectuer la bascule." });
+  }
+  res.locals.audit = { detail: { dateBascule: entry.facturation.config().dateBascule, facturesOuvertes: apercu.facturesOuvertes.length } };
+  console.log(`[${req.params.id}] BASCULE facturation intégrée -> IzyFacture par ${req.auth.adminUser} (${apercu.nbFactures} facture(s), ${apercu.facturesOuvertes.length} avec solde ouvert).`);
+  res.json({ source: sourceFacturation(entry), dateBascule: entry.facturation.config().dateBascule, apercu });
+});
+
+// ---- Pages publiques imprimables (facture, recu) : acces par jeton aleatoire de 128 bits, sans connexion ----
+function echapperHtml(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+const MOTS_PAGE = {
+  fr: { facture: "Facture", recu: "Reçu", avoir: "Avoir", date: "Date", client: "Client", designation: "Désignation", qte: "Qté", pu: "Prix unitaire", total: "Total", paye: "Payé", solde: "Solde à payer", paiements: "Paiements", avoirs: "Avoirs", imprimer: "Imprimer / Enregistrer en PDF", ttc: "Montants en FCFA, toutes taxes comprises.", methode: { especes: "Espèces", om: "Orange Money", momo: "MTN MoMo", banque: "Virement", cheque: "Chèque", autre: "Autre" }, statut: { issued: "Émise", partially_paid: "Partiellement payée", paid: "Payée", avoir: "Annulée (avoir)" }, recuPour: "Reçu pour la facture", montantRecu: "Montant reçu", mode: "Mode de paiement", reference: "Référence", merci: "Merci pour votre confiance." },
+  en: { facture: "Invoice", recu: "Receipt", avoir: "Credit note", date: "Date", client: "Customer", designation: "Description", qte: "Qty", pu: "Unit price", total: "Total", paye: "Paid", solde: "Balance due", paiements: "Payments", avoirs: "Credit notes", imprimer: "Print / Save as PDF", ttc: "Amounts in FCFA, taxes included.", methode: { especes: "Cash", om: "Orange Money", momo: "MTN MoMo", banque: "Bank transfer", cheque: "Cheque", autre: "Other" }, statut: { issued: "Issued", partially_paid: "Partially paid", paid: "Paid", avoir: "Cancelled (credit note)" }, recuPour: "Receipt for invoice", montantRecu: "Amount received", mode: "Payment method", reference: "Reference", merci: "Thank you for your business." }
+};
+function fcfa(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA"; }
+function dateAffichee(iso, lang) { return new Date(iso).toLocaleDateString(lang === "en" ? "en-GB" : "fr-FR", { timeZone: "Africa/Douala" }); }
+
+function enTetePage(titre, entry) {
+  const m = entry.merchant;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${echapperHtml(titre)}</title>
+<style>body{font-family:Arial,Helvetica,sans-serif;color:#222;max-width:760px;margin:24px auto;padding:0 16px}h1{font-size:1.5em;margin:0}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:2px solid #222;padding-bottom:10px;margin-bottom:14px}.top img{max-height:64px}table{width:100%;border-collapse:collapse;margin:12px 0}th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:left}td.n,th.n{text-align:right;white-space:nowrap}.tot{font-weight:bold}.badge{display:inline-block;padding:2px 10px;border-radius:10px;background:#eee;font-size:.85em}.note{color:#666;font-size:.85em;margin-top:18px}button{padding:8px 14px;margin-top:10px;cursor:pointer}@media print{button{display:none}body{margin:0}}</style></head><body>
+<div class="top"><div><strong style="font-size:1.2em">${echapperHtml(m.nom)}</strong></div>${m.logoUrl ? `<img src="${echapperHtml(m.logoUrl)}" alt="">` : ""}</div>`;
+}
+
+function pageFacture(entry, f, lang) {
+  const w = MOTS_PAGE[lang];
+  let h = enTetePage(w.facture + " " + f.numero, entry);
+  h += `<h1>${w.facture} ${echapperHtml(f.numero)}</h1><p>${w.date} : ${echapperHtml(dateAffichee(f.creeLe, lang))} &nbsp; <span class="badge">${echapperHtml(w.statut[f.statut] || f.statut)}</span></p>`;
+  h += `<p><strong>${w.client} :</strong> ${echapperHtml(f.client.nom)}${f.client.telephone ? " — " + echapperHtml(f.client.telephone) : ""}</p>`;
+  h += `<table><tr><th>${w.designation}</th><th class="n">${w.qte}</th><th class="n">${w.pu}</th><th class="n">${w.total}</th></tr>`;
+  f.lignes.forEach((l) => { h += `<tr><td>${echapperHtml(l.designation)}</td><td class="n">${l.quantite}</td><td class="n">${fcfa(l.prixUnitaire)}</td><td class="n">${fcfa(l.total)}</td></tr>`; });
+  h += `<tr class="tot"><td colspan="3" class="n">${w.total}</td><td class="n">${fcfa(f.total)}</td></tr></table>`;
+  if (f.avoirs.length) {
+    h += `<h3>${w.avoirs}</h3><table>` + f.avoirs.map((a) => `<tr><td>${echapperHtml(a.numero)} — ${echapperHtml(a.motif)}</td><td>${echapperHtml(dateAffichee(a.date, lang))}</td><td class="n">- ${fcfa(a.montant)}</td></tr>`).join("") + "</table>";
+  }
+  if (f.paiements.length) {
+    h += `<h3>${w.paiements}</h3><table>` + f.paiements.map((p) => `<tr><td>${echapperHtml(p.recuNumero)}</td><td>${echapperHtml(dateAffichee(p.date, lang))}</td><td>${echapperHtml(w.methode[p.methode] || p.methode)}</td><td class="n"><a href="/f/${echapperHtml(f.token)}/recu/${p.id}${lang === "en" ? "?lang=en" : ""}">${fcfa(p.montant)}</a></td></tr>`).join("") + "</table>";
+  }
+  h += `<p class="tot">${w.paye} : ${fcfa(f.paye)} &nbsp;|&nbsp; ${w.solde} : ${fcfa(f.solde)}</p>`;
+  h += `<p class="note">${w.ttc} ${f.notes ? echapperHtml(f.notes) : ""}</p><button onclick="window.print()">${w.imprimer}</button></body></html>`;
+  return h;
+}
+
+function pageRecu(entry, f, p, lang) {
+  const w = MOTS_PAGE[lang];
+  let h = enTetePage(w.recu + " " + p.recuNumero, entry);
+  h += `<h1>${w.recu} ${echapperHtml(p.recuNumero)}</h1><p>${w.date} : ${echapperHtml(dateAffichee(p.date, lang))}</p>`;
+  h += `<p><strong>${w.client} :</strong> ${echapperHtml(f.client.nom)}</p><p>${w.recuPour} ${echapperHtml(f.numero)}</p>`;
+  h += `<table><tr><td>${w.montantRecu}</td><td class="n tot">${fcfa(p.montant)}</td></tr><tr><td>${w.mode}</td><td class="n">${echapperHtml(w.methode[p.methode] || p.methode)}</td></tr>${p.reference ? `<tr><td>${w.reference}</td><td class="n">${echapperHtml(p.reference)}</td></tr>` : ""}</table>`;
+  h += `<p class="note">${w.merci}</p><button onclick="window.print()">${w.imprimer}</button></body></html>`;
+  return h;
+}
+
+function trouverParJetonPublic(token) {
+  for (const id of Object.keys(engines)) {
+    const e = engines[id];
+    if (!e || !e.facturation) continue;
+    const f = e.facturation.factureParToken(token);
+    if (f) return { entry: e, facture: f };
+  }
+  return null;
+}
+app.get("/f/:token", (req, res) => {
+  const r = trouverParJetonPublic(req.params.token);
+  res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  if (!r) return res.status(404).type("text/plain").send("Document introuvable.");
+  res.type("html").send(pageFacture(r.entry, r.facture, req.query.lang === "en" ? "en" : "fr"));
+});
+app.get("/f/:token/recu/:paiementId", (req, res) => {
+  const r = trouverParJetonPublic(req.params.token);
+  res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  if (!r) return res.status(404).type("text/plain").send("Document introuvable.");
+  const p = r.facture.paiements.find((x) => x.id === Number(req.params.paiementId));
+  if (!p) return res.status(404).type("text/plain").send("Document introuvable.");
+  res.type("html").send(pageRecu(r.entry, r.facture, p, req.query.lang === "en" ? "en" : "fr"));
 });
 
 // ---------------- Pont IzyFacture (facturation automatique des commandes confirmees) ----------------
@@ -1500,9 +1957,9 @@ app.post("/api/:id/izyfacture/tester", protegerAcces, async (req, res) => {
 app.post("/api/:id/commandes/:orderId/izyfacture/facturer", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
-  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
   const order = entry.engine.getOrderById(req.params.orderId);
+  const refus = refusFacturationManuelle(entry, order, "facturer");
+  if (refus) return res.status(refus.status).json({ erreur: refus.erreur });
   if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
   await tenterFacturationCommande(entry, order);
   res.json(entry.engine.getOrderById(req.params.orderId));
@@ -1516,9 +1973,9 @@ app.post("/api/:id/commandes/:orderId/izyfacture/facturer", protegerAcces, async
 app.post("/api/:id/commandes/:orderId/izyfacture/paiement", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
-  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
   const order = entry.engine.getOrderById(req.params.orderId);
+  const refus = refusFacturationManuelle(entry, order, "paiement");
+  if (refus) return res.status(refus.status).json({ erreur: refus.erreur });
   if (!order) return res.status(404).json({ erreur: "Commande introuvable." });
   if (!order.izyfactureFactureId) return res.status(400).json({ erreur: "Cette commande n'a pas encore de facture IzyFacture — facturez-la d'abord." });
   const montant = parseInt(req.body && req.body.montant, 10);
@@ -1897,8 +2354,8 @@ app.put("/api/:id/commandes/:orderId/statut", protegerAcces, (req, res) => {
   // Pont IzyFacture - APRES avoir repondu (jamais bloquant pour la commande, voir doc API-IZYVENDEUR.md
   // section 9, regle 1) : facturation automatique a la confirmation, avoir automatique a l'annulation d'une
   // commande deja facturee. Rien ne se passe si la cle/l'auto-facturation ne sont pas configurees.
-  if (statutAvant !== order.statut && entry.merchant.optionFacturationIzyfacture && entry.merchant.izyfactureApiKey) {
-    if (order.statut === "Confirmée" && entry.merchant.izyfactureAutoFacturation) {
+  if (statutAvant !== order.statut && facturationPeutAgir(entry, order)) {
+    if (order.statut === "Confirmée" && facturationAutoActive(entry) && !order.izyfactureFactureId) {
       tenterFacturationCommande(entry, order).catch((erreur) =>
         console.error(`[${req.params.id}] Echec inattendu de la facturation IzyFacture (commande #${order.id}) :`, erreur)
       );
@@ -1947,8 +2404,8 @@ app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
   // Pont IzyFacture (Etape 46) - APRES avoir repondu, jamais bloquant : facture a l'"Honoré" (la prestation a
   // eu lieu, le client a paye sur place), avoir si le rendez-vous est annule APRES avoir ete facture. Les
   // rendez-vous du Simulateur ne sont jamais factures.
-  if (statutAvant !== appt.statut && appt.source !== "simulateur" && entry.merchant.optionFacturationIzyfacture && entry.merchant.izyfactureApiKey) {
-    if (appt.statut === "Honoré" && entry.merchant.izyfactureAutoFacturation && !appt.izyfactureFactureId) {
+  if (statutAvant !== appt.statut && appt.source !== "simulateur" && facturationPeutAgir(entry, appt)) {
+    if (appt.statut === "Honoré" && facturationAutoActive(entry) && !appt.izyfactureFactureId) {
       tenterFacturationCommande(entry, appt).catch((erreur) =>
         console.error(`[${req.params.id}] Echec inattendu de la facturation IzyFacture (rendez-vous #${appt.id}) :`, erreur)
       );
@@ -1967,9 +2424,9 @@ app.put("/api/:id/rendezvous/:apptId/statut", protegerAcces, (req, res) => {
 app.post("/api/:id/rendezvous/:apptId/izyfacture/facturer", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
-  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
   const appt = entry.engine.getAppointmentById(req.params.apptId);
+  const refus = refusFacturationManuelle(entry, appt, "facturer");
+  if (refus) return res.status(refus.status).json({ erreur: refus.erreur });
   if (!appt || appt.source === "simulateur") return res.status(404).json({ erreur: "Rendez-vous introuvable." });
   if (appt.statut !== "Honoré" && !appt.izyfactureFactureId) {
     return res.status(400).json({ erreur: "Seul un rendez-vous au statut « Honoré » peut être facturé." });
@@ -1982,9 +2439,9 @@ app.post("/api/:id/rendezvous/:apptId/izyfacture/facturer", protegerAcces, async
 app.post("/api/:id/rendezvous/:apptId/izyfacture/paiement", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
-  if (!entry.merchant.optionFacturationIzyfacture) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  if (!entry.merchant.izyfactureApiKey) return res.status(400).json({ erreur: "Aucune clé IzyFacture enregistrée pour ce marchand." });
   const appt = entry.engine.getAppointmentById(req.params.apptId);
+  const refus = refusFacturationManuelle(entry, appt, "paiement");
+  if (refus) return res.status(refus.status).json({ erreur: refus.erreur });
   if (!appt || appt.source === "simulateur") return res.status(404).json({ erreur: "Rendez-vous introuvable." });
   if (!appt.izyfactureFactureId) return res.status(400).json({ erreur: "Ce rendez-vous n'a pas encore de facture IzyFacture — facturez-le d'abord." });
   const montant = parseInt(req.body && req.body.montant, 10);
@@ -3426,6 +3883,9 @@ function appelFacturer(entry, cle, order) {
 }
 
 async function tenterFacturationCommande(entry, order) {
+  // Etape 54 : la source de facturation (integree ou IzyFacture) est decidee par le super-administrateur ;
+  // une commande deja facturee par le module integre reste geree par lui, meme apres une bascule.
+  if (sourceDeLObjet(entry, order) === "interne") return tenterFacturationInterne(entry, order);
   if (!entry.merchant.izyfactureApiKey) return;
   // Un rendez-vous sans prix (service gratuit/prix 0) n'a rien a facturer : on le dit clairement plutot que
   // d'envoyer une facture a zero a IzyFacture (erreur non reessayable, visible dans /admin).
@@ -3478,6 +3938,7 @@ async function tenterFacturationCommande(entry, order) {
 }
 
 async function tenterAvoirCommande(entry, order, raison) {
+  if (order.factureSource === "interne") return tenterAvoirInterne(entry, order, raison);
   if (!entry.merchant.izyfactureApiKey || !order.izyfactureFactureId) return;
   const cle = cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey);
   if (!cle) return;
@@ -3505,6 +3966,7 @@ async function tenterAvoirCommande(entry, order, raison) {
 // immédiat (voir la route qui l'appelle), pas un mécanisme de réessai automatique en arrière-plan - la
 // route transforme l'exception en réponse HTTP claire.
 async function enregistrerPaiementCommande(entry, order, { montant, methode, reference }) {
+  if (order.factureSource === "interne") return enregistrerPaiementInterne(entry, order, { montant, methode, reference }, "pont");
   const cle = cryptoUtil.dechiffrer(entry.merchant.izyfactureApiKey);
   if (!cle) {
     const erreur = new Error("Clé IzyFacture illisible (échec de déchiffrement) — réenregistrez-la depuis Paramètres.");

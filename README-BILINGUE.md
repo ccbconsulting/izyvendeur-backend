@@ -1662,6 +1662,65 @@ L02 et non plus H09) ; un morceau du nom complet suffit (« Dior Vol 2 » donne 
 (« Invictus ») ne posent aucune question. Aucune migration, aucun réglage. Fichier modifié : `conversation.js`.
 Test : `test_etape53_articles_ambigus.js`.
 
+## Étapes 54 à 56 — Facturation intégrée à IzyVendeur, choisie par le super-administrateur seul (nouveau)
+
+**Principe.** Chaque marchand a une seule « source de facturation » à la fois, que **vous seul** (super-administrateur)
+choisissez dans l'onglet *Mon compte* du marchand, bloc « Source de facturation » : **aucune**, **facturation intégrée
+à IzyVendeur**, ou **pont vers IzyFacture** (le pont existant, inchangé). Le marchand et ses employés ne voient jamais
+ce choix ni la bascule : ils n'en voient que le résultat (colonne Facture, onglet Facturation). Côté serveur, les routes
+`PUT /api/:id/facturation/source`, `GET .../bascule/apercu` et `POST .../bascule` répondent 403 à tout autre que le
+super-administrateur, et ces actions sont masquées du journal du marchand. L'ancienne case « Facturation IzyFacture »
+des options payantes est remplacée par ce bloc ; activer IzyFacture par l'ancienne route pendant que la source
+intégrée est active est refusé (409).
+
+**Facturation intégrée (Étape 54).** Factures `FV-AAAA-NNNN`, avoirs `AV-…`, reçus `RV-…` (numérotation par année, jamais
+réutilisée). Une commande confirmée ou un rendez-vous honoré est facturé automatiquement (case réglable par le
+propriétaire) ou par le bouton « Facturer » existant de la colonne Facture ; le paiement passe par le bouton « Enregistrer
+un paiement » existant, et l'annulation crée un avoir. Les mêmes champs que le pont IzyFacture sont utilisés sur la
+commande (`izyfacture*`), avec en plus `factureSource: "interne"`, donc l'interface des commandes fonctionne telle
+quelle. Le client reçoit le même message WhatsApp qu'avec IzyFacture, avec le lien de sa facture. Nouvel onglet
+**Facturation** : factures libres (sans commande), paiements avec reçu, avoirs partiels ou totaux, totaux (facturé net,
+encaissé, reste à encaisser, dépenses). Page publique imprimable `/f/<jeton>` (facture) et `/f/<jeton>/recu/<n>`
+(reçu) : jeton aléatoire de 128 bits, aucune connexion requise, non indexée, FR/EN (`?lang=en`) ; « Imprimer /
+Enregistrer en PDF » depuis le navigateur. Une facture n'est jamais supprimée : on la corrige par un avoir.
+Stockage : état séparé `<id>__facturation` (même mécanisme que les commandes ; aucune colonne ajoutée aux marchands).
+
+**Dépenses simples (Étape 55).** Catégorie, montant, mode de paiement, date (pas dans le futur), fournisseur, note, n° de
+pièce. Une dépense ne se supprime pas : elle s'annule avec un motif et reste visible, barrée. Disponible uniquement
+tant que la source est « intégrée ».
+
+**Journal normalisé, rôles, bascule (Étape 56).**
+- Journal exportable : `GET /api/:id/facturation/journal` (JSON, ou `?format=csv`, `&sep=semicolon` pour Excel en
+  français, filtres `du` et `au`). Une ligne par événement (vente, encaissement, avoir, dépense, annulation de dépense)
+  avec un **identifiant unique et stable** `<marchand>:<n° de pièce>` : importer deux fois la même période ne crée
+  aucun doublon côté IzyCompta. Montants TTC en FCFA, aucune TVA calculée.
+- Deux nouveaux rôles d'employé, proposés seulement si le module est (ou a été) utilisé : **Facturation** (écriture) et
+  **Comptable** (lecture et export uniquement, jamais d'écriture).
+- **Bascule à sens unique** « intégrée → IzyFacture » (bouton réservé au super-administrateur) : aperçu (nombre de pièces,
+  derniers numéros émis, factures au solde ouvert), clé IzyFacture obligatoire et testée avant de basculer, case de
+  confirmation explicite. Effet : la source passe à IzyFacture, la date de bascule est enregistrée, la facturation
+  automatique est conservée. **Le retour à la facturation intégrée est impossible** (409). Après la bascule, plus de
+  nouvelle facture ni dépense intégrée ; l'historique reste lisible (onglet Facturation, journal) et **les anciennes
+  factures intégrées restent encaissables et annulables dans IzyVendeur** (leurs reçus et avoirs continuent d'alimenter
+  le journal intégré, marqués `posterieurBascule`).
+
+**Limites connues (à connaître avant usage).**
+- Les montants sont TTC ; aucune TVA n'est calculée ni ventilée.
+- La facture est une page HTML imprimable (PDF depuis le navigateur), pas un PDF généré ni un document envoyé par
+  WhatsApp : le client reçoit un lien.
+- Un remboursement en espèces après un avoir n'est pas enregistré dans IzyVendeur (la facture indique « à rembourser ») :
+  le comptable le saisit dans IzyCompta.
+- Les ventes de la Caisse POS et les commandes non facturées n'entrent pas dans le journal (seulement ce qui est
+  facturé) ; la justification d'une dépense est un numéro de pièce, pas un fichier joint.
+- Le journal se télécharge depuis /admin (compte comptable, propriétaire ou super-administrateur) ; IzyCompta ne le
+  récupère pas encore automatiquement (il faudrait une clé de lecture dédiée, non construite).
+- Numérotation : les factures intégrées (`FV-`) et celles d'IzyFacture (`FAC-`) forment deux séries distinctes ; après la
+  bascule, la série IzyFacture démarre à son propre compteur.
+
+Fichiers modifiés : `facturation.js` (nouveau), `server.js`, `public/admin.html`. Tests : `test_etape54_facturation_interne.js`
+(HTTP : sécurité du choix de source, facture/paiement/avoir/dépense, journal, bascule, journal d'audit) et
+`test_etape54_facturation_interne_playwright.js` (/admin : ce que voit chaque rôle, parcours complet, bascule, anglais).
+
 ## Ce qui n'est PAS encore fait (volontairement, pour la suite)
 
 - ~~**Le moteur rendez-vous (conversationService.js)** en français seulement~~ — résolu à l'Étape 45 ci-dessus.
@@ -1669,13 +1728,14 @@ Test : `test_etape53_articles_ambigus.js`.
   (ex: "Robe wax imprimée"), il n'y a pas de traduction automatique du nom lui-même.
 - Les messages que le bot vous envoie à VOUS, marchand, pour vous notifier d'une nouvelle commande
   restent en français — c'est votre langue, pas celle du client, donc pas concerné.
-- **Facturation après confirmation de commande** — résolu à l'Étape 20 via le pont vers IzyFacture (voir
-  ci-dessus) plutôt que par un moteur de facturation propre à IzyVendeur.
+- **Facturation après confirmation de commande** — résolu à l'Étape 20 via le pont vers IzyFacture, et depuis les
+  Étapes 54 à 56 aussi par un module de facturation intégré (au choix du super-administrateur).
 - **Message WhatsApp au client avec le numéro de facture** — résolu à l'Étape 27 ci-dessus (numéro, montant
   et lien de vérification quand disponible).
 
 ## Fichiers modifiés dans ce zip
 
+- Étapes 54 à 56 : `facturation.js` (nouveau : factures, avoirs, paiements, dépenses, journal normalisé), `server.js` (choix de la source et bascule réservés au super-administrateur, routes `/api/:id/facturation/*`, pages publiques `/f/…`, aiguillage du pont facturation selon la source, rôles `facturation` et `comptable`) et `public/admin.html` (bloc « Source de facturation », onglet Facturation, rôles, textes FR/EN).
 - Étape 49 : `conversation.js` (récapitulatif avec téléphone, étape de correction, `updateOrderContact`), `server.js` (bouton Modifier, route `PUT /api/:id/commandes/:orderId/coordonnees`, journal) et `public/admin.html` (bouton « Corriger tél./adresse », textes FR/EN).
 - Étape 50 : `server.js` (`compacterTexteMenuCatalogue` : corps du menu catalogue sans la liste de tous les articles quand le catalogue dépasse 8 articles, message d'accueil du marchand à la place).
 - Étape 53 : `conversation.js` (`scoreProduit`, `matchProduct` par score, `produitsAmbigus` et question de précision).
