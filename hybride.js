@@ -1,5 +1,5 @@
 // IzyVendeur - Routage d'un marchand HYBRIDE (Etape 47, generalise a TROIS volets a l'Etape 66) : un meme
-// numero WhatsApp, jusqu'a trois volets (catalogue = produits, service = rendez-vous, hebergement = chambres)
+// numero WhatsApp, jusqu'a trois volets (catalogue = produits, service = rendez-vous, hebergement = chambres, transport = billets, Etape 74)
 // servis par autant de moteurs distincts.
 //
 // Le routeur ne remplace aucun moteur : il decide, pour chaque message d'un client, a QUEL moteur le donner,
@@ -24,7 +24,8 @@ const sessionsPersistantes = require("./sessionsPersistantes");
 const JETON_VOLET_CATALOGUE = "__volet_catalogue__";
 const JETON_VOLET_SERVICE = "__volet_service__";
 const JETON_VOLET_HEBERGEMENT = "__volet_hebergement__";
-const VOLETS_CONNUS = ["catalogue", "service", "hebergement"];
+const JETON_VOLET_TRANSPORT = "__volet_transport__"; // Etape 74
+const VOLETS_CONNUS = ["catalogue", "service", "hebergement", "transport"];
 
 function norm(texte) {
   return String(texte || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -47,6 +48,9 @@ const RE_CHOIX_RDV = /\b(rendez[\s-]?vous|rdv|reserver|reservation|soins?|presta
 const RE_RDV_STRICT = /\b(rendez[\s-]?vous|rdv|appointments?)\b/;
 const RE_VEUT_HEB_AUTO = /\b(chambres?|rooms?|suites?)\b.*\b(disponibles?|available|libres?|reserver|book)\b|\b(reserver|book|booking|reservation|louer|rent)\b.*\b(chambres?|rooms?|suites?)\b|\b(nuitees?|hebergement|accommodation)\b/;
 const RE_CHOIX_HEB = /\b(chambres?|rooms?|suites?|hotel|hebergement|sejour|nuitees?|nuits?|nights?|stay|accommodation|lodging)\b/;
+// Volet transport (Etape 74) : billets, trajets, navettes. Dans les bascules AUTOMATIQUES, seuls les mots tres explicites comptent.
+const RE_VEUT_TRANSPORT_AUTO = /\b(billets?|tickets?|navette|shuttle|train|trajets?)\b/;
+const RE_CHOIX_TRANSPORT = /\b(billets?|tickets?|train|voyages?|voyager|trajets?|navette|shuttle|cars?|bus|transport|travel|trip)\b/;
 // Lien de commande genere par /admin (« Bonjour, je suis intéressé(e) par : X » / « Hello, I'm interested in: X »).
 const RE_LIEN_COMMANDE = /(int[eé]ress[eé](\(e\))? par\s*:|interested in\s*:)/i;
 
@@ -55,7 +59,8 @@ function libelleBoutons(langue, volets) {
   const titres = {
     catalogue: en ? "🛍️ Our products" : "🛍️ Nos produits",
     service: en ? "📅 Appointments" : "📅 Rendez-vous",
-    hebergement: en ? "🛏️ Rooms" : "🛏️ Chambres"
+    hebergement: en ? "🛏️ Rooms" : "🛏️ Chambres",
+    transport: en ? "🎫 Tickets" : "🎫 Billets"
   };
   return volets.map((v) => ({ volet: v, title: titres[v] }));
 }
@@ -66,6 +71,7 @@ function texteMenu(langue, volets) {
     const num = (i + 1) + "️⃣ ";
     if (v === "catalogue") return num + (en ? "Browse our products" : "Voir nos produits");
     if (v === "hebergement") return num + (en ? "Book a room" : "Réserver une chambre");
+    if (v === "transport") return num + (en ? "Book a ticket" : "Réserver un billet");
     return num + (en ? "Book an appointment" : "Prendre un rendez-vous");
   });
   return (en ? "What would you like to do?" : "Que souhaitez-vous faire ?") + "\n" + lignes.join("\n");
@@ -107,6 +113,7 @@ function creerRouteur(moteurs, principal, deps) {
     try {
       if (type === "catalogue") return (m.getCatalog() || []).length;
       if (type === "hebergement") return (m.getChambres() || []).length;
+      if (type === "transport") return (m.getLignes() || []).some((l) => l.actif !== false) ? (m.getDeparts() || []).filter((d) => d.actif !== false).length : 0;
       return (m.getServices() || []).length;
     } catch (e) { return 0; }
   }
@@ -211,11 +218,17 @@ function creerRouteur(moteurs, principal, deps) {
         }
         const ni = norm(texteInitial);
         const avecHeb = volets.indexOf("hebergement") !== -1;
+        const avecTransport = volets.indexOf("transport") !== -1;
+        const avecAutres = avecHeb || avecTransport;
+        if (avecTransport && RE_VEUT_TRANSPORT_AUTO.test(ni) && !RE_RDV_STRICT.test(ni) && !RE_VEUT_PRODUITS.test(ni) && !(avecHeb && RE_VEUT_HEB_AUTO.test(ni))) {
+          journaliser(tel, "client", brut);
+          return versMoteur(tel, "transport", texteInitial, { sansJournalClient: true });
+        }
         if (avecHeb && RE_VEUT_HEB_AUTO.test(ni) && !RE_RDV_STRICT.test(ni) && !RE_VEUT_PRODUITS.test(ni)) {
           journaliser(tel, "client", brut);
           return versMoteur(tel, "hebergement", texteInitial, { sansJournalClient: true });
         }
-        if (volets.indexOf("service") !== -1 && (avecHeb ? RE_RDV_STRICT.test(ni) : RE_VEUT_RDV.test(ni)) && !RE_VEUT_PRODUITS.test(ni) && !(avecHeb && RE_VEUT_HEB_AUTO.test(ni))) {
+        if (volets.indexOf("service") !== -1 && (avecAutres ? RE_RDV_STRICT.test(ni) : RE_VEUT_RDV.test(ni)) && !RE_VEUT_PRODUITS.test(ni) && !(avecHeb && RE_VEUT_HEB_AUTO.test(ni))) {
           journaliser(tel, "client", brut);
           return versMoteur(tel, "service", texteInitial, { sansJournalClient: true });
         }
@@ -247,15 +260,19 @@ function creerRouteur(moteurs, principal, deps) {
       if (brut === JETON_VOLET_CATALOGUE) choisi = "catalogue";
       else if (brut === JETON_VOLET_SERVICE) choisi = "service";
       else if (brut === JETON_VOLET_HEBERGEMENT) choisi = "hebergement";
-      else if (/^\s*[123]\s*$/.test(brut)) choisi = volets[Number(brut.trim()) - 1] || null;
+      else if (brut === JETON_VOLET_TRANSPORT) choisi = "transport";
+      else if (/^\s*[1-4]\s*$/.test(brut)) choisi = volets[Number(brut.trim()) - 1] || null;
       else {
         // Un mot n'est retenu que s'il designe UN SEUL des volets proposes. Quand un volet hebergement est
         // propose, « reserver / reservation / book » seuls ne designent plus le volet rendez-vous.
         const avecHeb = volets.indexOf("hebergement") !== -1;
+        const avecTransport = volets.indexOf("transport") !== -1;
+        const avecAutres = avecHeb || avecTransport;
         const trouves = [];
         if (volets.indexOf("catalogue") !== -1 && RE_CHOIX_PRODUITS.test(n)) trouves.push("catalogue");
-        if (volets.indexOf("service") !== -1 && (avecHeb ? RE_RDV_STRICT.test(n) || /\b(soins?|prestations?|services?)\b/.test(n) : RE_CHOIX_RDV.test(n))) trouves.push("service");
-        if (avecHeb && (RE_CHOIX_HEB.test(n) || (volets.indexOf("service") === -1 && /\b(reserver|reservation|book|booking)\b/.test(n)))) trouves.push("hebergement");
+        if (volets.indexOf("service") !== -1 && (avecAutres ? RE_RDV_STRICT.test(n) || /\b(soins?|prestations?|services?)\b/.test(n) : RE_CHOIX_RDV.test(n))) trouves.push("service");
+        if (avecHeb && (RE_CHOIX_HEB.test(n) || (volets.indexOf("service") === -1 && !avecTransport && /\b(reserver|reservation|book|booking)\b/.test(n)))) trouves.push("hebergement");
+        if (avecTransport && (RE_CHOIX_TRANSPORT.test(n) || (volets.indexOf("service") === -1 && !avecHeb && /\b(reserver|reservation|book|booking)\b/.test(n)))) trouves.push("transport");
         if (trouves.length === 1) choisi = trouves[0];
       }
       if (!choisi || volets.indexOf(choisi) === -1) {
@@ -298,10 +315,13 @@ function creerRouteur(moteurs, principal, deps) {
     const autres = volets.filter((v) => v !== volet);
     if (autres.length && stageDe(volet, tel) === "idle") {
       const avecHeb = volets.indexOf("hebergement") !== -1;
+      const avecAutres = avecHeb || volets.indexOf("transport") !== -1;
       const cibles = [];
       for (const v of autres) {
-        if (v === "service") {
-          if (avecHeb) { if (RE_RDV_STRICT.test(n) && !RE_VEUT_PRODUITS.test(n) && !RE_VEUT_HEB_AUTO.test(n)) cibles.push(v); }
+        if (v === "transport") {
+          if (RE_VEUT_TRANSPORT_AUTO.test(n) && !RE_RDV_STRICT.test(n) && !RE_VEUT_PRODUITS.test(n) && !RE_VEUT_HEB_AUTO.test(n)) cibles.push(v);
+        } else if (v === "service") {
+          if (avecAutres) { if (RE_RDV_STRICT.test(n) && !RE_VEUT_PRODUITS.test(n) && !RE_VEUT_HEB_AUTO.test(n)) cibles.push(v); }
           else if (sh.detecterIntentionRdv(brut) || (RE_VEUT_RDV.test(n) && !RE_VEUT_PRODUITS.test(n))) cibles.push(v);
         } else if (v === "catalogue") {
           if (RE_VEUT_PRODUITS.test(n) && !RE_VEUT_RDV.test(n) && !RE_VEUT_HEB_AUTO.test(n)) cibles.push(v);
@@ -342,4 +362,4 @@ function creerRouteur(moteurs, principal, deps) {
   };
 }
 
-module.exports = { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE, JETON_VOLET_HEBERGEMENT, VOLETS_CONNUS };
+module.exports = { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE, JETON_VOLET_HEBERGEMENT, JETON_VOLET_TRANSPORT, VOLETS_CONNUS };

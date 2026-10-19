@@ -225,7 +225,7 @@ const I18N = {
 
     promptIdMarchand: "Identifiant technique du marchand (sans espaces, ex: don-william) :",
     promptNomMarchand: "Nom affiché du marchand :",
-    promptTypeMarchand: "Type : 'catalogue' (vente de produits), 'service' (prise de rendez-vous) ou 'hebergement' (réservation de chambres) ?",
+    promptTypeMarchand: "Type : 'catalogue' (vente de produits), 'service' (prise de rendez-vous), 'hebergement' (réservation de chambres) ou 'transport' (billets de train, car, navette) ?",
     promptPhoneNumberIdCreation: "phone_number_id WhatsApp de ce marchand (visible dans le tableau de bord Meta > WhatsApp > Numéros de téléphone). Laissez vide si pas encore connu :",
     promptAdminUser: "Nom d'utilisateur de connexion pour ce marchand (il servira à se connecter à /admin) :",
     promptAdminPassword: "Mot de passe initial pour ce marchand (il pourra le changer lui-même ensuite depuis \"Mon compte\") :",
@@ -597,7 +597,7 @@ const I18N = {
     btnEnregistrerModule: "Enregistrer le second volet",
     alertModuleEnregistre: "Volets enregistrés.",
     confirmRetirerModule: "Retirer un volet ? Il sera masqué pour les clients et dans /admin, mais ses données sont conservées.",
-    promptModuleSecondaire: "Volets supplémentaires (facultatif, super-administrateur uniquement) : 'catalogue', 'service' ou 'hebergement' (deux au plus, séparés par une virgule, ex. service,hebergement) pour créer un marchand HYBRIDE, ou laissez vide.",
+    promptModuleSecondaire: "Volets supplémentaires (facultatif, super-administrateur uniquement) : 'catalogue', 'service', 'hebergement' ou 'transport' (trois au plus, séparés par une virgule, ex. service,hebergement) pour créer un marchand HYBRIDE, ou laissez vide.",
     alertModuleSecondaireIdentique: "Le second volet doit être différent du type principal.",
     descIzyfactureHybride: "Connectez IzyVendeur à votre compte IzyFacture : une facture officielle est créée automatiquement quand une commande est confirmée ET quand un rendez-vous est marqué « Honoré » (factures séparées). Une commande ou un rendez-vous annulé après facturation génère un avoir. La clé est chiffrée avant d'être enregistrée et n'est jamais réaffichée en clair.",
     labelIzyfactureAutoHybride: "Créer automatiquement la facture (commande confirmée ou rendez-vous « Honoré »)",
@@ -1194,7 +1194,147 @@ const I18N = {
     alertNouveauMdpGenereEmploye: "Nouveau mot de passe généré. Communiquez-le à l'employé :\n\n{mdp}",
     confirmSupprimerEmploye: "Supprimer définitivement ce compte employé ?",
     alertChampsRequisEmploye: "Nom, identifiant et mot de passe sont requis.",
-    alertCompteEmployeCree: "Compte employé créé. Identifiants à lui communiquer :\n\nIdentifiant : {id}\nMot de passe : {mdp}"
+    alertCompteEmployeCree: "Compte employé créé. Identifiants à lui communiquer :\n\nIdentifiant : {id}\nMot de passe : {mdp}",
+    groupeTransport: "Billets",
+    voletTransport: "Billets",
+    typeTransport: "transport",
+    optionModuleAjoutTransport: "Ajouter les billets (trains, cars, navettes)",
+    ongletLignes: "Lignes et tarifs",
+    ongletDeparts: "Départs",
+    ongletBillets: "Réservations",
+    ongletManifeste: "Manifeste",
+    ongletParametresTransportHyb: "Paramètres billets",
+    roleReservationsTransport: "Réservations (billets)",
+    roleRendezvousReservationsBillets: "Rendez-vous, réservations & billets",
+    noteOptionsTransport: "Ce marchand est de type transport : les options payantes du catalogue s'appliquent seulement s'il a aussi le volet catalogue ; la facturation des billets n'est pas encore disponible.",
+    trpLignesTitre: "Lignes, arrêts et tarifs",
+    trpNoteLignes: "Une ligne est un trajet avec ses arrêts dans l'ordre (ex. Douala, Édéa, Eséka, Yaoundé). Un tarif est fixé pour chaque paire d'arrêts et chaque classe ; le trajet inverse utilise les mêmes tarifs. « Choix fenêtre / couloir » : cochez-le pour les classes où le client choisit son côté (train, car) ; décochez-le pour une navette.",
+    trpAucuneLigne: "Aucune ligne pour le moment.",
+    btnChargerExempleTrp: "Charger un exemple (train Douala–Yaoundé et navette d'aéroport)",
+    trpNoteExemple: "L'exemple ne remplit que des lignes vides : il ne remplace jamais vos données. Les horaires et tarifs du train suivent la plaquette ; les arrêts intermédiaires, distances et la navette sont des valeurs d'exemple à ajuster.",
+    trpExempleCharge: "Exemple chargé : lignes et départs créés. Ajustez-les puis testez dans le Simulateur.",
+    btnAjouterLigne: "Ajouter une ligne",
+    btnAjouterArret: "Ajouter un arrêt",
+    btnAjouterClasse: "Ajouter une classe",
+    nouvelleLigneTrp: "Nouvelle ligne",
+    nouvelArretTrp: "Nouvel arrêt",
+    nouvelleClasseTrp: "Nouvelle classe",
+    trpLabelNomLigne: "Nom de la ligne",
+    trpLabelType: "Type",
+    trpTypeTrain: "Train",
+    trpTypeNavette: "Navette",
+    trpTypeCar: "Car / bus",
+    trpTypeAutre: "Autre",
+    trpLabelActive: "Ligne ouverte à la vente",
+    trpH4Arrets: "Arrêts (dans l'ordre du trajet)",
+    trpTheadArret: "Arrêt",
+    trpTheadKm: "Distance depuis le départ (km)",
+    trpH4Classes: "Classes",
+    trpTheadClasse: "Classe",
+    trpTheadCote: "Choix fenêtre / couloir",
+    trpTheadDescription: "Précision (facultatif)",
+    trpH4Tarifs: "Tarifs (FCFA par personne)",
+    trpNoteTarifs: "Remplissez le prix de bout en bout de chaque classe puis « Calculer » : les prix des arrêts intermédiaires sont répartis selon la distance (arrondis à 500 FCFA). Vous pouvez ensuite corriger chaque prix à la main. Prix aller-retour : laissez 0 pour proposer seulement l'aller simple.",
+    trpTheadDe: "De",
+    trpTheadVers: "Vers",
+    trpTheadPrix: "Prix simple",
+    trpTheadPrixAR: "Prix aller-retour",
+    trpTheadPrixTerminus: "Prix de bout en bout",
+    trpTheadPrixARTerminus: "Aller-retour de bout en bout",
+    btnCalculerTarifs: "Calculer les tarifs par arrêt",
+    trpConfirmerCalcul: "Les tarifs actuels de cette ligne vont être remplacés par le calcul. Continuer ?",
+    trpConfirmerSupprLigne: "Supprimer cette ligne ? Ses départs ne seront plus proposés (les réservations déjà faites restent visibles).",
+    trpEnregistre: "Enregistré.",
+    trpDepartsTitre: "Départs et places vendues sur WhatsApp",
+    trpNoteDeparts: "Un départ est un horaire récurrent sur une ligne et dans un sens. Les quotas sont le nombre de places que vous réservez au canal WhatsApp (par classe, et par côté fenêtre / couloir si la classe le permet) : la disponibilité est calculée tronçon par tronçon, la place d'un voyageur qui descend à Édéa est donc revendue pour Édéa → Yaoundé. Le siège exact est attribué plus tard par votre équipe.",
+    trpAucunDepart: "Aucun départ pour le moment.",
+    btnAjouterDepart: "Ajouter un départ",
+    btnDupliquerDepart: "Dupliquer",
+    trpLabelLigne: "Ligne",
+    trpLabelSens: "Sens",
+    trpLabelHeure: "Heure de départ",
+    trpLabelJours: "Jours de circulation",
+    trpLabelPassages: "Heures de passage aux arrêts (facultatif, affichées au client)",
+    trpLabelQuotas: "Places vendues sur WhatsApp",
+    trpLabelFenetre: "fenêtre",
+    trpLabelCouloir: "couloir",
+    trpLabelTotal: "places",
+    trpLabelFermes: "Dates sans circulation (AAAA-MM-JJ, séparées par des virgules)",
+    trpLabelDebut: "Valable à partir du (facultatif)",
+    trpLabelFin: "Jusqu'au (facultatif)",
+    trpLabelActifDepart: "Départ ouvert à la vente",
+    trpDepartIncomplet: "Complétez la ligne et l'heure de chaque départ.",
+    trpOccupationTitre: "Remplissage d'un départ",
+    trpNoteOccupation: "Places prises par tronçon, retenues « À payer » comprises.",
+    btnVoirOccupation: "Voir le remplissage",
+    trpTheadTroncon: "Tronçon",
+    trpLabelDepartChoisi: "Départ",
+    trpLabelDate: "Date",
+    trpResaTitre: "Réservations de billets",
+    trpNoteResa: "Une réservation WhatsApp est « À payer » : ses places sont retenues pendant le délai réglé dans les paramètres. Passez-la à « Confirmé » quand le paiement est reçu, puis envoyez le billet au client. La CNI est masquée ici ; elle n'apparaît que dans le Manifeste.",
+    trpTousStatuts: "Tous les statuts",
+    trpAucuneResa: "Aucune réservation.",
+    trpTheadClient: "Client",
+    trpTheadTrajet: "Trajet",
+    trpTheadClasseCote: "Classe / côté",
+    trpTheadVoyageurs: "Voyageurs",
+    trpTheadTotal: "Total",
+    trpTheadActions: "Actions",
+    trpRetenueJusqua: "retenue jusqu'à {h}",
+    trpLabelAller: "Aller",
+    trpLabelRetour: "Retour",
+    btnAppliquer: "Appliquer",
+    btnEnvoyerBillet: "Envoyer le billet",
+    trpBilletEnvoye: "Billet envoyé au client sur WhatsApp.",
+    trpConfirmerAnnulResa: "Annuler cette réservation ? Les places seront rendues. Le client n'est pas prévenu automatiquement.",
+    billetAPayer: "À payer",
+    billetConfirme: "Confirmé",
+    billetEmbarque: "Embarqué",
+    billetAbsent: "Absent",
+    billetAnnule: "Annulé",
+    billetExpire: "Expiré",
+    trpManifesteTitre: "Manifeste de voyage",
+    trpNoteManifeste: "Liste des voyageurs d'un départ, avec leur numéro de CNI en clair. Chaque consultation est enregistrée dans le journal. Ne partagez pas cet écran ; imprimez ou exportez seulement pour les besoins du voyage.",
+    btnAfficherManifeste: "Afficher le manifeste",
+    btnImprimer: "Imprimer",
+    btnExporterCsv: "Exporter en CSV",
+    trpTheadNom: "Nom",
+    trpTheadCni: "CNI",
+    trpTheadTel: "Téléphone",
+    trpTheadMonte: "Monte à",
+    trpTheadDescend: "Descend à",
+    trpManifesteVide: "Aucun voyageur sur ce départ à cette date.",
+    trpParamTitre: "Paramètres des billets",
+    trpLabelDelaiRetenue: "Délai de paiement : minutes pendant lesquelles les places d'une réservation « À payer » sont retenues",
+    trpLabelCloture: "Fin des ventes WhatsApp : minutes avant le départ",
+    trpLabelAvance: "Dates proposées : nombre de jours à l'avance",
+    trpLabelMaxVoyageurs: "Voyageurs maximum par réservation",
+    trpLabelChoixMontee: "Proposer le choix de l'arrêt de montée",
+    trpLabelNotePaiement: "Consigne de paiement (français)",
+    trpLabelNotePaiementEn: "Consigne de paiement (anglais)",
+    trpLabelConsigne: "Consigne de voyage jointe au billet (français)",
+    trpLabelConsigneEn: "Consigne de voyage jointe au billet (anglais)",
+    trpLabelMsgConfirm: "Mot de fin du billet (français)",
+    trpLabelMsgConfirmEn: "Mot de fin du billet (anglais)",
+    libelleAPayerDash: "Réservations à payer",
+    libelleConfirmeesDash: "Réservations confirmées à venir",
+    libelleVoyageursDash: "Voyageurs à venir",
+    libelleCaBilletsDash: "Billets confirmés (FCFA)",
+    libelleMontantAttenteDash: "En attente de paiement (FCFA)",
+    h3ProchainsDeparts: "Prochains départs (7 jours)",
+    h3ResaAPayer: "Réservations à payer",
+    theadVendus: "Places vendues",
+    trpAlerteCni: "Attention : la clé de chiffrement du serveur (ENCRYPTION_KEY) n'est pas définie. Les numéros de CNI seraient enregistrés sans chiffrement : à corriger avant d'ouvrir les ventes.",
+    trpAucunDepartProche: "Aucun départ dans les 7 prochains jours.",
+    act_transport_lignes_modifiees: "Lignes de transport modifiées",
+    act_transport_tarifs_generes: "Tarifs de ligne calculés",
+    act_transport_departs_modifies: "Départs de transport modifiés",
+    act_transport_reservation_statut_modifie: "Statut de billet modifié",
+    act_transport_billet_envoye: "Billet envoyé au client",
+    act_transport_manifeste_consulte: "Manifeste consulté (CNI visibles)",
+    act_transport_exemple_charge: "Exemple de transport chargé",
+    trpLabelIndiff: "indifférent",
+    btnFiltrerTrp: "Filtrer"
   },
   en: {
     admin: "Admin",
@@ -1232,7 +1372,7 @@ const I18N = {
 
     promptIdMarchand: "Merchant's technical identifier (no spaces, e.g. don-william):",
     promptNomMarchand: "Merchant's display name:",
-    promptTypeMarchand: "Type: 'catalogue' (selling products), 'service' (appointment booking) or 'hebergement' (room booking)?",
+    promptTypeMarchand: "Type: 'catalogue' (selling products), 'service' (appointment booking), 'hebergement' (room booking) or 'transport' (train, coach, shuttle tickets)?",
     promptPhoneNumberIdCreation: "This merchant's WhatsApp phone_number_id (found in the Meta dashboard > WhatsApp > Phone numbers). Leave blank if not known yet:",
     promptAdminUser: "Login username for this merchant (used to log in to /admin):",
     promptAdminPassword: "Initial password for this merchant (they can change it later from \"My account\"):",
@@ -1604,7 +1744,7 @@ const I18N = {
     btnEnregistrerModule: "Save the second section",
     alertModuleEnregistre: "Sections saved.",
     confirmRetirerModule: "Remove a section? It will be hidden from customers and from /admin, but its data is kept.",
-    promptModuleSecondaire: "Additional sections (optional, super-administrator only): 'catalogue', 'service' or 'hebergement' (two at most, comma-separated, e.g. service,hebergement) to create a HYBRID merchant, or leave empty.",
+    promptModuleSecondaire: "Additional sections (optional, super-administrator only): 'catalogue', 'service', 'hebergement' or 'transport' (three at most, comma-separated, e.g. service,hebergement) to create a HYBRID merchant, or leave empty.",
     alertModuleSecondaireIdentique: "The second section must differ from the main type.",
     descIzyfactureHybride: "Connect IzyVendeur to your IzyFacture account: an official invoice is created automatically when an order is confirmed AND when an appointment is marked \"Completed\" (separate invoices). An order or appointment cancelled after invoicing generates a credit note. The key is encrypted before being stored and is never shown again in full.",
     labelIzyfactureAutoHybride: "Automatically create the invoice (order confirmed or appointment \"Completed\")",
@@ -2201,7 +2341,147 @@ const I18N = {
     alertNouveauMdpGenereEmploye: "New password generated. Share it with the employee:\n\n{mdp}",
     confirmSupprimerEmploye: "Permanently delete this employee account?",
     alertChampsRequisEmploye: "Name, username and password are required.",
-    alertCompteEmployeCree: "Employee account created. Login details to share with them:\n\nUsername: {id}\nPassword: {mdp}"
+    alertCompteEmployeCree: "Employee account created. Login details to share with them:\n\nUsername: {id}\nPassword: {mdp}",
+    groupeTransport: "Tickets",
+    voletTransport: "Tickets",
+    typeTransport: "Transport",
+    optionModuleAjoutTransport: "Add tickets (trains, coaches, shuttles)",
+    ongletLignes: "Routes and fares",
+    ongletDeparts: "Departures",
+    ongletBillets: "Bookings",
+    ongletManifeste: "Manifest",
+    ongletParametresTransportHyb: "Ticket settings",
+    roleReservationsTransport: "Bookings (tickets)",
+    roleRendezvousReservationsBillets: "Appointments, bookings & tickets",
+    noteOptionsTransport: "This merchant is a transport merchant: the catalog paid options only apply if it also has the catalog section; invoicing of tickets is not available yet.",
+    trpLignesTitre: "Routes, stops and fares",
+    trpNoteLignes: "A route is a trip with its stops in order (e.g. Douala, Édéa, Eséka, Yaoundé). A fare is set for each pair of stops and each class; the reverse trip uses the same fares. “Window / aisle choice”: tick it for classes where the customer picks a side (train, coach); untick it for a shuttle.",
+    trpAucuneLigne: "No route yet.",
+    btnChargerExempleTrp: "Load an example (Douala–Yaoundé train and airport shuttle)",
+    trpNoteExemple: "The example only fills an empty list: it never replaces your data. The train times and fares follow the leaflet; intermediate stops, distances and the shuttle are sample values to adjust.",
+    trpExempleCharge: "Example loaded: routes and departures created. Adjust them, then test in the Simulator.",
+    btnAjouterLigne: "Add a route",
+    btnAjouterArret: "Add a stop",
+    btnAjouterClasse: "Add a class",
+    nouvelleLigneTrp: "New route",
+    nouvelArretTrp: "New stop",
+    nouvelleClasseTrp: "New class",
+    trpLabelNomLigne: "Route name",
+    trpLabelType: "Type",
+    trpTypeTrain: "Train",
+    trpTypeNavette: "Shuttle",
+    trpTypeCar: "Coach / bus",
+    trpTypeAutre: "Other",
+    trpLabelActive: "Route open for sale",
+    trpH4Arrets: "Stops (in trip order)",
+    trpTheadArret: "Stop",
+    trpTheadKm: "Distance from start (km)",
+    trpH4Classes: "Classes",
+    trpTheadClasse: "Class",
+    trpTheadCote: "Window / aisle choice",
+    trpTheadDescription: "Detail (optional)",
+    trpH4Tarifs: "Fares (FCFA per person)",
+    trpNoteTarifs: "Enter each class's end-to-end price then “Calculate”: intermediate-stop fares are split by distance (rounded to 500 FCFA). You can then edit each price by hand. Return price: leave 0 to offer one-way only.",
+    trpTheadDe: "From",
+    trpTheadVers: "To",
+    trpTheadPrix: "One-way price",
+    trpTheadPrixAR: "Return price",
+    trpTheadPrixTerminus: "End-to-end price",
+    trpTheadPrixARTerminus: "End-to-end return",
+    btnCalculerTarifs: "Calculate fares per stop",
+    trpConfirmerCalcul: "This route's current fares will be replaced by the calculation. Continue?",
+    trpConfirmerSupprLigne: "Delete this route? Its departures will no longer be offered (existing bookings stay visible).",
+    trpEnregistre: "Saved.",
+    trpDepartsTitre: "Departures and seats sold on WhatsApp",
+    trpNoteDeparts: "A departure is a recurring time on a route and in one direction. Quotas are the seats you allot to the WhatsApp channel (per class, and per window / aisle side if the class allows it): availability is computed leg by leg, so the seat of a traveller getting off at Édéa is resold for Édéa → Yaoundé. The exact seat is assigned later by your team.",
+    trpAucunDepart: "No departure yet.",
+    btnAjouterDepart: "Add a departure",
+    btnDupliquerDepart: "Duplicate",
+    trpLabelLigne: "Route",
+    trpLabelSens: "Direction",
+    trpLabelHeure: "Departure time",
+    trpLabelJours: "Days of operation",
+    trpLabelPassages: "Times at each stop (optional, shown to the customer)",
+    trpLabelQuotas: "Seats sold on WhatsApp",
+    trpLabelFenetre: "window",
+    trpLabelCouloir: "aisle",
+    trpLabelTotal: "seats",
+    trpLabelFermes: "Dates without service (YYYY-MM-DD, comma-separated)",
+    trpLabelDebut: "Valid from (optional)",
+    trpLabelFin: "Until (optional)",
+    trpLabelActifDepart: "Departure open for sale",
+    trpDepartIncomplet: "Please fill in the route and time of every departure.",
+    trpOccupationTitre: "Departure occupancy",
+    trpNoteOccupation: "Seats taken per leg, including “To pay” holds.",
+    btnVoirOccupation: "Show occupancy",
+    trpTheadTroncon: "Leg",
+    trpLabelDepartChoisi: "Departure",
+    trpLabelDate: "Date",
+    trpResaTitre: "Ticket bookings",
+    trpNoteResa: "A WhatsApp booking is “To pay”: its seats are held for the time set in the settings. Switch it to “Confirmed” once payment is received, then send the ticket to the customer. The ID number is masked here; it only appears in the Manifest.",
+    trpTousStatuts: "All statuses",
+    trpAucuneResa: "No booking.",
+    trpTheadClient: "Customer",
+    trpTheadTrajet: "Trip",
+    trpTheadClasseCote: "Class / side",
+    trpTheadVoyageurs: "Passengers",
+    trpTheadTotal: "Total",
+    trpTheadActions: "Actions",
+    trpRetenueJusqua: "held until {h}",
+    trpLabelAller: "Outbound",
+    trpLabelRetour: "Return",
+    btnAppliquer: "Apply",
+    btnEnvoyerBillet: "Send the ticket",
+    trpBilletEnvoye: "Ticket sent to the customer on WhatsApp.",
+    trpConfirmerAnnulResa: "Cancel this booking? The seats will be released. The customer is not notified automatically.",
+    billetAPayer: "To pay",
+    billetConfirme: "Confirmed",
+    billetEmbarque: "Boarded",
+    billetAbsent: "No-show",
+    billetAnnule: "Cancelled",
+    billetExpire: "Expired",
+    trpManifesteTitre: "Travel manifest",
+    trpNoteManifeste: "List of a departure's passengers, with their ID numbers in clear. Every consultation is recorded in the journal. Do not share this screen; print or export only for travel purposes.",
+    btnAfficherManifeste: "Show the manifest",
+    btnImprimer: "Print",
+    btnExporterCsv: "Export as CSV",
+    trpTheadNom: "Name",
+    trpTheadCni: "ID number",
+    trpTheadTel: "Phone",
+    trpTheadMonte: "Boards at",
+    trpTheadDescend: "Gets off at",
+    trpManifesteVide: "No passenger on this departure on that date.",
+    trpParamTitre: "Ticket settings",
+    trpLabelDelaiRetenue: "Payment time: minutes during which a “To pay” booking's seats are held",
+    trpLabelCloture: "End of WhatsApp sales: minutes before departure",
+    trpLabelAvance: "Dates offered: days in advance",
+    trpLabelMaxVoyageurs: "Maximum passengers per booking",
+    trpLabelChoixMontee: "Offer the choice of boarding stop",
+    trpLabelNotePaiement: "Payment instruction (French)",
+    trpLabelNotePaiementEn: "Payment instruction (English)",
+    trpLabelConsigne: "Travel note attached to the ticket (French)",
+    trpLabelConsigneEn: "Travel note attached to the ticket (English)",
+    trpLabelMsgConfirm: "Closing words on the ticket (French)",
+    trpLabelMsgConfirmEn: "Closing words on the ticket (English)",
+    libelleAPayerDash: "Bookings to pay",
+    libelleConfirmeesDash: "Upcoming confirmed bookings",
+    libelleVoyageursDash: "Upcoming passengers",
+    libelleCaBilletsDash: "Confirmed tickets (FCFA)",
+    libelleMontantAttenteDash: "Awaiting payment (FCFA)",
+    h3ProchainsDeparts: "Next departures (7 days)",
+    h3ResaAPayer: "Bookings to pay",
+    theadVendus: "Seats sold",
+    trpAlerteCni: "Warning: the server encryption key (ENCRYPTION_KEY) is not set. ID numbers would be stored unencrypted: fix this before opening sales.",
+    trpAucunDepartProche: "No departure in the next 7 days.",
+    act_transport_lignes_modifiees: "Transport routes changed",
+    act_transport_tarifs_generes: "Route fares calculated",
+    act_transport_departs_modifies: "Transport departures changed",
+    act_transport_reservation_statut_modifie: "Ticket booking status changed",
+    act_transport_billet_envoye: "Ticket sent to customer",
+    act_transport_manifeste_consulte: "Manifest viewed (ID numbers visible)",
+    act_transport_exemple_charge: "Transport example loaded",
+    trpLabelIndiff: "no preference",
+    btnFiltrerTrp: "Filter"
   }
 };
 
@@ -2233,15 +2513,15 @@ function libelleJour(j) {
   const map = { lundi: "jourLundi", mardi: "jourMardi", mercredi: "jourMercredi", jeudi: "jourJeudi", vendredi: "jourVendredi", samedi: "jourSamedi", dimanche: "jourDimanche" };
   return map[j] ? t(map[j]) : j;
 }
-function libelleTypeMarchand(type) { return type === "service" ? t("typeService") : type === "hebergement" ? t("typeHebergement") : t("typeCatalogue"); }
+function libelleTypeMarchand(type) { return type === "service" ? t("typeService") : type === "hebergement" ? t("typeHebergement") : type === "transport" ? t("typeTransport") : t("typeCatalogue"); }
 // Etape 48/66 : un marchand HYBRIDE a deux ou trois volets (`modules` = [principal, second, troisieme], fournis par GET /api/marchands).
-function libelleVoletCle(v) { return v === "service" ? "voletService" : v === "hebergement" ? "voletHebergement" : "voletCatalogue"; }
+function libelleVoletCle(v) { return v === "service" ? "voletService" : v === "hebergement" ? "voletHebergement" : v === "transport" ? "voletTransport" : "voletCatalogue"; }
 function modulesAdmin(m) { m = m || marchandActif; return m && Array.isArray(m.modules) && m.modules.length ? m.modules : [m ? m.type : "catalogue"]; }
 function estHybrideAdmin(m) { return modulesAdmin(m).length > 1; }
 function libelleMarchandType(m) {
   const mods = modulesAdmin(m);
   // Etape 66 : jusqu'a trois volets (le troisieme est simplement ajoute au libelle « A + B »).
-  return mods.length > 1 ? t("typeHybrideLibelle", { a: libelleTypeMarchand(mods[0]), b: libelleTypeMarchand(mods[1]) }) + (mods[2] ? " + " + libelleTypeMarchand(mods[2]) : "") : libelleTypeMarchand(m.type);
+  return mods.length > 1 ? t("typeHybrideLibelle", { a: libelleTypeMarchand(mods[0]), b: libelleTypeMarchand(mods[1]) }) + (mods[2] ? " + " + libelleTypeMarchand(mods[2]) : "") + (mods[3] ? " + " + libelleTypeMarchand(mods[3]) : "") : libelleTypeMarchand(m.type);
 }
 // Volet (« catalogue » / « service ») de l'onglet affiche, pour un marchand hybride : ajoute ?volet= aux
 // appels qui en ont besoin (voir api() ci-dessous). null hors marchand hybride et pour les onglets communs.
@@ -2579,15 +2859,25 @@ function rolesDisponiblesBase() {
     // Marchand hybride : les roles des DEUX volets (un employe garde le sien et ne voit que ses onglets).
     // Etape 66 : seuls les roles des volets que ce marchand possede (catalogue / rendez-vous / chambres).
     const mods = modulesAdmin();
-    const aCat = mods.indexOf("catalogue") !== -1, aSvc = mods.indexOf("service") !== -1, aHeb = mods.indexOf("hebergement") !== -1;
+    const aCat = mods.indexOf("catalogue") !== -1, aSvc = mods.indexOf("service") !== -1, aHeb = mods.indexOf("hebergement") !== -1, aTrp = mods.indexOf("transport") !== -1;
+    const nbRdv = [aSvc, aHeb, aTrp].filter(Boolean).length;
+    const libelleRdv = nbRdv > 1 ? (aTrp ? t("roleRendezvousReservationsBillets") : t("roleRendezvousEtReservations")) : (aTrp ? t("roleReservationsTransport") : (aHeb ? t("roleReservations") : t("roleRendezvous")));
     return [].concat(
       aCat ? [["catalogue", t("roleCatalogue")], ["commandes", t("roleCommandes")]] : [],
-      aSvc || aHeb ? [["rendezvous", aSvc && aHeb ? t("roleRendezvousEtReservations") : (aHeb ? t("roleReservations") : t("roleRendezvous"))]] : [],
+      nbRdv ? [["rendezvous", libelleRdv]] : [],
       [["conversations", t("roleConversationsService")], ["tableaudebord", t("roleTableauDeBord")]],
       aCat ? [["rapports", t("roleRapports")], ["inventaire", t("roleInventaire")]] : [],
       [["parametres", t("roleParametres")]],
       aCat && marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : []
     );
+  }
+  if (marchandActif.type === "transport") {
+    return [
+      ["rendezvous", t("roleReservationsTransport")],
+      ["conversations", t("roleConversationsService")],
+      ["tableaudebord", t("roleTableauDeBord")],
+      ["parametres", t("roleParametres")]
+    ];
   }
   if (marchandActif.type === "hebergement") {
     return [
@@ -2656,7 +2946,15 @@ function construireOnglets() {
     ["calendrier", t("ongletCalendrier"), renderCalendrierChambres, "rendezvous", "hebergement"],
     ["parametresHeb", t("ongletParametresHebHyb"), renderParametresHebergement, "parametres", "hebergement"]
   ];
-  const ongletsDuVolet = { catalogue: ongletsCatalogue, service: ongletsService, hebergement: ongletsHeb };
+  // Etape 74 : onglets du volet transport (lignes, departs, reservations de billets, manifeste, parametres).
+  const ongletsTrp = () => [
+    ["lignes", t("ongletLignes"), renderTransportLignes, "rendezvous", "transport"],
+    ["departs", t("ongletDeparts"), renderTransportDeparts, "rendezvous", "transport"],
+    ["billets", t("ongletBillets"), renderTransportReservations, "rendezvous", "transport"],
+    ["manifeste", t("ongletManifeste"), renderTransportManifeste, "rendezvous", "transport"],
+    ["parametresTrp", t("ongletParametresTransportHyb"), renderParametresTransport, "parametres", "transport"]
+  ];
+  const ongletsDuVolet = { catalogue: ongletsCatalogue, service: ongletsService, hebergement: ongletsHeb, transport: ongletsTrp };
   // Roles operationnels exiges pour le Simulateur complet : celui de CHAQUE volet (voir simulateurHybrideAutorise cote serveur).
   const permissionsDesVolets = modulesAdmin().map((v) => (v === "catalogue" ? "catalogue" : "rendezvous"));
   let onglets = hybride
@@ -2674,6 +2972,20 @@ function construireOnglets() {
           ["compte", t("ongletCompte"), renderCompte, null, null]
         ]
       ).filter(Boolean)
+    : marchandActif.type === "transport"
+    ? [
+        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"]
+      ].concat(
+        ongletsTrp().filter((o) => o[0] !== "parametresTrp").map((o) => o.slice(0, 4)),
+        [
+          ["simulateur", t("ongletSimulateur"), renderSimulateur, ["rendezvous", "conversations"]],
+          ["conversations", t("ongletConversations"), renderConversations, "conversations"],
+          ["parametresTrp", t("ongletParametresTransportHyb"), renderParametresTransport, "parametres"],
+          ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
+          ["journal", t("ongletJournal"), renderJournal, "gestion"],
+          ["compte", t("ongletCompte"), renderCompte, null]
+        ]
+      )
     : marchandActif.type === "hebergement"
     ? [
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
@@ -2735,8 +3047,8 @@ function construireOnglets() {
   // Les boutons d'onglet restent TOUS dans le DOM (allerVersOnglet() et les tuiles du Tableau de bord continuent de
   // fonctionner) ; seuls ceux du groupe actif sont affiches. Marchand a un seul volet : rien n'est regroupe.
   const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
-    services: "rdv", rendezvous: "rdv", parametresService: "rdv", chambres: "hebergement", sejours: "hebergement", calendrier: "hebergement", parametresHeb: "hebergement", simulateur: "echanges", conversations: "echanges", facturation: "admin", employes: "admin", journal: "admin", compte: "admin" };
-  const LIBELLE_GROUPE = { dashboard: t("ongletTableauDeBord"), produits: t("groupeProduits"), rdv: t("groupeRdv"), hebergement: t("groupeHebergement"), echanges: t("groupeEchanges"), admin: t("groupeAdmin") };
+    services: "rdv", rendezvous: "rdv", parametresService: "rdv", chambres: "hebergement", sejours: "hebergement", calendrier: "hebergement", parametresHeb: "hebergement", lignes: "transport", departs: "transport", billets: "transport", manifeste: "transport", parametresTrp: "transport", simulateur: "echanges", conversations: "echanges", facturation: "admin", employes: "admin", journal: "admin", compte: "admin" };
+  const LIBELLE_GROUPE = { dashboard: t("ongletTableauDeBord"), produits: t("groupeProduits"), rdv: t("groupeRdv"), hebergement: t("groupeHebergement"), transport: t("groupeTransport"), echanges: t("groupeEchanges"), admin: t("groupeAdmin") };
   const barreGroupes = document.getElementById("barreGroupes");
   const ordreGroupes = [];
   if (hybride) onglets.forEach((o) => { const g = GROUPE_DE[o[0]] || "admin"; if (ordreGroupes.indexOf(g) === -1) ordreGroupes.push(g); });
@@ -4246,8 +4558,9 @@ function blocIzyfactureHtml(etat, estService) {
 // Le bloc IzyFacture existe dans Parametres des deux types de marchand (catalogue ET service, Etape 46) :
 // apres une sauvegarde on redessine donc le bon ecran.
 function rafraichirParametresMarchand() {
-  if (estHybrideAdmin()) return voletCourant === "service" ? renderParametresService() : voletCourant === "hebergement" ? renderParametresHebergement() : renderParametresCatalogue();
+  if (estHybrideAdmin()) return voletCourant === "service" ? renderParametresService() : voletCourant === "hebergement" ? renderParametresHebergement() : voletCourant === "transport" ? renderParametresTransport() : renderParametresCatalogue();
   if (marchandActif.type === "hebergement") return renderParametresHebergement();
+  if (marchandActif.type === "transport") return renderParametresTransport();
   if (marchandActif.type === "service") return renderParametresService();
   return renderParametresCatalogue();
 }
@@ -5062,6 +5375,520 @@ async function renderParametresHebergement() {
   };
 }
 
+// ---------------- Transport (Etape 74) : lignes, departs, reservations, manifeste, parametres ----------------
+// Volet generique « billets » (train, car, navette...) : le client choisit trajet + arret + classe + cote (fenetre / couloir) sur WhatsApp ;
+// le marchand regle ici les lignes, les tarifs par paire d'arrets, les quotas de places vendues sur WhatsApp et suit les reservations.
+// La CNI des voyageurs n'est affichee en clair QUE dans le Manifeste (action journalisee cote serveur).
+
+const TRP_JOURS = [[1, "lundi"], [2, "mardi"], [3, "mercredi"], [4, "jeudi"], [5, "vendredi"], [6, "samedi"], [0, "dimanche"]];
+const TRP_STATUTS = ["À payer", "Confirmé", "Embarqué", "Absent", "Annulé", "Expiré"];
+function libelleStatutBillet(s) {
+  const map = { "À payer": "billetAPayer", "Confirmé": "billetConfirme", "Embarqué": "billetEmbarque", "Absent": "billetAbsent", "Annulé": "billetAnnule", "Expiré": "billetExpire" };
+  return map[s] ? t(map[s]) : s;
+}
+function trpFcfa(n) { return (Number(n) || 0).toLocaleString(localeCourante()) + " FCFA"; }
+function trpIdNeuf(prefixe) { return prefixe + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36); }
+function trpAujourdhui() { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function trpHeureLocale(iso) { try { return new Date(iso).toLocaleTimeString(localeCourante(), { hour: "2-digit", minute: "2-digit" }); } catch (e) { return ""; } }
+function trpLibelleCote(c) { return c === "fenetre" ? t("trpLabelFenetre") : c === "couloir" ? t("trpLabelCouloir") : c === "total" ? t("trpLabelTotal") : c === "indiff" ? t("trpLabelIndiff") : ""; }
+function trpLibelleSens(ligne, sens) {
+  if (!ligne || !ligne.arrets || ligne.arrets.length < 2) return sens === -1 ? "←" : "→";
+  const a = ligne.arrets[0].nom, b = ligne.arrets[ligne.arrets.length - 1].nom;
+  return sens === -1 ? b + " → " + a : a + " → " + b;
+}
+function trpOrdreArrets(ligne, sens) { return sens === -1 ? ligne.arrets.slice().reverse() : ligne.arrets.slice(); }
+function trpJambeTexte(j) {
+  if (!j) return "";
+  return formaterJourIso(j.date) + (j.heureDe ? " " + String(j.heureDe).replace(":", "h") : "") + " · " + j.deNom + " → " + j.versNom;
+}
+// Meme calcul que le serveur (conversationTransport.calculerTarifs) : prix de bout en bout reparti selon la distance, arrondi a 500 FCFA.
+function trpCalculerTarifs(ligne, base) {
+  const arrets = ligne.arrets;
+  const total = Math.max(1, (Number(arrets[arrets.length - 1].pk) || 0) - (Number(arrets[0].pk) || 0));
+  const arrondi = (v) => Math.max(500, Math.round(v / 500) * 500);
+  const out = [];
+  for (let i = 0; i < arrets.length; i++) {
+    for (let j = i + 1; j < arrets.length; j++) {
+      const part = ((Number(arrets[j].pk) || 0) - (Number(arrets[i].pk) || 0)) / total;
+      Object.keys(base || {}).forEach((cid) => {
+        const b = base[cid] || {};
+        if (!(Number(b.prix) > 0)) return;
+        const pleine = i === 0 && j === arrets.length - 1;
+        out.push({
+          de: arrets[i].id, vers: arrets[j].id, classeId: cid,
+          prix: pleine ? Number(b.prix) : arrondi(Number(b.prix) * part),
+          prixAR: Number(b.prixAR) > 0 ? (pleine ? Number(b.prixAR) : arrondi(Number(b.prixAR) * part)) : 0
+        });
+      });
+    }
+  }
+  return out;
+}
+
+// ---- Lignes et tarifs ----
+async function renderTransportLignes() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const lignes = await api("/api/" + marchandActif.id + "/transport/lignes");
+  const local = JSON.parse(JSON.stringify(lignes));
+  const bases = {}; // bases[ligneId][classeId] = { prix, prixAR } : prix de bout en bout du generateur de tarifs
+  function baseDe(l) {
+    if (!bases[l.id]) bases[l.id] = {};
+    const a0 = l.arrets[0], an = l.arrets[l.arrets.length - 1];
+    l.classes.forEach((c) => {
+      if (!bases[l.id][c.id]) {
+        const tf = (l.tarifs || []).filter((x) => a0 && an && x.de === a0.id && x.vers === an.id && x.classeId === c.id)[0];
+        bases[l.id][c.id] = { prix: tf ? tf.prix : 0, prixAR: tf ? tf.prixAR : 0 };
+      }
+    });
+    return bases[l.id];
+  }
+  function tarifDe(l, de, vers, cid) { return (l.tarifs || []).filter((x) => x.de === de && x.vers === vers && x.classeId === cid)[0] || null; }
+  function fixerTarif(l, de, vers, cid, champ, valeur) {
+    if (!l.tarifs) l.tarifs = [];
+    let x = tarifDe(l, de, vers, cid);
+    if (!x) { x = { de, vers, classeId: cid, prix: 0, prixAR: 0 }; l.tarifs.push(x); }
+    x[champ] = valeur;
+  }
+  function htmlLigne(l, i) {
+    const b = baseDe(l);
+    let h = "<div class='carte-trp' data-ligne='" + i + "' style='border:1px solid #d9dde3; border-radius:8px; padding:12px; margin-bottom:18px;'>";
+    h += "<div style='display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;'>" +
+      "<div><label>" + t("trpLabelNomLigne") + "</label><input data-f='nom' data-l='" + i + "' value=\"" + esc(l.nom) + "\" /></div>" +
+      "<div><label>" + t("trpLabelType") + "</label><select data-f='mode' data-l='" + i + "'>" +
+        ["train", "navette", "car", "autre"].map((m) => "<option value='" + m + "'" + (l.mode === m ? " selected" : "") + ">" + t("trpType" + m.charAt(0).toUpperCase() + m.slice(1)) + "</option>").join("") +
+      "</select></div>" +
+      "<div><label><input type='checkbox' data-f='actif' data-l='" + i + "'" + (l.actif !== false ? " checked" : "") + " /> " + t("trpLabelActive") + "</label></div>" +
+      "<div><button type='button' class='danger' data-a='suppr-ligne' data-l='" + i + "'>×</button></div>" +
+    "</div>";
+    // Arrets
+    h += "<h4>" + t("trpH4Arrets") + "</h4><table class='table-donnees'><tr><th>" + t("trpTheadArret") + "</th><th>" + t("trpTheadKm") + "</th><th></th></tr>" +
+      l.arrets.map((a, j) =>
+        "<tr><td><input data-f='arret-nom' data-l='" + i + "' data-j='" + j + "' value=\"" + esc(a.nom) + "\" /></td>" +
+        "<td><input type='number' min='0' data-f='arret-pk' data-l='" + i + "' data-j='" + j + "' value='" + (Number(a.pk) || 0) + "' /></td>" +
+        "<td><button type='button' data-a='haut' data-l='" + i + "' data-j='" + j + "'" + (j === 0 ? " disabled" : "") + ">▲</button> " +
+        "<button type='button' data-a='bas' data-l='" + i + "' data-j='" + j + "'" + (j === l.arrets.length - 1 ? " disabled" : "") + ">▼</button> " +
+        "<button type='button' class='danger' data-a='suppr-arret' data-l='" + i + "' data-j='" + j + "'>×</button></td></tr>"
+      ).join("") + "</table>" +
+      "<button type='button' data-a='ajout-arret' data-l='" + i + "'>" + t("btnAjouterArret") + "</button>";
+    // Classes
+    h += "<h4>" + t("trpH4Classes") + "</h4><table class='table-donnees'><tr><th>" + t("trpTheadClasse") + "</th><th>" + t("trpTheadCote") + "</th><th>" + t("trpTheadDescription") + "</th><th></th></tr>" +
+      l.classes.map((c, j) =>
+        "<tr><td><input data-f='classe-nom' data-l='" + i + "' data-j='" + j + "' value=\"" + esc(c.nom) + "\" /></td>" +
+        "<td><input type='checkbox' data-f='classe-cote' data-l='" + i + "' data-j='" + j + "'" + (c.cote ? " checked" : "") + " /></td>" +
+        "<td><input data-f='classe-desc' data-l='" + i + "' data-j='" + j + "' value=\"" + esc(c.description || "") + "\" /></td>" +
+        "<td><button type='button' class='danger' data-a='suppr-classe' data-l='" + i + "' data-j='" + j + "'>×</button></td></tr>"
+      ).join("") + "</table>" +
+      "<button type='button' data-a='ajout-classe' data-l='" + i + "'>" + t("btnAjouterClasse") + "</button>";
+    // Tarifs
+    h += "<h4>" + t("trpH4Tarifs") + "</h4><p class='raison'>" + t("trpNoteTarifs") + "</p>";
+    h += "<table class='table-donnees'><tr><th>" + t("trpTheadClasse") + "</th><th>" + t("trpTheadPrixTerminus") + "</th><th>" + t("trpTheadPrixARTerminus") + "</th></tr>" +
+      l.classes.map((c) =>
+        "<tr><td>" + esc(c.nom) + "</td>" +
+        "<td><input type='number' min='0' data-f='base' data-l='" + i + "' data-c='" + esc(c.id) + "' data-w='prix' value='" + (Number(b[c.id].prix) || 0) + "' /></td>" +
+        "<td><input type='number' min='0' data-f='base' data-l='" + i + "' data-c='" + esc(c.id) + "' data-w='prixAR' value='" + (Number(b[c.id].prixAR) || 0) + "' /></td></tr>"
+      ).join("") + "</table>" +
+      "<button type='button' data-a='calculer' data-l='" + i + "'>" + t("btnCalculerTarifs") + "</button>";
+    if (l.arrets.length >= 2 && l.classes.length) {
+      h += "<table class='table-donnees' style='margin-top:10px;'><tr><th rowspan='2'>" + t("trpTheadDe") + "</th><th rowspan='2'>" + t("trpTheadVers") + "</th>" +
+        l.classes.map((c) => "<th colspan='2'>" + esc(c.nom) + "</th>").join("") + "</tr><tr>" +
+        l.classes.map(() => "<th>" + t("trpTheadPrix") + "</th><th>" + t("trpTheadPrixAR") + "</th>").join("") + "</tr>";
+      for (let x = 0; x < l.arrets.length; x++) {
+        for (let y = x + 1; y < l.arrets.length; y++) {
+          const de = l.arrets[x], vers = l.arrets[y];
+          h += "<tr><td><span data-nomarret='" + i + ":" + esc(de.id) + "'>" + esc(de.nom) + "</span></td><td><span data-nomarret='" + i + ":" + esc(vers.id) + "'>" + esc(vers.nom) + "</span></td>" +
+            l.classes.map((c) => {
+              const tf = tarifDe(l, de.id, vers.id, c.id) || { prix: 0, prixAR: 0 };
+              const attrs = " data-f='tarif' data-l='" + i + "' data-de='" + esc(de.id) + "' data-vers='" + esc(vers.id) + "' data-c='" + esc(c.id) + "'";
+              return "<td><input type='number' min='0'" + attrs + " data-w='prix' value='" + (Number(tf.prix) || 0) + "' /></td>" +
+                     "<td><input type='number' min='0'" + attrs + " data-w='prixAR' value='" + (Number(tf.prixAR) || 0) + "' /></td>";
+            }).join("") + "</tr>";
+        }
+      }
+      h += "</table>";
+    }
+    return h + "</div>";
+  }
+  zone.innerHTML = "<div id='trpRoot'></div>";
+  const root = document.getElementById("trpRoot");
+  function redraw() {
+    root.innerHTML =
+      "<h2>" + t("trpLignesTitre") + "</h2><p class='raison'>" + t("trpNoteLignes") + "</p>" +
+      (local.length ? local.map(htmlLigne).join("") : "<p class='raison'>" + t("trpAucuneLigne") + "</p>" +
+        "<p><button type='button' data-a='exemple'>" + t("btnChargerExempleTrp") + "</button></p><p class='raison'>" + t("trpNoteExemple") + "</p>") +
+      "<div><button type='button' data-a='ajout-ligne'>" + t("btnAjouterLigne") + "</button> " +
+      "<button type='button' id='btnSauverLignesTrp' class='principal' data-a='sauver'>" + t("enregistrer") + "</button></div>";
+  }
+  function surSaisie(ev) {
+    const el = ev.target, f = el.dataset && el.dataset.f;
+    if (!f) return;
+    const l = local[Number(el.dataset.l)];
+    if (!l) return;
+    const j = Number(el.dataset.j);
+    const nombre = () => Math.max(0, Number(el.value) || 0);
+    if (f === "nom") l.nom = el.value;
+    else if (f === "mode") l.mode = el.value;
+    else if (f === "actif") l.actif = el.checked;
+    else if (f === "arret-nom") {
+      l.arrets[j].nom = el.value;
+      Array.prototype.forEach.call(root.querySelectorAll("[data-nomarret='" + el.dataset.l + ":" + l.arrets[j].id + "']"), (s) => { s.textContent = el.value; });
+    }
+    else if (f === "arret-pk") l.arrets[j].pk = nombre();
+    else if (f === "classe-nom") l.classes[j].nom = el.value;
+    else if (f === "classe-cote") l.classes[j].cote = el.checked;
+    else if (f === "classe-desc") l.classes[j].description = el.value;
+    else if (f === "base") baseDe(l)[el.dataset.c][el.dataset.w] = nombre();
+    else if (f === "tarif") fixerTarif(l, el.dataset.de, el.dataset.vers, el.dataset.c, el.dataset.w, nombre());
+  }
+  root.addEventListener("input", surSaisie);
+  root.addEventListener("change", surSaisie);
+  root.addEventListener("click", async (ev) => {
+    const btn = ev.target.closest && ev.target.closest("[data-a]");
+    if (!btn || !root.contains(btn)) return;
+    const a = btn.dataset.a, i = Number(btn.dataset.l), j = Number(btn.dataset.j);
+    const l = local[i];
+    if (a === "ajout-ligne") {
+      local.push({
+        id: trpIdNeuf("l"), nom: t("nouvelleLigneTrp"), mode: "train", actif: true,
+        arrets: [{ id: trpIdNeuf("a"), nom: t("nouvelArretTrp") + " 1", pk: 0 }, { id: trpIdNeuf("b"), nom: t("nouvelArretTrp") + " 2", pk: 100 }],
+        classes: [{ id: trpIdNeuf("c"), nom: t("nouvelleClasseTrp"), cote: false, description: "" }], tarifs: []
+      });
+      redraw();
+    } else if (a === "suppr-ligne") {
+      if (!confirm(t("trpConfirmerSupprLigne"))) return;
+      local.splice(i, 1); redraw();
+    } else if (a === "ajout-arret") {
+      const dernier = l.arrets[l.arrets.length - 1];
+      l.arrets.push({ id: trpIdNeuf("a"), nom: t("nouvelArretTrp"), pk: dernier ? Number(dernier.pk) || 0 : 0 }); redraw();
+    } else if (a === "suppr-arret") {
+      const id = l.arrets[j].id;
+      l.arrets.splice(j, 1);
+      l.tarifs = (l.tarifs || []).filter((x) => x.de !== id && x.vers !== id);
+      redraw();
+    } else if (a === "haut" || a === "bas") {
+      const k = a === "haut" ? j - 1 : j + 1;
+      if (k < 0 || k >= l.arrets.length) return;
+      const tmp = l.arrets[j]; l.arrets[j] = l.arrets[k]; l.arrets[k] = tmp;
+      redraw();
+    } else if (a === "ajout-classe") {
+      l.classes.push({ id: trpIdNeuf("c"), nom: t("nouvelleClasseTrp"), cote: false, description: "" }); redraw();
+    } else if (a === "suppr-classe") {
+      const id = l.classes[j].id;
+      l.classes.splice(j, 1);
+      l.tarifs = (l.tarifs || []).filter((x) => x.classeId !== id);
+      redraw();
+    } else if (a === "calculer") {
+      if (l.arrets.length < 2 || !l.classes.length) return;
+      if ((l.tarifs || []).length && !confirm(t("trpConfirmerCalcul"))) return;
+      l.tarifs = trpCalculerTarifs(l, baseDe(l));
+      redraw();
+    } else if (a === "exemple") {
+      try {
+        await api("/api/" + marchandActif.id + "/transport/exemple", { method: "POST", body: "{}" });
+        alert(t("trpExempleCharge"));
+        renderTransportLignes();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    } else if (a === "sauver") {
+      try {
+        await api("/api/" + marchandActif.id + "/transport/lignes", { method: "PUT", body: JSON.stringify(local) });
+        alert(t("trpEnregistre"));
+        renderTransportLignes();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    }
+  });
+  redraw();
+}
+
+// ---- Departs et quotas ----
+async function renderTransportDeparts() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const [lignes, departs] = await Promise.all([api("/api/" + marchandActif.id + "/transport/lignes"), api("/api/" + marchandActif.id + "/transport/departs")]);
+  const ligneDe = {}; lignes.forEach((l) => { ligneDe[l.id] = l; });
+  const local = JSON.parse(JSON.stringify(departs.filter((d) => ligneDe[d.ligneId])));
+  function quotasParDefaut(ligne, anciens) {
+    const q = {};
+    ligne.classes.forEach((c) => {
+      const a = (anciens && anciens[c.id]) || {};
+      q[c.id] = c.cote ? { fenetre: Number(a.fenetre) || 0, couloir: Number(a.couloir) || 0 } : { total: Number(a.total) || 0 };
+    });
+    return q;
+  }
+  function nouveauDepart(ligne) {
+    return { id: trpIdNeuf("d"), ligneId: ligne.id, sens: 1, heure: "08:00", passages: {}, jours: [0, 1, 2, 3, 4, 5, 6], fermes: [], debut: null, fin: null, actif: true, quotas: quotasParDefaut(ligne) };
+  }
+  function htmlDepart(d, i) {
+    const ligne = ligneDe[d.ligneId];
+    d.quotas = quotasParDefaut(ligne, d.quotas);
+    const ordre = trpOrdreArrets(ligne, d.sens);
+    return "<div style='border:1px solid #d9dde3; border-radius:8px; padding:12px; margin-bottom:14px;'>" +
+      "<div style='display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;'>" +
+        "<div><label>" + t("trpLabelLigne") + "</label><select data-f='ligne' data-i='" + i + "'>" +
+          lignes.map((l) => "<option value=\"" + esc(l.id) + "\"" + (l.id === d.ligneId ? " selected" : "") + ">" + esc(l.nom) + "</option>").join("") + "</select></div>" +
+        "<div><label>" + t("trpLabelSens") + "</label><select data-f='sens' data-i='" + i + "'>" +
+          "<option value='1'" + (d.sens !== -1 ? " selected" : "") + ">" + esc(trpLibelleSens(ligne, 1)) + "</option>" +
+          "<option value='-1'" + (d.sens === -1 ? " selected" : "") + ">" + esc(trpLibelleSens(ligne, -1)) + "</option></select></div>" +
+        "<div><label>" + t("trpLabelHeure") + "</label><input type='time' data-f='heure' data-i='" + i + "' value=\"" + esc(d.heure) + "\" /></div>" +
+        "<div><label><input type='checkbox' data-f='actif' data-i='" + i + "'" + (d.actif !== false ? " checked" : "") + " /> " + t("trpLabelActifDepart") + "</label></div>" +
+        "<div><button type='button' data-a='dupliquer' data-i='" + i + "'>" + t("btnDupliquerDepart") + "</button> <button type='button' class='danger' data-a='suppr' data-i='" + i + "'>×</button></div>" +
+      "</div>" +
+      "<label>" + t("trpLabelJours") + "</label><div>" +
+        TRP_JOURS.map((x) => "<label style='display:inline-block; margin-right:10px;'><input type='checkbox' data-f='jour' data-i='" + i + "' data-jour='" + x[0] + "'" + (d.jours.indexOf(x[0]) !== -1 ? " checked" : "") + " /> " + esc(libelleJour(x[1])) + "</label>").join("") + "</div>" +
+      "<label>" + t("trpLabelPassages") + "</label><div style='display:flex; gap:10px; flex-wrap:wrap;'>" +
+        ordre.map((a) => "<div><small>" + esc(a.nom) + "</small><br><input type='time' data-f='passage' data-i='" + i + "' data-arret='" + esc(a.id) + "' value=\"" + esc((d.passages && d.passages[a.id]) || "") + "\" /></div>").join("") + "</div>" +
+      "<label>" + t("trpLabelQuotas") + "</label><table class='table-donnees'>" +
+        ligne.classes.map((c) =>
+          "<tr><td>" + esc(c.nom) + "</td>" +
+          (c.cote
+            ? "<td><input type='number' min='0' data-f='quota' data-i='" + i + "' data-c='" + esc(c.id) + "' data-k='fenetre' value='" + d.quotas[c.id].fenetre + "' /> " + t("trpLabelFenetre") + "</td>" +
+              "<td><input type='number' min='0' data-f='quota' data-i='" + i + "' data-c='" + esc(c.id) + "' data-k='couloir' value='" + d.quotas[c.id].couloir + "' /> " + t("trpLabelCouloir") + "</td>"
+            : "<td colspan='2'><input type='number' min='0' data-f='quota' data-i='" + i + "' data-c='" + esc(c.id) + "' data-k='total' value='" + d.quotas[c.id].total + "' /> " + t("trpLabelTotal") + "</td>") +
+          "</tr>"
+        ).join("") + "</table>" +
+      "<div style='display:flex; gap:12px; flex-wrap:wrap;'>" +
+        "<div style='flex:2; min-width:240px;'><label>" + t("trpLabelFermes") + "</label><input data-f='fermes' data-i='" + i + "' value=\"" + esc((d.fermes || []).join(", ")) + "\" /></div>" +
+        "<div><label>" + t("trpLabelDebut") + "</label><input type='date' data-f='debut' data-i='" + i + "' value=\"" + esc(d.debut || "") + "\" /></div>" +
+        "<div><label>" + t("trpLabelFin") + "</label><input type='date' data-f='fin' data-i='" + i + "' value=\"" + esc(d.fin || "") + "\" /></div>" +
+      "</div></div>";
+  }
+  zone.innerHTML = "<div id='trpRoot'></div>";
+  const root = document.getElementById("trpRoot");
+  function redraw() {
+    root.innerHTML =
+      "<h2>" + t("trpDepartsTitre") + "</h2><p class='raison'>" + t("trpNoteDeparts") + "</p>" +
+      (!lignes.length ? "<p class='raison'>" + t("trpAucuneLigne") + "</p>"
+        : (local.length ? local.map(htmlDepart).join("") : "<p class='raison'>" + t("trpAucunDepart") + "</p>") +
+          "<div><button type='button' data-a='ajout'>" + t("btnAjouterDepart") + "</button> <button type='button' class='principal' data-a='sauver'>" + t("enregistrer") + "</button></div>") +
+      (departs.some((d) => ligneDe[d.ligneId]) ?
+        "<h3 style='margin-top:26px;'>" + t("trpOccupationTitre") + "</h3><p class='raison'>" + t("trpNoteOccupation") + "</p>" +
+        "<div style='display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;'>" +
+          "<div><label>" + t("trpLabelDepartChoisi") + "</label><select id='trpOccDepart'>" +
+            departs.filter((d) => ligneDe[d.ligneId]).map((d) => "<option value=\"" + esc(d.id) + "\">" + esc(ligneDe[d.ligneId].nom + " · " + trpLibelleSens(ligneDe[d.ligneId], d.sens) + " · " + String(d.heure).replace(":", "h")) + "</option>").join("") + "</select></div>" +
+          "<div><label>" + t("trpLabelDate") + "</label><input type='date' id='trpOccDate' value='" + trpAujourdhui() + "' /></div>" +
+          "<div><button type='button' id='btnVoirOccupation'>" + t("btnVoirOccupation") + "</button></div>" +
+        "</div><div id='trpOccResultat'></div>" : "");
+    const bo = document.getElementById("btnVoirOccupation");
+    if (bo) bo.onclick = async () => {
+      const dep = document.getElementById("trpOccDepart").value, date = document.getElementById("trpOccDate").value;
+      const res = document.getElementById("trpOccResultat");
+      try {
+        const o = await api("/api/" + marchandActif.id + "/transport/occupation?departId=" + encodeURIComponent(dep) + "&date=" + encodeURIComponent(date));
+        res.innerHTML = "<table class='table-donnees'><tr><th>" + t("trpTheadTroncon") + "</th>" +
+          (o.troncons[0] ? o.troncons[0].classes.map((c) => "<th>" + esc(c.classeNom) + "</th>").join("") : "") + "</tr>" +
+          o.troncons.map((tr) => "<tr><td>" + esc(tr.de + " → " + tr.vers) + "</td>" +
+            tr.classes.map((c) => "<td>" + Object.keys(c.cotes).map((k) => esc(trpLibelleCote(k)) + " : " + c.cotes[k].libres + "/" + c.cotes[k].quota).join("<br>") + "</td>").join("") + "</tr>").join("") + "</table>";
+      } catch (e) { res.innerHTML = ""; alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+  function surSaisie(ev) {
+    const el = ev.target, f = el.dataset && el.dataset.f;
+    if (!f) return;
+    const d = local[Number(el.dataset.i)];
+    if (!d) return;
+    if (f === "ligne") {
+      d.ligneId = el.value; d.passages = {}; d.quotas = quotasParDefaut(ligneDe[d.ligneId]); redraw();
+    } else if (f === "sens") { d.sens = Number(el.value) === -1 ? -1 : 1; d.passages = {}; redraw(); }
+    else if (f === "heure") d.heure = el.value;
+    else if (f === "actif") d.actif = el.checked;
+    else if (f === "jour") {
+      const n = Number(el.dataset.jour);
+      d.jours = d.jours.filter((x) => x !== n).concat(el.checked ? [n] : []);
+    }
+    else if (f === "passage") { if (!d.passages) d.passages = {}; if (el.value) d.passages[el.dataset.arret] = el.value; else delete d.passages[el.dataset.arret]; }
+    else if (f === "quota") { if (!d.quotas[el.dataset.c]) d.quotas[el.dataset.c] = {}; d.quotas[el.dataset.c][el.dataset.k] = Math.max(0, parseInt(el.value, 10) || 0); }
+    else if (f === "fermes") d.fermes = el.value.split(/[,;\s]+/).filter(Boolean);
+    else if (f === "debut") d.debut = el.value || null;
+    else if (f === "fin") d.fin = el.value || null;
+  }
+  root.addEventListener("input", surSaisie);
+  root.addEventListener("change", surSaisie);
+  root.addEventListener("click", async (ev) => {
+    const btn = ev.target.closest && ev.target.closest("[data-a]");
+    if (!btn || !root.contains(btn)) return;
+    const a = btn.dataset.a, i = Number(btn.dataset.i);
+    if (a === "ajout") { local.push(nouveauDepart(lignes[0])); redraw(); }
+    else if (a === "dupliquer") { const c = JSON.parse(JSON.stringify(local[i])); c.id = trpIdNeuf("d"); local.splice(i + 1, 0, c); redraw(); }
+    else if (a === "suppr") { local.splice(i, 1); redraw(); }
+    else if (a === "sauver") {
+      if (local.some((d) => !d.ligneId || !d.heure)) { alert(t("trpDepartIncomplet")); return; }
+      try {
+        await api("/api/" + marchandActif.id + "/transport/departs", { method: "PUT", body: JSON.stringify(local) });
+        alert(t("trpEnregistre"));
+        renderTransportDeparts();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    }
+  });
+  redraw();
+}
+
+// ---- Reservations de billets ----
+let trpFiltreStatut = "";
+let trpFiltreDate = "";
+async function renderTransportReservations() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const q = [];
+  if (trpFiltreStatut) q.push("statut=" + encodeURIComponent(trpFiltreStatut));
+  if (trpFiltreDate) q.push("date=" + encodeURIComponent(trpFiltreDate));
+  const resas = await api("/api/" + marchandActif.id + "/transport/reservations" + (q.length ? "?" + q.join("&") : ""));
+  const coteTexte = (j) => { const c = trpLibelleCote(j.coteDemande); return c ? " · " + c : ""; };
+  zone.innerHTML =
+    "<h2>" + t("trpResaTitre") + "</h2><p class='raison'>" + t("trpNoteResa") + "</p>" +
+    "<div style='display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:10px;'>" +
+      "<div><label>" + t("theadStatut") + "</label><select id='trpFiltreStatut'><option value=''>" + t("trpTousStatuts") + "</option>" +
+        TRP_STATUTS.map((s) => "<option value=\"" + esc(s) + "\"" + (s === trpFiltreStatut ? " selected" : "") + ">" + esc(libelleStatutBillet(s)) + "</option>").join("") + "</select></div>" +
+      "<div><label>" + t("trpLabelDate") + "</label><input type='date' id='trpFiltreDate' value=\"" + esc(trpFiltreDate) + "\" /></div>" +
+      "<div><button type='button' id='btnFiltrerResaTrp'>" + t("btnFiltrerTrp") + "</button></div>" +
+    "</div>" +
+    (resas.length
+      ? "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("trpTheadClient") + "</th><th>" + t("trpTheadTrajet") + "</th><th>" + t("trpTheadClasseCote") + "</th><th>" + t("trpTheadVoyageurs") + "</th><th>" + t("trpTheadTotal") + "</th><th>" + t("theadStatut") + "</th><th>" + t("trpTheadActions") + "</th></tr>" +
+        resas.map((r) =>
+          "<tr data-resa='" + esc(r.id) + "'><td>" + esc(r.reference) + "</td>" +
+          "<td>" + esc(r.fromWhatsapp || r.telephone || "") + "</td>" +
+          "<td>" + esc(r.ligneNom || "") + "<br><small>" + t("trpLabelAller") + " : " + esc(trpJambeTexte(r.aller)) + "</small>" +
+            (r.retour ? "<br><small>" + t("trpLabelRetour") + " : " + esc(trpJambeTexte(r.retour)) + "</small>" : "") + "</td>" +
+          "<td>" + esc((r.aller ? r.aller.classeNom : "") + (r.aller ? coteTexte(r.aller) : "")) + "</td>" +
+          "<td>" + (r.voyageurs || []).map((v) => esc(v.nom) + " <small>(" + esc(v.cni) + ")</small>").join("<br>") + "</td>" +
+          "<td>" + esc(trpFcfa(r.total)) + "</td>" +
+          "<td>" + esc(libelleStatutBillet(r.statut)) + (r.statut === "À payer" && r.expireLe ? "<br><small>" + esc(t("trpRetenueJusqua", { h: trpHeureLocale(r.expireLe) })) + "</small>" : "") + "</td>" +
+          "<td><select data-sel='" + esc(r.id) + "'>" + TRP_STATUTS.map((s) => "<option value=\"" + esc(s) + "\"" + (s === r.statut ? " selected" : "") + ">" + esc(libelleStatutBillet(s)) + "</option>").join("") + "</select> " +
+            "<button type='button' data-a='statut' data-id='" + esc(r.id) + "'>" + t("btnAppliquer") + "</button>" +
+            (r.statut === "Confirmé" || r.statut === "Embarqué" ? " <button type='button' class='principal' data-a='billet' data-id='" + esc(r.id) + "'>" + t("btnEnvoyerBillet") + "</button>" : "") + "</td></tr>"
+        ).join("") + "</table>"
+      : "<p class='raison'>" + t("trpAucuneResa") + "</p>");
+  document.getElementById("btnFiltrerResaTrp").onclick = () => {
+    trpFiltreStatut = document.getElementById("trpFiltreStatut").value;
+    trpFiltreDate = document.getElementById("trpFiltreDate").value;
+    renderTransportReservations();
+  };
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-a]"), (btn) => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id;
+      try {
+        if (btn.dataset.a === "statut") {
+          const nouveau = zone.querySelector("select[data-sel='" + id + "']").value;
+          if (nouveau === "Annulé" && !confirm(t("trpConfirmerAnnulResa"))) return;
+          await api("/api/" + marchandActif.id + "/transport/reservations/" + encodeURIComponent(id) + "/statut", { method: "PUT", body: JSON.stringify({ statut: nouveau }) });
+          renderTransportReservations();
+        } else if (btn.dataset.a === "billet") {
+          btn.disabled = true;
+          await api("/api/" + marchandActif.id + "/transport/reservations/" + encodeURIComponent(id) + "/envoyer-billet", { method: "POST", body: "{}" });
+          alert(t("trpBilletEnvoye"));
+          btn.disabled = false;
+        }
+      } catch (e) { alert(t("erreurPrefixe") + e.message); btn.disabled = false; }
+    };
+  });
+}
+
+// ---- Manifeste ----
+let trpDernierManifeste = null;
+async function renderTransportManifeste() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const [lignes, departs] = await Promise.all([api("/api/" + marchandActif.id + "/transport/lignes"), api("/api/" + marchandActif.id + "/transport/departs")]);
+  const ligneDe = {}; lignes.forEach((l) => { ligneDe[l.id] = l; });
+  const utiles = departs.filter((d) => ligneDe[d.ligneId]);
+  trpDernierManifeste = null;
+  zone.innerHTML =
+    "<h2>" + t("trpManifesteTitre") + "</h2><p class='raison'>" + t("trpNoteManifeste") + "</p>" +
+    (utiles.length
+      ? "<div style='display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;'>" +
+          "<div><label>" + t("trpLabelDepartChoisi") + "</label><select id='trpManDepart'>" +
+            utiles.map((d) => "<option value=\"" + esc(d.id) + "\">" + esc(ligneDe[d.ligneId].nom + " · " + trpLibelleSens(ligneDe[d.ligneId], d.sens) + " · " + String(d.heure).replace(":", "h")) + "</option>").join("") + "</select></div>" +
+          "<div><label>" + t("trpLabelDate") + "</label><input type='date' id='trpManDate' value='" + trpAujourdhui() + "' /></div>" +
+          "<div><button type='button' id='btnAfficherManifeste' class='principal'>" + t("btnAfficherManifeste") + "</button></div>" +
+        "</div><div id='trpManResultat'></div>"
+      : "<p class='raison'>" + t("trpAucunDepart") + "</p>");
+  function tableHtml(m) {
+    return "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("trpTheadNom") + "</th><th>" + t("trpTheadCni") + "</th><th>" + t("trpTheadTel") + "</th><th>" + t("trpTheadClasseCote") + "</th><th>" + t("trpTheadMonte") + "</th><th>" + t("trpTheadDescend") + "</th><th>" + t("theadStatut") + "</th></tr>" +
+      m.passagers.map((p) => "<tr><td>" + esc(p.reference) + "</td><td>" + esc(p.nom) + "</td><td>" + esc(p.cni) + "</td><td>" + esc(p.telephone || "") + "</td><td>" + esc(p.classe + (trpLibelleCote(p.cote) ? " · " + trpLibelleCote(p.cote) : "")) + "</td><td>" + esc(p.monte) + "</td><td>" + esc(p.descend) + "</td><td>" + esc(libelleStatutBillet(p.statut)) + "</td></tr>").join("") + "</table>";
+  }
+  const bouton = document.getElementById("btnAfficherManifeste");
+  if (!bouton) return;
+  bouton.onclick = async () => {
+    const res = document.getElementById("trpManResultat");
+    try {
+      const m = await api("/api/" + marchandActif.id + "/transport/manifeste", { method: "POST", body: JSON.stringify({ departId: document.getElementById("trpManDepart").value, date: document.getElementById("trpManDate").value }) });
+      trpDernierManifeste = m;
+      const titre = m.ligne + " · " + trpLibelleSens(ligneDe[(utiles.filter((d) => d.id === m.departId)[0] || {}).ligneId], m.sens) + " · " + String(m.heure).replace(":", "h") + " · " + formaterJourIso(m.date);
+      res.innerHTML = "<h3>" + esc(titre) + "</h3>" +
+        (m.passagers.length
+          ? tableHtml(m) + "<p><button type='button' id='btnImprimerManifeste'>" + t("btnImprimer") + "</button> <button type='button' id='btnCsvManifeste'>" + t("btnExporterCsv") + "</button></p>"
+          : "<p class='raison'>" + t("trpManifesteVide") + "</p>");
+      const bi = document.getElementById("btnImprimerManifeste");
+      if (bi) bi.onclick = () => {
+        const w = window.open("", "_blank");
+        if (!w) return;
+        w.document.write("<!doctype html><html><head><meta charset='utf-8'><title>" + esc(titre) + "</title><style>body{font-family:sans-serif;padding:16px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #444;padding:4px 8px;text-align:left;font-size:13px}</style></head><body><h2>" + esc(titre) + "</h2>" + tableHtml(m) + "</body></html>");
+        w.document.close(); w.focus(); w.print();
+      };
+      const bc = document.getElementById("btnCsvManifeste");
+      if (bc) bc.onclick = () => {
+        const cellule = (v) => '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+        const securise = (v) => (/^[=+\-@]/.test(String(v || "")) ? "'" + v : v); // evite l'execution de formules a l'ouverture dans un tableur
+        const lignesCsv = [[t("theadRef"), t("trpTheadNom"), t("trpTheadCni"), t("trpTheadTel"), t("trpTheadClasseCote"), t("trpTheadMonte"), t("trpTheadDescend"), t("theadStatut")].map(cellule).join(";")].concat(
+          m.passagers.map((p) => [p.reference, securise(p.nom), p.cni, p.telephone, p.classe + (trpLibelleCote(p.cote) ? " - " + trpLibelleCote(p.cote) : ""), p.monte, p.descend, libelleStatutBillet(p.statut)].map(cellule).join(";")));
+        const lien = document.createElement("a");
+        lien.href = URL.createObjectURL(new Blob(["﻿" + lignesCsv.join("\n")], { type: "text/csv;charset=utf-8" }));
+        lien.download = "manifeste_" + m.date + ".csv";
+        document.body.appendChild(lien); lien.click(); lien.remove();
+      };
+    } catch (e) { res.innerHTML = ""; alert(t("erreurPrefixe") + e.message); }
+  };
+}
+
+// ---- Parametres des billets ----
+async function renderParametresTransport() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const p = await api("/api/" + marchandActif.id + "/parametres");
+  const champNombre = (id, cle, valeurDefaut, min) => "<input type='number' min='" + min + "' id='" + id + "' value='" + (Number.isFinite(Number(p[cle])) && p[cle] !== undefined ? Number(p[cle]) : valeurDefaut) + "' />";
+  zone.innerHTML =
+    "<h2>" + t("trpParamTitre") + "</h2>" +
+    "<label>" + t("labelFuseau") + "</label>" +
+    "<select id='trpFuseau'>" +
+      ["Africa/Douala", "Africa/Libreville", "Africa/Brazzaville", "Africa/Kinshasa", "Africa/Lagos", "Africa/Abidjan", "Africa/Dakar", "Europe/Paris", "UTC"].map((z) =>
+        "<option value='" + z + "'" + (z === (p.fuseau || "Africa/Douala") ? " selected" : "") + ">" + z + "</option>").join("") +
+    "</select><p class='raison'>" + t("noteFuseau") + "</p>" +
+    "<label>" + t("trpLabelDelaiRetenue") + "</label>" + champNombre("trpDelaiRetenue", "delaiRetenueMinutes", 120, 0) +
+    "<label>" + t("trpLabelCloture") + "</label>" + champNombre("trpCloture", "clotureAvantDepartMinutes", 30, 0) +
+    "<label>" + t("trpLabelAvance") + "</label>" + champNombre("trpAvance", "avanceMaxJours", 30, 1) +
+    "<label>" + t("trpLabelMaxVoyageurs") + "</label>" + champNombre("trpMaxVoyageurs", "maxVoyageurs", 4, 1) +
+    "<label style='display:block; margin:10px 0;'><input type='checkbox' id='trpChoixMontee'" + (p.choixMontee !== false ? " checked" : "") + " /> " + t("trpLabelChoixMontee") + "</label>" +
+    "<label>" + t("trpLabelNotePaiement") + "</label><input id='trpNotePaiement' value=\"" + esc(p.notePaiement || "") + "\" />" +
+    "<label>" + t("trpLabelNotePaiementEn") + "</label><input id='trpNotePaiementEn' value=\"" + esc(p.notePaiementEn || "") + "\" />" +
+    "<label>" + t("trpLabelConsigne") + "</label><textarea id='trpConsigne' rows='3'>" + esc(p.consigne || "") + "</textarea>" +
+    "<label>" + t("trpLabelConsigneEn") + "</label><textarea id='trpConsigneEn' rows='3'>" + esc(p.consigneEn || "") + "</textarea>" +
+    "<label>" + t("trpLabelMsgConfirm") + "</label><textarea id='trpMsgConfirm' rows='2'>" + esc(p.autoConfirmMessage || "") + "</textarea>" +
+    "<label>" + t("trpLabelMsgConfirmEn") + "</label><textarea id='trpMsgConfirmEn' rows='2'>" + esc(p.autoConfirmMessageEn || "") + "</textarea>" +
+    "<div><button id='btnSauverParamsTrp' class='principal'>" + t("enregistrer") + "</button></div>";
+  document.getElementById("btnSauverParamsTrp").onclick = async () => {
+    const n = (id, defaut) => { const v = parseInt(document.getElementById(id).value, 10); return Number.isFinite(v) ? v : defaut; };
+    try {
+      await api("/api/" + marchandActif.id + "/parametres", {
+        method: "PUT",
+        body: JSON.stringify({
+          fuseau: document.getElementById("trpFuseau").value,
+          delaiRetenueMinutes: n("trpDelaiRetenue", 120),
+          clotureAvantDepartMinutes: n("trpCloture", 30),
+          avanceMaxJours: n("trpAvance", 30),
+          maxVoyageurs: n("trpMaxVoyageurs", 4),
+          choixMontee: document.getElementById("trpChoixMontee").checked,
+          notePaiement: document.getElementById("trpNotePaiement").value,
+          notePaiementEn: document.getElementById("trpNotePaiementEn").value,
+          consigne: document.getElementById("trpConsigne").value,
+          consigneEn: document.getElementById("trpConsigneEn").value,
+          autoConfirmMessage: document.getElementById("trpMsgConfirm").value,
+          autoConfirmMessageEn: document.getElementById("trpMsgConfirmEn").value
+        })
+      });
+      alert(t("alertParametresEnregistres"));
+      renderParametresTransport();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
+
 // ---------------- Conversations en attente d'un humain ----------------
 
 function formaterDureeDepuis(depuisISO) {
@@ -5532,10 +6359,11 @@ async function renderTableauDeBord() {
   const donneesDash = await Promise.all(voletsDash.map((v) =>
     api("/api/" + marchandActif.id + "/tableau-de-bord?periode=" + encodeURIComponent(dashboardPeriodeActuelle) + (hybrideDash ? "&volet=" + v : ""))
   ));
-  const d = donneesDash[0];
+  // Le volet transport n'a pas de periode (pas de debutISO) : la 1re section qui en a une fournit le selecteur.
+  const d = donneesDash.filter((x) => x && x.debutISO)[0] || donneesDash[0];
   const jours = t("joursAbrev");
 
-  const selecteurPeriode =
+  const selecteurPeriode = !d.debutISO ? "" :
     "<div class='controles-rapport'>" +
       "<div><label>" + t("labelPeriodeDashboard") + "</label><select id='dashPeriode'>" +
         "<option value='jour'>" + t("optionJour") + "</option>" +
@@ -5652,9 +6480,32 @@ async function renderTableauDeBord() {
     return tuiles + sparkline + top + bas;
   }
 
+  // Etape 74 : tableau de bord du volet transport (billets a payer / confirmes, prochains departs, alerte CNI).
+  function sectionDashboardTransport(d) {
+    const tuiles = "<div class='tuiles'>" +
+      tuile("billets", d.aPayer, t("libelleAPayerDash"), d.aPayer) +
+      tuile("billets", d.confirmees, t("libelleConfirmeesDash")) +
+      tuile("billets", d.voyageursAVenir, t("libelleVoyageursDash")) +
+      tuile("billets", esc(trpFcfa(d.chiffreAffairesConfirme)), t("libelleCaBilletsDash")) +
+      tuile("billets", esc(trpFcfa(d.montantEnAttente)), t("libelleMontantAttenteDash")) +
+      tuile("conversations", d.conversationsEnAttente || 0, t("libelleConvEnAttente"), d.conversationsEnAttente) +
+      "</div>";
+    const alerte = d.cniChiffreeActive === false ? "<div class='erreur' style='margin:10px 0;'>" + t("trpAlerteCni") + "</div>" : "";
+    const departs = "<h3>" + t("h3ProchainsDeparts") + "</h3>" +
+      (d.prochainsDeparts.length
+        ? "<table class='table-donnees'><tr><th>" + t("trpLabelDate") + "</th><th>" + t("trpLabelHeure") + "</th><th>" + t("trpTheadTrajet") + "</th><th>" + t("theadVendus") + "</th></tr>" +
+          d.prochainsDeparts.map((x) => "<tr><td>" + esc(formaterJourIso(x.date)) + "</td><td>" + esc(String(x.heure).replace(":", "h")) + "</td><td>" + esc(x.ligne + " · " + x.trajet) + "</td><td>" + x.vendus + " / " + x.quota + "</td></tr>").join("") + "</table>"
+        : "<p class='raison'>" + t("trpAucunDepartProche") + "</p>");
+    const aPayer = d.reservationsAPayer && d.reservationsAPayer.length
+      ? "<h3>" + t("h3ResaAPayer") + "</h3><table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("trpTheadClient") + "</th><th>" + t("trpTheadTrajet") + "</th><th>" + t("trpTheadTotal") + "</th><th>" + t("theadStatut") + "</th></tr>" +
+        d.reservationsAPayer.map((r) => "<tr><td>" + esc(r.reference) + "</td><td>" + esc(r.fromWhatsapp || r.telephone || "") + "</td><td>" + esc(trpJambeTexte(r.aller)) + "</td><td>" + esc(trpFcfa(r.total)) + "</td><td>" + (r.expireLe ? esc(t("trpRetenueJusqua", { h: trpHeureLocale(r.expireLe) })) : "") + "</td></tr>").join("") + "</table>"
+      : "";
+    return alerte + tuiles + departs + aPayer;
+  }
+
   const sectionsDash = voletsDash.map((v, i) =>
     (hybrideDash ? "<h2 style='margin-top:26px; border-bottom:2px solid #e3e6ea; padding-bottom:4px;'>" + t(libelleVoletCle(v)) + "</h2>" : "") +
-    (v === "hebergement" ? sectionDashboardHeb(donneesDash[i]) : sectionDashboard(donneesDash[i], v !== "service"))
+    (v === "hebergement" ? sectionDashboardHeb(donneesDash[i]) : v === "transport" ? sectionDashboardTransport(donneesDash[i]) : sectionDashboard(donneesDash[i], v !== "service"))
   ).join("");
   zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode +
     (voletsDash.indexOf("catalogue") !== -1 && estOngletVisible("commandes") ? "<div id='zoneARelancer'></div>" : "") + sectionsDash;
@@ -5670,11 +6521,13 @@ async function renderTableauDeBord() {
   });
 
   const selectPeriode = document.getElementById("dashPeriode");
-  selectPeriode.value = dashboardPeriodeActuelle;
-  selectPeriode.onchange = () => {
-    dashboardPeriodeActuelle = selectPeriode.value;
-    renderTableauDeBord();
-  };
+  if (selectPeriode) {
+    selectPeriode.value = dashboardPeriodeActuelle;
+    selectPeriode.onchange = () => {
+      dashboardPeriodeActuelle = selectPeriode.value;
+      renderTableauDeBord();
+    };
+  }
 }
 
 // ---------------- Simulateur WhatsApp ----------------
@@ -5723,7 +6576,7 @@ async function renderSimulateur() {
     champ.addEventListener("keydown", (e) => { if (e.key === "Enter") envoyer(); });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-volet-bouton]"), (b) => {
       // Meme jeton que celui produit par un vrai clic sur le bouton WhatsApp (voir hybride.js).
-      b.onclick = () => envoyer(b.dataset.voletBouton === "service" ? "__volet_service__" : b.dataset.voletBouton === "hebergement" ? "__volet_hebergement__" : "__volet_catalogue__", b.textContent);
+      b.onclick = () => envoyer(b.dataset.voletBouton === "service" ? "__volet_service__" : b.dataset.voletBouton === "hebergement" ? "__volet_hebergement__" : b.dataset.voletBouton === "transport" ? "__volet_transport__" : "__volet_catalogue__", b.textContent);
     });
     document.getElementById("btnResetSimu").onclick = async () => {
       try {
@@ -6535,12 +7388,12 @@ function brancherBlocNumeroPublic() {
 // blocNumeroPublicHtml()/brancherBlocNumeroPublic() dans renderCompte() ci-dessous, tous gardes par
 // marchandActif.optionStockIllimite / optionLienCommande / optionNotificationsStatut.
 function blocOptionsPayantesHtml() {
-  const principalHeb = marchandActif.type === "hebergement";
+  const principalHeb = marchandActif.type === "hebergement" || marchandActif.type === "transport";
   // Etape 66 : un marchand dont le volet principal est l'hebergement n'a les options du catalogue que s'il a AUSSI
   // le volet catalogue ; la facturation de sejours n'existe pas encore. Le choix des volets reste propose au
   // super-administrateur seul (blocModuleSecondaireHtml renvoie "" pour tout autre role).
   if (principalHeb && modulesAdmin().indexOf("catalogue") === -1) {
-    return "<h3>" + t("h3OptionsPayantes") + "</h3><p class='raison'>" + t("noteOptionsHebergement") + "</p>" + blocModuleSecondaireHtml();
+    return "<h3>" + t("h3OptionsPayantes") + "</h3><p class='raison'>" + t(marchandActif.type === "transport" ? "noteOptionsTransport" : "noteOptionsHebergement") + "</p>" + blocModuleSecondaireHtml();
   }
   return "<h3>" + t("h3OptionsPayantes") + "</h3>" +
     "<p class='raison'>" + t("noteOptionsPayantes") + "</p>" +
@@ -6670,8 +7523,8 @@ function blocModuleSecondaireHtml() {
   if (!moi || moi.role !== "superadmin") return "";
   // Etape 66 : une case par volet AUTRE que le principal (donc au plus deux : trois volets au total).
   const actuels = modulesAdmin().slice(1);
-  const autres = ["catalogue", "service", "hebergement"].filter((v) => v !== marchandActif.type);
-  const cleAjout = { catalogue: "optionModuleAjoutCatalogue", service: "optionModuleAjoutService", hebergement: "optionModuleAjoutHebergement" };
+  const autres = ["catalogue", "service", "hebergement", "transport"].filter((v) => v !== marchandActif.type);
+  const cleAjout = { catalogue: "optionModuleAjoutCatalogue", service: "optionModuleAjoutService", hebergement: "optionModuleAjoutHebergement", transport: "optionModuleAjoutTransport" };
   return "<h3>" + t("h3ModuleSecondaire") + "</h3>" +
     "<p class='raison'>" + t("noteModuleSecondaire") + "</p>" +
     "<label>" + t("labelModuleSecondaire") + "</label>" +
@@ -6696,7 +7549,7 @@ function brancherBlocModuleSecondaire() {
   };
 }
 function brancherBlocOptionsPayantes() {
-  if (marchandActif.type === "hebergement" && modulesAdmin().indexOf("catalogue") === -1) { brancherBlocModuleSecondaire(); return; }
+  if ((marchandActif.type === "hebergement" || marchandActif.type === "transport") && modulesAdmin().indexOf("catalogue") === -1) { brancherBlocModuleSecondaire(); return; }
   brancherBlocModuleSecondaire();
   brancherBlocSourceFacturation();
   brancherBlocCleComptable();

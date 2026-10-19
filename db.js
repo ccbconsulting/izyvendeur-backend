@@ -254,9 +254,9 @@ function normaliserModulesSecondaires(brut) {
   const vus = [];
   liste.forEach((v) => {
     const t = String(v || "").trim();
-    if ((t === "catalogue" || t === "service" || t === "hebergement") && vus.indexOf(t) === -1) vus.push(t);
+    if ((t === "catalogue" || t === "service" || t === "hebergement" || t === "transport") && vus.indexOf(t) === -1) vus.push(t);
   });
-  return vus.slice(0, 2).join(",") || null;
+  return vus.slice(0, 3).join(",") || null; // Etape 74 : jusqu'a trois volets secondaires (quatre volets au total)
 }
 
 function defaultMerchantFromEnv() {

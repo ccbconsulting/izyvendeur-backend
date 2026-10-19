@@ -21,13 +21,14 @@ const sh = require("./shared");
 const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
 const createHebergementEngine = require("./conversationHebergement");
+const createTransportEngine = require("./conversationTransport");
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
 const remisesLib = require("./remises");
 const { creerMoteurFacturation, METHODES: METHODES_PAIEMENT, CATEGORIES_DEPENSE } = require("./facturation");
 const cryptoUtil = require("./crypto-util");
 const { clientIp } = require("./clientip");
-const { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE, JETON_VOLET_HEBERGEMENT } = require("./hybride");
+const { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE, JETON_VOLET_HEBERGEMENT, JETON_VOLET_TRANSPORT } = require("./hybride");
 
 const app = express();
 
@@ -232,9 +233,9 @@ const phoneNumberIndex = {}; // phone_number_id WhatsApp -> merchantId
 // principal garde l'etat enregistre sous l'id du marchand (donc rien ne change pour les marchands
 // existants), le second sous une cle d'etat distincte. engines[id] = { merchant, engine (= principal),
 // moteurs: { catalogue?, service? }, routeur? (seulement si deux moteurs) }.
-// Etape 66 : jusqu'a TROIS volets (catalogue, service, hebergement), donc jusqu'a DEUX volets secondaires.
+// Etape 66 : jusqu'a TROIS volets (catalogue, service, hebergement), Etape 74 : QUATRE avec le transport (jusqu'a TROIS volets secondaires).
 // `moduleSecondaire` est une chaine « service » ou « service,hebergement » (voir db.normaliserModulesSecondaires).
-const VOLETS_VALIDES = ["catalogue", "service", "hebergement"];
+const VOLETS_VALIDES = ["catalogue", "service", "hebergement", "transport"];
 function listeSecondaires(brut, type) {
   const norm = db.normaliserModulesSecondaires(brut);
   return norm ? norm.split(",").filter((v) => v !== type) : [];
@@ -251,18 +252,19 @@ function lireDemandeSecondaires(brut, type) {
   for (const v of entree) {
     const t = String(v || "").trim();
     if (!t || t === "aucun") continue;
-    if (VOLETS_VALIDES.indexOf(t) === -1) return { erreur: "moduleSecondaire doit être 'catalogue', 'service' ou 'hebergement' (deux au plus), ou null." };
+    if (VOLETS_VALIDES.indexOf(t) === -1) return { erreur: "moduleSecondaire doit être 'catalogue', 'service', 'hebergement' ou 'transport' (trois au plus), ou null." };
     if (t === type) return { erreur: "Le second volet doit être différent du type principal (" + type + ")." };
     if (liste.indexOf(t) !== -1) return { erreur: "Un même volet ne peut pas être accordé deux fois." };
     liste.push(t);
   }
-  if (liste.length > 2) return { erreur: "Trois volets au maximum par marchand (le principal + deux autres)." };
+  if (liste.length > 3) return { erreur: "Quatre volets au maximum par marchand (le principal + trois autres)." };
   return { liste };
 }
 
 function fabriquerMoteur(type, merchantKey, optionsSupplementaires) {
   const options = Object.assign(creerOptionsEngine(merchantKey), optionsSupplementaires || {});
   if (type === "hebergement") return createHebergementEngine(merchantKey, options);
+  if (type === "transport") return createTransportEngine(merchantKey, options);
   return type === "service" ? createServiceEngine(merchantKey, options) : createCatalogEngine(merchantKey, options);
 }
 
@@ -302,7 +304,7 @@ async function appliquerModuleSecondaire(entry, modules) {
   const demande = Array.isArray(modules) ? modules : (modules ? [modules] : []);
   const cibles = [];
   demande.forEach((v) => { if (VOLETS_VALIDES.indexOf(v) !== -1 && v !== m.type && cibles.indexOf(v) === -1) cibles.push(v); });
-  cibles.splice(2);
+  cibles.splice(3);
   const actuels = modulesDuMarchand(m).slice(1);
   if (cibles.join(",") === actuels.join(",")) return;
   for (const v of actuels) {
@@ -337,7 +339,7 @@ function vueEntree(entry, type) {
 // s'appliquent aux deux volets et utilisent `?volet=` (principal par defaut).
 const VOLET_DE_PERMISSION = { catalogue: "catalogue", commandes: "catalogue", caisse: "catalogue", inventaire: "catalogue", rapports: "catalogue", rendezvous: "service" };
 // Permission employe du role operationnel de chaque type de volet (l'hebergement partage « rendezvous » : reservations).
-function permissionDuVolet(t) { return t === "service" || t === "hebergement" ? "rendezvous" : "catalogue"; }
+function permissionDuVolet(t) { return t === "service" || t === "hebergement" || t === "transport" ? "rendezvous" : "catalogue"; }
 function vuePourRequete(req, entry, permission) {
   if (!entry || !entry.moteurs || Object.keys(entry.moteurs).length < 2) return entry;
   const perms = Array.isArray(permission) ? permission : (permission ? [permission] : []);
@@ -839,6 +841,13 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/sejours": "sejour_cree",
   "PUT /api/:id/sejours/:sejourId/deplacer": "sejour_deplace",
   "PUT /api/:id/sejours/:sejourId/statut": "sejour_statut_modifie",
+  "PUT /api/:id/transport/lignes": "transport_lignes_modifiees",
+  "POST /api/:id/transport/lignes/:ligneId/generer-tarifs": "transport_tarifs_generes",
+  "PUT /api/:id/transport/departs": "transport_departs_modifies",
+  "PUT /api/:id/transport/reservations/:resId/statut": "transport_reservation_statut_modifie",
+  "POST /api/:id/transport/reservations/:resId/envoyer-billet": "transport_billet_envoye",
+  "POST /api/:id/transport/manifeste": "transport_manifeste_consulte",
+  "POST /api/:id/transport/exemple": "transport_exemple_charge",
   "PUT /api/:id/parametres": "parametres_modifies",
   "PUT /api/:id/notification": "notification_modifiee",
   "PUT /api/:id/numero-whatsapp-public": "numero_public_modifie",
@@ -879,6 +888,12 @@ function detailAuditRequete(code, req) {
     case "sejour_statut_modifie": return { sejour: p.sejourId, statut: b.statut || null };
     case "sejour_deplace": return { sejour: p.sejourId, arrivee: b.arrivee || null, depart: b.depart || null };
     case "sejour_cree": return { arrivee: b.arrivee || null, depart: b.depart || null };
+    case "transport_reservation_statut_modifie": return { reservation: p.resId, statut: b.statut || null };
+    case "transport_billet_envoye": return { reservation: p.resId };
+    case "transport_manifeste_consulte": return { depart: b.departId || null, date: b.date || null };
+    case "transport_tarifs_generes": return { ligne: p.ligneId };
+    case "transport_lignes_modifiees": return { lignes: Array.isArray(b) ? b.length : null };
+    case "transport_departs_modifies": return { departs: Array.isArray(b) ? b.length : null };
     case "chambres_importees": return { fichier: req.file ? req.file.originalname : null };
     case "services_importes": return { fichier: req.file ? req.file.originalname : null };
     case "facture_creee": case "paiement_facture_enregistre":
@@ -1224,7 +1239,7 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification, moduleSecondaire } = req.body || {};
   if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
-  if (type !== "catalogue" && type !== "service" && type !== "hebergement") return res.status(400).json({ erreur: "type doit être 'catalogue', 'service' ou 'hebergement'." });
+  if (type !== "catalogue" && type !== "service" && type !== "hebergement" && type !== "transport") return res.status(400).json({ erreur: "type doit être 'catalogue', 'service', 'hebergement' ou 'transport'." });
   // Marchand HYBRIDE (Etape 48, generalise a trois volets a l'Etape 66) : volets secondaires accordes des la
   // creation - reserve au super-administrateur (cette route l'est deja en entier), jamais deductible d'une
   // autre source.
@@ -1349,7 +1364,7 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
   if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
   const rolesIncompatibles = rolesDemandes.filter((r) =>
-    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement)
+    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport)
   );
   if (rolesIncompatibles.length) {
     return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -1420,7 +1435,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
       const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
       if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
       const rolesIncompatibles = rolesDemandes.filter((r) =>
-        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement)
+        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport)
       );
       if (rolesIncompatibles.length) {
         return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -2961,6 +2976,92 @@ app.get("/api/:id/calendrier-chambres", protegerAcces, (req, res) => {
   res.json(entry.engine.getCalendrier(req.query && req.query.debut ? String(req.query.debut) : null, req.query && req.query.jours));
 });
 
+// -- Marchand transport (Etape 74) : lignes (arrets, classes, tarifs par paire d'arrets), departs (horaires, quotas WhatsApp),
+// reservations, manifeste. Meme permission employe que les autres reservations (« rendezvous »). Ces routes visent toujours le volet
+// transport ; ce volet n'est accorde que par le super-administrateur (POST /api/marchands, PUT /api/marchands/:id/module-secondaire).
+// La CNI des voyageurs n'est JAMAIS renvoyee par ces routes, sauf par POST /transport/manifeste (journalisee) : tout le reste la masque.
+function entreeTransport(req, res) {
+  let entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return null;
+  entry = vueEntree(entry, "transport");
+  if (entry.engine.type !== "transport") { res.status(400).json({ erreur: "Ce marchand n'a pas de volet transport." }); return null; }
+  return entry;
+}
+
+app.get("/api/:id/transport/lignes", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  res.json(entry.engine.getLignes());
+});
+app.put("/api/:id/transport/lignes", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const r = entry.engine.updateLignes(req.body);
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json(r.lignes);
+});
+app.post("/api/:id/transport/lignes/:ligneId/generer-tarifs", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const r = entry.engine.genererTarifs(req.params.ligneId, req.body && req.body.base);
+  if (r.erreur) return res.status(404).json({ erreur: r.erreur });
+  res.json(r.ligne);
+});
+app.get("/api/:id/transport/departs", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  res.json(entry.engine.getDeparts());
+});
+app.put("/api/:id/transport/departs", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const r = entry.engine.updateDeparts(req.body);
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json(r.departs);
+});
+app.get("/api/:id/transport/occupation", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const o = entry.engine.getOccupation(String(req.query.departId || ""), String(req.query.date || ""));
+  if (!o) return res.status(404).json({ erreur: "Départ ou date introuvable." });
+  res.json(o);
+});
+app.get("/api/:id/transport/reservations", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const q = req.query || {};
+  res.json(entry.engine.getReservations({ statut: q.statut ? String(q.statut) : null, departId: q.departId ? String(q.departId) : null, date: q.date ? String(q.date) : null }));
+});
+app.put("/api/:id/transport/reservations/:resId/statut", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const { statut, raison } = req.body || {};
+  const r = entry.engine.updateReservationStatut(req.params.resId, statut, raison, (req.auth && req.auth.adminUser) || null);
+  if (!r) return res.status(404).json({ erreur: "Réservation introuvable." });
+  if (r.erreur === "occupe") return res.status(409).json({ erreur: r.message, code: r.erreur });
+  if (r.erreur) return res.status(400).json({ erreur: r.message, code: r.erreur });
+  res.json(r);
+});
+// Envoi du billet au client : action EXPLICITE de l'equipe (aucun envoi automatique).
+app.post("/api/:id/transport/reservations/:resId/envoyer-billet", protegerAcces, async (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  try {
+    const r = await entry.engine.envoyerBillet(req.params.resId);
+    if (r.erreur === "introuvable") return res.status(404).json({ erreur: "Réservation introuvable." });
+    if (r.erreur) return res.status(400).json({ erreur: r.message, code: r.erreur });
+    res.json({ ok: true });
+  } catch (erreur) {
+    console.error("[" + req.params.id + "] Echec de l'envoi du billet :", erreur);
+    res.status(502).json({ erreur: "Le billet n'a pas pu être envoyé (WhatsApp). Réessayez ou contactez le client." });
+  }
+});
+// Manifeste d'un depart : SEUL endroit ou la CNI est dechiffree. POST (et non GET) pour que chaque consultation soit journalisee.
+app.post("/api/:id/transport/manifeste", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const b = req.body || {};
+  const m = entry.engine.getManifeste(String(b.departId || ""), String(b.date || ""), true);
+  if (!m) return res.status(404).json({ erreur: "Départ ou date introuvable." });
+  res.json(m);
+});
+app.post("/api/:id/transport/exemple", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const r = entry.engine.chargerExemple();
+  if (r.erreur === "dejaRempli") return res.status(409).json({ erreur: r.message, code: r.erreur });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.status(201).json({ lignes: r.lignes.length, departs: r.departs.length });
+});
+
 // -- Parametres : commun aux deux types (autoConfirmMessage, + horaires/dureeCreneauMinutes pour service) --
 // (permission employe requise : "parametres")
 
@@ -3287,6 +3388,11 @@ function simulerHybride(entry, message) {
 // puisse l'aider. Les boutons/listes cliquables, eux, ne sont toujours pas simules.
 function compacterReponseSimulateur(moteur, resultat) {
   try {
+    if (resultat && resultat.reponse && moteur && moteur.type === "transport" && typeof moteur.getEtatSession === "function") {
+      // Etape 74 : le Simulateur ne montre pas les listes cliquables : on ajoute les options en texte numerote.
+      const opts = texteOptionsTransport(moteur.getEtatSession("SIMULATEUR"));
+      return opts ? Object.assign({}, resultat, { reponse: resultat.reponse + "\n\n" + opts }) : resultat;
+    }
     if (!resultat || !resultat.reponse || !moteur || moteur.type !== "catalogue" || typeof moteur.getEtatSession !== "function") return resultat;
     const etat = moteur.getEtatSession("SIMULATEUR"); // numero reserve, voir PHONE_SIMULATEUR dans conversation.js
     if (!etat || etat.stage !== "idle" || !etat.pretPourChoix) return resultat;
@@ -3551,7 +3657,7 @@ app.post("/webhook", async (req, res) => {
     // le client dans ce volet puis on rejoue le clic habituel (panier, ou boutons Annuler / Reporter) comme s'il venait de la liste du volet.
     if (estHybride(entreeComplete) && idInteractifClique.indexOf(PREFIXE_ESPACE) === 0) {
       const quoi = idInteractifClique.slice(PREFIXE_ESPACE.length);
-      const voletCible = quoi === "panier" || quoi === "commande" ? "catalogue" : quoi === "rdv" ? "service" : quoi === "sejour" ? "hebergement" : null;
+      const voletCible = quoi === "panier" || quoi === "commande" ? "catalogue" : quoi === "rdv" ? "service" : quoi === "sejour" ? "hebergement" : quoi === "billets" ? "transport" : null;
       if (voletCible && entreeComplete.moteurs[voletCible]) {
         if (quoi === "panier" || quoi === "commande") {
           const eCat = entreeComplete.moteurs.catalogue.getEtatSession(from);
@@ -3560,6 +3666,9 @@ app.post("/webhook", async (req, res) => {
           // Commande deja avancee (telephone, adresse...) : on redonne sa derniere question au lieu d'afficher le panier.
           entreeComplete.routeur.entrerDansVolet(from, "catalogue", !peutVoir);
           idInteractifClique = peutVoir ? (quoi === "commande" ? ID_MA_COMMANDE : ID_PANIER) : ID_VOLET_CATALOGUE;
+        } else if (quoi === "billets") {
+          entreeComplete.routeur.entrerDansVolet(from, "transport", false);
+          idInteractifClique = ID_MES_BILLETS;
         } else {
           entreeComplete.routeur.entrerDansVolet(from, voletCible, false);
           idInteractifClique = ID_MON_RDV;
@@ -3695,7 +3804,7 @@ app.post("/webhook", async (req, res) => {
       if (decision.type === "menu") {
         console.log(`[${merchantId}] Marchand hybride : menu des volets envoye a ${from}.`);
         const boutonsVolets = decision.boutons.map((b) => ({
-          volet: b.volet, id: b.volet === "catalogue" ? ID_VOLET_CATALOGUE : b.volet === "hebergement" ? ID_VOLET_HEBERGEMENT : ID_VOLET_SERVICE, title: b.title
+          volet: b.volet, id: b.volet === "catalogue" ? ID_VOLET_CATALOGUE : b.volet === "hebergement" ? ID_VOLET_HEBERGEMENT : b.volet === "transport" ? ID_VOLET_TRANSPORT : ID_VOLET_SERVICE, title: b.title
         }));
         // Etape 70 : ce que le client a deja en cours (panier, rendez-vous, sejour) passe EN PREMIER (section « Mon espace »).
         const etatMenu = { langue: (entreeComplete.routeur.etatDe(from) || {}).langue || "fr" };
@@ -3793,6 +3902,9 @@ const ID_LANG_FR = "IZY_LANG_FR";
 const ID_VOLET_CATALOGUE = "IZY_VOLET_CAT";
 const ID_VOLET_SERVICE = "IZY_VOLET_SVC";
 const ID_VOLET_HEBERGEMENT = "IZY_VOLET_HEB";
+const ID_VOLET_TRANSPORT = "IZY_VOLET_TRP"; // Etape 74
+const PREFIXE_TRANSPORT = "IZY_TR_"; // Etape 74 : toutes les lignes/boutons du parcours transport (le moteur les comprend directement)
+const ID_MES_BILLETS = "IZY_TR_MB";
 // Etape 64 : ligne cliquable « Menu principal » (marchand hybride) - equivalent du texte « menu principal » deja gere par hybride.js.
 const ID_MENU_PRINCIPAL = "IZY_MENU_PRINCIPAL";
 const ID_LANG_EN = "IZY_LANG_EN";
@@ -3936,12 +4048,16 @@ function elementsEspace(entree, telephone, etat) {
     if (volets.indexOf("hebergement") !== -1 && typeof entree.moteurs.hebergement.nbSejoursAVenir === "function" && entree.moteurs.hebergement.nbSejoursAVenir(telephone) > 0) {
       out.push({ id: PREFIXE_ESPACE + "sejour", title: tW(etat, "Ma réservation", "My booking"), description: tW(etat, "Annuler ou reporter", "Cancel or reschedule") });
     }
+    if (volets.indexOf("transport") !== -1 && typeof entree.moteurs.transport.nbBilletsAVenir === "function" && entree.moteurs.transport.nbBilletsAVenir(telephone) > 0) {
+      out.push({ id: PREFIXE_ESPACE + "billets", title: tW(etat, "Mes billets", "My tickets"), description: tW(etat, "Voir ou annuler", "View or cancel") });
+    }
   } catch (e) { return []; }
   return out;
 }
 function descriptionVolet(volet, etat) {
   if (volet === "catalogue") return tW(etat, "Voir nos produits", "Browse our products");
   if (volet === "hebergement") return tW(etat, "Réserver une chambre", "Book a room");
+  if (volet === "transport") return tW(etat, "Réserver un billet", "Book a ticket");
   return tW(etat, "Prendre un rendez-vous", "Book an appointment");
 }
 
@@ -4220,10 +4336,12 @@ function resoudreTexteInteractif(marchand, interactive, idForce) {
   if (id === ID_VOLET_CATALOGUE) return JETON_VOLET_CATALOGUE; // choix du volet (marchand hybride, voir hybride.js)
   if (id === ID_VOLET_SERVICE) return JETON_VOLET_SERVICE;
   if (id === ID_VOLET_HEBERGEMENT) return JETON_VOLET_HEBERGEMENT;
+  if (id === ID_VOLET_TRANSPORT) return JETON_VOLET_TRANSPORT;
   if (id === ID_MENU_PRINCIPAL) return "menu principal"; // Etape 64 : reconnu par hybride.js (RE_MENU_PRINCIPAL)
   if (id === ID_HUMAIN) return "un conseiller";
   if (id === ID_CONTACT_ECRIT) return "réponse écrite ici";
   if (id === ID_CONTACT_APPEL) return "être rappelé";
+  if (id.indexOf(PREFIXE_TRANSPORT) === 0) return id; // Etape 74 : le moteur transport lit directement les identifiants de ses lignes et boutons
   if (id === ID_OUI) return "oui";
   if (id === ID_NON) return "non";
   if (id === ID_MODIFIER) return "modifier";
@@ -4313,6 +4431,35 @@ function compacterTexteMenuCatalogue(marchand, texte, etat) {
   }
 }
 
+// Etape 74 : options de l'etape en cours du parcours transport, en texte numerote (Simulateur de /admin, et repli si WhatsApp refuse la liste).
+// Le moteur comprend le numero, le libelle ou « retour ».
+function texteOptionsTransport(etat) {
+  if (!etat) return "";
+  const out = [];
+  if (etat.liste && etat.liste.lignes && etat.liste.lignes.length) {
+    out.push(etat.liste.lignes.map((r, i) => (i + 1) + ". " + r.title + (r.description ? " — " + r.description : "")).join("\n"));
+    if (etat.liste.retour) out.push(tW(etat, "(Écrivez « retour » pour revenir en arrière.)", "(Write \"back\" to go back.)"));
+  } else if (etat.boutons && etat.boutons.length) {
+    out.push(etat.boutons.map((b) => "[" + b.title + "]").join("  "));
+  }
+  return out.join("\n");
+}
+async function envoyerMenuTransport(marchand, destinataire, phoneNumberId, texte, etat) {
+  if (etat.boutons && etat.boutons.length) {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, etat.boutons.slice(0, 3));
+  }
+  if (!etat.liste) return false;
+  const rows = etat.liste.lignes.map((r) => ({ id: r.id, title: tronquerTexte(r.title, 24), description: tronquerTexte(r.description || "", 72) }));
+  if (etat.liste.retour) rows.push({ id: PREFIXE_TRANSPORT + "BACK", title: tW(etat, "◀ Retour", "◀ Back"), description: tW(etat, "Étape précédente", "Previous step") });
+  ligneMenuPrincipal(marchand, etat).forEach((r) => rows.push(r));
+  rows.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
+  const ok = await envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tronquerTexte(etat.liste.bouton, 20), [{ title: tronquerTexte(etat.liste.section, 24), rows: rows.slice(0, 10) }]);
+  if (ok) return true;
+  // WhatsApp a refuse la liste : repli en texte numerote (le client peut repondre par le numero ou le libelle).
+  await envoyerMessageWhatsApp(destinataire, texte + "\n\n" + texteOptionsTransport(etat), phoneNumberId);
+  return true;
+}
+
 // Tente d'accompagner `texte` (la reponse deja calculee par le moteur) d'un menu cliquable adapte a l'etat
 // de la conversation. Renvoie true si un message interactif a bien ete envoye (rien d'autre a faire),
 // false s'il n'y a pas de menu pertinent ICI ou si l'envoi a echoue (l'appelant se rabat alors sur
@@ -4348,6 +4495,9 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   if (typeof marchand.engine.getEtatSession !== "function") return false;
   const etat = marchand.engine.getEtatSession(destinataire);
   if (!etat) return false;
+
+  // Etape 74 : le moteur transport fournit lui-meme la liste (ou les boutons) de l'etape en cours.
+  if (marchand.engine.type === "transport") return envoyerMenuTransport(marchand, destinataire, phoneNumberId, texte, etat);
 
   if (etat.stage === "idle" && etat.pretPourChoix) {
     const estCatalogue = marchand.engine.type === "catalogue";

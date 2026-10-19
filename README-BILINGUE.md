@@ -2380,3 +2380,31 @@ Chaque ligne a un bouton **« Relancer sur WhatsApp »** : il ouvre le WhatsApp 
 Sécurité : rien de cette étape ne donne accès à un type, un volet ou une option payante — le super-administrateur reste le seul à les attribuer.
 
 Fichiers modifiés : `conversation.js`, `shared.js`, `server.js`, `sessionsPersistantes.js`, `public/admin.html`. Aucune migration, aucune variable d'environnement. (Les paniers et le délai se retrouvent après redémarrage grâce à l'étape 72.)
+
+## Étape 74 — Volet « Billets » (transport) : train, car, navette
+
+**1. Un quatrième volet, pour tout marchand de transport.** Le volet **transport** s'ajoute aux trois autres (catalogue, rendez-vous, chambres) : un marchand peut avoir **jusqu'à quatre volets** (un principal et trois secondaires), par exemple une résidence hôtelière avec chambres, restaurant et navette d'aéroport. Il est pensé pour Camrail (test), puis pour d'autres transporteurs (cars, navettes, fret plus tard) : rien n'est propre à une compagnie.
+**Accord réservé au super-administrateur.** Comme pour les autres volets, seul le super-administrateur peut accorder ou retirer le volet transport (création du marchand, ou « Mon compte » > « Volets supplémentaires » du marchand concerné). Le marchand et ses employés ne voient jamais ce choix ; l'API le refuse aussi (403). Aucun rôle d'employé nouveau : les onglets billets suivent le rôle **Rendez-vous / réservations** existant, les paramètres le rôle **Paramètres**.
+
+**2. Parcours du client sur WhatsApp (tout en listes déroulantes).** Trajet (ex. « Douala → Yaoundé ») > arrêt de descente (et de montée si le trajet a des arrêts intermédiaires) > date > départ (heure, prix) > classe > côté **fenêtre ou couloir** (seulement pour les classes qui le proposent) > aller simple ou aller-retour > nombre de voyageurs > **nom et numéro de CNI de chaque voyageur** (obligatoires) > récapitulatif Oui / Non. Chaque liste a « ◀ Retour » et « ◀ Menu principal » ; les boutons ne servent qu'aux confirmations. Le client peut écrire « mes billets » pour retrouver ou annuler une réservation « À payer ».
+Le siège exact n'est pas choisi par le client : comme en avion, il choisit la classe et le côté ; l'attribution du siège viendra plus tard.
+
+**3. Places vendues sur WhatsApp = quota réglé par le marchand.** Pour chaque départ, le marchand fixe combien de places il met en vente sur WhatsApp, par classe (et par côté fenêtre / couloir). La disponibilité est calculée **tronçon par tronçon** : la place d'un voyageur qui descend à Édéa est revendue pour Édéa > Yaoundé. Une réservation WhatsApp est « À payer » : ses places sont retenues pendant le délai réglé (120 minutes par défaut), puis rendues automatiquement.
+
+**4. Onglets de /admin.**
+- **Lignes et tarifs** : arrêts dans l'ordre (avec ▲ ▼), classes (case « choix fenêtre / couloir »), tarifs par paire d'arrêts et par classe, aller simple et aller-retour. Le générateur répartit le prix de bout en bout selon la distance (arrondi à 500 FCFA), puis chaque prix reste modifiable à la main. Bouton **« Charger un exemple »** (liste vide seulement, ne remplace jamais vos données) : train Douala – Édéa – Eséka – Yaoundé (Premium et Première classe) et navette d'aéroport (Aéroport de Douala – Akwa – Bonamoussadi). Les horaires et tarifs du train suivent la plaquette ; les arrêts intermédiaires, distances et la navette sont des **valeurs d'exemple à ajuster**.
+- **Départs** : ligne, sens, heure, jours de circulation, heures de passage aux arrêts, quotas, dates sans circulation, période de validité, duplication, et **visualisation du remplissage** d'un départ par tronçon.
+- **Réservations** : filtres statut / date, changement de statut (À payer, Confirmé, Embarqué, Absent, Annulé, Expiré), bouton **« Envoyer le billet »** (voir ci-dessous). La CNI est masquée (quatre derniers caractères).
+- **Manifeste** : liste des voyageurs d'un départ à une date, avec la CNI en clair, impression et export CSV (séparateur « ; », ouvrable dans Excel). C'est le **seul** écran où la CNI apparaît en clair ; chaque consultation est enregistrée au Journal d'activité.
+- **Paramètres billets** : fuseau, délai de paiement, fin des ventes avant le départ, jours à l'avance, voyageurs maximum, choix de l'arrêt de montée, consigne de paiement, consigne de voyage, mot de fin du billet (français et anglais).
+- **Tableau de bord** : réservations à payer et confirmées, voyageurs à venir, chiffre d'affaires confirmé, montant en attente, prochains départs (places vendues / quota sur 7 jours), réservations à payer avec heure limite.
+
+**5. Billet envoyé par une action de l'équipe (pas d'envoi automatique).** Le client réserve et reçoit les consignes de paiement ; quand l'équipe a reçu le paiement (Orange Money, MTN MoMo…), elle passe la réservation en « Confirmé » puis clique **« Envoyer le billet »** : le billet part sur WhatsApp avec la consigne de voyage. Annuler une réservation ne prévient pas le client automatiquement. Le paiement Mobile Money automatique n'existe pas encore.
+
+**6. Sécurité des CNI.** Les numéros de CNI sont enregistrés **chiffrés** (AES-256-GCM). **À faire sur Render avant d'ouvrir les ventes : définir la variable d'environnement `ENCRYPTION_KEY`** (déjà utilisée par l'application). Sans elle, les CNI seraient enregistrées sans chiffrement : le tableau de bord de /admin affiche alors un avertissement rouge.
+
+**7. Marchand « Test Izyvendeur ».** Pour la démonstration : se connecter en super-administrateur, choisir le marchand de test, « Mon compte » > « Volets supplémentaires », cocher les billets, puis onglet « Lignes et tarifs » > « Charger un exemple ». Le Simulateur propose les trajets (en texte numéroté, car il n'affiche pas les listes WhatsApp).
+
+**Pas encore fait (prévu plus tard).** Attribution automatique du siège exact, contrôle à l'embarquement et statut de départ (retards), paiement Mobile Money automatique, QR code sur le billet, fret, ventes en gros.
+
+Fichiers modifiés : `server.js`, `hybride.js`, `db.js`, `public/admin.html`. **Nouveau fichier : `conversationTransport.js`** (à copier avec les autres). Aucune migration SQL ; variable d'environnement `ENCRYPTION_KEY` à vérifier (voir 6).
