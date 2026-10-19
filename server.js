@@ -3666,20 +3666,16 @@ app.post("/webhook", async (req, res) => {
         const boutonsVolets = decision.boutons.map((b) => ({
           volet: b.volet, id: b.volet === "catalogue" ? ID_VOLET_CATALOGUE : b.volet === "hebergement" ? ID_VOLET_HEBERGEMENT : ID_VOLET_SERVICE, title: b.title
         }));
-        // Etape 70 : ce que le client a deja en cours (panier, rendez-vous, sejour) passe EN PREMIER. Jusqu'a 3 entrees : boutons ;
-        // au-dela (ex. trois volets + un element), liste deroulante.
+        // Etape 70 : ce que le client a deja en cours (panier, rendez-vous, sejour) passe EN PREMIER (section « Mon espace »).
         const etatMenu = { langue: (entreeComplete.routeur.etatDe(from) || {}).langue || "fr" };
         const elements = elementsEspace(entreeComplete, from, etatMenu);
-        let menuEnvoye;
-        if (elements.length && elements.length + boutonsVolets.length > 3) {
-          menuEnvoye = await envoyerListeWhatsApp(from, phoneNumberId, decision.texte, tW(etatMenu, "Ouvrir le menu", "Open menu"), [
-            { title: tW(etatMenu, "Mon espace", "My space"), rows: elements.map((e) => ({ id: e.id, title: tronquerTexte(e.title, 24), description: tronquerTexte(e.description, 72) })) },
-            { title: tW(etatMenu, "Que souhaitez-vous faire ?", "What would you like to do?"), rows: boutonsVolets.map((b) => ({ id: b.id, title: tronquerTexte(b.title, 24), description: tronquerTexte(descriptionVolet(b.volet, etatMenu), 72) })) }
-          ]).catch(() => false);
-        } else {
-          menuEnvoye = await envoyerBoutonsWhatsApp(from, phoneNumberId, decision.texte,
-            elements.map((e) => ({ id: e.id, title: e.title })).concat(boutonsVolets.map((b) => ({ id: b.id, title: b.title })))).catch(() => false);
-        }
+        // Etape 71 : le menu principal est TOUJOURS une liste deroulante (meme geste que partout ailleurs), jamais des boutons.
+        // Titre de section limite a 24 caracteres par WhatsApp.
+        const lignesVolets = boutonsVolets.map((b) => ({ id: b.id, title: tronquerTexte(b.title, 24), description: tronquerTexte(descriptionVolet(b.volet, etatMenu), 72) }));
+        const sectionsMenu = [];
+        if (elements.length) sectionsMenu.push({ title: tW(etatMenu, "Mon espace", "My space"), rows: elements.map((e) => ({ id: e.id, title: tronquerTexte(e.title, 24), description: tronquerTexte(e.description, 72) })) });
+        sectionsMenu.push({ title: tW(etatMenu, "Que voulez-vous faire ?", "What do you want to do?"), rows: lignesVolets });
+        const menuEnvoye = await envoyerListeWhatsApp(from, phoneNumberId, decision.texte, tW(etatMenu, "Ouvrir le menu", "Open menu"), sectionsMenu).catch(() => false);
         if (!menuEnvoye) await envoyerMessageWhatsApp(from, decision.texte, phoneNumberId);
         return;
       }

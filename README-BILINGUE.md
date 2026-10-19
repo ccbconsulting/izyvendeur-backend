@@ -2331,3 +2331,15 @@ Un clic sur « Mon panier » ouvre le panier (si la commande est déjà avancée
 **Message d'accueil personnalisé.** Les **Paramètres rendez-vous** et les **Paramètres chambres** ont maintenant, comme le catalogue, deux champs « Message d'accueil personnalisé » (français et English, 600 caractères maximum, vides par défaut). Le texte s'affiche **après le choix de la langue**, dans la langue du client, en tête de la liste des services ou des chambres, à la place de « Bienvenue chez… » ; si un seul champ est rempli, il sert pour les deux langues. La liste des services n'est pas répétée dans le corps du message (elle est dans le menu cliquable). Réglable par le propriétaire, un employé « parametres » et le super-administrateur, tracé au Journal (nom du champ). Vide = accueil standard inchangé.
 
 Fichiers modifiés : `server.js`, `hybride.js`, `conversationService.js`, `conversationHebergement.js`, `public/admin.html`. Aucune migration, aucune variable d'environnement, aucun nouveau modèle Meta.
+
+## Étape 71 — Menu principal des marchands hybrides en liste déroulante
+
+Pour un marchand **hybride** (deux ou trois volets), le premier écran « Que souhaitez-vous faire ? » est maintenant **toujours une liste déroulante** (bouton « Ouvrir le menu » / « Open menu »), comme les listes d'articles, de services et de chambres, et non plus 2 ou 3 boutons.
+- Chaque ligne a une courte description : « Voir nos produits », « Prendre un rendez-vous », « Réserver une chambre ».
+- Si le client a quelque chose en cours (panier, rendez-vous, séjour), une première section **« Mon espace »** le propose en tête, puis la section **« Que voulez-vous faire ? »** liste les volets. Sans rien en cours, une seule section.
+- Le nombre de lignes n'est plus limité à 3 : un futur élément n'oblige plus à changer de format.
+- Les marchands à un seul volet ne changent pas (ils n'ont pas ce menu). Rien à régler dans /admin.
+
+Correction au passage : le titre de section « Que souhaitez-vous faire ? » (26 caractères) dépassait la limite de 24 caractères de WhatsApp, ce qui aurait fait refuser la liste de l'étape 70 pour les clients à plus de 3 choix ; il devient « Que voulez-vous faire ? ».
+
+Fichier modifié : `server.js` (aucune migration, aucune variable d'environnement). Le Simulateur de /admin continue d'afficher ce menu sous forme de boutons.
