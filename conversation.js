@@ -1246,6 +1246,17 @@ function createCatalogEngine(merchantKey, options) {
   function reponseDeReprise(fromPhone) {
     const s = sessions[fromPhone];
     if (!s || !s.derniereReponse) return null;
+    // Etape 65 : une simple SELECTION d'article en cours (quantite, couleur, taille ou variante demandee, rien de
+    // valide) n'est pas un parcours a reprendre : le client qui touche « Nos produits » dans le menu principal veut
+    // voir le catalogue, pas retomber sur « Combien de pieces ? » d'un article choisi plus tot. On efface donc cette
+    // selection (le PANIER, lui, n'est jamais touche) et on laisse le moteur repartir de son accueil.
+    const selectionLegere = !s.attenteChoixContactHumain && (s.stage === "awaiting_quantity" ||
+      (s.stage === "idle" && s.pendingChoice && ["couleur", "taille", "variante"].indexOf(s.pendingChoice.type) !== -1));
+    if (selectionLegere) {
+      s.productId = null; s.couleur = null; s.taille = null; s.quantite = null;
+      s.stage = "idle"; s.pendingChoice = null; s.derniereReponse = null;
+      return null;
+    }
     const enCours = s.stage !== "idle" || !!s.pendingChoice || !!s.attenteChoixContactHumain;
     return enCours ? s.derniereReponse : null;
   }

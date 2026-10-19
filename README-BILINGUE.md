@@ -2261,3 +2261,7 @@ Fichiers modifiés : `server.js`, `public/admin.html`. Aucune migration, aucune 
 **Pas encore fait (Étape 66).** Hébergement combiné à un autre volet (menu à deux boutons) ou à plusieurs volets (chambres + restaurant + spa), rappel avant l'arrivée, facturation des séjours, rapports d'occupation, tarifs saisonniers.
 
 Fichiers : `conversationHebergement.js` et `datesSejour.js` (nouveaux), `server.js`, `public/admin.html`.
+
+### Étape 65 (correctif) — Marchand hybride : « Nos produits » ramène au catalogue
+
+Quand un client d'un marchand hybride revenait au volet produits par le menu principal alors qu'il n'avait qu'une **sélection d'article en cours** (quantité, couleur ou taille demandée, rien de validé), le bot lui redonnait sa dernière question (« Combien de pièces ? ») au lieu du catalogue. Cette sélection est maintenant effacée et le client repart de la liste des articles. Le **panier**, une commande en cours (adresse, nom, confirmation) et les rendez-vous en cours sont toujours repris tels quels. Fichier modifié : `conversation.js`.
