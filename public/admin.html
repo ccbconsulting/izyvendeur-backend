@@ -225,7 +225,7 @@ const I18N = {
 
     promptIdMarchand: "Identifiant technique du marchand (sans espaces, ex: don-william) :",
     promptNomMarchand: "Nom affiché du marchand :",
-    promptTypeMarchand: "Type : 'catalogue' (vente de produits) ou 'service' (prise de rendez-vous) ?",
+    promptTypeMarchand: "Type : 'catalogue' (vente de produits), 'service' (prise de rendez-vous) ou 'hebergement' (réservation de chambres) ?",
     promptPhoneNumberIdCreation: "phone_number_id WhatsApp de ce marchand (visible dans le tableau de bord Meta > WhatsApp > Numéros de téléphone). Laissez vide si pas encore connu :",
     promptAdminUser: "Nom d'utilisateur de connexion pour ce marchand (il servira à se connecter à /admin) :",
     promptAdminPassword: "Mot de passe initial pour ce marchand (il pourra le changer lui-même ensuite depuis \"Mon compte\") :",
@@ -482,6 +482,86 @@ const I18N = {
     act_module_secondaire_modifie: "Second volet (hybride) modifié",
     voletCatalogue: "Catalogue",
     voletService: "Rendez-vous",
+    typeHebergement: "hébergement",
+    ongletChambres: "Chambres",
+    ongletSejours: "Réservations",
+    ongletCalendrier: "Calendrier",
+    ongletParametresHeb: "Paramètres",
+    roleReservations: "Réservations (chambres)",
+    chambresTitre: "Chambres ({n} au total)",
+    noteChambres: "Un « type de chambre » regroupe des chambres identiques : indiquez combien vous en avez, leur tarif par nuit et le nombre de personnes qu'elles accueillent. Le bot propose ces types à vos clients et ne confirme jamais plus de chambres que ce nombre sur une même nuit.",
+    theadNombreChambres: "Nombre de chambres",
+    theadPrixNuit: "Prix / nuit (FCFA)",
+    theadCapacite: "Capacité (pers.)",
+    theadDescriptionCourte: "Description (facultatif)",
+    aucuneChambre: "Aucun type de chambre pour l'instant.",
+    btnAjouterChambre: "Ajouter un type de chambre",
+    nouvelleChambre: "Nouveau type de chambre",
+    alertChambresEnregistrees: "Chambres enregistrées.",
+    noteImportChambres: "Import CSV (colonnes : Nom, Nombre, Prix, Capacité — la capacité est facultative). Les types déjà présents sont ignorés.",
+    btnImporterChambres: "Importer les chambres",
+    btnModeleChambres: "Télécharger un modèle",
+    msgImportChambresResultat: "{ajoutes} type(s) de chambre ajouté(s).",
+    sejoursTitre: "Réservations ({n})",
+    btnNouvelleReservation: "Nouvelle réservation",
+    titreNouvelleReservation: "Nouvelle réservation (appel, comptoir)",
+    titreModifierSejour: "Modifier la réservation {ref}",
+    btnCreerReservation: "Créer la réservation",
+    msgReservationCreee: "Réservation créée.",
+    msgSejourDeplace: "Réservation modifiée. Pensez à prévenir le client (bouton « Prévenir le client sur WhatsApp »).",
+    noteDeplacementSejour: "Le client n'est PAS prévenu automatiquement : utilisez ensuite le bouton « Prévenir le client sur WhatsApp ».",
+    theadChambre: "Chambre",
+    theadArrivee: "Arrivée",
+    theadDepartSejour: "Départ",
+    theadPersonnes: "Personnes",
+    theadTotal: "Total",
+    labelArrivee: "Arrivée",
+    labelDepartSejour: "Départ",
+    nbNuits: "{n} nuit(s)",
+    nbChambres: "{n} chambre(s)",
+    aucuneReservation: "Aucune réservation pour l'instant.",
+    sejourNouvelle: "Non confirmé",
+    sejourConfirme: "Confirmé",
+    sejourArrive: "Arrivé",
+    sejourParti: "Parti",
+    sejourAbsent: "Absent",
+    sejourAnnule: "Annulé",
+    sejourNonBloque: "Ne bloque pas la chambre tant que le client n'a pas confirmé.",
+    sejourModifieAdmin: "Modifiée depuis /admin",
+    btnModifierSejour: "Modifier",
+    btnPrevenirClient: "Prévenir le client sur WhatsApp",
+    notePrevenirClient: "« Prévenir le client » ouvre WhatsApp avec un message prêt à envoyer : c'est vous qui l'envoyez (aucun coût côté Meta).",
+    calendrierTitre: "Calendrier des chambres",
+    noteCalendrier: "Pour chaque type de chambre et chaque nuit : chambres occupées / chambres au total (réservations confirmées ou arrivées).",
+    legendeCalendrier: "Vert : libre — Orange : partiellement occupé — Rouge : complet.",
+    btnSemainePrec: "7 jours",
+    btnSemaineSuiv: "7 jours",
+    btnAujourdhui: "Aujourd'hui",
+    labelHeureArrivee: "Heure d'arrivée (à partir de)",
+    labelHeureDepart: "Heure de départ (avant)",
+    labelDelaiAnnulation: "Délai d'annulation / de report (heures avant l'arrivée)",
+    noteDelaiAnnulation: "0 = le client peut annuler ou reporter jusqu'à l'arrivée. Exemple : 48 → au-delà, le bot renvoie le client vers un conseiller.",
+    labelNuitsMax: "Nombre de nuits maximum par réservation WhatsApp",
+    labelAvanceMax: "Réservation possible jusqu'à (jours à l'avance)",
+    labelNotePaiement: "Note de paiement (français)",
+    labelNotePaiementEn: "Note de paiement (anglais)",
+    labelMsgConfirmSejour: "Message de confirmation de réservation (français)",
+    labelMsgConfirmSejourEn: "Message de confirmation de réservation (anglais)",
+    libelleArriveesPeriodeDash: "Arrivées sur la période",
+    libelleCaSejoursDash: "Chiffre d'affaires des séjours",
+    libelleOccupationDash: "Chambres occupées ce soir",
+    libelleArriveesAujourdhuiDash: "Arrivées aujourd'hui",
+    libelleDepartsAujourdhuiDash: "Départs aujourd'hui",
+    libelleNonConfirmesDash: "Réservations à confirmer",
+    h3ChambresTop: "Types de chambre les plus demandés",
+    h3ProchainesArrivees: "Arrivées des 7 prochains jours",
+    msgAucuneArriveeProche: "Aucune arrivée prévue dans les 7 prochains jours.",
+    noteOptionsHebergement: "Ce marchand est de type hébergement : les options payantes du catalogue, la facturation et le second volet ne s'appliquent pas encore (prévus à l'étape suivante).",
+    act_chambres_modifiees: "Chambres modifiées",
+    act_chambres_importees: "Chambres importées (fichier)",
+    act_sejour_cree: "Réservation créée (comptoir)",
+    act_sejour_deplace: "Réservation déplacée / modifiée",
+    act_sejour_statut_modifie: "Statut de réservation modifié",
     typeHybrideLibelle: "{a} + {b}",
     ongletParametresCatalogueHyb: "Paramètres catalogue",
     ongletParametresServiceHyb: "Paramètres rendez-vous",
@@ -1116,7 +1196,7 @@ const I18N = {
 
     promptIdMarchand: "Merchant's technical identifier (no spaces, e.g. don-william):",
     promptNomMarchand: "Merchant's display name:",
-    promptTypeMarchand: "Type: 'catalogue' (selling products) or 'service' (appointment booking)?",
+    promptTypeMarchand: "Type: 'catalogue' (selling products), 'service' (appointment booking) or 'hebergement' (room booking)?",
     promptPhoneNumberIdCreation: "This merchant's WhatsApp phone_number_id (found in the Meta dashboard > WhatsApp > Phone numbers). Leave blank if not known yet:",
     promptAdminUser: "Login username for this merchant (used to log in to /admin):",
     promptAdminPassword: "Initial password for this merchant (they can change it later from \"My account\"):",
@@ -1373,6 +1453,86 @@ const I18N = {
     act_module_secondaire_modifie: "Second section (hybrid) changed",
     voletCatalogue: "Catalog",
     voletService: "Appointments",
+    typeHebergement: "Lodging",
+    ongletChambres: "Rooms",
+    ongletSejours: "Bookings",
+    ongletCalendrier: "Calendar",
+    ongletParametresHeb: "Settings",
+    roleReservations: "Bookings (rooms)",
+    chambresTitre: "Rooms ({n} in total)",
+    noteChambres: "A \"room type\" groups identical rooms: tell us how many you have, the price per night and how many people they sleep. The bot offers these types to your customers and never confirms more rooms than this number on a given night.",
+    theadNombreChambres: "Number of rooms",
+    theadPrixNuit: "Price / night (FCFA)",
+    theadCapacite: "Capacity (people)",
+    theadDescriptionCourte: "Description (optional)",
+    aucuneChambre: "No room type yet.",
+    btnAjouterChambre: "Add a room type",
+    nouvelleChambre: "New room type",
+    alertChambresEnregistrees: "Rooms saved.",
+    noteImportChambres: "CSV import (columns: Name, Number, Price, Capacity — capacity is optional). Existing types are skipped.",
+    btnImporterChambres: "Import rooms",
+    btnModeleChambres: "Download a template",
+    msgImportChambresResultat: "{ajoutes} room type(s) added.",
+    sejoursTitre: "Bookings ({n})",
+    btnNouvelleReservation: "New booking",
+    titreNouvelleReservation: "New booking (phone, front desk)",
+    titreModifierSejour: "Edit booking {ref}",
+    btnCreerReservation: "Create booking",
+    msgReservationCreee: "Booking created.",
+    msgSejourDeplace: "Booking updated. Remember to notify the guest (\"Notify the guest on WhatsApp\" button).",
+    noteDeplacementSejour: "The guest is NOT notified automatically: use the \"Notify the guest on WhatsApp\" button afterwards.",
+    theadChambre: "Room",
+    theadArrivee: "Check-in",
+    theadDepartSejour: "Check-out",
+    theadPersonnes: "Guests",
+    theadTotal: "Total",
+    labelArrivee: "Check-in",
+    labelDepartSejour: "Check-out",
+    nbNuits: "{n} night(s)",
+    nbChambres: "{n} room(s)",
+    aucuneReservation: "No bookings yet.",
+    sejourNouvelle: "Unconfirmed",
+    sejourConfirme: "Confirmed",
+    sejourArrive: "Checked in",
+    sejourParti: "Checked out",
+    sejourAbsent: "No-show",
+    sejourAnnule: "Cancelled",
+    sejourNonBloque: "Does not block the room until the guest confirms.",
+    sejourModifieAdmin: "Edited from /admin",
+    btnModifierSejour: "Edit",
+    btnPrevenirClient: "Notify the guest on WhatsApp",
+    notePrevenirClient: "\"Notify the guest\" opens WhatsApp with a ready-to-send message: you send it yourself (no Meta cost).",
+    calendrierTitre: "Room calendar",
+    noteCalendrier: "For each room type and each night: rooms occupied / total rooms (confirmed or checked-in bookings).",
+    legendeCalendrier: "Green: free — Orange: partly occupied — Red: full.",
+    btnSemainePrec: "7 days",
+    btnSemaineSuiv: "7 days",
+    btnAujourdhui: "Today",
+    labelHeureArrivee: "Check-in time (from)",
+    labelHeureDepart: "Check-out time (before)",
+    labelDelaiAnnulation: "Cancellation / rescheduling deadline (hours before arrival)",
+    noteDelaiAnnulation: "0 = guests can cancel or reschedule until arrival. Example: 48 → beyond that, the bot sends the guest to an advisor.",
+    labelNuitsMax: "Maximum nights per WhatsApp booking",
+    labelAvanceMax: "Bookable up to (days ahead)",
+    labelNotePaiement: "Payment note (French)",
+    labelNotePaiementEn: "Payment note (English)",
+    labelMsgConfirmSejour: "Booking confirmation message (French)",
+    labelMsgConfirmSejourEn: "Booking confirmation message (English)",
+    libelleArriveesPeriodeDash: "Arrivals in the period",
+    libelleCaSejoursDash: "Stay revenue",
+    libelleOccupationDash: "Rooms occupied tonight",
+    libelleArriveesAujourdhuiDash: "Arrivals today",
+    libelleDepartsAujourdhuiDash: "Departures today",
+    libelleNonConfirmesDash: "Bookings to confirm",
+    h3ChambresTop: "Most requested room types",
+    h3ProchainesArrivees: "Arrivals in the next 7 days",
+    msgAucuneArriveeProche: "No arrivals scheduled in the next 7 days.",
+    noteOptionsHebergement: "This merchant is a lodging merchant: catalog paid options, invoicing and the second module do not apply yet (planned for the next step).",
+    act_chambres_modifiees: "Rooms edited",
+    act_chambres_importees: "Rooms imported (file)",
+    act_sejour_cree: "Booking created (front desk)",
+    act_sejour_deplace: "Booking moved / edited",
+    act_sejour_statut_modifie: "Booking status changed",
     typeHybrideLibelle: "{a} + {b}",
     ongletParametresCatalogueHyb: "Catalog settings",
     ongletParametresServiceHyb: "Appointment settings",
@@ -2001,7 +2161,7 @@ function libelleJour(j) {
   const map = { lundi: "jourLundi", mardi: "jourMardi", mercredi: "jourMercredi", jeudi: "jourJeudi", vendredi: "jourVendredi", samedi: "jourSamedi", dimanche: "jourDimanche" };
   return map[j] ? t(map[j]) : j;
 }
-function libelleTypeMarchand(type) { return type === "service" ? t("typeService") : t("typeCatalogue"); }
+function libelleTypeMarchand(type) { return type === "service" ? t("typeService") : type === "hebergement" ? t("typeHebergement") : t("typeCatalogue"); }
 // Etape 48 : un marchand HYBRIDE a deux volets (`modules` = [principal, second], fournis par GET /api/marchands).
 function modulesAdmin(m) { m = m || marchandActif; return m && Array.isArray(m.modules) && m.modules.length ? m.modules : [m ? m.type : "catalogue"]; }
 function estHybrideAdmin(m) { return modulesAdmin(m).length > 1; }
@@ -2353,6 +2513,14 @@ function rolesDisponiblesBase() {
       ["parametres", t("roleParametres")]
     ].concat(modulesAdmin().indexOf("catalogue") !== -1 && marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : []);
   }
+  if (marchandActif.type === "hebergement") {
+    return [
+      ["rendezvous", t("roleReservations")],
+      ["conversations", t("roleConversationsService")],
+      ["tableaudebord", t("roleTableauDeBord")],
+      ["parametres", t("roleParametres")]
+    ];
+  }
   if (marchandActif.type === "service") {
     return [
       ["rendezvous", t("roleRendezvous")],
@@ -2420,6 +2588,19 @@ function construireOnglets() {
           ["compte", t("ongletCompte"), renderCompte, null, null]
         ]
       ).filter(Boolean)
+    : marchandActif.type === "hebergement"
+    ? [
+        ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
+        ["chambres", t("ongletChambres"), renderChambres, "rendezvous"],
+        ["sejours", t("ongletSejours"), renderSejours, "rendezvous"],
+        ["calendrier", t("ongletCalendrier"), renderCalendrierChambres, "rendezvous"],
+        ["simulateur", t("ongletSimulateur"), renderSimulateur, ["rendezvous", "conversations"]],
+        ["conversations", t("ongletConversations"), renderConversations, "conversations"],
+        ["parametres", t("ongletParametresHeb"), renderParametresHebergement, "parametres"],
+        ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
+        ["journal", t("ongletJournal"), renderJournal, "gestion"],
+        ["compte", t("ongletCompte"), renderCompte, null]
+      ]
     : marchandActif.type === "service"
     ? [
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
@@ -3980,6 +4161,7 @@ function blocIzyfactureHtml(etat, estService) {
 // apres une sauvegarde on redessine donc le bon ecran.
 function rafraichirParametresMarchand() {
   if (estHybrideAdmin()) return voletCourant === "service" ? renderParametresService() : renderParametresCatalogue();
+  if (marchandActif.type === "hebergement") return renderParametresHebergement();
   if (marchandActif.type === "service") return renderParametresService();
   return renderParametresCatalogue();
 }
@@ -4405,6 +4587,337 @@ async function renderParametresService() {
       });
       alert(t("alertParametresEnregistres"));
       renderParametresService();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
+
+// ---------------- Marchand hebergement (Etape 65) : Chambres, Reservations, Calendrier, Parametres ----------------
+// Un marchand « hebergement » vend des NUITS dans des chambres. Chaque type de chambre a un nombre de chambres, un tarif
+// par nuit et une capacite. Un sejour « Non confirme » ne bloque rien (comme un rendez-vous) ; « Confirme » et « Arrive »
+// occupent une chambre pour chaque nuit [arrivee, depart[. Le type n'est accorde qu'a la creation, par le super-administrateur.
+function formaterJourIso(iso, options) {
+  if (!iso) return "—";
+  return new Date(iso + "T12:00:00Z").toLocaleDateString(localeCourante(), Object.assign({ weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }, options || {}));
+}
+function libelleStatutSejour(s) {
+  const map = { "Nouvelle": "sejourNouvelle", "Confirmé": "sejourConfirme", "Arrivé": "sejourArrive", "Parti": "sejourParti", "Absent": "sejourAbsent", "Annulé": "sejourAnnule" };
+  return map[s] ? t(map[s]) : s;
+}
+function refSejourAdmin(s) { return s.reference || ("SEJ-" + String(s.id).padStart(4, "0")); }
+function ajouterJoursIso(iso, n) { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+
+// Point D : lien wa.me pour PREVENIR le client d'un changement fait depuis /admin (aucun envoi par le bot, aucun cout Meta).
+function lienPrevenirClientSejour(s) {
+  const chiffres = String(s.fromWhatsapp || s.telephone || "").replace(/\D/g, "");
+  if (!chiffres || chiffres === "0") return "";
+  const en = s.langue === "en";
+  const nom = (s.clientNom || "").trim();
+  const periode = en
+    ? formaterJourIso(s.arrivee) + " → " + formaterJourIso(s.depart) + " (" + s.nuits + (s.nuits > 1 ? " nights" : " night") + ")"
+    : formaterJourIso(s.arrivee) + " → " + formaterJourIso(s.depart) + " (" + s.nuits + (s.nuits > 1 ? " nuits" : " nuit") + ")";
+  const lieu = (marchandActif && marchandActif.nom) ? (en ? " at " : " chez ") + marchandActif.nom : "";
+  const ref = refSejourAdmin(s);
+  let corps;
+  if (s.statut === "Annulé") {
+    corps = en ? "your booking " + ref + " (" + periode + ")" + lieu + " has been cancelled. Please contact us if you would like another date."
+      : "votre réservation " + ref + " (" + periode + ")" + lieu + " a été annulée. N'hésitez pas à nous écrire si vous souhaitez une autre date.";
+  } else if (s.modifieDepuisAdmin) {
+    corps = en ? "your booking " + ref + lieu + " has been updated: " + s.chambre + ", " + periode + ". Please let us know if this does not suit you."
+      : "votre réservation " + ref + lieu + " a été modifiée : " + s.chambre + ", " + periode + ". Dites-nous si cela ne vous convient pas.";
+  } else {
+    corps = en ? "your booking " + ref + lieu + " is confirmed: " + s.chambre + ", " + periode + ". We look forward to welcoming you!"
+      : "votre réservation " + ref + lieu + " est confirmée : " + s.chambre + ", " + periode + ". Nous avons hâte de vous accueillir !";
+  }
+  return "https://wa.me/" + chiffres + "?text=" + encodeURIComponent((en ? "Hello" : "Bonjour") + (nom ? " " + nom : "") + ", " + corps);
+}
+function lienRelanceSejour(s) {
+  const chiffres = String(s.fromWhatsapp || s.telephone || "").replace(/\D/g, "");
+  if (!chiffres || chiffres === "0") return "";
+  const en = s.langue === "en";
+  const nom = (s.clientNom || "").trim();
+  const lieu = (marchandActif && marchandActif.nom) ? (en ? " at " : " chez ") + marchandActif.nom : "";
+  const msg = en
+    ? "Hello" + (nom ? " " + nom : "") + ", you started booking " + s.chambre + " (" + formaterJourIso(s.arrivee) + " → " + formaterJourIso(s.depart) + ")" + lieu + " but did not confirm. Would you like to confirm it or pick other dates?"
+    : "Bonjour" + (nom ? " " + nom : "") + ", vous aviez commencé à réserver " + s.chambre + " (" + formaterJourIso(s.arrivee) + " → " + formaterJourIso(s.depart) + ")" + lieu + " sans confirmer. Souhaitez-vous confirmer cette réservation ou choisir d'autres dates ?";
+  return "https://wa.me/" + chiffres + "?text=" + encodeURIComponent(msg);
+}
+// Faut-il proposer « Prevenir le client » ? Pas pour une annulation que le client a faite lui-meme ou provoquee par un conflit.
+function afficherPrevenirSejour(s) {
+  if (!lienPrevenirClientSejour(s)) return false;
+  if (s.statut === "Confirmé" || s.statut === "Arrivé") return true;
+  if (s.statut === "Annulé") return !/par le client|Reporté|pris par un autre|réservée par un autre|Date dépassée|abandonné|autre client/i.test(s.raisonAnnulation || "");
+  return false;
+}
+
+async function renderChambres() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const chambres = await api("/api/" + marchandActif.id + "/chambres");
+  let local = JSON.parse(JSON.stringify(chambres));
+  function redraw() {
+    const total = local.reduce((n, c) => n + (Number(c.nombre) || 0), 0);
+    zone.innerHTML =
+      "<h2>" + t("chambresTitre", { n: total }) + "</h2>" +
+      "<p class='raison'>" + t("noteChambres") + "</p>" +
+      "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadNombreChambres") + "</th><th>" + t("theadPrixNuit") + "</th><th>" + t("theadCapacite") + "</th><th>" + t("theadDescriptionCourte") + "</th><th></th></tr>" +
+      (local.length ? local.map((c, i) =>
+        "<tr>" +
+          "<td><input data-i='" + i + "' data-champ='nom' value=\"" + esc(c.nom) + "\" /></td>" +
+          "<td><input type='number' min='0' data-i='" + i + "' data-champ='nombre' value='" + (Number(c.nombre) || 0) + "' /></td>" +
+          "<td><input type='number' min='0' data-i='" + i + "' data-champ='prix' value='" + (Number(c.prix) || 0) + "' /></td>" +
+          "<td><input type='number' min='1' data-i='" + i + "' data-champ='capacite' value='" + (Number(c.capacite) || 2) + "' /></td>" +
+          "<td><input data-i='" + i + "' data-champ='description' value=\"" + esc(c.description || "") + "\" /></td>" +
+          "<td><button data-suppr='" + i + "' class='danger'>×</button></td>" +
+        "</tr>"
+      ).join("") : "<tr><td colspan='6'>" + t("aucuneChambre") + "</td></tr>") +
+      "</table>" +
+      "<button id='btnAjouterChambre'>" + t("btnAjouterChambre") + "</button> " +
+      "<button id='btnSauverChambres' class='principal'>" + t("enregistrer") + "</button>" +
+      "<div class='bloc-import-services' style='margin-top:16px;'>" +
+        "<p class='raison'>" + t("noteImportChambres") + "</p>" +
+        "<input type='file' accept='.csv,text/csv' id='champFichierImportChambres' /> " +
+        "<button id='btnImporterChambres'>" + t("btnImporterChambres") + "</button> " +
+        "<button id='btnModeleChambres'>" + t("btnModeleChambres") + "</button>" +
+      "</div>";
+    Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
+      inp.addEventListener("input", () => {
+        const i = Number(inp.dataset.i), champ = inp.dataset.champ;
+        local[i][champ] = (champ === "nom" || champ === "description") ? inp.value : Number(inp.value);
+      });
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr]"), (btn) => {
+      btn.onclick = () => { local.splice(Number(btn.dataset.suppr), 1); redraw(); };
+    });
+    document.getElementById("btnAjouterChambre").onclick = () => {
+      local.push({ id: "c" + Date.now() + Math.floor(Math.random() * 1000), nom: t("nouvelleChambre"), nombre: 1, prix: 0, capacite: 2, description: "" });
+      redraw();
+    };
+    document.getElementById("btnModeleChambres").onclick = () => {
+      const modele = "﻿Nom;Nombre;Prix;Capacité\nChambre Standard;5;25000;2\nSuite;2;60000;4\n";
+      const lien = document.createElement("a");
+      lien.href = URL.createObjectURL(new Blob([modele], { type: "text/csv;charset=utf-8" }));
+      lien.download = "modele_import_chambres.csv";
+      document.body.appendChild(lien); lien.click(); lien.remove();
+    };
+    document.getElementById("btnImporterChambres").onclick = async () => {
+      const btn = document.getElementById("btnImporterChambres");
+      const fichier = document.getElementById("champFichierImportChambres").files[0];
+      if (!fichier) { alert(t("alertChoisirFichierImport")); return; }
+      const donnees = new FormData();
+      donnees.append("fichier", fichier);
+      btn.disabled = true;
+      try {
+        const reponse = await fetch("/api/" + marchandActif.id + "/chambres/importer", { method: "POST", body: donnees });
+        const j = await reponse.json();
+        if (!reponse.ok) throw new Error(j.erreur || reponse.statusText);
+        let message = t("msgImportChambresResultat", { ajoutes: j.ajoutes });
+        if (j.doublonsIgnores && j.doublonsIgnores.length) message += t("msgImportDoublons", { n: j.doublonsIgnores.length, noms: j.doublonsIgnores.join(", ") });
+        if (j.erreurs && j.erreurs.length) message += t("msgImportErreurs", { n: j.erreurs.length, details: j.erreurs.join(" / ") });
+        alert(message);
+        renderChambres();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); btn.disabled = false; }
+    };
+    document.getElementById("btnSauverChambres").onclick = async () => {
+      try {
+        await api("/api/" + marchandActif.id + "/chambres", { method: "PUT", body: JSON.stringify(local) });
+        alert(t("alertChambresEnregistrees"));
+        renderChambres();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+  redraw();
+}
+
+let filtreSejourRelancer = false;
+async function renderSejours() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const [sejours, chambres] = await Promise.all([api("/api/" + marchandActif.id + "/sejours"), api("/api/" + marchandActif.id + "/chambres")]);
+  const statuts = ["Nouvelle", "Confirmé", "Arrivé", "Parti", "Absent", "Annulé"];
+  const nbARelancer = sejours.filter((s) => s.statut === "Nouvelle").length;
+  if (!nbARelancer) filtreSejourRelancer = false;
+  const tri = sejours.slice().reverse().filter((s) => !filtreSejourRelancer || s.statut === "Nouvelle");
+  zone.innerHTML =
+    "<h2>" + t("sejoursTitre", { n: sejours.length }) + "</h2>" +
+    "<div class='no-print' style='margin:6px 0;display:flex;gap:8px;flex-wrap:wrap;'>" +
+      "<button id='btnNouvelleReservation' class='principal'>" + esc(t("btnNouvelleReservation")) + "</button>" +
+      (nbARelancer ? "<button id='btnFiltreSejourTous' class='" + (filtreSejourRelancer ? "" : "principal") + "'>" + esc(t("filtreRdvTous", { n: sejours.length })) + "</button>" +
+        "<button id='btnFiltreSejourRelancer' class='" + (filtreSejourRelancer ? "principal" : "") + "'>" + esc(t("filtreRdvRelancer", { n: nbARelancer })) + "</button>" : "") +
+    "</div>" +
+    "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadChambre") + "</th><th>" + t("theadArrivee") + "</th><th>" + t("theadDepartSejour") + "</th><th>" + t("theadPersonnes") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadTelephone") + "</th><th>" + t("theadTotal") + "</th><th>" + t("theadStatut") + "</th></tr>" +
+    (tri.length ? tri.map((s) =>
+      "<tr>" +
+        "<td>" + esc(refSejourAdmin(s)) + (s.remplaceId ? "<div class='raison'>" + esc(t("rdvRemplace", { ref: "SEJ-" + String(s.remplaceId).padStart(4, "0") })) + "</div>" : "") + "</td>" +
+        "<td>" + esc(s.chambre) + "</td>" +
+        "<td>" + esc(formaterJourIso(s.arrivee)) + "</td>" +
+        "<td>" + esc(formaterJourIso(s.depart)) + "<div class='raison'>" + esc(t("nbNuits", { n: s.nuits })) + "</div></td>" +
+        "<td>" + (s.personnes || "—") + "</td>" +
+        "<td>" + esc(s.clientNom || "") + "</td>" +
+        "<td>" + esc(s.telephone || "") + "</td>" +
+        "<td>" + (s.total || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
+        "<td><select data-sejour='" + s.id + "'>" + statuts.map((x) => "<option value='" + x + "'" + (x === s.statut ? " selected" : "") + ">" + esc(libelleStatutSejour(x)) + "</option>").join("") + "</select>" +
+          (s.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(s.raisonAnnulation) + "</div>" : "") +
+          (s.statut === "Nouvelle" ? "<div class='raison'>" + esc(t("sejourNonBloque")) + "</div>" + (lienRelanceSejour(s) ? "<div><a class='btnRelancerSejour' data-relancer-sejour='" + s.id + "' href='" + esc(lienRelanceSejour(s)) + "' target='_blank' rel='noopener noreferrer'>" + esc(t("btnRelancerWhatsapp")) + "</a></div>" : "") : "") +
+          (s.modifieDepuisAdmin ? "<div class='raison'>" + esc(t("sejourModifieAdmin")) + "</div>" : "") +
+          ((s.statut === "Nouvelle" || s.statut === "Confirmé" || s.statut === "Arrivé") ? "<div><button class='btnModifierSejour' data-modifier-sejour='" + s.id + "'>" + esc(t("btnModifierSejour")) + "</button></div>" : "") +
+          (afficherPrevenirSejour(s) ? "<div><a class='btnPrevenirClient' data-prevenir-sejour='" + s.id + "' href='" + esc(lienPrevenirClientSejour(s)) + "' target='_blank' rel='noopener noreferrer'>" + esc(t("btnPrevenirClient")) + "</a></div>" : "") +
+        "</td>" +
+      "</tr>"
+    ).join("") : "<tr><td colspan='9'>" + t(filtreSejourRelancer ? "aucunRdvARelancer" : "aucuneReservation") + "</td></tr>") +
+    "</table>" +
+    (sejours.some(afficherPrevenirSejour) ? "<p class='raison'>" + t("notePrevenirClient") + "</p>" : "");
+  Array.prototype.forEach.call(zone.querySelectorAll("select[data-sejour]"), (sel) => {
+    sel.addEventListener("change", async () => {
+      let raison = null;
+      if (sel.value === "Annulé") raison = prompt(t("promptRaisonAnnulation")) || "";
+      try {
+        await api("/api/" + marchandActif.id + "/sejours/" + sel.dataset.sejour + "/statut", { method: "PUT", body: JSON.stringify({ statut: sel.value, raisonAnnulation: raison }) });
+        renderSejours();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); renderSejours(); }
+    });
+  });
+  const bTous = document.getElementById("btnFiltreSejourTous"), bRel = document.getElementById("btnFiltreSejourRelancer");
+  if (bTous) bTous.onclick = () => { filtreSejourRelancer = false; renderSejours(); };
+  if (bRel) bRel.onclick = () => { filtreSejourRelancer = true; renderSejours(); };
+  document.getElementById("btnNouvelleReservation").onclick = () => ouvrirDialogueSejour(null, chambres, renderSejours);
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-modifier-sejour]"), (btn) => {
+    btn.onclick = () => {
+      const s = sejours.filter((x) => String(x.id) === btn.dataset.modifierSejour)[0];
+      if (s) ouvrirDialogueSejour(s, chambres, renderSejours);
+    };
+  });
+}
+
+// Dialogue « Nouvelle reservation » (s == null) ou « Modifier la reservation » (dates, type de chambre, personnes).
+function ouvrirDialogueSejour(s, chambres, apres) {
+  const creer = !s;
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  const fond = document.createElement("div");
+  fond.className = "no-print";
+  fond.style.cssText = "position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9999;";
+  const boite = document.createElement("div");
+  boite.style.cssText = "background:#fff;border-radius:10px;padding:16px;max-width:440px;width:92%;max-height:90vh;overflow:auto;";
+  boite.innerHTML =
+    "<h3 style='margin-top:0'>" + esc(creer ? t("titreNouvelleReservation") : t("titreModifierSejour", { ref: refSejourAdmin(s) })) + "</h3>" +
+    (creer ? "" : "<p class='raison'>" + esc(s.clientNom || "") + "</p>") +
+    "<label>" + t("theadChambre") + "</label><select id='sjChambre'>" +
+      chambres.map((c) => "<option value='" + esc(c.id) + "'" + ((creer ? chambres[0] && chambres[0].id : s.chambreId) === c.id ? " selected" : "") + ">" + esc(c.nom) + " (" + (Number(c.prix) || 0).toLocaleString(localeCourante()) + " FCFA)</option>").join("") + "</select>" +
+    "<label>" + t("labelArrivee") + "</label><input type='date' id='sjArrivee' value='" + (creer ? aujourdhui : s.arrivee) + "' />" +
+    "<label>" + t("labelDepartSejour") + "</label><input type='date' id='sjDepart' value='" + (creer ? ajouterJoursIso(aujourdhui, 1) : s.depart) + "' />" +
+    "<label>" + t("theadPersonnes") + "</label><input type='number' min='1' id='sjPersonnes' value='" + (creer ? 2 : (s.personnes || 1)) + "' />" +
+    (creer
+      ? "<label>" + t("theadClient") + "</label><input id='sjNom' />" +
+        "<label>" + t("theadTelephone") + "</label><input id='sjTel' placeholder='237…' />" +
+        "<label>" + t("theadStatut") + "</label><select id='sjStatut'><option value='Confirmé'>" + esc(libelleStatutSejour("Confirmé")) + "</option><option value='Nouvelle'>" + esc(libelleStatutSejour("Nouvelle")) + "</option></select>"
+      : "<p class='raison'>" + t("noteDeplacementSejour") + "</p>") +
+    "<div id='sjErreur' class='rappel-echec' style='margin:6px 0;'></div>" +
+    "<div><button id='sjOk' class='principal'>" + t(creer ? "btnCreerReservation" : "btnConfirmerDeplacement") + "</button> <button id='sjFermer'>" + t("btnFermerDialogue") + "</button></div>";
+  fond.appendChild(boite);
+  document.body.appendChild(fond);
+  document.getElementById("sjFermer").onclick = () => fond.remove();
+  document.getElementById("sjOk").onclick = async () => {
+    const corps = {
+      chambreId: document.getElementById("sjChambre").value,
+      arrivee: document.getElementById("sjArrivee").value,
+      depart: document.getElementById("sjDepart").value,
+      personnes: Number(document.getElementById("sjPersonnes").value)
+    };
+    try {
+      if (creer) {
+        corps.clientNom = document.getElementById("sjNom").value;
+        corps.telephone = document.getElementById("sjTel").value;
+        corps.statut = document.getElementById("sjStatut").value;
+        await api("/api/" + marchandActif.id + "/sejours", { method: "POST", body: JSON.stringify(corps) });
+        fond.remove();
+        alert(t("msgReservationCreee"));
+      } else {
+        await api("/api/" + marchandActif.id + "/sejours/" + s.id + "/deplacer", { method: "PUT", body: JSON.stringify(corps) });
+        fond.remove();
+        alert(t("msgSejourDeplace"));
+      }
+      if (apres) apres();
+    } catch (e) {
+      document.getElementById("sjErreur").textContent = e.message;
+    }
+  };
+}
+
+let calendrierDebut = null;
+async function renderCalendrierChambres() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const NB = 14;
+  const cal = await api("/api/" + marchandActif.id + "/calendrier-chambres?jours=" + NB + (calendrierDebut ? "&debut=" + encodeURIComponent(calendrierDebut) : ""));
+  calendrierDebut = cal.debut;
+  const couleur = (occ, total) => (total <= 0 ? "#eee" : occ <= 0 ? "#d9f2dd" : occ >= total ? "#f5c6c2" : "#fde9b8");
+  zone.innerHTML =
+    "<h2>" + t("calendrierTitre") + "</h2>" +
+    "<p class='raison'>" + t("noteCalendrier") + "</p>" +
+    "<div class='no-print' style='margin:6px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;'>" +
+      "<button id='calPrec'>◀ " + t("btnSemainePrec") + "</button>" +
+      "<input type='date' id='calDate' value='" + cal.debut + "' />" +
+      "<button id='calAuj'>" + t("btnAujourdhui") + "</button>" +
+      "<button id='calSuiv'>" + t("btnSemaineSuiv") + " ▶</button>" +
+    "</div>" +
+    "<div style='overflow-x:auto;'><table class='table-donnees' id='tableCalendrier'><tr><th>" + t("theadChambre") + "</th>" +
+    cal.jours.map((j) => "<th style='text-align:center;min-width:54px;" + (j === cal.aujourdhui ? "background:#dbe9ff;" : "") + "'>" + esc(formaterJourIso(j, { weekday: "short", day: "numeric", month: undefined })) + "<div class='raison'>" + esc(formaterJourIso(j, { weekday: undefined, day: undefined, month: "short" })) + "</div></th>").join("") + "</tr>" +
+    (cal.lignes.length ? cal.lignes.map((l) =>
+      "<tr><td><strong>" + esc(l.nom) + "</strong><div class='raison'>" + t("nbChambres", { n: l.nombre }) + "</div></td>" +
+      l.nuits.map((n) => "<td data-cal-date='" + n.date + "' data-cal-chambre='" + esc(l.chambreId) + "' style='text-align:center;background:" + couleur(n.occupees, l.nombre) + ";' title=\"" + esc(l.nom + " — " + n.date + " : " + n.occupees + "/" + l.nombre) + "\">" + n.occupees + "/" + l.nombre + "</td>").join("") + "</tr>"
+    ).join("") : "<tr><td colspan='" + (cal.jours.length + 1) + "'>" + t("aucuneChambre") + "</td></tr>") +
+    "</table></div>" +
+    "<p class='raison'>" + t("legendeCalendrier") + "</p>";
+  const aller = (iso) => { calendrierDebut = iso; renderCalendrierChambres(); };
+  document.getElementById("calPrec").onclick = () => aller(ajouterJoursIso(cal.debut, -7));
+  document.getElementById("calSuiv").onclick = () => aller(ajouterJoursIso(cal.debut, 7));
+  document.getElementById("calAuj").onclick = () => aller(cal.aujourdhui);
+  document.getElementById("calDate").onchange = (e) => { if (e.target.value) aller(e.target.value); };
+}
+
+async function renderParametresHebergement() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const p = await api("/api/" + marchandActif.id + "/parametres");
+  zone.innerHTML =
+    "<h2>" + t("paramTitre") + "</h2>" +
+    "<label>" + t("labelFuseau") + "</label>" +
+    "<select id='fuseauHeb'>" +
+      ["Africa/Douala", "Africa/Libreville", "Africa/Brazzaville", "Africa/Kinshasa", "Africa/Lagos", "Africa/Abidjan", "Africa/Dakar", "Europe/Paris", "UTC"].map((z) =>
+        "<option value='" + z + "'" + (z === (p.fuseau || "Africa/Douala") ? " selected" : "") + ">" + z + "</option>").join("") +
+    "</select>" +
+    "<p class='raison'>" + t("noteFuseau") + "</p>" +
+    "<label>" + t("labelHeureArrivee") + "</label><input type='time' id='hebHeureArrivee' value='" + esc(p.heureArrivee || "14:00") + "' />" +
+    "<label>" + t("labelHeureDepart") + "</label><input type='time' id='hebHeureDepart' value='" + esc(p.heureDepart || "12:00") + "' />" +
+    "<label>" + t("labelDelaiAnnulation") + "</label><input type='number' min='0' step='1' id='hebDelai' value='" + (Number(p.delaiAnnulationHeures) || 0) + "' />" +
+    "<p class='raison'>" + t("noteDelaiAnnulation") + "</p>" +
+    "<label>" + t("labelNuitsMax") + "</label><input type='number' min='1' id='hebNuitsMax' value='" + (Number(p.nuitsMax) || 30) + "' />" +
+    "<label>" + t("labelAvanceMax") + "</label><input type='number' min='1' id='hebAvanceMax' value='" + (Number(p.avanceMaxJours) || 365) + "' />" +
+    "<label>" + t("labelNotePaiement") + "</label><input id='hebNotePaiement' value=\"" + esc(p.notePaiement || "") + "\" />" +
+    "<label>" + t("labelNotePaiementEn") + "</label><input id='hebNotePaiementEn' value=\"" + esc(p.notePaiementEn || "") + "\" />" +
+    "<label>" + t("labelMsgConfirmSejour") + "</label>" +
+    "<textarea id='hebMsgConfirm' rows='4'>" + esc(p.autoConfirmMessage || "") + "</textarea>" +
+    "<label>" + t("labelMsgConfirmSejourEn") + "</label>" +
+    "<textarea id='hebMsgConfirmEn' rows='4'>" + esc(p.autoConfirmMessageEn || "") + "</textarea>" +
+    "<div><button id='btnSauverParamsHeb' class='principal'>" + t("enregistrer") + "</button></div>";
+  document.getElementById("btnSauverParamsHeb").onclick = async () => {
+    try {
+      await api("/api/" + marchandActif.id + "/parametres", {
+        method: "PUT",
+        body: JSON.stringify({
+          fuseau: document.getElementById("fuseauHeb").value,
+          heureArrivee: document.getElementById("hebHeureArrivee").value,
+          heureDepart: document.getElementById("hebHeureDepart").value,
+          delaiAnnulationHeures: Number(document.getElementById("hebDelai").value) || 0,
+          nuitsMax: Number(document.getElementById("hebNuitsMax").value) || 30,
+          avanceMaxJours: Number(document.getElementById("hebAvanceMax").value) || 365,
+          notePaiement: document.getElementById("hebNotePaiement").value,
+          notePaiementEn: document.getElementById("hebNotePaiementEn").value,
+          autoConfirmMessage: document.getElementById("hebMsgConfirm").value,
+          autoConfirmMessageEn: document.getElementById("hebMsgConfirmEn").value
+        })
+      });
+      alert(t("alertParametresEnregistres"));
+      renderParametresHebergement();
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
 }
@@ -4902,9 +5415,42 @@ async function renderTableauDeBord() {
   return tuiles + sparkline + top + bas;
   }
 
+  function sectionDashboardHeb(d) {
+    const maxSpark = Math.max(1, ...d.sparkline7j);
+    const tuiles = "<div class='tuiles'>" +
+      tuile("sejours", d.sejoursPeriode, t("libelleArriveesPeriodeDash")) +
+      tuile("sejours", (d.caPeriode || 0).toLocaleString(localeCourante()) + " FCFA", t("libelleCaSejoursDash")) +
+      tuile("calendrier", d.chambresOccupeesCeSoir + "/" + d.chambresTotal + " (" + d.tauxOccupation + " %)", t("libelleOccupationDash")) +
+      tuile("sejours", d.arriveesAujourdhui, t("libelleArriveesAujourdhuiDash")) +
+      tuile("sejours", d.departsAujourdhui, t("libelleDepartsAujourdhuiDash")) +
+      tuile("sejours", d.nonConfirmes, t("libelleNonConfirmesDash"), d.nonConfirmes) +
+      tuile("conversations", d.conversationsEnAttente, t("libelleConvEnAttente"), d.conversationsEnAttente) +
+      "</div>";
+    const sparkline =
+      "<h3>" + t("h3Activite7j") + "</h3>" +
+      "<div class='sparkline'>" +
+        d.sparkline7j.map((v, i) => {
+          const jourReel = new Date(); jourReel.setDate(jourReel.getDate() - (6 - i));
+          const label = jours[(jourReel.getDay() + 6) % 7];
+          return "<div class='colonne'><div class='barre' style='height:" + Math.max(4, Math.round((v / maxSpark) * 80)) + "px' title='" + v + "'></div><div class='jour-label'>" + label + "</div></div>";
+        }).join("") +
+      "</div>";
+    const top = "<h3>" + t("h3ChambresTop") + "</h3>" +
+      (d.topChambres.length
+        ? "<table class='table-donnees'><tr><th>" + t("theadChambre") + "</th><th>" + t("theadQuantite") + "</th></tr>" +
+          d.topChambres.map((p) => "<tr><td>" + esc(p.nom) + "</td><td>" + p.quantite + "</td></tr>").join("") + "</table>"
+        : "<p class='raison'>" + t("msgPasAssezDonnees") + "</p>");
+    const bas = "<h3>" + t("h3ProchainesArrivees") + "</h3>" +
+      (d.prochainsSejours.length
+        ? "<table class='table-donnees'><tr><th>" + t("theadRef") + "</th><th>" + t("theadChambre") + "</th><th>" + t("theadArrivee") + "</th><th>" + t("theadDepartSejour") + "</th><th>" + t("theadClient") + "</th><th>" + t("theadStatut") + "</th></tr>" +
+          d.prochainsSejours.map((s) => "<tr><td>" + esc(s.reference) + "</td><td>" + esc(s.chambre) + "</td><td>" + esc(formaterJourIso(s.arrivee)) + "</td><td>" + esc(formaterJourIso(s.depart)) + "</td><td>" + esc(s.clientNom) + "</td><td>" + esc(libelleStatutSejour(s.statut)) + "</td></tr>").join("") + "</table>"
+        : "<p class='raison'>" + t("msgAucuneArriveeProche") + "</p>");
+    return tuiles + sparkline + top + bas;
+  }
+
   const sectionsDash = voletsDash.map((v, i) =>
     (hybrideDash ? "<h2 style='margin-top:26px; border-bottom:2px solid #e3e6ea; padding-bottom:4px;'>" + t(v === "service" ? "voletService" : "voletCatalogue") + "</h2>" : "") +
-    sectionDashboard(donneesDash[i], v !== "service")
+    (v === "hebergement" ? sectionDashboardHeb(donneesDash[i]) : sectionDashboard(donneesDash[i], v !== "service"))
   ).join("");
   zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode + sectionsDash;
   brancherDeplierVentes(zone);
@@ -4937,7 +5483,7 @@ async function renderSimulateur() {
   if (!simulateurHistoriques[id]) simulateurHistoriques[id] = [];
   const historique = simulateurHistoriques[id];
   const hybrideSimu = estHybrideAdmin();
-  const aUneTrace = marchandActif.type !== "service" || hybrideSimu;
+  const aUneTrace = marchandActif.type === "catalogue" || hybrideSimu;
 
   function dessiner() {
     zone.innerHTML =
@@ -5783,6 +6329,7 @@ function brancherBlocNumeroPublic() {
 // blocNumeroPublicHtml()/brancherBlocNumeroPublic() dans renderCompte() ci-dessous, tous gardes par
 // marchandActif.optionStockIllimite / optionLienCommande / optionNotificationsStatut.
 function blocOptionsPayantesHtml() {
+  if (marchandActif.type === "hebergement") return "<h3>" + t("h3OptionsPayantes") + "</h3><p class='raison'>" + t("noteOptionsHebergement") + "</p>";
   return "<h3>" + t("h3OptionsPayantes") + "</h3>" +
     "<p class='raison'>" + t("noteOptionsPayantes") + "</p>" +
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionStockIllimite'" + (marchandActif.optionStockIllimite ? " checked" : "") + " /> " + t("labelOptionStockIllimite") + "</label>" +
@@ -5939,6 +6486,7 @@ function brancherBlocModuleSecondaire() {
   };
 }
 function brancherBlocOptionsPayantes() {
+  if (marchandActif.type === "hebergement") return;
   brancherBlocModuleSecondaire();
   brancherBlocSourceFacturation();
   brancherBlocCleComptable();

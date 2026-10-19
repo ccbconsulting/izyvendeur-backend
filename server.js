@@ -20,6 +20,7 @@ const storage = require("./storage");
 const sh = require("./shared");
 const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
+const createHebergementEngine = require("./conversationHebergement");
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
 const remisesLib = require("./remises");
@@ -240,6 +241,7 @@ function cleEtatSecondaire(m) { return m.id + "::" + m.moduleSecondaire; }
 
 function fabriquerMoteur(type, merchantKey, optionsSupplementaires) {
   const options = Object.assign(creerOptionsEngine(merchantKey), optionsSupplementaires || {});
+  if (type === "hebergement") return createHebergementEngine(merchantKey, options);
   return type === "service" ? createServiceEngine(merchantKey, options) : createCatalogEngine(merchantKey, options);
 }
 
@@ -308,6 +310,8 @@ function vueEntree(entry, type) {
 // rendezvous -> service) l'imposent ; les autres (parametres, tableau de bord, simulateur, conversations...)
 // s'appliquent aux deux volets et utilisent `?volet=` (principal par defaut).
 const VOLET_DE_PERMISSION = { catalogue: "catalogue", commandes: "catalogue", caisse: "catalogue", inventaire: "catalogue", rapports: "catalogue", rendezvous: "service" };
+// Permission employe du role operationnel de chaque type de volet (l'hebergement partage « rendezvous » : reservations).
+function permissionDuVolet(t) { return t === "service" || t === "hebergement" ? "rendezvous" : "catalogue"; }
 function vuePourRequete(req, entry, permission) {
   if (!entry || !entry.moteurs || Object.keys(entry.moteurs).length < 2) return entry;
   const perms = Array.isArray(permission) ? permission : (permission ? [permission] : []);
@@ -804,6 +808,11 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/services/importer": "services_importes",
   "PUT /api/:id/rendezvous/:apptId/deplacer": "rendezvous_deplace",
   "PUT /api/:id/rendezvous/:apptId/statut": "rendezvous_statut_modifie",
+  "PUT /api/:id/chambres": "chambres_modifiees",
+  "POST /api/:id/chambres/importer": "chambres_importees",
+  "POST /api/:id/sejours": "sejour_cree",
+  "PUT /api/:id/sejours/:sejourId/deplacer": "sejour_deplace",
+  "PUT /api/:id/sejours/:sejourId/statut": "sejour_statut_modifie",
   "PUT /api/:id/parametres": "parametres_modifies",
   "PUT /api/:id/notification": "notification_modifiee",
   "PUT /api/:id/numero-whatsapp-public": "numero_public_modifie",
@@ -839,6 +848,10 @@ function detailAuditRequete(code, req) {
     case "commande_coordonnees_modifiees": return { commande: p.orderId, champs: [b.telephone != null ? "telephone" : null, b.adresse != null ? "adresse" : null].filter(Boolean) };
     case "rendezvous_statut_modifie": return { rendezvous: p.apptId, statut: b.statut || null };
     case "rendezvous_deplace": return { rendezvous: p.apptId, date: b.date || null, heure: b.heure || null };
+    case "sejour_statut_modifie": return { sejour: p.sejourId, statut: b.statut || null };
+    case "sejour_deplace": return { sejour: p.sejourId, arrivee: b.arrivee || null, depart: b.depart || null };
+    case "sejour_cree": return { arrivee: b.arrivee || null, depart: b.depart || null };
+    case "chambres_importees": return { fichier: req.file ? req.file.originalname : null };
     case "services_importes": return { fichier: req.file ? req.file.originalname : null };
     case "facture_creee": case "paiement_facture_enregistre":
       return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
@@ -1174,7 +1187,11 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification, moduleSecondaire } = req.body || {};
   if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
-  if (type !== "catalogue" && type !== "service") return res.status(400).json({ erreur: "type doit être 'catalogue' ou 'service'." });
+  if (type !== "catalogue" && type !== "service" && type !== "hebergement") return res.status(400).json({ erreur: "type doit être 'catalogue', 'service' ou 'hebergement'." });
+  // Etape 65 : le type « hebergement » n'existe qu'en volet UNIQUE pour l'instant (hybride + hebergement : Etape 66).
+  if (type === "hebergement" && moduleSecondaire !== undefined && moduleSecondaire !== null && moduleSecondaire !== "" && moduleSecondaire !== "aucun") {
+    return res.status(400).json({ erreur: "Le type 'hebergement' ne peut pas encore être combiné avec un second volet." });
+  }
   // Marchand HYBRIDE (Etape 48) : second volet accorde des la creation — reserve au super-administrateur
   // (cette route l'est deja en entier), jamais deductible d'une autre source.
   if (moduleSecondaire !== undefined && moduleSecondaire !== null && moduleSecondaire !== "") {
@@ -1300,7 +1317,7 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
   if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
   const rolesIncompatibles = rolesDemandes.filter((r) =>
-    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service)
+    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement)
   );
   if (rolesIncompatibles.length) {
     return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -1371,7 +1388,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
       const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
       if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
       const rolesIncompatibles = rolesDemandes.filter((r) =>
-        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service)
+        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement)
       );
       if (rolesIncompatibles.length) {
         return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -1483,6 +1500,7 @@ app.put("/api/marchands/:id/module-secondaire", protegerAcces, async (req, res) 
   const brut = (req.body || {}).moduleSecondaire;
   const demande = brut === undefined || brut === null || brut === "" || brut === "aucun" ? null : brut;
   if (demande !== null && demande !== "catalogue" && demande !== "service") return res.status(400).json({ erreur: "moduleSecondaire doit être 'catalogue', 'service' ou null." });
+  if (demande !== null && entry.merchant.type === "hebergement") return res.status(400).json({ erreur: "Un marchand de type 'hebergement' ne peut pas encore avoir de second volet." });
   if (demande !== null && demande === entry.merchant.type) return res.status(400).json({ erreur: "Le second volet doit être différent du type principal (" + entry.merchant.type + ")." });
   const avant = modulesDuMarchand(entry.merchant)[1] || null;
   try {
@@ -2795,6 +2813,120 @@ app.post("/api/:id/rendezvous/:apptId/izyfacture/paiement", protegerAcces, async
   }
 });
 
+// -- Marchand hebergement (Etape 65) : chambres par type, sejours, calendrier d'occupation --
+// Meme permission employe que les rendez-vous (« rendezvous » = les reservations de ce marchand). Ces routes ne
+// repondent que pour un marchand de type hebergement ; le type lui-meme n'est accorde que par le
+// super-administrateur a la creation (POST /api/marchands, reserve au super-administrateur).
+function entreeHebergement(req, res) {
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return null;
+  if (entry.engine.type !== "hebergement") { res.status(400).json({ erreur: "Ce marchand n'est pas de type hébergement." }); return null; }
+  return entry;
+}
+
+app.get("/api/:id/chambres", protegerAcces, (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  res.json(entry.engine.getChambres());
+});
+
+app.put("/api/:id/chambres", protegerAcces, (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  const nouveau = entry.engine.updateChambres(req.body);
+  if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
+  res.json(nouveau);
+});
+
+// Import CSV des types de chambre. Colonnes (ordre libre, casse/accents ignores) : "Nom", "Nombre" (de chambres),
+// "Prix" (FCFA par nuit) et, facultatif, "Capacite" (personnes, 2 par defaut). Fusionne avec l'existant, ignore les
+// noms deja presents (un fichier renvoye deux fois ne cree pas de doublons).
+app.post("/api/:id/chambres/importer", protegerAcces, uploadFichierCatalogue.single("fichier"), (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"fichier\" attendu)." });
+  const texte = req.file.buffer.toString("utf8").replace(/^﻿/, "");
+  const lignes = texte.split(/\r\n|\n|\r/).filter((l) => l.trim() !== "");
+  if (!lignes.length) return res.status(400).json({ erreur: "Fichier vide." });
+  if (lignes.length > 201) return res.status(400).json({ erreur: "Fichier trop long (200 types de chambre maximum par import)." });
+  const separateur = lignes[0].indexOf(";") !== -1 ? ";" : ",";
+  const entetes = parserLigneCsv(lignes[0], separateur).map((h) => sansAccents(h).toLowerCase());
+  const idx = (motCle) => entetes.findIndex((h) => h.indexOf(motCle) !== -1);
+  const iNom = idx("nom"), iNombre = idx("nombre"), iPrix = idx("prix"), iCap = idx("capacit");
+  if (iNom === -1 || iNombre === -1 || iPrix === -1) {
+    return res.status(400).json({ erreur: "Colonnes attendues introuvables (\"Nom\", \"Nombre\" de chambres et \"Prix\" par nuit ; \"Capacité\" facultative)." });
+  }
+  const actuels = entry.engine.getChambres();
+  const vus = new Set(actuels.map((x) => String(x.nom || "").trim().toLowerCase()));
+  const nouveaux = [], doublons = [], erreurs = [];
+  const base = Date.now();
+  for (let i = 1; i < lignes.length; i++) {
+    const champs = parserLigneCsv(lignes[i], separateur);
+    const nom = (champs[iNom] || "").trim();
+    if (!nom) continue;
+    if (nom.length > 80) { erreurs.push("ligne " + (i + 1) + " (" + nom.slice(0, 30) + "…) : nom trop long (80 caractères maximum)"); continue; }
+    const nombre = parseInt(String(champs[iNombre] || "").replace(/[^\d]/g, ""), 10);
+    if (!Number.isFinite(nombre) || nombre < 1 || nombre > 500) { erreurs.push("ligne " + (i + 1) + " (" + nom + ") : nombre de chambres invalide (1 à 500)"); continue; }
+    const prix = parserPrixFcfa(champs[iPrix]);
+    if (prix == null) { erreurs.push("ligne " + (i + 1) + " (" + nom + ") : prix invalide"); continue; }
+    let capacite = 2;
+    if (iCap !== -1 && String(champs[iCap] || "").trim() !== "") {
+      capacite = parseInt(String(champs[iCap]).replace(/[^\d]/g, ""), 10);
+      if (!Number.isFinite(capacite) || capacite < 1 || capacite > 50) { erreurs.push("ligne " + (i + 1) + " (" + nom + ") : capacité invalide (1 à 50 personnes)"); continue; }
+    }
+    const cle = nom.toLowerCase();
+    if (vus.has(cle)) { if (doublons.indexOf(nom) === -1) doublons.push(nom); continue; }
+    vus.add(cle);
+    nouveaux.push({ id: "c" + base + "_" + nouveaux.length, nom, nombre, prix, capacite, description: "" });
+  }
+  if (!nouveaux.length) return res.json({ ajoutes: 0, doublonsIgnores: doublons, erreurs });
+  const liste = entry.engine.updateChambres(actuels.concat(nouveaux));
+  res.json({ ajoutes: nouveaux.length, doublonsIgnores: doublons, erreurs, chambres: liste });
+});
+
+app.get("/api/:id/sejours", protegerAcces, (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  res.json(entry.engine.getSejours());
+});
+
+// Nouveau sejour saisi par la reception (appel, comptoir).
+app.post("/api/:id/sejours", protegerAcces, (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.engine.creerSejourAdmin({
+    chambreId: b.chambreId, arrivee: b.arrivee, depart: b.depart, nuits: b.nuits, personnes: b.personnes,
+    clientNom: b.clientNom, telephone: b.telephone, statut: b.statut, par: (req.auth && req.auth.adminUser) || null
+  });
+  if (r.erreur === "occupe") return res.status(409).json({ erreur: r.message, code: r.erreur });
+  if (r.erreur) return res.status(400).json({ erreur: r.message, code: r.erreur });
+  res.status(201).json(r.sejour);
+});
+
+app.put("/api/:id/sejours/:sejourId/deplacer", protegerAcces, (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.engine.deplacerSejour(req.params.sejourId, {
+    chambreId: b.chambreId, arrivee: b.arrivee, depart: b.depart, nuits: b.nuits, personnes: b.personnes,
+    par: (req.auth && req.auth.adminUser) || null
+  });
+  if (r.erreur === "introuvable") return res.status(404).json({ erreur: r.message });
+  if (r.erreur === "occupe") return res.status(409).json({ erreur: r.message, code: r.erreur });
+  if (r.erreur) return res.status(400).json({ erreur: r.message, code: r.erreur });
+  res.json(r.sejour);
+});
+
+app.put("/api/:id/sejours/:sejourId/statut", protegerAcces, (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  const { statut, raisonAnnulation } = req.body || {};
+  const s = entry.engine.updateSejourStatut(req.params.sejourId, statut, raisonAnnulation);
+  if (!s) return res.status(404).json({ erreur: "Réservation introuvable." });
+  if (s.erreur === "occupe") return res.status(409).json({ erreur: s.message, code: s.erreur });
+  if (s.erreur) return res.status(400).json({ erreur: s.message, code: s.erreur });
+  res.json(s);
+});
+
+// Calendrier d'occupation : ?debut=AAAA-MM-JJ&jours=14 (62 maximum).
+app.get("/api/:id/calendrier-chambres", protegerAcces, (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  res.json(entry.engine.getCalendrier(req.query && req.query.debut ? String(req.query.debut) : null, req.query && req.query.jours));
+});
+
 // -- Parametres : commun aux deux types (autoConfirmMessage, + horaires/dureeCreneauMinutes pour service) --
 // (permission employe requise : "parametres")
 
@@ -3101,7 +3233,7 @@ function simulateurHybrideAutorise(req, entry) {
   if (req.auth.role !== "employe") return true;
   const roles = req.auth.roles || [];
   if (roles.indexOf("conversations") !== -1) return true;
-  return Object.keys(entry.moteurs).every((t) => roles.indexOf(t === "service" ? "rendezvous" : "catalogue") !== -1);
+  return Object.keys(entry.moteurs).every((t) => roles.indexOf(permissionDuVolet(t)) !== -1);
 }
 
 function simulerHybride(entry, message) {
@@ -3134,7 +3266,7 @@ app.post("/api/:id/simulateur/message", protegerAcces, (req, res) => {
   const merchantExistant = engines[req.params.id];
   // Marchand hybride : le role operationnel de CHACUN de ses volets ouvre le Simulateur (volet choisi par `?volet=`).
   const permissionsOperationnelles = merchantExistant
-    ? Object.keys(merchantExistant.moteurs).map((t) => (t === "service" ? "rendezvous" : "catalogue"))
+    ? Object.keys(merchantExistant.moteurs).map(permissionDuVolet)
     : ["catalogue"];
   const modeRouteur = !!(merchantExistant && estHybride(merchantExistant) && !(req.query && req.query.volet));
   const entry = getMarchandAutorise(req, res, permissionsOperationnelles.concat("conversations")); if (!entry) return;
@@ -3151,7 +3283,7 @@ app.post("/api/:id/simulateur/reset", protegerAcces, (req, res) => {
   const merchantExistant = engines[req.params.id];
   // Marchand hybride : le role operationnel de CHACUN de ses volets ouvre le Simulateur (volet choisi par `?volet=`).
   const permissionsOperationnelles = merchantExistant
-    ? Object.keys(merchantExistant.moteurs).map((t) => (t === "service" ? "rendezvous" : "catalogue"))
+    ? Object.keys(merchantExistant.moteurs).map(permissionDuVolet)
     : ["catalogue"];
   const modeRouteur = !!(merchantExistant && estHybride(merchantExistant) && !(req.query && req.query.volet));
   const entry = getMarchandAutorise(req, res, permissionsOperationnelles.concat("conversations")); if (!entry) return;
@@ -3366,14 +3498,12 @@ app.post("/webhook", async (req, res) => {
       const items = construireItemsListe(marchand);
       const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
       const rows = construireLignesListe(items, offset, etatPourLangue, (estCatalogue ? [] : lignesMonRendezVous(marchand, from, etatPourLangue)).concat(ligneMenuPrincipal(marchand, etatPourLangue)));
-      const texteCorps = estCatalogue
-        ? tW(etatPourLangue, "Voici la suite de nos articles :", "Here are more of our items:")
-        : tW(etatPourLangue, "Voici la suite de nos services :", "Here are more of our services:");
-      db.logConversationMessage(merchantId, from, "client", "Voir plus " + (estCatalogue ? "d'articles" : "de services")).catch(() => {});
+      const lib = libellesListeAccueil(marchand, etatPourLangue);
+      const texteCorps = lib.suite;
+      db.logConversationMessage(merchantId, from, "client", lib.journal).catch(() => {});
       const envoye = await envoyerListeWhatsApp(
-        from, phoneNumberId, texteCorps,
-        estCatalogue ? tW(etatPourLangue, "Voir les articles", "See items") : tW(etatPourLangue, "Voir les services", "See services"),
-        [{ title: estCatalogue ? tW(etatPourLangue, "Nos articles", "Our items") : tW(etatPourLangue, "Nos services", "Our services"), rows }]
+        from, phoneNumberId, texteCorps, lib.bouton,
+        [{ title: lib.section, rows }]
       ).catch(() => false);
       if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
       else await envoyerMessageWhatsApp(from, texteCorps + "\n" + items.slice(offset).map((it) => "• " + it.nom).join("\n"), phoneNumberId);
@@ -3429,10 +3559,11 @@ app.post("/webhook", async (req, res) => {
     // Etape 63 - clic sur « Mon rendez-vous » : pure navigation (aucun changement d'etat de la conversation) ; on
     // propose Annuler / Reporter / Contacter un conseiller. Le clic sur l'un de ces boutons passe ensuite par le
     // moteur comme si la cliente avait ecrit « annuler mon rendez-vous » / « reporter mon rendez-vous ».
-    if (idInteractifClique === ID_MON_RDV && marchand.engine.type === "service") {
+    if (idInteractifClique === ID_MON_RDV && (marchand.engine.type === "service" || marchand.engine.type === "hebergement")) {
       const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
-      const texteCorps = tW(etatPourLangue, "Que souhaitez-vous faire de votre rendez-vous ?", "What would you like to do with your appointment?");
-      db.logConversationMessage(merchantId, from, "client", tW(etatPourLangue, "Mon rendez-vous", "My appointment")).catch(() => {});
+      const heb = marchand.engine.type === "hebergement";
+      const texteCorps = heb ? tW(etatPourLangue, "Que souhaitez-vous faire de votre réservation ?", "What would you like to do with your booking?") : tW(etatPourLangue, "Que souhaitez-vous faire de votre rendez-vous ?", "What would you like to do with your appointment?");
+      db.logConversationMessage(merchantId, from, "client", heb ? tW(etatPourLangue, "Ma réservation", "My booking") : tW(etatPourLangue, "Mon rendez-vous", "My appointment")).catch(() => {});
       const envoye = await envoyerBoutonsWhatsApp(from, phoneNumberId, texteCorps, [
         { id: ID_RDV_ANNULER, title: tW(etatPourLangue, "Annuler", "Cancel") },
         { id: ID_RDV_REPORTER, title: tW(etatPourLangue, "Reporter", "Reschedule") },
@@ -3589,6 +3720,12 @@ function tronquerTexte(texte, max) {
 // pertinent pour le moteur service, qui n'a pas de categories).
 function construireItemsListe(marchand, categorieFiltre) {
   const estCatalogue = marchand.engine.type === "catalogue";
+  if (marchand.engine.type === "hebergement") {
+    // Etape 65 : un type de chambre par ligne, avec son tarif et sa capacite
+    return marchand.engine.getChambres().filter((c) => Number(c.nombre) > 0).map((c) => ({
+      id: c.id, nom: c.nom, description: sh.formatFcfa(Number(c.prix) || 0) + " / nuit — " + (Number(c.capacite) || 2) + " pers."
+    }));
+  }
   if (!estCatalogue) {
     return marchand.engine.getServices().map((s) => ({ id: s.id, nom: s.nom, description: s.dureeMinutes + " min — " + sh.formatFcfa(s.prix) }));
   }
@@ -3633,6 +3770,10 @@ function construireCategoriesCatalogue(marchand) {
 // qui a au moins un rendez-vous a venir (sinon elle n'aurait aucun sens et prendrait une des 10 places).
 function lignesMonRendezVous(marchand, telephone, etat) {
   try {
+    if (marchand && marchand.engine && marchand.engine.type === "hebergement" && typeof marchand.engine.nbSejoursAVenir === "function") {
+      if (!(marchand.engine.nbSejoursAVenir(telephone) > 0)) return [];
+      return [{ id: ID_MON_RDV, title: tW(etat, "Ma réservation", "My booking"), description: tW(etat, "Annuler ou reporter", "Cancel or reschedule") }];
+    }
     if (!marchand || !marchand.engine || marchand.engine.type !== "service" || typeof marchand.engine.nbRdvsAVenir !== "function") return [];
     if (!(marchand.engine.nbRdvsAVenir(telephone) > 0)) return [];
     return [{ id: ID_MON_RDV, title: tW(etat, "Mon rendez-vous", "My appointment"), description: tW(etat, "Annuler ou reporter", "Cancel or reschedule") }];
@@ -3641,6 +3782,14 @@ function lignesMonRendezVous(marchand, telephone, etat) {
 
 // Etape 64 : pour un marchand HYBRIDE (au moins deux volets utilisables), ligne « Menu principal » qui ramene au menu
 // a deux boutons (produits / rendez-vous). Vide pour un marchand a un seul volet : rien ne change pour lui.
+// Etape 65 : libelles de la liste d'accueil selon le type (catalogue : articles ; service : services ; hebergement : chambres).
+function libellesListeAccueil(marchand, etat) {
+  const type = marchand.engine.type;
+  if (type === "catalogue") return { bouton: tW(etat, "Voir les articles", "See items"), section: tW(etat, "Nos articles", "Our items"), suite: tW(etat, "Voici la suite de nos articles :", "Here are more of our items:"), journal: "Voir plus d'articles", repli: "" };
+  if (type === "hebergement") return { bouton: tW(etat, "Voir les chambres", "See rooms"), section: tW(etat, "Nos chambres", "Our rooms"), suite: tW(etat, "Voici la suite de nos chambres :", "Here are more of our rooms:"), journal: "Voir plus de chambres", repli: "" };
+  return { bouton: tW(etat, "Voir les services", "See services"), section: tW(etat, "Nos services", "Our services"), suite: tW(etat, "Voici la suite de nos services :", "Here are more of our services:"), journal: "Voir plus de services", repli: "" };
+}
+
 function ligneMenuPrincipal(marchand, etat) {
   try {
     if (!marchand || !marchand.routeur || typeof marchand.routeur.voletsUtilisables !== "function") return [];
@@ -3753,6 +3902,10 @@ function resoudreTexteInteractif(marchand, interactive) {
     const p = marchand.engine.getCatalog().filter((x) => x.id === id)[0];
     return p ? p.nom : id;
   }
+  if (marchand.engine.type === "hebergement") {
+    const c = marchand.engine.getChambres().filter((x) => x.id === id)[0];
+    return c ? c.nom : id;
+  }
   const s = marchand.engine.getServices().filter((x) => x.id === id)[0];
   return s ? s.nom : id;
 }
@@ -3842,6 +3995,11 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   if (etat.stage === "idle" && etat.pretPourChoix) {
     const estCatalogue = marchand.engine.type === "catalogue";
     texte = compacterTexteMenuCatalogue(marchand, texte, etat); // Etape 50 : voir plus haut
+    // Etape 65 : la liste des chambres figure deja dans le menu cliquable : on la retire du corps du message.
+    if (marchand.engine.type === "hebergement") {
+      const sans = texte.split("\n").filter((l) => l.indexOf("• ") !== 0).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+      if (sans) texte = sans;
+    }
 
     // Navigation par categorie (Etape 24) : seulement si ca a un vrai interet (2+ categories distinctes) -
     // un catalogue non categorise, ou avec une seule categorie, garde le comportement direct d'avant (liste
@@ -3857,13 +4015,8 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     if (!items.length) return false;
     const rows = construireLignesListe(items, 0, etat, (estCatalogue ? [] : lignesMonRendezVous(marchand, destinataire, etat)).concat(ligneMenuPrincipal(marchand, etat)));
 
-    return envoyerListeWhatsApp(
-      destinataire,
-      phoneNumberId,
-      texte,
-      estCatalogue ? tW(etat, "Voir les articles", "See items") : tW(etat, "Voir les services", "See services"),
-      [{ title: estCatalogue ? tW(etat, "Nos articles", "Our items") : tW(etat, "Nos services", "Our services"), rows }]
-    );
+    const lib = libellesListeAccueil(marchand, etat);
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, lib.bouton, [{ title: lib.section, rows }]);
   }
 
   // Choix livraison vs retrait en boutique (voir conversation.js / retraitConfigure()) : seulement 2
@@ -3964,7 +4117,17 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   // Etape 63 : plusieurs rendez-vous a venir -> liste cliquable (au lieu d'une liste numerotee a retaper).
   if (etat.stage === "awaiting_rdv_choice" && etat.rdvChoix && etat.rdvChoix.length) {
     const rows = etat.rdvChoix.slice(0, 9).map((r, i) => ({ id: PREFIXE_RDV_CHOIX + i, title: tronquerTexte(r.ref, 24), description: tronquerTexte(r.detail, 72) }));
-    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Choisir", "Choose"), [{ title: tW(etat, "Vos rendez-vous", "Your appointments"), rows }]);
+    const titreChoix = marchand.engine.type === "hebergement" ? tW(etat, "Vos réservations", "Your bookings") : tW(etat, "Vos rendez-vous", "Your appointments");
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Choisir", "Choose"), [{ title: titreChoix, rows }]);
+  }
+
+  // Etape 65 : nombre de personnes (hebergement) -> 3 boutons rapides ; le client peut taper un autre nombre.
+  if (marchand.engine.type === "hebergement" && etat.stage === "awaiting_personnes") {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: "1", title: tW(etat, "1 personne", "1 person") },
+      { id: "2", title: tW(etat, "2 personnes", "2 people") },
+      { id: "3", title: tW(etat, "3 personnes", "3 people") }
+    ]);
   }
 
   if (etat.stage === "awaiting_slot_choice" && etat.proposedSlots && etat.proposedSlots.length) {
@@ -4482,6 +4645,7 @@ async function reessayerFacturationsIzyFactureEnAttente() {
     // catalogue (commandes) ET service (rendez-vous honores, Etape 46)
     if (entry.merchant.actif === false) continue;
     if (!entry.merchant.optionFacturationIzyfacture || !entry.merchant.izyfactureApiKey) continue;
+    if (entry.engine.type === "hebergement") continue; // Etape 66 : facturation des sejours
     const service = entry.engine.type === "service";
     let commandes;
     try {
