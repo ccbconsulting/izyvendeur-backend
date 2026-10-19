@@ -12,6 +12,11 @@
   header h1 { font-size: 1.15em; margin: 0; font-weight: 600; }
   header select { padding: 6px 10px; border-radius: 6px; border: none; font-size: 0.95em; }
   main { max-width: 1100px; margin: 24px auto; padding: 0 16px 60px; }
+  /* Etape 64 : marchand hybride - barre de groupes (niveau 1) au-dessus de la barre d'onglets (niveau 2) */
+  #barreGroupes { display: none; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  #barreGroupes.visible { display: flex; }
+  #barreGroupes button { padding: 10px 20px; border: 2px solid #14213d; background: #fff; border-radius: 10px; cursor: pointer; font-size: 1em; font-weight: 600; color: #14213d; }
+  #barreGroupes button.actif { background: #14213d; color: #fff; }
   #barreOnglets { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
   #barreOnglets button { padding: 8px 16px; border: 1px solid #d6dbe3; background: #fff; border-radius: 20px; cursor: pointer; font-size: 0.92em; color: #33404f; }
   #barreOnglets button.actif { background: #14213d; color: #fff; border-color: #14213d; }
@@ -130,6 +135,7 @@
   </span>
 </header>
 <main>
+  <div id="barreGroupes"></div>
   <div id="barreOnglets"></div>
   <div id="contenuOnglet"><div class="chargement"></div></div>
 </main>
@@ -433,6 +439,7 @@ const I18N = {
     factCat_achat_marchandises: "Achat de marchandises", factCat_transport: "Transport", factCat_loyer: "Loyer", factCat_salaires: "Salaires", factCat_electricite_eau: "Électricité / eau", factCat_telecom: "Téléphone / internet", factCat_publicite: "Publicité", factCat_entretien: "Entretien", factCat_taxes: "Taxes et impôts", factCat_autre: "Autre",
 
     ongletTableauDeBord: "Tableau de bord",
+    groupeProduits: "Produits", groupeRdv: "Rendez-vous", groupeEchanges: "Échanges", groupeAdmin: "Administration",
     ongletServices: "Services",
     ongletRendezvous: "Rendez-vous",
     ongletSimulateur: "Simulateur WhatsApp",
@@ -1323,6 +1330,7 @@ const I18N = {
     factCat_achat_marchandises: "Goods purchase", factCat_transport: "Transport", factCat_loyer: "Rent", factCat_salaires: "Salaries", factCat_electricite_eau: "Electricity / water", factCat_telecom: "Phone / internet", factCat_publicite: "Advertising", factCat_entretien: "Maintenance", factCat_taxes: "Taxes", factCat_autre: "Other",
 
     ongletTableauDeBord: "Dashboard",
+    groupeProduits: "Products", groupeRdv: "Appointments", groupeEchanges: "Conversations", groupeAdmin: "Administration",
     ongletServices: "Services",
     ongletRendezvous: "Appointments",
     ongletSimulateur: "WhatsApp Simulator",
@@ -2456,7 +2464,42 @@ function construireOnglets() {
     return requis.some((p) => (moi.roles || []).indexOf(p) !== -1);
   });
 
-  barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "' class='" + (i === 0 ? "actif" : "") + "'>" + esc(o[1]) + "</button>").join("");
+  // Etape 64 : marchand HYBRIDE = onglets regroupes (Tableau de bord, Produits, Rendez-vous, Echanges, Administration).
+  // Les boutons d'onglet restent TOUS dans le DOM (allerVersOnglet() et les tuiles du Tableau de bord continuent de
+  // fonctionner) ; seuls ceux du groupe actif sont affiches. Marchand a un seul volet : rien n'est regroupe.
+  const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
+    services: "rdv", rendezvous: "rdv", parametresService: "rdv", simulateur: "echanges", conversations: "echanges", facturation: "admin", employes: "admin", journal: "admin", compte: "admin" };
+  const LIBELLE_GROUPE = { dashboard: t("ongletTableauDeBord"), produits: t("groupeProduits"), rdv: t("groupeRdv"), echanges: t("groupeEchanges"), admin: t("groupeAdmin") };
+  const barreGroupes = document.getElementById("barreGroupes");
+  const ordreGroupes = [];
+  if (hybride) onglets.forEach((o) => { const g = GROUPE_DE[o[0]] || "admin"; if (ordreGroupes.indexOf(g) === -1) ordreGroupes.push(g); });
+  const groupeActuel = (idOnglet) => (hybride ? (GROUPE_DE[idOnglet] || "admin") : null);
+  barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "'" + (hybride ? " data-groupe='" + groupeActuel(o[0]) + "'" : "") + " class='" + (i === 0 ? "actif" : "") + "'>" + esc(o[1]) + "</button>").join("");
+  const activerGroupe = (g) => {
+    if (!hybride) return;
+    Array.prototype.forEach.call(barreGroupes.querySelectorAll("button"), (b) => b.classList.toggle("actif", b.dataset.groupe === g));
+    let nb = 0;
+    Array.prototype.forEach.call(barre.querySelectorAll("button"), (b) => {
+      const dedans = b.dataset.groupe === g;
+      b.style.display = dedans ? "" : "none";
+      if (dedans) nb++;
+    });
+    barre.style.display = nb > 1 ? "" : "none"; // un groupe d'un seul onglet n'a pas besoin de seconde barre
+  };
+  if (hybride && ordreGroupes.length) {
+    barreGroupes.classList.add("visible");
+    barreGroupes.innerHTML = ordreGroupes.map((g) => "<button data-groupe='" + g + "'>" + esc(LIBELLE_GROUPE[g] || g) + "</button>").join("");
+    Array.prototype.forEach.call(barreGroupes.querySelectorAll("button"), (gb) => {
+      gb.onclick = () => {
+        const premier = barre.querySelector("button[data-groupe='" + gb.dataset.groupe + "']");
+        if (premier) premier.click();
+      };
+    });
+  } else {
+    barreGroupes.classList.remove("visible");
+    barreGroupes.innerHTML = "";
+    barre.style.display = "";
+  }
   const fonctions = {};
   const volets = {};
   onglets.forEach((o) => { fonctions[o[0]] = o[2]; volets[o[0]] = hybride ? (o[4] || null) : null; });
@@ -2464,11 +2507,13 @@ function construireOnglets() {
     btn.onclick = () => {
       Array.prototype.forEach.call(barre.querySelectorAll("button"), (b) => b.classList.remove("actif"));
       btn.classList.add("actif");
+      activerGroupe(btn.dataset.groupe);
       voletCourant = volets[btn.dataset.onglet];
       fonctions[btn.dataset.onglet]();
     };
   });
   voletCourant = onglets.length && hybride ? (onglets[0][4] || null) : null;
+  if (onglets.length) activerGroupe(groupeActuel(onglets[0][0]));
   if (onglets.length) onglets[0][2]();
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("accesNonConfigure") + "</div>";
 }

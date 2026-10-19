@@ -3365,7 +3365,7 @@ app.post("/webhook", async (req, res) => {
       const estCatalogue = marchand.engine.type === "catalogue";
       const items = construireItemsListe(marchand);
       const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
-      const rows = construireLignesListe(items, offset, etatPourLangue, estCatalogue ? [] : lignesMonRendezVous(marchand, from, etatPourLangue));
+      const rows = construireLignesListe(items, offset, etatPourLangue, (estCatalogue ? [] : lignesMonRendezVous(marchand, from, etatPourLangue)).concat(ligneMenuPrincipal(marchand, etatPourLangue)));
       const texteCorps = estCatalogue
         ? tW(etatPourLangue, "Voici la suite de nos articles :", "Here are more of our items:")
         : tW(etatPourLangue, "Voici la suite de nos services :", "Here are more of our services:");
@@ -3557,6 +3557,8 @@ const ID_LANG_FR = "IZY_LANG_FR";
 // Menu a deux boutons d'un marchand hybride (Etape 47, voir hybride.js).
 const ID_VOLET_CATALOGUE = "IZY_VOLET_CAT";
 const ID_VOLET_SERVICE = "IZY_VOLET_SVC";
+// Etape 64 : ligne cliquable « Menu principal » (marchand hybride) - equivalent du texte « menu principal » deja gere par hybride.js.
+const ID_MENU_PRINCIPAL = "IZY_MENU_PRINCIPAL";
 const ID_LANG_EN = "IZY_LANG_EN";
 const PREFIXE_RETIRER_PANIER = "IZY_DELCART_";
 // Navigation par categorie (Etape 24, 27 sept 2026 - demandee des qu'un catalogue depasse une poignee
@@ -3637,6 +3639,16 @@ function lignesMonRendezVous(marchand, telephone, etat) {
   } catch (e) { return []; }
 }
 
+// Etape 64 : pour un marchand HYBRIDE (au moins deux volets utilisables), ligne « Menu principal » qui ramene au menu
+// a deux boutons (produits / rendez-vous). Vide pour un marchand a un seul volet : rien ne change pour lui.
+function ligneMenuPrincipal(marchand, etat) {
+  try {
+    if (!marchand || !marchand.routeur || typeof marchand.routeur.voletsUtilisables !== "function") return [];
+    if (marchand.routeur.voletsUtilisables().length < 2) return [];
+    return [{ id: ID_MENU_PRINCIPAL, title: tW(etat, "◀ Menu principal", "◀ Main menu"), description: tW(etat, "Produits ou rendez-vous", "Products or appointments") }];
+  } catch (e) { return []; }
+}
+
 function construireLignesListe(items, offset, etat, lignesSupplementaires, prefixeVoirPlus) {
   const supplementaires = lignesSupplementaires || [];
   const placesReservees = 1 + supplementaires.length; // "Contacter un conseiller" + lignes supplementaires
@@ -3669,7 +3681,7 @@ async function envoyerEcranCategories(destinataire, phoneNumberId, marchand, off
     nom: cat || tW(etat, "Autres articles", "Other items"),
     description: ""
   }));
-  const rows = construireLignesListe(itemsCategories, offset, etat, [], PREFIXE_VOIR_PLUS_CATEGORIES);
+  const rows = construireLignesListe(itemsCategories, offset, etat, ligneMenuPrincipal(marchand, etat), PREFIXE_VOIR_PLUS_CATEGORIES);
   return envoyerListeWhatsApp(
     destinataire, phoneNumberId, texteCorps,
     tW(etat, "Voir les catégories", "See categories"),
@@ -3691,7 +3703,7 @@ async function envoyerEcranArticlesCategorie(destinataire, phoneNumberId, marcha
   const items = construireItemsListe(marchand, nomCategorie);
   if (!items.length) return envoyerEcranCategories(destinataire, phoneNumberId, marchand, 0, texteCorps, etat);
   const ligneRetour = { id: ID_RETOUR_CATEGORIES, title: tW(etat, "◀ Toutes les catégories", "◀ All categories") };
-  const rows = construireLignesListe(items, offset, etat, [ligneRetour], PREFIXE_VOIR_PLUS_DANS_CAT + catIndex + "_");
+  const rows = construireLignesListe(items, offset, etat, [ligneRetour].concat(ligneMenuPrincipal(marchand, etat)), PREFIXE_VOIR_PLUS_DANS_CAT + catIndex + "_");
   return envoyerListeWhatsApp(
     destinataire, phoneNumberId, texteCorps,
     tW(etat, "Voir les articles", "See items"),
@@ -3716,6 +3728,7 @@ function resoudreTexteInteractif(marchand, interactive) {
   if (id === ID_LANG_EN) return "en";
   if (id === ID_VOLET_CATALOGUE) return JETON_VOLET_CATALOGUE; // choix du volet (marchand hybride, voir hybride.js)
   if (id === ID_VOLET_SERVICE) return JETON_VOLET_SERVICE;
+  if (id === ID_MENU_PRINCIPAL) return "menu principal"; // Etape 64 : reconnu par hybride.js (RE_MENU_PRINCIPAL)
   if (id === ID_HUMAIN) return "un conseiller";
   if (id === ID_CONTACT_ECRIT) return "réponse écrite ici";
   if (id === ID_CONTACT_APPEL) return "être rappelé";
@@ -3842,7 +3855,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
     const items = construireItemsListe(marchand);
     if (!items.length) return false;
-    const rows = construireLignesListe(items, 0, etat, estCatalogue ? [] : lignesMonRendezVous(marchand, destinataire, etat));
+    const rows = construireLignesListe(items, 0, etat, (estCatalogue ? [] : lignesMonRendezVous(marchand, destinataire, etat)).concat(ligneMenuPrincipal(marchand, etat)));
 
     return envoyerListeWhatsApp(
       destinataire,
@@ -3883,7 +3896,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     // reste intacte).
     const rows = construireLignesListe(items, 0, etat, [
       { id: ID_AUTRE_ARTICLE, title: tW(etat, "◀ Autres articles", "◀ Other items"), description: tW(etat, "Revenir au catalogue complet", "Back to the full catalog") }
-    ]);
+    ].concat(ligneMenuPrincipal(marchand, etat)));
 
     return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, labels.bouton, [{ title: labels.section, rows }]);
   }
