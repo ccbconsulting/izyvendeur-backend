@@ -905,7 +905,15 @@ function detailAuditRequete(code, req) {
     case "catalogue_importe": return { fichier: req.file ? req.file.originalname : null };
     case "vente_caisse": return Object.assign({ lignes: Array.isArray(b.lignes) ? b.lignes.length : null, modePaiement: b.modePaiement || null },
       (b.remiseGlobale || b.motifRemise || (Array.isArray(b.lignes) && b.lignes.some((l) => l && l.remise))) ? { tentativeRemise: true, motif: b.motifRemise || null } : {});
-    case "parametres_modifies": case "infos_marchand_modifiees": case "izyfacture_parametres_modifies":
+    case "parametres_modifies": {
+      // Etape 67 : la regle d'annulation est une decision metier (le super-administrateur l'aide a la regler) :
+      // le journal garde ses VALEURS, pas seulement le nom des champs.
+      const d = { champs: cleCorpsAudit(b) };
+      if (b.delaiAnnulationHeures !== undefined) d.delaiAnnulationHeures = Number(b.delaiAnnulationHeures) || 0;
+      if (b.modeDelaiDepasse !== undefined) d.modeDelaiDepasse = b.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
+      return d;
+    }
+    case "infos_marchand_modifiees": case "izyfacture_parametres_modifies":
     case "services_modifies": case "logo_modifie": case "image_accueil_modifiee":
       return { champs: cleCorpsAudit(b) };
     default: return {};

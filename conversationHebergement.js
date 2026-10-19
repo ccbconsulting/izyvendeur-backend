@@ -58,6 +58,7 @@ function reglagesParDefaut() {
     notePaiement: "Règlement sur place, à votre arrivée.",
     notePaiementEn: "Payment on site, on arrival.",
     delaiAnnulationHeures: 0, // 0 = pas de delai : le client peut annuler / reporter jusqu'a l'arrivee
+    modeDelaiDepasse: "refuser", // Etape 67 : "refuser" (renvoi vers un conseiller) ou "accepter" (annulation marquee « tardive »)
     nuitsMax: NUITS_MAX_DEFAUT,
     avanceMaxJours: AVANCE_MAX_JOURS_DEFAUT,
     fuseau: sh.FUSEAU_PAR_DEFAUT
@@ -456,7 +457,9 @@ function createHebergementEngine(merchantKey, options) {
     changerStatut(s, "Confirmé");
     const ancien = s.remplaceId ? sejourParId(s.remplaceId) : null;
     if (ancien && STATUTS_ACTIFS.indexOf(ancien.statut) !== -1) {
-      changerStatut(ancien, "Annulé", "Reporté par le client via WhatsApp (remplacé par " + refSejour(s) + ")");
+      const reportTardif = sejourHorsDelai(ancien); // avant le changement de statut
+      changerStatut(ancien, "Annulé", (reportTardif ? "Reporté tardivement par le client via WhatsApp (moins de " + parseFloat(reg().delaiAnnulationHeures) + " h avant l'arrivée, remplacé par " : "Reporté par le client via WhatsApp (remplacé par ") + refSejour(s) + ")");
+      if (reportTardif) ancien.annulationTardive = true;
       ancien.remplaceParId = s.id;
       saveState();
       alerterSejourModifie("reporte", ancien, s);
@@ -479,7 +482,7 @@ function createHebergementEngine(merchantKey, options) {
   }
 
   function alerterSejourModifie(action, ancien, nouveau) {
-    const libelleAction = action === "annule" ? "annulée par le client" : "déplacée par le client";
+    const libelleAction = (action === "annule" ? "annulée" : "déplacée") + (ancien.annulationTardive ? " TARDIVEMENT" : "") + " par le client";
     notifierMarchand("rdv_modifie", [
       refSejour(ancien), ancien.chambre + " (" + libelleNuits(ancien.nuits, null) + ")", libelleAction,
       "du " + formatCourtNum(ancien.arrivee) + " au " + formatCourtNum(ancien.depart),
@@ -496,11 +499,15 @@ function createHebergementEngine(merchantKey, options) {
   }
   function nbSejoursAVenir(telephone) { return sejoursAVenirDuClient(telephone).length; }
 
-  function delaiOk(s) {
+  function modeDelai() { return reg().modeDelaiDepasse === "accepter" ? "accepter" : "refuser"; }
+  // Etape 67 : seul un sejour « Confirmé » est soumis au delai ; en mode « accepter », le client peut annuler /
+  // reporter mais le sejour est marque « annulation tardive ».
+  function sejourHorsDelai(s) {
     const h = parseFloat(reg().delaiAnnulationHeures);
-    if (!(h > 0)) return true;
-    return instantArrivee(s).getTime() - Date.now() >= h * 3600000;
+    if (!(h > 0) || !s || s.statut !== "Confirmé") return false;
+    return instantArrivee(s).getTime() - Date.now() < h * 3600000;
   }
+  function delaiOk(s) { return !sejourHorsDelai(s) || modeDelai() === "accepter"; }
   function messageDelaiDepasse(session, s) {
     const h = parseFloat(reg().delaiAnnulationHeures);
     return sh.t(session,
@@ -541,7 +548,9 @@ function createHebergementEngine(merchantKey, options) {
   function appliquerIntention(session, intention, s) {
     if (!delaiOk(s)) { resetSession(session); return messageDelaiDepasse(session, s); }
     if (intention === "annuler") {
-      changerStatut(s, "Annulé", "Annulé par le client via WhatsApp");
+      const tardif = sejourHorsDelai(s);
+      changerStatut(s, "Annulé", tardif ? "Annulé tardivement par le client via WhatsApp (moins de " + parseFloat(reg().delaiAnnulationHeures) + " h avant l'arrivée)" : "Annulé par le client via WhatsApp");
+      if (tardif) s.annulationTardive = true;
       saveState();
       alerterSejourModifie("annule", s, null);
       resetSession(session);
@@ -871,6 +880,7 @@ function createHebergementEngine(merchantKey, options) {
     if (sain.fuseau !== undefined && !sh.fuseauValide(sain.fuseau)) delete sain.fuseau;
     ["heureArrivee", "heureDepart"].forEach((k) => { if (sain[k] !== undefined && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(sain[k]))) delete sain[k]; });
     if (sain.delaiAnnulationHeures !== undefined) { const h = parseFloat(sain.delaiAnnulationHeures); sain.delaiAnnulationHeures = Number.isFinite(h) && h >= 0 ? Math.min(h, 720) : 0; }
+    if (sain.modeDelaiDepasse !== undefined) sain.modeDelaiDepasse = sain.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
     if (sain.nuitsMax !== undefined) { const n = parseInt(sain.nuitsMax, 10); sain.nuitsMax = Number.isFinite(n) && n >= 1 ? Math.min(n, 365) : NUITS_MAX_DEFAUT; }
     if (sain.avanceMaxJours !== undefined) { const n = parseInt(sain.avanceMaxJours, 10); sain.avanceMaxJours = Number.isFinite(n) && n >= 1 ? Math.min(n, 1095) : AVANCE_MAX_JOURS_DEFAUT; }
     state.settings = Object.assign({}, state.settings, sain);

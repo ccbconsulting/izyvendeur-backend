@@ -2283,3 +2283,17 @@ Quand un client d'un marchand hybride revenait au volet produits par le menu pri
 **Pas encore fait.** Rappel avant l'arrivée, facturation des séjours, rapports d'occupation, tarifs saisonniers ; type « transport » (capacité par départ, clôture des réservations, liste des passagers).
 
 Fichiers modifiés : `hybride.js`, `server.js`, `db.js`, `public/admin.html`.
+
+## Étape 67 — Délai d'annulation / de report réglé par le marchand (rendez-vous et chambres)
+
+**Ce qui change.** Dans **Paramètres** (service) et **Paramètres** (chambres), un bloc « Annulation et report par le client » : **délai en heures** avant le rendez-vous ou l'arrivée (0 = aucune limite, comme avant pour tous les marchands existants) et **mode au-delà du délai**, au choix du marchand :
+- **Refuser et renvoyer vers un conseiller** (défaut) : le bot explique le délai et invite à écrire « conseiller ». Pour le bouton « Annuler » du menu, le refus arrive avant la question de confirmation.
+- **Accepter, mais signaler « annulation tardive »** : l'annulation (ou le report, une fois le nouveau confirmé) est faite ; le rendez-vous / la réservation reçoit le badge **« Annulation tardive »** dans la liste, le motif indique « tardivement … (moins de X h avant) », et l'alerte envoyée à la gérante dit « annulé TARDIVEMENT par la cliente » (même modèle Meta, aucun nouveau modèle).
+
+Le délai ne concerne que les rendez-vous / séjours **« Confirmé »** : un « Nouvelle » (pas encore confirmé par la cliente) reste annulable à tout moment. La gérante garde toujours la main depuis /admin (aucun délai pour elle).
+
+**Super-administrateur.** Le réglage est visible et modifiable par le propriétaire du marchand, par un employé ayant le rôle « parametres » **et par vous** (sélectionnez le marchand, onglet Paramètres) pour l'aider à le régler. Le **Journal** garde les valeurs (« Délai d'annulation : 12 h — au-delà : Refuser… ») avec l'auteur de la modification. Ce n'est pas une option payante : aucun droit particulier à accorder.
+
+**Abandonné sur votre décision.** Point D (prévenir automatiquement la cliente quand la gérante déplace ou annule depuis /admin) : la gérante prévient elle-même la cliente ; rien n'est codé.
+
+Fichiers modifiés : `conversationService.js`, `conversationHebergement.js`, `server.js` (journal), `public/admin.html`. Aucune migration, aucune variable d'environnement. Prochaine étape : listes de jours et d'heures (Étape 68).

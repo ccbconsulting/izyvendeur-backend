@@ -131,6 +131,11 @@ function seedState() {
       dureeCreneauMinutes: DEFAULT_DUREE_CRENEAU_MINUTES,
       autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE,
       autoConfirmMessageEn: "",
+      // Etape 67 : delai limite d'annulation / report par la cliente (heures avant le rendez-vous ; 0 = aucune
+      // limite) et ce qui se passe au-dela : "refuser" (renvoi vers un conseiller) ou "accepter" (le rendez-vous
+      // est annule / deplace mais marque « annulation tardive » pour la gerante). Regle par marchand.
+      delaiAnnulationHeures: 0,
+      modeDelaiDepasse: "refuser",
       // Fuseau horaire du marchand (Etape 44) : toutes les heures de rendez-vous s'entendent dans ce
       // fuseau, jamais dans celui du serveur. `fuseauMigre` marque que les rendez-vous de cet etat ont
       // deja ete (re)interpretes dans ce fuseau - voir migrerFuseauRendezvous().
@@ -883,7 +888,7 @@ function createServiceEngine(merchantKey, options) {
     notifierMarchand("rdv_modifie", [
       orderRef(ancien),
       ancien.service + (ancien.praticienNom ? " (avec " + ancien.praticienNom + ")" : ""),
-      action === "annule" ? "annulé par la cliente" : "déplacé par la cliente",
+      (action === "annule" ? "annulé" : "déplacé") + (ancien.annulationTardive ? " TARDIVEMENT" : "") + " par la cliente",
       formatSlot(new Date(ancien.dateISO), null),
       nouveau ? formatSlot(new Date(nouveau.dateISO), null) : "aucun (annulation)",
       ancien.clientNom || "—",
@@ -1012,7 +1017,9 @@ function createServiceEngine(merchantKey, options) {
         // alerte « déplacé » part vers la gerante (au lieu de « confirmé » + « annulé »).
         const ancienRemplace = appt.remplaceId ? rdvParId(appt.remplaceId) : null;
         if (ancienRemplace && ACTIFS_STATUSES_RDV.indexOf(ancienRemplace.statut) !== -1) {
-          applyStatusChange(ancienRemplace, "Annulé", "Reporté par le client via WhatsApp (remplacé par " + orderRef(appt) + ")");
+          const reportTardif = rdvHorsDelai(ancienRemplace); // avant le changement de statut
+          applyStatusChange(ancienRemplace, "Annulé", (reportTardif ? "Reporté tardivement par le client via WhatsApp (moins de " + delaiHeures() + " h avant le rendez-vous, remplacé par " : "Reporté par le client via WhatsApp (remplacé par ") + orderRef(appt) + ")");
+          if (reportTardif) ancienRemplace.annulationTardive = true;
           ancienRemplace.remplaceParId = appt.id;
           saveState();
           alerterRdvModifie("reporte", ancienRemplace, appt);
@@ -1094,9 +1101,26 @@ function createServiceEngine(merchantKey, options) {
       .sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
   }
 
+  // Etape 67 : delai limite d'annulation / report. Seul un rendez-vous « Confirmé » est concerne (un « Nouvelle »
+  // n'a pas encore ete confirme par la cliente : elle peut toujours l'abandonner).
+  function modeDelai() { return state && state.settings && state.settings.modeDelaiDepasse === "accepter" ? "accepter" : "refuser"; }
+  function delaiHeures() { const h = parseFloat(state && state.settings && state.settings.delaiAnnulationHeures); return h > 0 ? h : 0; }
+  function rdvHorsDelai(appt) {
+    const h = delaiHeures();
+    if (!h || !appt || appt.statut !== "Confirmé") return false;
+    return new Date(appt.dateISO).getTime() - Date.now() < h * 3600000;
+  }
+  function messageDelaiDepasse(session, appt) {
+    const h = delaiHeures();
+    return sh.t(session,
+      "Votre rendez-vous " + orderRef(appt) + " a lieu dans moins de " + h + " h : au-delà de ce délai, l'annulation ou le report ne se fait plus ici. Écrivez « conseiller » et notre équipe s'en occupe.",
+      "Your appointment " + orderRef(appt) + " is in less than " + h + " h: past that deadline, cancelling or rescheduling can no longer be done here. Type \"advisor\" and our team will take care of it.");
+  }
+
   // Etape 63 : un bouton « Annuler » du menu est plus facile a toucher par erreur qu'un message ecrit : on demande
   // donc une confirmation (Oui/Non) avant d'annuler. Un message ecrit (« annuler mon rendez-vous ») reste direct.
   function demanderConfirmationAnnulation(session, appt) {
+    if (rdvHorsDelai(appt) && modeDelai() === "refuser") { resetSession(session); return messageDelaiDepasse(session, appt); }
     session.stage = "awaiting_annulation_confirm";
     session.annulationApptId = appt.id;
     return sh.t(session,
@@ -1141,8 +1165,13 @@ function createServiceEngine(merchantKey, options) {
   }
 
   function appliquerIntentionRdv(session, intention, appt) {
+    const horsDelai = rdvHorsDelai(appt);
+    if (horsDelai && modeDelai() === "refuser") { resetSession(session); return messageDelaiDepasse(session, appt); }
     if (intention === "annuler") {
-      applyStatusChange(appt, "Annulé", "Annulé par le client via WhatsApp");
+      applyStatusChange(appt, "Annulé", horsDelai
+        ? "Annulé tardivement par le client via WhatsApp (moins de " + delaiHeures() + " h avant le rendez-vous)"
+        : "Annulé par le client via WhatsApp");
+      if (horsDelai) { appt.annulationTardive = true; saveState(); }
       resetSession(session);
       alerterRdvModifie("annule", appt, null);
       return sh.t(session,
@@ -1590,6 +1619,8 @@ function createServiceEngine(merchantKey, options) {
     // garde l'actuel) plutot que de casser tous les calculs de dates.
     delete sain.fuseauMigre;
     if (sain.fuseau !== undefined && !sh.fuseauValide(sain.fuseau)) delete sain.fuseau;
+    if (sain.delaiAnnulationHeures !== undefined) { const h = parseFloat(sain.delaiAnnulationHeures); sain.delaiAnnulationHeures = Number.isFinite(h) && h >= 0 ? Math.min(h, 720) : 0; }
+    if (sain.modeDelaiDepasse !== undefined) sain.modeDelaiDepasse = sain.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
     state.settings = Object.assign({}, state.settings, sain);
     saveState();
     return state.settings;

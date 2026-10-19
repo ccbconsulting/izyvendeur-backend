@@ -545,6 +545,14 @@ const I18N = {
     labelHeureArrivee: "Heure d'arrivée (à partir de)",
     labelHeureDepart: "Heure de départ (avant)",
     labelDelaiAnnulation: "Délai d'annulation / de report (heures avant l'arrivée)",
+    h3DelaiAnnulation: "Annulation et report par le client",
+    labelDelaiAnnulationRdv: "Délai d'annulation / de report (heures avant le rendez-vous)",
+    noteDelaiAnnulationRdv: "0 = la cliente peut annuler ou reporter jusqu'au rendez-vous. Exemple : 24 → moins de 24 h avant, elle ne peut plus le faire seule. Ne concerne que les rendez-vous « Confirmé ».",
+    labelModeDelai: "Au-delà du délai",
+    optionModeRefuser: "Refuser et renvoyer vers un conseiller",
+    optionModeAccepter: "Accepter, mais signaler « annulation tardive »",
+    noteModeDelai: "Refuser : le bot explique le délai et invite à écrire « conseiller ». Accepter : l'annulation ou le report est fait, et le rendez-vous / la réservation est marqué « Annulation tardive » (visible dans la liste, et l'alerte envoyée à la gérante le précise).",
+    badgeAnnulationTardive: "Annulation tardive",
     noteDelaiAnnulation: "0 = le client peut annuler ou reporter jusqu'à l'arrivée. Exemple : 48 → au-delà, le bot renvoie le client vers un conseiller.",
     labelNuitsMax: "Nombre de nuits maximum par réservation WhatsApp",
     labelAvanceMax: "Réservation possible jusqu'à (jours à l'avance)",
@@ -637,6 +645,7 @@ const I18N = {
     jdRoles: "Rôles : {r}",
     jdMotDePasseChange: "mot de passe changé",
     jdChamps: "Champs : {c}",
+    jdDelaiAnnulation: "Délai d'annulation : {h} h — au-delà : {m}",
     jdFichier: "Fichier : {f}",
     jdCible: "Cible : {c}",
     jdTelephone: "Client : {t}",
@@ -1521,6 +1530,14 @@ const I18N = {
     labelHeureArrivee: "Check-in time (from)",
     labelHeureDepart: "Check-out time (before)",
     labelDelaiAnnulation: "Cancellation / rescheduling deadline (hours before arrival)",
+    h3DelaiAnnulation: "Cancellation and rescheduling by the customer",
+    labelDelaiAnnulationRdv: "Cancellation / rescheduling deadline (hours before the appointment)",
+    noteDelaiAnnulationRdv: "0 = the customer can cancel or reschedule until the appointment. Example: 24 → less than 24 h before, she can no longer do it herself. Only applies to \"Confirmed\" appointments.",
+    labelModeDelai: "Past the deadline",
+    optionModeRefuser: "Refuse and send to an advisor",
+    optionModeAccepter: "Accept, but flag as \"late cancellation\"",
+    noteModeDelai: "Refuse: the bot explains the deadline and invites to type \"advisor\". Accept: the cancellation or reschedule is done, and the appointment / booking is flagged \"Late cancellation\" (visible in the list, and the alert sent to the manager says so).",
+    badgeAnnulationTardive: "Late cancellation",
     noteDelaiAnnulation: "0 = guests can cancel or reschedule until arrival. Example: 48 → beyond that, the bot sends the guest to an advisor.",
     labelNuitsMax: "Maximum nights per WhatsApp booking",
     labelAvanceMax: "Bookable up to (days ahead)",
@@ -1613,6 +1630,7 @@ const I18N = {
     jdRoles: "Roles: {r}",
     jdMotDePasseChange: "password changed",
     jdChamps: "Fields: {c}",
+    jdDelaiAnnulation: "Cancellation deadline: {h} h — beyond it: {m}",
     jdFichier: "File: {f}",
     jdCible: "Target: {c}",
     jdTelephone: "Customer: {t}",
@@ -4425,6 +4443,7 @@ async function renderRendezvous() {
         "<td>" + esc(a.telephone) + "</td>" +
         "<td>" + (a.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
         "<td><select data-rdv='" + a.id + "'>" + statuts.map((s) => "<option value='" + s + "'" + (s === a.statut ? " selected" : "") + ">" + esc(libelleStatutRdv(s)) + "</option>").join("") + "</select>" +
+          (a.annulationTardive ? "<div><span class='badge-tardif' style='background:#fdecea;color:#b3261e;border-radius:4px;padding:1px 6px;font-size:0.85em;'>" + t("badgeAnnulationTardive") + "</span></div>" : "") +
           (a.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(a.raisonAnnulation) + "</div>" : "") +
           (a.statut === "Nouvelle" ? "<div class='raison'>" + esc(t("rdvNonBloque")) + "</div>" + (lienRelanceWhatsapp(a) ? "<div><a class='btnRelancerRdv' data-relancer-rdv='" + a.id + "' href='" + esc(lienRelanceWhatsapp(a)) + "' target='_blank' rel='noopener noreferrer'>" + esc(t("btnRelancerWhatsapp")) + "</a></div>" : "") : "") +
           ((a.statut === "Nouvelle" || a.statut === "Confirmé") ? "<div><button class='btnModifierRdv' data-modifier-rdv='" + a.id + "'>" + esc(t("btnModifierRdv")) + "</button></div>" : "") +
@@ -4500,6 +4519,24 @@ async function ouvrirDialogueDeplacerRdv(a, apres) {
   };
 }
 
+// Etape 67 : delai limite d'annulation / report par le client + mode au-dela du delai. Meme bloc pour les
+// rendez-vous et les chambres. Regle par marchand, reglable par le proprietaire ET par le super-administrateur
+// (qui le voit dans les Parametres du marchand choisi et retrouve chaque modification, avec son auteur, au Journal).
+function blocDelaiAnnulationHtml(p, genre) {
+  const pre = genre === "heb" ? "heb" : "rdv";
+  const mode = p.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
+  return "<h3>" + t("h3DelaiAnnulation") + "</h3>" +
+    "<label>" + t(genre === "heb" ? "labelDelaiAnnulation" : "labelDelaiAnnulationRdv") + "</label>" +
+    "<input type='number' min='0' step='1' id='" + pre + "Delai' value='" + (Number(p.delaiAnnulationHeures) || 0) + "' />" +
+    "<p class='raison'>" + t(genre === "heb" ? "noteDelaiAnnulation" : "noteDelaiAnnulationRdv") + "</p>" +
+    "<label>" + t("labelModeDelai") + "</label>" +
+    "<select id='" + pre + "ModeDelai'>" +
+      "<option value='refuser'" + (mode === "refuser" ? " selected" : "") + ">" + t("optionModeRefuser") + "</option>" +
+      "<option value='accepter'" + (mode === "accepter" ? " selected" : "") + ">" + t("optionModeAccepter") + "</option>" +
+    "</select>" +
+    "<p class='raison'>" + t("noteModeDelai") + "</p>";
+}
+
 async function renderParametresService() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -4528,6 +4565,7 @@ async function renderParametresService() {
       ).join("") +
     "</select>" +
     "<p class='raison'>" + t("noteFuseau") + "</p>" +
+    blocDelaiAnnulationHtml(parametres, "rdv") +
     "<h3>" + t("h3HorairesOuverture") + "</h3>" +
     "<p class='raison'>" + t("notePause") + "</p>" +
     "<table class='table-donnees'><tr><th>" + t("theadJour") + "</th><th>" + t("theadOuvert") + "</th><th>" + t("theadDebut") + "</th><th>" + t("theadFin") + "</th><th>" + t("theadPauseDebut") + "</th><th>" + t("theadPauseFin") + "</th></tr>" +
@@ -4605,6 +4643,8 @@ async function renderParametresService() {
           horaires: nouvHoraires,
           praticiens: nouvPraticiens,
           fuseau: document.getElementById("fuseauRdv").value,
+          delaiAnnulationHeures: Number(document.getElementById("rdvDelai").value) || 0,
+          modeDelaiDepasse: document.getElementById("rdvModeDelai").value,
           autoConfirmMessage: document.getElementById("msgConfirm").value,
           autoConfirmMessageEn: document.getElementById("msgConfirmEn").value
         })
@@ -4780,6 +4820,7 @@ async function renderSejours() {
         "<td>" + esc(s.telephone || "") + "</td>" +
         "<td>" + (s.total || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
         "<td><select data-sejour='" + s.id + "'>" + statuts.map((x) => "<option value='" + x + "'" + (x === s.statut ? " selected" : "") + ">" + esc(libelleStatutSejour(x)) + "</option>").join("") + "</select>" +
+          (s.annulationTardive ? "<div><span class='badge-tardif' style='background:#fdecea;color:#b3261e;border-radius:4px;padding:1px 6px;font-size:0.85em;'>" + t("badgeAnnulationTardive") + "</span></div>" : "") +
           (s.raisonAnnulation ? "<div class='raison'>" + t("raisonPrefixe") + esc(s.raisonAnnulation) + "</div>" : "") +
           (s.statut === "Nouvelle" ? "<div class='raison'>" + esc(t("sejourNonBloque")) + "</div>" + (lienRelanceSejour(s) ? "<div><a class='btnRelancerSejour' data-relancer-sejour='" + s.id + "' href='" + esc(lienRelanceSejour(s)) + "' target='_blank' rel='noopener noreferrer'>" + esc(t("btnRelancerWhatsapp")) + "</a></div>" : "") : "") +
           (s.modifieDepuisAdmin ? "<div class='raison'>" + esc(t("sejourModifieAdmin")) + "</div>" : "") +
@@ -4912,8 +4953,7 @@ async function renderParametresHebergement() {
     "<p class='raison'>" + t("noteFuseau") + "</p>" +
     "<label>" + t("labelHeureArrivee") + "</label><input type='time' id='hebHeureArrivee' value='" + esc(p.heureArrivee || "14:00") + "' />" +
     "<label>" + t("labelHeureDepart") + "</label><input type='time' id='hebHeureDepart' value='" + esc(p.heureDepart || "12:00") + "' />" +
-    "<label>" + t("labelDelaiAnnulation") + "</label><input type='number' min='0' step='1' id='hebDelai' value='" + (Number(p.delaiAnnulationHeures) || 0) + "' />" +
-    "<p class='raison'>" + t("noteDelaiAnnulation") + "</p>" +
+    blocDelaiAnnulationHtml(p, "heb") +
     "<label>" + t("labelNuitsMax") + "</label><input type='number' min='1' id='hebNuitsMax' value='" + (Number(p.nuitsMax) || 30) + "' />" +
     "<label>" + t("labelAvanceMax") + "</label><input type='number' min='1' id='hebAvanceMax' value='" + (Number(p.avanceMaxJours) || 365) + "' />" +
     "<label>" + t("labelNotePaiement") + "</label><input id='hebNotePaiement' value=\"" + esc(p.notePaiement || "") + "\" />" +
@@ -4932,6 +4972,7 @@ async function renderParametresHebergement() {
           heureArrivee: document.getElementById("hebHeureArrivee").value,
           heureDepart: document.getElementById("hebHeureDepart").value,
           delaiAnnulationHeures: Number(document.getElementById("hebDelai").value) || 0,
+          modeDelaiDepasse: document.getElementById("hebModeDelai").value,
           nuitsMax: Number(document.getElementById("hebNuitsMax").value) || 30,
           avanceMaxJours: Number(document.getElementById("hebAvanceMax").value) || 365,
           notePaiement: document.getElementById("hebNotePaiement").value,
@@ -6784,6 +6825,7 @@ function detailJournalHtml(ligne) {
   if (Array.isArray(d.roles) && d.roles.length) out.push(t("jdRoles", { r: esc(d.roles.join(", ")) }));
   if (d.motDePasse === true) out.push(t("jdMotDePasseChange"));
   if (Array.isArray(d.champs) && d.champs.length) out.push(t("jdChamps", { c: esc(d.champs.join(", ")) }));
+  if (d.delaiAnnulationHeures != null) out.push(t("jdDelaiAnnulation", { h: d.delaiAnnulationHeures, m: t(d.modeDelaiDepasse === "accepter" ? "optionModeAccepter" : "optionModeRefuser") }));
   if (d.fichier) out.push(t("jdFichier", { f: esc(d.fichier) }));
   if (d.cible) out.push(t("jdCible", { c: esc(d.cible) }));
   if (d.telephone) out.push(t("jdTelephone", { t: esc(d.telephone) }));
