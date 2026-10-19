@@ -2313,3 +2313,21 @@ Fichiers modifiés : `conversationService.js`, `conversationHebergement.js`, `se
 **Technique.** Aucune migration, aucune variable d'environnement, aucun nouveau modèle Meta. Le moteur calcule seulement ce qui est libre (`getChoixJours`, `getChoixHeures`, `getChoixArrivees`, `getChoixNuits`) ; `server.js` bâtit les listes et traduit le clic en texte compris par le moteur (jeton interne `__creneau:AAAA-MM-JJ HH:MM__` pour les rendez-vous, `AAAA-MM-JJ` puis « N nuits » pour les chambres). Le Simulateur n'affiche pas de listes cliquables (comme pour les autres listes). Les calendriers natifs WhatsApp (Flows) restent une option plus lourde, non retenue pour l'instant.
 
 Fichiers modifiés : `conversationService.js`, `conversationHebergement.js`, `server.js`, `public/admin.html`.
+
+## Étape 69 — Ligne « Mon panier » dans la liste des produits
+
+Pour un marchand **catalogue**, quand un client revient à la liste des produits alors qu'il a déjà un **panier en cours** (articles ajoutés, commande pas encore validée), une ligne **« Mon panier (N) »** (EN : « My cart (N) ») apparaît **en bas de la liste**, juste avant « Contacter un conseiller ». Elle figure aussi sur l'écran des catégories, sur celui des articles d'une catégorie et sur les pages « Voir plus ». Un clic ouvre le panier (voir, retirer un article, continuer les achats ou terminer), comme si le client avait écrit « voir mon panier ». Sans panier en cours, rien ne change : la ligne n'apparaît pas. Les lignes équivalentes existaient déjà pour les rendez-vous (« Mon rendez-vous ») et les chambres (« Ma réservation »), affichées seulement quand le client a un rendez-vous ou un séjour à venir.
+
+Fichier modifié : `server.js` (aucune migration, aucune variable d'environnement).
+
+## Étape 70 — « Mon espace » en premier et message d'accueil personnalisé (rendez-vous et chambres)
+
+**Ce que le client a déjà en cours passe en premier.** Uniquement quand il a réellement quelque chose : un panier non vide, un rendez-vous à venir ou un séjour à venir.
+- **Marchand à un seul volet** : la ligne « Mon panier (N) » / « Mon rendez-vous » / « Ma réservation » est maintenant la **première ligne** de la liste (elle était en bas), y compris sur les écrans de catégories et les pages « Voir plus ».
+- **Marchand à deux volets** : le menu principal gagne un bouton **avant** les deux autres (Mon panier (N) / Mon rendez-vous / Ma réservation), soit trois boutons au total.
+- **Marchand à trois volets** : WhatsApp limite les boutons à 3, donc le menu devient une **liste déroulante** (bouton « Ouvrir le menu ») avec deux sections : « Mon espace » (les éléments en cours) puis « Que souhaitez-vous faire ? » (les volets). Un client sans rien en cours garde les trois boutons habituels.
+Un clic sur « Mon panier » ouvre le panier (si la commande est déjà avancée — téléphone, adresse —, le bot redonne la dernière question au lieu d'écraser la réponse) ; « Mon rendez-vous » / « Ma réservation » ouvrent Annuler / Reporter / Contacter un conseiller. Rien à régler dans /admin.
+
+**Message d'accueil personnalisé.** Les **Paramètres rendez-vous** et les **Paramètres chambres** ont maintenant, comme le catalogue, deux champs « Message d'accueil personnalisé » (français et English, 600 caractères maximum, vides par défaut). Le texte s'affiche **après le choix de la langue**, dans la langue du client, en tête de la liste des services ou des chambres, à la place de « Bienvenue chez… » ; si un seul champ est rempli, il sert pour les deux langues. La liste des services n'est pas répétée dans le corps du message (elle est dans le menu cliquable). Réglable par le propriétaire, un employé « parametres » et le super-administrateur, tracé au Journal (nom du champ). Vide = accueil standard inchangé.
+
+Fichiers modifiés : `server.js`, `hybride.js`, `conversationService.js`, `conversationHebergement.js`, `public/admin.html`. Aucune migration, aucune variable d'environnement, aucun nouveau modèle Meta.

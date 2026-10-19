@@ -303,10 +303,23 @@ function creerRouteur(moteurs, principal, deps) {
     return { type: "moteur", volet, texte: brut, suffixe: null };
   }
 
+  // Etape 70 : le client touche « Mon panier / Mon rendez-vous / Ma reservation » dans le menu principal : il est conduit
+  // dans ce volet SANS rien envoyer au moteur. `viaMenu` = vrai : il reste a l'etape « menu », et son prochain message
+  // (le jeton du volet) passe par la logique habituelle de reprise de sa derniere question.
+  function entrerDansVolet(tel, volet, viaMenu) {
+    if (!moteurs[volet]) return false;
+    if (viaMenu) {
+      etats[tel] = Object.assign(etats[tel] || {}, { etape: "menu", langue: (etats[tel] && etats[tel].langue) || langueConnue(tel) });
+      return true;
+    }
+    versMoteur(tel, volet, "", {});
+    return true;
+  }
+
   // Efface l'etat de routage d'un numero (bouton « Reinitialiser » du Simulateur de /admin).
   function oublier(tel) { delete etats[tel]; }
 
-  return { traiter, oublier, voletActif, voletsUtilisables, etatDe: (tel) => (etats[tel] ? Object.assign({}, etats[tel]) : null) };
+  return { traiter, oublier, entrerDansVolet, voletActif, voletsUtilisables, etatDe: (tel) => (etats[tel] ? Object.assign({}, etats[tel]) : null) };
 }
 
 module.exports = { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE, JETON_VOLET_HEBERGEMENT, VOLETS_CONNUS };

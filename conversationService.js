@@ -877,7 +877,15 @@ function createServiceEngine(merchantKey, options) {
 
   function listeServicesTexte() { return state.services.map((s) => s.nom).join(", "); }
 
+  // Etape 70 : message d'accueil PERSONNALISE du marchand (Parametres > rendez-vous), dans la langue du client (le champ de
+  // l'autre langue sert de repli). Vide par defaut : l'accueil standard « Bienvenue chez <nom> » est alors inchange.
+  function accueilPerso(session) {
+    const r = (state && state.settings) || {};
+    const fr = String(r.messageAccueilSupplementaire || "").trim(), en = String(r.messageAccueilSupplementaireEn || "").trim();
+    return sh.langueSession(session) === "en" ? (en || fr) : (fr || en);
+  }
   function messageChoixService(session, introFr, introEn) {
+    session.accueilPersoAffiche = false;
     return sh.t(session,
       introFr + " Nous proposons : " + listeServicesTexte() + ".",
       introEn + " We offer: " + listeServicesTexte() + "."
@@ -1200,6 +1208,12 @@ function createServiceEngine(merchantKey, options) {
     if (!serviceIds.length) {
       session.pretPourChoix = true;
       const nomAccueil = String(nomMarchandOption() || "").trim();
+      const perso = accueilPerso(session);
+      if (perso) {
+        const rep = messageChoixService(session, perso + "\n\nQuel service vous intéresse ?", perso + "\n\nWhich service are you interested in?");
+        session.accueilPersoAffiche = true;
+        return rep;
+      }
       return nomAccueil
         ? messageChoixService(session,
             "Bonjour ! Bienvenue chez " + nomAccueil + ". Quel service vous intéresse ?",
@@ -1520,6 +1534,7 @@ function createServiceEngine(merchantKey, options) {
         : null,
       // Etape 68 : le client doit donner un jour et une heure -> server.js peut proposer la liste des jours.
       choixDate: s.stage === "awaiting_datetime" && !!contexteListes(fromPhone),
+      accueilPerso: !!s.pretPourChoix && !!s.accueilPersoAffiche, // Etape 70 : le texte contient l'accueil personnalise du marchand
       langue: sh.langueSession(s)
     } : null;
   }
@@ -1755,6 +1770,7 @@ function createServiceEngine(merchantKey, options) {
     if (sain.fuseau !== undefined && !sh.fuseauValide(sain.fuseau)) delete sain.fuseau;
     if (sain.delaiAnnulationHeures !== undefined) { const h = parseFloat(sain.delaiAnnulationHeures); sain.delaiAnnulationHeures = Number.isFinite(h) && h >= 0 ? Math.min(h, 720) : 0; }
     if (sain.modeDelaiDepasse !== undefined) sain.modeDelaiDepasse = sain.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
+    ['messageAccueilSupplementaire', 'messageAccueilSupplementaireEn'].forEach((k) => { if (sain[k] !== undefined) sain[k] = String(sain[k] == null ? '' : sain[k]).trim().slice(0, 600); });
     if (sain.listesDatesHeures !== undefined) sain.listesDatesHeures = !(sain.listesDatesHeures === false || sain.listesDatesHeures === "false" || sain.listesDatesHeures === 0);
     state.settings = Object.assign({}, state.settings, sain);
     saveState();

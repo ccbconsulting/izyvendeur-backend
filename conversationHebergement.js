@@ -204,7 +204,15 @@ function createHebergementEngine(merchantKey, options) {
   function listeChambresTexte(session) {
     return state.chambres.map((c) => "• " + c.nom + " — " + sh.t(session, "à partir de ", "from ") + formatFcfa(prixNuit(c)) + sh.t(session, " / nuit", " / night") + " (" + sh.t(session, "jusqu'à ", "up to ") + libellePersonnes(capaciteChambre(c), session) + ")").join("\n");
   }
+  // Etape 70 : message d'accueil PERSONNALISE du marchand (Parametres > chambres), dans la langue du client (l'autre langue sert
+  // de repli). Vide par defaut : l'accueil standard « Bienvenue chez <nom> » est alors inchange.
+  function accueilPerso(session) {
+    const r = reg();
+    const fr = String(r.messageAccueilSupplementaire || "").trim(), en = String(r.messageAccueilSupplementaireEn || "").trim();
+    return sh.langueSession(session) === "en" ? (en || fr) : (fr || en);
+  }
   function messageChoixChambre(session, introFr, introEn) {
+    session.accueilPersoAffiche = false;
     if (!state.chambres.length) {
       return sh.t(session, "Nous n'avons pas encore de chambre à vous proposer ici. Un conseiller peut vous aider : écrivez « conseiller ».", "We have no rooms to offer here yet. An advisor can help you: type \"advisor\".");
     }
@@ -702,6 +710,12 @@ function createHebergementEngine(merchantKey, options) {
         // dates donnees sans chambre : on les garde et on demande la chambre
         return messageChoixChambre(session, "Très bien ! Quelle chambre vous intéresse ?", "Great! Which room are you interested in?");
       }
+      const perso = accueilPerso(session);
+      if (perso) {
+        const rep = messageChoixChambre(session, perso + "\n\nQuelle chambre vous intéresse ?", perso + "\n\nWhich room are you interested in?");
+        session.accueilPersoAffiche = true;
+        return rep;
+      }
       return nomAccueil
         ? messageChoixChambre(session, "Bonjour ! Bienvenue chez " + nomAccueil + ". Quelle chambre vous intéresse ?", "Hello! Welcome to " + nomAccueil + ". Which room are you interested in?")
         : messageChoixChambre(session, "Bonjour ! Quelle chambre vous intéresse ?", "Hello! Which room are you interested in?");
@@ -840,6 +854,7 @@ function createHebergementEngine(merchantKey, options) {
         ? s.choixIds.map((id) => sejourParId(id)).filter(Boolean).map((x) => ({ ref: refSejour(x), detail: x.chambre + " — " + formatCourt(x.arrivee, s) + " → " + formatCourt(x.depart, s) }))
         : null,
       libelleChoix: { fr: "Vos réservations", en: "Your bookings" },
+      accueilPerso: !!s.pretPourChoix && !!s.accueilPersoAffiche, // Etape 70
       choixDate: choixDateDe(fromPhone), // Etape 68 : "arrivee" | "nuits" | null
       langue: sh.langueSession(s)
     };
@@ -962,6 +977,7 @@ function createHebergementEngine(merchantKey, options) {
     ["heureArrivee", "heureDepart"].forEach((k) => { if (sain[k] !== undefined && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(sain[k]))) delete sain[k]; });
     if (sain.delaiAnnulationHeures !== undefined) { const h = parseFloat(sain.delaiAnnulationHeures); sain.delaiAnnulationHeures = Number.isFinite(h) && h >= 0 ? Math.min(h, 720) : 0; }
     if (sain.modeDelaiDepasse !== undefined) sain.modeDelaiDepasse = sain.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
+    ['messageAccueilSupplementaire', 'messageAccueilSupplementaireEn'].forEach((k) => { if (sain[k] !== undefined) sain[k] = String(sain[k] == null ? '' : sain[k]).trim().slice(0, 600); });
     if (sain.listesDatesHeures !== undefined) sain.listesDatesHeures = !(sain.listesDatesHeures === false || sain.listesDatesHeures === "false" || sain.listesDatesHeures === 0);
     if (sain.nuitsMax !== undefined) { const n = parseInt(sain.nuitsMax, 10); sain.nuitsMax = Number.isFinite(n) && n >= 1 ? Math.min(n, 365) : NUITS_MAX_DEFAUT; }
     if (sain.avanceMaxJours !== undefined) { const n = parseInt(sain.avanceMaxJours, 10); sain.avanceMaxJours = Number.isFinite(n) && n >= 1 ? Math.min(n, 1095) : AVANCE_MAX_JOURS_DEFAUT; }

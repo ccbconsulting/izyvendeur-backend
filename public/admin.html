@@ -545,6 +545,8 @@ const I18N = {
     labelHeureArrivee: "Heure d'arrivée (à partir de)",
     labelHeureDepart: "Heure de départ (avant)",
     labelDelaiAnnulation: "Délai d'annulation / de report (heures avant l'arrivée)",
+    descAccueilPersoRdv: "Affiché en tête de la liste des services, juste après le choix de la langue, à la place de « Bienvenue chez… ». Le client le lit dans sa langue (si un seul champ est rempli, il sert pour les deux). Laissez vide pour garder l'accueil standard. 600 caractères maximum.",
+    descAccueilPersoHeb: "Affiché en tête de la liste des chambres, juste après le choix de la langue, à la place de « Bienvenue chez… ». Le client le lit dans sa langue (si un seul champ est rempli, il sert pour les deux). Laissez vide pour garder l'accueil standard. 600 caractères maximum.",
     h3ListesDatesHeures: "Choix du jour et de l'heure",
     labelListesRdv: "Proposer des listes de jours et d'heures",
     labelListesHeb: "Proposer des listes de dates d'arrivée et de nuits",
@@ -1538,6 +1540,8 @@ const I18N = {
     labelHeureArrivee: "Check-in time (from)",
     labelHeureDepart: "Check-out time (before)",
     labelDelaiAnnulation: "Cancellation / rescheduling deadline (hours before arrival)",
+    descAccueilPersoRdv: "Shown at the top of the services list, right after the language choice, instead of \"Welcome to…\". The customer reads it in their language (if only one field is filled it is used for both). Leave empty to keep the standard welcome. 600 characters maximum.",
+    descAccueilPersoHeb: "Shown at the top of the rooms list, right after the language choice, instead of \"Welcome to…\". The customer reads it in their language (if only one field is filled it is used for both). Leave empty to keep the standard welcome. 600 characters maximum.",
     h3ListesDatesHeures: "Choosing the day and time",
     labelListesRdv: "Offer day and time lists",
     labelListesHeb: "Offer arrival date and number-of-nights lists",
@@ -4540,6 +4544,17 @@ async function ouvrirDialogueDeplacerRdv(a, apres) {
 // (qui le voit dans les Parametres du marchand choisi et retrouve chaque modification, avec son auteur, au Journal).
 // Etape 68 : case « Proposer des listes de jours et d'heures » (cochee par defaut). Reglable par le proprietaire, un employe
 // ayant le role Parametres et le super-administrateur ; ce n'est pas une option payante.
+// Etape 70 : message d'accueil personnalise (FR / EN) des rendez-vous et des chambres, comme celui du catalogue.
+function blocAccueilPersoHtml(p, genre) {
+  const pre = genre === "heb" ? "heb" : "rdv";
+  return "<h3>" + t("h3AccueilPerso") + "</h3>" +
+    "<p class='raison'>" + t(genre === "heb" ? "descAccueilPersoHeb" : "descAccueilPersoRdv") + "</p>" +
+    "<label>" + t("labelAccueilPersoFr") + "</label>" +
+    "<textarea id='" + pre + "AccueilFr' rows='3' maxlength='600'>" + esc(p.messageAccueilSupplementaire || "") + "</textarea>" +
+    "<label>" + t("labelAccueilPersoEn") + "</label>" +
+    "<textarea id='" + pre + "AccueilEn' rows='3' maxlength='600'>" + esc(p.messageAccueilSupplementaireEn || "") + "</textarea>";
+}
+
 function blocListesDatesHeuresHtml(p, genre) {
   const pre = genre === "heb" ? "heb" : "rdv";
   const coche = p.listesDatesHeures !== false;
@@ -4591,6 +4606,7 @@ async function renderParametresService() {
       ).join("") +
     "</select>" +
     "<p class='raison'>" + t("noteFuseau") + "</p>" +
+    blocAccueilPersoHtml(parametres, "rdv") +
     blocListesDatesHeuresHtml(parametres, "rdv") +
     blocDelaiAnnulationHtml(parametres, "rdv") +
     "<h3>" + t("h3HorairesOuverture") + "</h3>" +
@@ -4670,6 +4686,8 @@ async function renderParametresService() {
           horaires: nouvHoraires,
           praticiens: nouvPraticiens,
           fuseau: document.getElementById("fuseauRdv").value,
+          messageAccueilSupplementaire: document.getElementById("rdvAccueilFr").value,
+          messageAccueilSupplementaireEn: document.getElementById("rdvAccueilEn").value,
           listesDatesHeures: document.getElementById("rdvListes").checked,
           delaiAnnulationHeures: Number(document.getElementById("rdvDelai").value) || 0,
           modeDelaiDepasse: document.getElementById("rdvModeDelai").value,
@@ -4981,6 +4999,7 @@ async function renderParametresHebergement() {
     "<p class='raison'>" + t("noteFuseau") + "</p>" +
     "<label>" + t("labelHeureArrivee") + "</label><input type='time' id='hebHeureArrivee' value='" + esc(p.heureArrivee || "14:00") + "' />" +
     "<label>" + t("labelHeureDepart") + "</label><input type='time' id='hebHeureDepart' value='" + esc(p.heureDepart || "12:00") + "' />" +
+    blocAccueilPersoHtml(p, "heb") +
     blocListesDatesHeuresHtml(p, "heb") +
     blocDelaiAnnulationHtml(p, "heb") +
     "<label>" + t("labelNuitsMax") + "</label><input type='number' min='1' id='hebNuitsMax' value='" + (Number(p.nuitsMax) || 30) + "' />" +
@@ -5000,6 +5019,8 @@ async function renderParametresHebergement() {
           fuseau: document.getElementById("fuseauHeb").value,
           heureArrivee: document.getElementById("hebHeureArrivee").value,
           heureDepart: document.getElementById("hebHeureDepart").value,
+          messageAccueilSupplementaire: document.getElementById("hebAccueilFr").value,
+          messageAccueilSupplementaireEn: document.getElementById("hebAccueilEn").value,
           listesDatesHeures: document.getElementById("hebListes").checked,
           delaiAnnulationHeures: Number(document.getElementById("hebDelai").value) || 0,
           modeDelaiDepasse: document.getElementById("hebModeDelai").value,

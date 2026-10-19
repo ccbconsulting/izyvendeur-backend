@@ -3520,15 +3520,35 @@ app.post("/webhook", async (req, res) => {
     // tenir sur une seule liste WhatsApp - 10 lignes max au total) : pure navigation d'affichage, ne
     // correspond a AUCUN texte que le client aurait pu taper et ne doit donc jamais passer par
     // engine.handleMessage() (qui changerait l'etat de la conversation). On envoie juste la page suivante.
-    const idInteractifClique = message.type === "interactive"
+    let idInteractifClique = message.type === "interactive"
       ? (message.interactive?.list_reply?.id || message.interactive?.button_reply?.id || "")
       : "";
+    // Etape 70 : « Mon panier / Mon rendez-vous / Ma reservation » touche dans le MENU PRINCIPAL d'un marchand hybride : on conduit
+    // le client dans ce volet puis on rejoue le clic habituel (panier, ou boutons Annuler / Reporter) comme s'il venait de la liste du volet.
+    if (estHybride(entreeComplete) && idInteractifClique.indexOf(PREFIXE_ESPACE) === 0) {
+      const quoi = idInteractifClique.slice(PREFIXE_ESPACE.length);
+      const voletCible = quoi === "panier" ? "catalogue" : quoi === "rdv" ? "service" : quoi === "sejour" ? "hebergement" : null;
+      if (voletCible && entreeComplete.moteurs[voletCible]) {
+        if (quoi === "panier") {
+          const eCat = entreeComplete.moteurs.catalogue.getEtatSession(from);
+          const peutVoir = !eCat || ["idle", "awaiting_quantity", "awaiting_more_items", "viewing_cart"].indexOf(eCat.stage) !== -1;
+          // Commande deja avancee (telephone, adresse...) : on redonne sa derniere question au lieu d'afficher le panier.
+          entreeComplete.routeur.entrerDansVolet(from, "catalogue", !peutVoir);
+          idInteractifClique = peutVoir ? ID_PANIER : ID_VOLET_CATALOGUE;
+        } else {
+          entreeComplete.routeur.entrerDansVolet(from, voletCible, false);
+          idInteractifClique = ID_MON_RDV;
+        }
+        marchand = vueEntree(entreeComplete, voletCible);
+      }
+    }
+
     if (idInteractifClique.indexOf(PREFIXE_VOIR_PLUS) === 0) {
       const offset = Number(idInteractifClique.slice(PREFIXE_VOIR_PLUS.length)) || 0;
       const estCatalogue = marchand.engine.type === "catalogue";
       const items = construireItemsListe(marchand);
       const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
-      const rows = construireLignesListe(items, offset, etatPourLangue, (estCatalogue ? [] : lignesMonRendezVous(marchand, from, etatPourLangue)).concat(ligneMenuPrincipal(marchand, etatPourLangue)));
+      const rows = construireLignesListe(items, offset, etatPourLangue, ligneMenuPrincipal(marchand, etatPourLangue), undefined, estCatalogue ? lignesMonPanier(marchand, etatPourLangue) : lignesMonRendezVous(marchand, from, etatPourLangue));
       const lib = libellesListeAccueil(marchand, etatPourLangue);
       const texteCorps = lib.suite;
       db.logConversationMessage(merchantId, from, "client", lib.journal).catch(() => {});
@@ -3614,7 +3634,7 @@ app.post("/webhook", async (req, res) => {
     // reconnaissance que si le client avait tape la reponse lui-meme).
     let texteRecu = message.text?.body || "";
     if (!texteRecu && message.type === "interactive") {
-      texteRecu = resoudreTexteInteractif(marchand, message.interactive) || "";
+      texteRecu = resoudreTexteInteractif(marchand, message.interactive, idInteractifClique) || "";
     }
 
     if (!texteRecu) {
@@ -3643,9 +3663,23 @@ app.post("/webhook", async (req, res) => {
       const decision = entreeComplete.routeur.traiter(from, texteRecu);
       if (decision.type === "menu") {
         console.log(`[${merchantId}] Marchand hybride : menu des volets envoye a ${from}.`);
-        const menuEnvoye = await envoyerBoutonsWhatsApp(from, phoneNumberId, decision.texte, decision.boutons.map((b) => ({
-          id: b.volet === "catalogue" ? ID_VOLET_CATALOGUE : b.volet === "hebergement" ? ID_VOLET_HEBERGEMENT : ID_VOLET_SERVICE, title: b.title
-        }))).catch(() => false);
+        const boutonsVolets = decision.boutons.map((b) => ({
+          volet: b.volet, id: b.volet === "catalogue" ? ID_VOLET_CATALOGUE : b.volet === "hebergement" ? ID_VOLET_HEBERGEMENT : ID_VOLET_SERVICE, title: b.title
+        }));
+        // Etape 70 : ce que le client a deja en cours (panier, rendez-vous, sejour) passe EN PREMIER. Jusqu'a 3 entrees : boutons ;
+        // au-dela (ex. trois volets + un element), liste deroulante.
+        const etatMenu = { langue: (entreeComplete.routeur.etatDe(from) || {}).langue || "fr" };
+        const elements = elementsEspace(entreeComplete, from, etatMenu);
+        let menuEnvoye;
+        if (elements.length && elements.length + boutonsVolets.length > 3) {
+          menuEnvoye = await envoyerListeWhatsApp(from, phoneNumberId, decision.texte, tW(etatMenu, "Ouvrir le menu", "Open menu"), [
+            { title: tW(etatMenu, "Mon espace", "My space"), rows: elements.map((e) => ({ id: e.id, title: tronquerTexte(e.title, 24), description: tronquerTexte(e.description, 72) })) },
+            { title: tW(etatMenu, "Que souhaitez-vous faire ?", "What would you like to do?"), rows: boutonsVolets.map((b) => ({ id: b.id, title: tronquerTexte(b.title, 24), description: tronquerTexte(descriptionVolet(b.volet, etatMenu), 72) })) }
+          ]).catch(() => false);
+        } else {
+          menuEnvoye = await envoyerBoutonsWhatsApp(from, phoneNumberId, decision.texte,
+            elements.map((e) => ({ id: e.id, title: e.title })).concat(boutonsVolets.map((b) => ({ id: b.id, title: b.title })))).catch(() => false);
+        }
         if (!menuEnvoye) await envoyerMessageWhatsApp(from, decision.texte, phoneNumberId);
         return;
       }
@@ -3828,6 +3862,44 @@ function lignesMonRendezVous(marchand, telephone, etat) {
   } catch (e) { return []; }
 }
 
+// Etape 69 (placee en PREMIERE ligne depuis l'Etape 70) : ligne « Mon panier (N) » de la liste des produits, UNIQUEMENT pour un client qui a deja un panier en cours
+// (articles ajoutes, commande pas encore validee). Un clic equivaut a ecrire « voir mon panier » (voir resoudreTexteInteractif).
+function lignesMonPanier(marchand, etat) {
+  try {
+    if (!marchand || !marchand.engine || marchand.engine.type !== "catalogue") return [];
+    const n = etat && Array.isArray(etat.cart) ? etat.cart.length : 0;
+    if (!(n > 0)) return [];
+    return [{ id: ID_PANIER, title: tW(etat, "Mon panier (" + n + ")", "My cart (" + n + ")"), description: tW(etat, "Voir, modifier ou valider", "View, edit or complete") }];
+  } catch (e) { return []; }
+}
+
+// Etape 70 : entrees « Mon panier / Mon rendez-vous / Ma reservation » du MENU PRINCIPAL d'un marchand hybride, uniquement pour ce que le
+// client a reellement en cours dans les volets proposes (panier non vide, rendez-vous ou sejour a venir).
+const PREFIXE_ESPACE = "IZY_ESPACE_"; // + panier | rdv | sejour
+function elementsEspace(entree, telephone, etat) {
+  const out = [];
+  try {
+    const volets = entree.routeur.voletsUtilisables();
+    if (volets.indexOf("catalogue") !== -1) {
+      const e = entree.moteurs.catalogue.getEtatSession(telephone);
+      const n = e && Array.isArray(e.cart) ? e.cart.length : 0;
+      if (n > 0) out.push({ id: PREFIXE_ESPACE + "panier", title: tW(etat, "Mon panier (" + n + ")", "My cart (" + n + ")"), description: tW(etat, "Voir, modifier ou valider", "View, edit or complete") });
+    }
+    if (volets.indexOf("service") !== -1 && typeof entree.moteurs.service.nbRdvsAVenir === "function" && entree.moteurs.service.nbRdvsAVenir(telephone) > 0) {
+      out.push({ id: PREFIXE_ESPACE + "rdv", title: tW(etat, "Mon rendez-vous", "My appointment"), description: tW(etat, "Annuler ou reporter", "Cancel or reschedule") });
+    }
+    if (volets.indexOf("hebergement") !== -1 && typeof entree.moteurs.hebergement.nbSejoursAVenir === "function" && entree.moteurs.hebergement.nbSejoursAVenir(telephone) > 0) {
+      out.push({ id: PREFIXE_ESPACE + "sejour", title: tW(etat, "Ma réservation", "My booking"), description: tW(etat, "Annuler ou reporter", "Cancel or reschedule") });
+    }
+  } catch (e) { return []; }
+  return out;
+}
+function descriptionVolet(volet, etat) {
+  if (volet === "catalogue") return tW(etat, "Voir nos produits", "Browse our products");
+  if (volet === "hebergement") return tW(etat, "Réserver une chambre", "Book a room");
+  return tW(etat, "Prendre un rendez-vous", "Book an appointment");
+}
+
 // Etape 64 : pour un marchand HYBRIDE (au moins deux volets utilisables), ligne « Menu principal » qui ramene au menu
 // a deux ou trois boutons (produits / rendez-vous / chambres). Vide pour un marchand a un seul volet : rien ne change pour lui.
 // Etape 65 : libelles de la liste d'accueil selon le type (catalogue : articles ; service : services ; hebergement : chambres).
@@ -3846,19 +3918,20 @@ function ligneMenuPrincipal(marchand, etat) {
   } catch (e) { return []; }
 }
 
-function construireLignesListe(items, offset, etat, lignesSupplementaires, prefixeVoirPlus) {
+function construireLignesListe(items, offset, etat, lignesSupplementaires, prefixeVoirPlus, lignesEnTete) {
   const supplementaires = lignesSupplementaires || [];
-  const placesReservees = 1 + supplementaires.length; // "Contacter un conseiller" + lignes supplementaires
+  const enTete = lignesEnTete || []; // Etape 70 : « Mon panier » / « Mon rendez-vous » / « Ma reservation » en PREMIERE ligne
+  const placesReservees = 1 + supplementaires.length + enTete.length; // "Contacter un conseiller" + lignes supplementaires
   const maxSansVoirPlus = 10 - placesReservees;
   const restant = items.length - offset;
   const inclureVoirPlus = restant > maxSansVoirPlus;
   const nbAffiches = inclureVoirPlus ? maxSansVoirPlus - 1 : Math.max(0, Math.min(restant, maxSansVoirPlus));
   const page = items.slice(offset, offset + nbAffiches);
-  const rows = page.map((it) => ({
+  const rows = enTete.slice().concat(page.map((it) => ({
     id: it.id,
     title: tronquerTexte(it.nom, 24),
     description: tronquerTexte(it.description, 72)
-  }));
+  })));
   if (inclureVoirPlus) {
     rows.push({ id: (prefixeVoirPlus || PREFIXE_VOIR_PLUS) + (offset + nbAffiches), title: tW(etat, "Voir plus ▸", "See more ▸") });
   }
@@ -3878,7 +3951,7 @@ async function envoyerEcranCategories(destinataire, phoneNumberId, marchand, off
     nom: cat || tW(etat, "Autres articles", "Other items"),
     description: ""
   }));
-  const rows = construireLignesListe(itemsCategories, offset, etat, ligneMenuPrincipal(marchand, etat), PREFIXE_VOIR_PLUS_CATEGORIES);
+  const rows = construireLignesListe(itemsCategories, offset, etat, ligneMenuPrincipal(marchand, etat), PREFIXE_VOIR_PLUS_CATEGORIES, lignesMonPanier(marchand, etat));
   return envoyerListeWhatsApp(
     destinataire, phoneNumberId, texteCorps,
     tW(etat, "Voir les catégories", "See categories"),
@@ -3900,7 +3973,7 @@ async function envoyerEcranArticlesCategorie(destinataire, phoneNumberId, marcha
   const items = construireItemsListe(marchand, nomCategorie);
   if (!items.length) return envoyerEcranCategories(destinataire, phoneNumberId, marchand, 0, texteCorps, etat);
   const ligneRetour = { id: ID_RETOUR_CATEGORIES, title: tW(etat, "◀ Toutes les catégories", "◀ All categories") };
-  const rows = construireLignesListe(items, offset, etat, [ligneRetour].concat(ligneMenuPrincipal(marchand, etat)), PREFIXE_VOIR_PLUS_DANS_CAT + catIndex + "_");
+  const rows = construireLignesListe(items, offset, etat, [ligneRetour].concat(ligneMenuPrincipal(marchand, etat)), PREFIXE_VOIR_PLUS_DANS_CAT + catIndex + "_", lignesMonPanier(marchand, etat));
   return envoyerListeWhatsApp(
     destinataire, phoneNumberId, texteCorps,
     tW(etat, "Voir les articles", "See items"),
@@ -4089,11 +4162,12 @@ async function gererNavigationDates(marchand, from, phoneNumberId, id, merchantI
 // parseAffirmative/parseNegative). Les lignes de couleur/taille/variante (voir plus bas) utilisent
 // directement le libelle affiche comme id : matchCouleur()/matchTaille() le reconnaissent nativement,
 // donc aucune correspondance dediee n'est necessaire pour elles ici.
-function resoudreTexteInteractif(marchand, interactive) {
+function resoudreTexteInteractif(marchand, interactive, idForce) {
   if (!interactive) return null;
   let id = null;
   if (interactive.type === "list_reply") id = interactive.list_reply?.id;
   else if (interactive.type === "button_reply") id = interactive.button_reply?.id;
+  if (idForce) id = idForce; // Etape 70 : id reecrit par le webhook (clic sur « Mon panier » du menu principal)
   if (!id) return null;
 
   if (id === ID_LANG_FR) return "fr"; // reponse a la porte bilingue (voir sh.detecterChoixLangueInitial)
@@ -4228,8 +4302,13 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     texte = compacterTexteMenuCatalogue(marchand, texte, etat); // Etape 50 : voir plus haut
     // Etape 65 : la liste des chambres figure deja dans le menu cliquable : on la retire du corps du message.
     if (marchand.engine.type === "hebergement") {
-      const sans = texte.split("\n").filter((l) => l.indexOf("• ") !== 0).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+      const sans = texte.split("\n").filter((l) => !/^• .+ — .*\/ (nuit|night)/.test(l)).join("\n").replace(/\n{3,}/g, "\n\n").trim();
       if (sans) texte = sans;
+    }
+    // Etape 70 : accueil personnalise d'un marchand rendez-vous : la liste des services est deja dans le menu, on la retire du corps.
+    if (marchand.engine.type === "service" && etat.accueilPerso) {
+      const sans = texte.replace(/\s*(?:Nous proposons|We offer) : [\s\S]*$/, "").trim();
+      if (sans) texte = tronquerTexte(sans, 1000);
     }
 
     // Navigation par categorie (Etape 24) : seulement si ca a un vrai interet (2+ categories distinctes) -
@@ -4244,7 +4323,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
     const items = construireItemsListe(marchand);
     if (!items.length) return false;
-    const rows = construireLignesListe(items, 0, etat, (estCatalogue ? [] : lignesMonRendezVous(marchand, destinataire, etat)).concat(ligneMenuPrincipal(marchand, etat)));
+    const rows = construireLignesListe(items, 0, etat, ligneMenuPrincipal(marchand, etat), undefined, estCatalogue ? lignesMonPanier(marchand, etat) : lignesMonRendezVous(marchand, destinataire, etat));
 
     const lib = libellesListeAccueil(marchand, etat);
     return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, lib.bouton, [{ title: lib.section, rows }]);
