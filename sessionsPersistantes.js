@@ -140,7 +140,10 @@ function creer(o) {
     });
   }
 
-  return { charger, enregistrer, balayer };
+  // Etape 73 : date (ms) du dernier message de ce client, ou null (utilise par le bloc « A relancer » du tableau de bord).
+  function activiteDe(tel) { return activite[tel] || null; }
+
+  return { charger, enregistrer, balayer, activiteDe };
 }
 
 module.exports = { creer, estVide, attendreEcritures, JOUR_MS, DUREE_MAX_JOURS };

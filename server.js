@@ -851,7 +851,9 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/conversations/:telephone/repondre": "reponse_manuelle_envoyee",
   "POST /api/:id/inventaire/instantanes": "inventaire_instantane_cree",
   "DELETE /api/:id/inventaire/instantanes/:snapshotId": "inventaire_instantane_supprime",
-  "POST /api/:id/liste-attente/:entreeId/contacte": "client_attente_contacte"
+  "POST /api/:id/liste-attente/:entreeId/contacte": "client_attente_contacte",
+  "PUT /api/:id/a-relancer/delai": "delai_relance_modifie",
+  "POST /api/:id/a-relancer/marquer": "relance_marquee"
 };
 
 function cleCorpsAudit(corps) {
@@ -3400,6 +3402,27 @@ app.post("/api/:id/liste-attente/:entreeId/contacte", protegerAcces, (req, res) 
   res.json({ ok: true });
 });
 
+// -- Etape 73 : « A relancer » (tableau de bord) -- paniers abandonnes et commandes restees « Nouvelle ». Permission « commandes ».
+// Le marchand relance depuis son propre WhatsApp (lien wa.me construit dans /admin) : rien n'est envoye par le bot.
+app.get("/api/:id/a-relancer", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  res.json(entry.engine.aRelancer());
+});
+app.put("/api/:id/a-relancer/delai", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.engine.definirDelaiRelanceHeures((req.body || {}).heures)) return res.status(400).json({ erreur: "Délai invalide (2, 6, 12, 24, 48 ou 72 heures)." });
+  res.json(entry.engine.aRelancer());
+});
+app.post("/api/:id/a-relancer/marquer", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "commandes"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  const { type, cle } = req.body || {};
+  if (!entry.engine.marquerRelance(String(type || ""), String(cle || ""), req.auth.adminUser || null)) return res.status(404).json({ erreur: "Élément introuvable ou déjà traité." });
+  res.json({ ok: true });
+});
+
 // ---------------- Webhook WhatsApp ----------------
 
 // --- ETAPE 1 : Verification du webhook par Meta ---
@@ -3528,14 +3551,15 @@ app.post("/webhook", async (req, res) => {
     // le client dans ce volet puis on rejoue le clic habituel (panier, ou boutons Annuler / Reporter) comme s'il venait de la liste du volet.
     if (estHybride(entreeComplete) && idInteractifClique.indexOf(PREFIXE_ESPACE) === 0) {
       const quoi = idInteractifClique.slice(PREFIXE_ESPACE.length);
-      const voletCible = quoi === "panier" ? "catalogue" : quoi === "rdv" ? "service" : quoi === "sejour" ? "hebergement" : null;
+      const voletCible = quoi === "panier" || quoi === "commande" ? "catalogue" : quoi === "rdv" ? "service" : quoi === "sejour" ? "hebergement" : null;
       if (voletCible && entreeComplete.moteurs[voletCible]) {
-        if (quoi === "panier") {
+        if (quoi === "panier" || quoi === "commande") {
           const eCat = entreeComplete.moteurs.catalogue.getEtatSession(from);
-          const peutVoir = !eCat || ["idle", "awaiting_quantity", "awaiting_more_items", "viewing_cart"].indexOf(eCat.stage) !== -1;
+          const stadesOk = quoi === "commande" ? STADES_ACCES_COMMANDE : ["idle", "awaiting_quantity", "awaiting_more_items", "viewing_cart"];
+          const peutVoir = !eCat || stadesOk.indexOf(eCat.stage) !== -1;
           // Commande deja avancee (telephone, adresse...) : on redonne sa derniere question au lieu d'afficher le panier.
           entreeComplete.routeur.entrerDansVolet(from, "catalogue", !peutVoir);
-          idInteractifClique = peutVoir ? ID_PANIER : ID_VOLET_CATALOGUE;
+          idInteractifClique = peutVoir ? (quoi === "commande" ? ID_MA_COMMANDE : ID_PANIER) : ID_VOLET_CATALOGUE;
         } else {
           entreeComplete.routeur.entrerDansVolet(from, voletCible, false);
           idInteractifClique = ID_MON_RDV;
@@ -3755,6 +3779,15 @@ const ID_PANIER = "IZY_PANIER";
 const ID_AUTRE_ARTICLE = "IZY_AUTRE";
 const ID_PANIER_CONTINUER = "IZY_PANIER_CONTINUER";
 const ID_PANIER_TERMINER = "IZY_PANIER_TERMINER";
+// Etape 73 : « Ma commande » (espace client). Une commande « Nouvelle » est modifiable par le client ; une commande confirmee est verrouillee.
+const ID_MA_COMMANDE = "IZY_MA_COMMANDE";
+const ID_CMD_CONFIRMER = "IZY_CMD_CONFIRMER";
+const ID_CMD_ARTICLES = "IZY_CMD_ARTICLES";
+const ID_CMD_COORD = "IZY_CMD_COORD";
+const ID_CMD_ANNULER = "IZY_CMD_ANNULER";
+const ID_CMD_ANNULER_EDIT = "IZY_CMD_ANNULER_EDIT";
+const PREFIXE_CMD_GERER = "IZY_CMD_GERER_";
+const STADES_ACCES_COMMANDE = ["idle", "awaiting_quantity", "awaiting_more_items", "viewing_cart", "viewing_orders", "managing_order", "awaiting_order_confirmation"];
 const ID_LANG_FR = "IZY_LANG_FR";
 // Menu a deux boutons d'un marchand hybride (Etape 47, voir hybride.js).
 const ID_VOLET_CATALOGUE = "IZY_VOLET_CAT";
@@ -3870,15 +3903,21 @@ function lignesMonRendezVous(marchand, telephone, etat) {
 function lignesMonPanier(marchand, etat) {
   try {
     if (!marchand || !marchand.engine || marchand.engine.type !== "catalogue") return [];
+    const out = [];
     const n = etat && Array.isArray(etat.cart) ? etat.cart.length : 0;
-    if (!(n > 0)) return [];
-    return [{ id: ID_PANIER, title: tW(etat, "Mon panier (" + n + ")", "My cart (" + n + ")"), description: tW(etat, "Voir, modifier ou valider", "View, edit or complete") }];
+    if (n > 0) out.push({ id: ID_PANIER, title: tW(etat, "Mon panier (" + n + ")", "My cart (" + n + ")"), description: tW(etat, "Voir, modifier ou valider", "View, edit or complete") });
+    // Etape 73 : « Ma commande » (uniquement si le client a une commande en cours) juste apres « Mon panier ».
+    if (etat && etat.nbCommandesEnCours > 0) out.push(ligneMaCommande(etat));
+    return out;
   } catch (e) { return []; }
+}
+function ligneMaCommande(etat) {
+  return { id: ID_MA_COMMANDE, title: tW(etat, "Ma commande", "My order"), description: tW(etat, "Suivre, modifier ou annuler", "Track, edit or cancel") };
 }
 
 // Etape 70 : entrees « Mon panier / Mon rendez-vous / Ma reservation » du MENU PRINCIPAL d'un marchand hybride, uniquement pour ce que le
 // client a reellement en cours dans les volets proposes (panier non vide, rendez-vous ou sejour a venir).
-const PREFIXE_ESPACE = "IZY_ESPACE_"; // + panier | rdv | sejour
+const PREFIXE_ESPACE = "IZY_ESPACE_"; // + panier | commande | rdv | sejour
 function elementsEspace(entree, telephone, etat) {
   const out = [];
   try {
@@ -3887,6 +3926,9 @@ function elementsEspace(entree, telephone, etat) {
       const e = entree.moteurs.catalogue.getEtatSession(telephone);
       const n = e && Array.isArray(e.cart) ? e.cart.length : 0;
       if (n > 0) out.push({ id: PREFIXE_ESPACE + "panier", title: tW(etat, "Mon panier (" + n + ")", "My cart (" + n + ")"), description: tW(etat, "Voir, modifier ou valider", "View, edit or complete") });
+      if (typeof entree.moteurs.catalogue.nbCommandesEnCours === "function" && entree.moteurs.catalogue.nbCommandesEnCours(telephone) > 0) {
+        out.push(Object.assign({}, ligneMaCommande(etat), { id: PREFIXE_ESPACE + "commande" }));
+      }
     }
     if (volets.indexOf("service") !== -1 && typeof entree.moteurs.service.nbRdvsAVenir === "function" && entree.moteurs.service.nbRdvsAVenir(telephone) > 0) {
       out.push({ id: PREFIXE_ESPACE + "rdv", title: tW(etat, "Mon rendez-vous", "My appointment"), description: tW(etat, "Annuler ou reporter", "Cancel or reschedule") });
@@ -4189,6 +4231,13 @@ function resoudreTexteInteractif(marchand, interactive, idForce) {
   if (id === ID_RDV_REPORTER) return "reporter mon rendez-vous";
   if (id.indexOf(PREFIXE_RDV_CHOIX) === 0) return String(Number(id.slice(PREFIXE_RDV_CHOIX.length)) + 1); // position 1-based dans la liste
   if (id === ID_PANIER) return "voir mon panier";
+  if (id === ID_MA_COMMANDE) return "ma commande"; // Etape 73
+  if (id === ID_CMD_CONFIRMER) return "confirmer ma commande";
+  if (id === ID_CMD_ARTICLES) return "modifier les articles";
+  if (id === ID_CMD_COORD) return "modifier mes coordonnées";
+  if (id === ID_CMD_ANNULER) return "annuler ma commande";
+  if (id === ID_CMD_ANNULER_EDIT) return "annuler";
+  if (id.indexOf(PREFIXE_CMD_GERER) === 0) return "gérer CMD-" + String(Number(id.slice(PREFIXE_CMD_GERER.length))).padStart(4, "0");
   if (id === ID_AUTRE_ARTICLE) return "autre chose";
   if (id === ID_PANIER_CONTINUER) return "continuer mes achats";
   if (id === ID_PANIER_TERMINER) return "terminé";
@@ -4381,13 +4430,14 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   // Vue panier : une ligne "retirer" par article (voir etat.cart, fourni par conversation.js), plus la
   // reprise des achats ou la validation de la commande.
   if (etat.stage === "viewing_cart" && etat.cart && etat.cart.length) {
-    const rows = etat.cart.slice(0, 6).map((it, i) => ({
+    const rows = etat.cart.slice(0, etat.editOrderRef ? 5 : 6).map((it, i) => ({
       id: PREFIXE_RETIRER_PANIER + i,
       title: tronquerTexte(it.produit, 24),
       description: tronquerTexte(tW(etat, "🗑️ Retirer — ", "🗑️ Remove — ") + libelleVarianteClient(it.couleur, it.taille) + " × " + it.quantite + " — " + sh.formatFcfa(it.prixUnitaire * it.quantite), 72)
     }));
     rows.push({ id: ID_PANIER_CONTINUER, title: tronquerTexte(tW(etat, "🛍️ Continuer mes achats", "🛍️ Keep shopping"), 24) });
-    rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte(tW(etat, "✅ Terminer ma commande", "✅ Complete my order"), 24) });
+    rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte(etat.editOrderRef ? tW(etat, "✅ Valider les changements", "✅ Save changes") : tW(etat, "✅ Terminer ma commande", "✅ Complete my order"), 24) });
+    if (etat.editOrderRef) rows.push({ id: ID_CMD_ANNULER_EDIT, title: tronquerTexte(tW(etat, "Annuler la modification", "Cancel the edit"), 24), description: tronquerTexte(tW(etat, "Garder " + etat.editOrderRef + " telle quelle", "Keep " + etat.editOrderRef + " unchanged"), 72) });
     rows.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
     ligneMenuPrincipal(marchand, etat).forEach((l) => rows.push(l)); // Etape 72 : retour au menu principal (marchand hybride)
     return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Gérer mon panier", "Manage my cart"), [{ title: tW(etat, "Votre panier", "Your cart"), rows }]);
@@ -4405,6 +4455,33 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
   // Rupture sur tous les modeles : "Souhaitez-vous que notre equipe vous previenne des le reassort ?" (voir
   // conversation.js, etape awaiting_reassort) - memes boutons Oui/Non que la confirmation de commande.
+  // Etape 73 : « Ma commande » - une commande « Nouvelle » ouverte : actions possibles ; plusieurs commandes : choix ; confirmee : contact seulement.
+  if (etat.stage === "managing_order" && etat.commandeActive) {
+    const rows = [
+      { id: ID_CMD_CONFIRMER, title: tW(etat, "Confirmer la commande", "Confirm the order"), description: tW(etat, "Valider " + etat.commandeActive.ref, "Confirm " + etat.commandeActive.ref) },
+      { id: ID_CMD_ARTICLES, title: tW(etat, "Modifier les articles", "Edit items"), description: tW(etat, "Ajouter, retirer, changer", "Add, remove, change") },
+      { id: ID_CMD_COORD, title: tW(etat, "Mes coordonnées", "My details"), description: tW(etat, "Téléphone ou adresse", "Phone or address") },
+      { id: ID_CMD_ANNULER, title: tW(etat, "Annuler la commande", "Cancel the order"), description: tW(etat, "Supprimer " + etat.commandeActive.ref, "Remove " + etat.commandeActive.ref) },
+      { id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") }
+    ].concat(ligneMenuPrincipal(marchand, etat));
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Mes options", "My options"), [{ title: tW(etat, "Ma commande", "My order"), rows }]);
+  }
+  if (etat.stage === "viewing_orders") {
+    const rows = (etat.commandesVue || []).slice(0, 4).map((c) => ({
+      id: PREFIXE_CMD_GERER + c.id, title: c.ref,
+      description: tronquerTexte(tW(etat, "À confirmer · ", "To confirm · ") + c.nbArticles + tW(etat, " article(s) · ", " item(s) · ") + sh.formatFcfa(c.prix), 72)
+    }));
+    rows.push({ id: ID_PANIER_CONTINUER, title: tW(etat, "Continuer mes achats", "Keep shopping"), description: tW(etat, "Retour au catalogue", "Back to the catalog") });
+    rows.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
+    ligneMenuPrincipal(marchand, etat).forEach((l) => rows.push(l));
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Mes options", "My options"), [{ title: tW(etat, "Mes commandes", "My orders"), rows }]);
+  }
+  if (etat.stage === "awaiting_order_cancel_confirm") {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: ID_OUI, title: tW(etat, "Oui, annuler", "Yes, cancel") },
+      { id: ID_NON, title: tW(etat, "Non, la garder", "No, keep it") }
+    ]);
+  }
   // Etape 49 : la confirmation de COMMANDE propose un 3e bouton "Modifier" (corriger telephone/adresse).
   if (etat.stage === "awaiting_order_confirmation") {
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [

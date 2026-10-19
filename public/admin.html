@@ -711,6 +711,18 @@ const I18N = {
     titreListeAttente: "Clients en attente de réassort",
     noteListeAttente: "Clients à qui le bot a répondu « en rupture » et qui ont demandé à être prévenus. Contactez-les vous-même quand l'article est de nouveau en stock, puis cliquez sur « Marquer comme contacté ».",
     aucuneAttente: "Aucun client en attente pour le moment.",
+    titreARelancer: "Clients à relancer",
+    noteARelancer: "Paniers abandonnés et commandes restées « Nouvelle » (le client n'a pas confirmé). Vous relancez depuis votre propre WhatsApp : rien n'est envoyé automatiquement.",
+    labelDelaiRelance: "Relancer après",
+    uniteHeures: "h sans réponse",
+    aucunARelancer: "Personne à relancer pour le moment.",
+    relPanierAbandonne: "Panier abandonné",
+    relCommandeNouvelle: "Commande {ref} non confirmée",
+    colRelClient: "Client",
+    colRelDetail: "Détail",
+    colRelDepuis: "Depuis",
+    btnMarquerRelance: "Marquer comme relancé",
+    relacesBadge: "{n} à relancer",
     attACompter: "{n} à contacter",
     colAttArticle: "Article",
     colAttClient: "Client (WhatsApp)",
@@ -1706,6 +1718,18 @@ const I18N = {
     titreListeAttente: "Customers waiting for restock",
     noteListeAttente: "Customers the bot told \u201cout of stock\u201d who asked to be notified. Contact them yourself once the item is back in stock, then click \u201cMark as contacted\u201d.",
     aucuneAttente: "No customers waiting right now.",
+    titreARelancer: "Customers to follow up",
+    noteARelancer: "Abandoned carts and orders left \"Nouvelle\" (the customer did not confirm). You follow up from your own WhatsApp: nothing is sent automatically.",
+    labelDelaiRelance: "Follow up after",
+    uniteHeures: "h without reply",
+    aucunARelancer: "Nobody to follow up right now.",
+    relPanierAbandonne: "Abandoned cart",
+    relCommandeNouvelle: "Order {ref} not confirmed",
+    colRelClient: "Customer",
+    colRelDetail: "Details",
+    colRelDepuis: "Since",
+    btnMarquerRelance: "Mark as followed up",
+    relacesBadge: "{n} to follow up",
     attACompter: "{n} to contact",
     colAttArticle: "Item",
     colAttClient: "Customer (WhatsApp)",
@@ -5435,6 +5459,70 @@ async function renderHistoriqueDetail(telephone) {
 
 // ---------------- Tableau de bord ----------------
 
+// Etape 73 : bloc « Clients à relancer » du tableau de bord (marchand catalogue) : paniers abandonnés + commandes restées « Nouvelle ».
+// Le lien wa.me s'ouvre dans le WhatsApp du marchand ; « Marquer comme relancé » retire la ligne de la liste.
+function lienRelanceClient(e) {
+  const chiffres = String(e.telephone || "").replace(/\D/g, "");
+  if (!chiffres) return "";
+  const en = e.langue === "en";
+  const lieu = (marchandActif && marchandActif.nom) ? marchandActif.nom : "";
+  const articles = (e.articles || []).map((a) => a.produit + " x" + a.quantite).join(", ");
+  const total = (e.total || 0).toLocaleString(en ? "en-US" : "fr-FR") + " FCFA";
+  const msg = e.type === "commande"
+    ? (en ? "Hello, your order " + e.ref + (lieu ? " at " + lieu : "") + " (" + articles + ", total " + total + ") is waiting for your confirmation. Would you like to confirm it? I'm here to help."
+          : "Bonjour, votre commande " + e.ref + (lieu ? " chez " + lieu : "") + " (" + articles + ", total " + total + ") attend votre confirmation. Souhaitez-vous la confirmer ? Je reste disponible pour vous aider.")
+    : (en ? "Hello, you added items to your cart" + (lieu ? " at " + lieu : "") + " (" + articles + ", total " + total + ") but did not finish your order. Would you like to complete it? I'm here to help."
+          : "Bonjour, vous aviez ajouté des articles à votre panier" + (lieu ? " chez " + lieu : "") + " (" + articles + ", total " + total + ") sans terminer votre commande. Souhaitez-vous la finaliser ? Je reste disponible pour vous aider.");
+  return "https://wa.me/" + chiffres + "?text=" + encodeURIComponent(msg);
+}
+function depuisTexte(iso) {
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (min < 60) return min + " min";
+  const h = Math.round(min / 60);
+  return h < 48 ? h + " h" : Math.round(h / 24) + " j";
+}
+async function monterARelancer(zoneBloc) {
+  if (!zoneBloc) return;
+  let donnees;
+  try { donnees = await api("/api/" + marchandActif.id + "/a-relancer?volet=catalogue"); }
+  catch (e) { zoneBloc.innerHTML = ""; return; }   // droit manquant ou marchand sans catalogue : le bloc reste simplement absent
+  const lignes = donnees.commandes.concat(donnees.paniers);
+  const options = donnees.delaisPossibles.map((h) => "<option value='" + h + "'" + (h === donnees.delaiHeures ? " selected" : "") + ">" + h + " " + esc(t("uniteHeures")) + "</option>").join("");
+  zoneBloc.innerHTML =
+    "<div class='bloc-liste-attente' id='blocARelancer'>" +
+      "<h3>" + esc(t("titreARelancer")) + " <span class='badge-attente-compte' style='display:" + (lignes.length ? "" : "none") + ";'>" + esc(t("relacesBadge", { n: lignes.length })) + "</span></h3>" +
+      "<p class='raison'>" + esc(t("noteARelancer")) + "</p>" +
+      "<div style='margin:6px 0;'><label>" + esc(t("labelDelaiRelance")) + " <select id='selDelaiRelance'>" + options + "</select></label></div>" +
+      (lignes.length
+        ? "<table class='table-liste-attente'><thead><tr><th></th><th>" + esc(t("colRelClient")) + "</th><th>" + esc(t("colRelDetail")) + "</th><th>" + esc(t("colRelDepuis")) + "</th><th></th></tr></thead><tbody>" +
+          lignes.map((e) =>
+            "<tr data-relance-type='" + esc(e.type) + "' data-relance-cle='" + esc(e.cle) + "'>" +
+              "<td>" + esc(e.type === "commande" ? t("relCommandeNouvelle", { ref: e.ref }) : t("relPanierAbandonne")) + "</td>" +
+              "<td>" + esc(e.telephone) + "</td>" +
+              "<td>" + esc((e.articles || []).map((a) => a.produit + " ×" + a.quantite).join(", ")) + " — " + esc((e.total || 0).toLocaleString(localeCourante())) + " FCFA</td>" +
+              "<td>" + esc(depuisTexte(e.type === "commande" ? e.dateISO : e.derniereActiviteISO)) + "</td>" +
+              "<td><a class='btnRelancerClient' href='" + esc(lienRelanceClient(e)) + "' target='_blank' rel='noopener noreferrer'>" + esc(t("btnRelancerWhatsapp")) + "</a> " +
+                "<button data-relance-fait='1'>" + esc(t("btnMarquerRelance")) + "</button></td>" +
+            "</tr>").join("") + "</tbody></table>"
+        : "<p>" + esc(t("aucunARelancer")) + "</p>") +
+    "</div>";
+  const sel = zoneBloc.querySelector("#selDelaiRelance");
+  sel.onchange = async () => {
+    try { await api("/api/" + marchandActif.id + "/a-relancer/delai?volet=catalogue", { method: "PUT", body: JSON.stringify({ heures: Number(sel.value) }) }); await monterARelancer(zoneBloc); }
+    catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  Array.prototype.forEach.call(zoneBloc.querySelectorAll("[data-relance-fait]"), (btn) => {
+    btn.onclick = async () => {
+      const tr = btn.closest("tr");
+      btn.disabled = true;
+      try {
+        await api("/api/" + marchandActif.id + "/a-relancer/marquer?volet=catalogue", { method: "POST", body: JSON.stringify({ type: tr.dataset.relanceType, cle: tr.dataset.relanceCle }) });
+        await monterARelancer(zoneBloc);
+      } catch (e) { alert(t("erreurPrefixe") + e.message); btn.disabled = false; }
+    };
+  });
+}
+
 async function renderTableauDeBord() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -5568,8 +5656,10 @@ async function renderTableauDeBord() {
     (hybrideDash ? "<h2 style='margin-top:26px; border-bottom:2px solid #e3e6ea; padding-bottom:4px;'>" + t(libelleVoletCle(v)) + "</h2>" : "") +
     (v === "hebergement" ? sectionDashboardHeb(donneesDash[i]) : sectionDashboard(donneesDash[i], v !== "service"))
   ).join("");
-  zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode + sectionsDash;
+  zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode +
+    (voletsDash.indexOf("catalogue") !== -1 && estOngletVisible("commandes") ? "<div id='zoneARelancer'></div>" : "") + sectionsDash;
   brancherDeplierVentes(zone);
+  monterARelancer(document.getElementById("zoneARelancer")); // Etape 73 : chargee apres coup, sans jamais bloquer le tableau de bord
 
   Array.prototype.forEach.call(zone.querySelectorAll(".tuile.cliquable"), (el) => {
     const cible = el.dataset.tuileOnglet;

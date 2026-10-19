@@ -188,6 +188,7 @@ function createCatalogEngine(merchantKey, options) {
         if (s.stage === "idle" && !s.pendingChoice && !s.attenteChoixContactHumain) return s;
         if (s.stage === "awaiting_order_confirmation" || s.stage === "awaiting_order_correction") return s;
         const neuve = freshSession(s); neuve.cart = s.cart || []; neuve.fromPhone = s.fromPhone;
+        if (s.editOrderId && neuve.cart.length) neuve.editOrderId = s.editOrderId; // Etape 73 : le panier est la copie d'une commande en cours de modification
         return neuve;
       }
       const neuve = freshSession(s); neuve.fromPhone = s.fromPhone;
@@ -302,7 +303,11 @@ function createCatalogEngine(merchantKey, options) {
   function afficherPanierTexte(session, cart) {
     const items = describeItemsNumbered(cart);
     const total = formatFcfa(itemsTotal(cart));
-    return sh.t(session,
+    const editRef = refEditionEnCours(session);
+    const prefixeEdition = editRef ? sh.t(session,
+      "✏️ Vous modifiez la commande " + editRef + " (tapez *annuler* pour la garder telle quelle).\n\n",
+      "✏️ You are editing order " + editRef + " (type *cancel* to keep it unchanged).\n\n") : "";
+    return prefixeEdition + sh.t(session,
       "Voici votre panier :\n" + items + "\nTotal : " + total +
         "\n\nPour retirer un article, indiquez simplement son numéro. Tapez *continuer* pour poursuivre vos achats, ou *terminé* pour valider votre commande.",
       "Here is your cart:\n" + items + "\nTotal: " + total +
@@ -372,6 +377,9 @@ function createCatalogEngine(merchantKey, options) {
   // sinon directement vers la demande d'adresse de livraison comme avant. Modifie `session` et renvoie le
   // texte a repondre.
   function finaliserPanier(session) {
+    // Etape 73 : le panier est la copie d'une commande « Nouvelle » que le client modifie -> on met a jour CETTE commande
+    // (pas de nouvelle commande, pas de nouvelle collecte telephone/adresse).
+    if (session.editOrderId) return terminerModificationArticles(session);
     if (retraitConfigure()) {
       session.stage = "awaiting_mode_livraison";
       session.pendingChoice = { type: "mode_livraison", options: ["Livraison", "Retrait en boutique"] };
@@ -625,6 +633,223 @@ function createCatalogEngine(merchantKey, options) {
     return res;
   }
 
+  // ---------------- Etape 73 : « Ma commande » (espace client, comme sur un site e-commerce) ----------------
+  // Commandes « en cours » du client : Nouvelle (attend son « oui » -> modifiable par lui), puis Confirmee / Commandee / Expediee
+  // (VERROUILLEES : seul « Contacter un conseiller » reste possible). Livree et Annulee n'y figurent plus.
+  const STATUTS_COMMANDE_EN_COURS = ["Nouvelle", "Confirmée", "Commandée", "Expédiée"];
+  const DUREE_COMMANDE_EN_COURS_MS = 60 * 24 * 60 * 60 * 1000;
+
+  function commandesEnCoursDuClient(tel) {
+    if (!state || !tel) return [];
+    const maintenant = Date.now();
+    return state.orders.filter((o) => {
+      if (o.fromWhatsapp !== tel) return false;
+      if (o.source === "simulateur" && tel !== PHONE_SIMULATEUR) return false;
+      if (STATUTS_COMMANDE_EN_COURS.indexOf(o.statut) === -1) return false;
+      return !(maintenant - new Date(o.dateISO).getTime() > DUREE_COMMANDE_EN_COURS_MS);
+    }).sort((a, b) => new Date(b.dateISO).getTime() - new Date(a.dateISO).getTime()).slice(0, 5);
+  }
+  function nbCommandesEnCours(tel) { return commandesEnCoursDuClient(tel).length; }
+
+  // Reference de la commande que le panier est en train de modifier (null si aucune, ou si elle n'est plus modifiable).
+  function refEditionEnCours(session) {
+    if (!session || !session.editOrderId || !state) return null;
+    const o = state.orders.filter((x) => x.id === session.editOrderId)[0];
+    return o ? orderRef(o) : null;
+  }
+
+  function signatureItems(items) {
+    return (items || []).map((it) => [it.productId, it.couleur || "", it.taille || "", it.quantite].join("|")).sort().join(";");
+  }
+  // true si le panier est exactement les articles d'une des commandes donnees (reste du panier d'une commande deja passee).
+  function panierEgalCommande(cart, commandes) {
+    if (!cart || !cart.length) return false;
+    const sig = signatureItems(cart);
+    return commandes.some((o) => signatureItems(o.items) === sig);
+  }
+
+  function statutClair(session, statut) {
+    if (statut === "Nouvelle") return sh.t(session, "en attente de votre confirmation", "awaiting your confirmation");
+    if (statut === "Confirmée") return sh.t(session, "confirmée", "confirmed");
+    if (statut === "Commandée") return sh.t(session, "en préparation", "being prepared");
+    if (statut === "Expédiée") return sh.t(session, "expédiée", "shipped");
+    return statut;
+  }
+
+  function detailCommande(session, o) {
+    const retrait = o.modeLivraison === "retrait";
+    return "• " + orderRef(o) + " — " + statutClair(session, o.statut) + "\n" + describeItems(o.items) + "\n" +
+      sh.t(session, "Total : ", "Total: ") + formatFcfa(o.prix) + "\n" +
+      sh.t(session, retrait ? "Retrait : " : "Livraison : ", retrait ? "Pickup: " : "Delivery: ") + (o.adresse || "—");
+  }
+
+  function listeArticlesMessage() { return state.catalog.map((p) => p.nom).join(", "); }
+
+  function retourCatalogue(session, debutFr, debutEn) {
+    session.stage = "idle";
+    session.pretPourChoix = true;
+    return sh.t(session,
+      debutFr + " Quel article vous intéresse ? Nous avons : " + listeArticlesMessage() + ".",
+      debutEn + " Which item are you interested in? We have: " + listeArticlesMessage() + ".");
+  }
+
+  const MSG_COMMANDE_VERROUILLEE_FR = "Une commande déjà confirmée ne peut plus être modifiée ici : pour toute demande, contactez un conseiller.";
+  const MSG_COMMANDE_VERROUILLEE_EN = "An order that is already confirmed can no longer be changed here: please contact an advisor for any request.";
+
+  function textesActionsCommande(session) {
+    return sh.t(session,
+      "Vous pouvez la confirmer, modifier ses articles, modifier votre numéro ou votre adresse, ou l'annuler.",
+      "You can confirm it, change its items, change your phone number or address, or cancel it.");
+  }
+
+  // Vue « Ma commande » : toutes les commandes en cours, puis les actions possibles (uniquement sur les commandes « Nouvelle »).
+  function afficherMesCommandes(session) {
+    const commandes = commandesEnCoursDuClient(session.fromPhone);
+    if (!commandes.length) {
+      return retourCatalogue(session, "Vous n'avez aucune commande en cours pour le moment.", "You have no order in progress right now.");
+    }
+    const nouvelles = commandes.filter((o) => o.statut === "Nouvelle");
+    const verrouillees = commandes.length - nouvelles.length;
+    const entete = commandes.length > 1 ? sh.t(session, "Vos commandes en cours :", "Your orders in progress:") : sh.t(session, "Votre commande en cours :", "Your order in progress:");
+    const corps = entete + "\n" + commandes.map((o) => detailCommande(session, o)).join("\n\n");
+    const noteVerrou = verrouillees ? "\n\n" + sh.t(session, MSG_COMMANDE_VERROUILLEE_FR, MSG_COMMANDE_VERROUILLEE_EN) : "";
+    if (nouvelles.length === 1) {
+      session.stage = "managing_order";
+      session.pendingOrderId = nouvelles[0].id;
+      session.modeLivraison = nouvelles[0].modeLivraison || session.modeLivraison;
+      return corps + "\n\n" + sh.t(session, "La commande " + orderRef(nouvelles[0]) + " attend votre confirmation. ", "Order " + orderRef(nouvelles[0]) + " is awaiting your confirmation. ") + textesActionsCommande(session) + noteVerrou;
+    }
+    session.stage = "viewing_orders";
+    if (nouvelles.length > 1) {
+      return corps + "\n\n" + sh.t(session,
+        "Plusieurs commandes attendent votre confirmation. Indiquez le numéro de celle à gérer (exemple : " + orderRef(nouvelles[0]) + ").",
+        "Several orders are awaiting your confirmation. Tell me the number of the one to manage (e.g. " + orderRef(nouvelles[0]) + ").") + noteVerrou;
+    }
+    return corps + "\n\n" + sh.t(session, MSG_COMMANDE_VERROUILLEE_FR, MSG_COMMANDE_VERROUILLEE_EN);
+  }
+
+  // Le client modifie les articles d'une commande « Nouvelle » : son panier devient la copie de la commande.
+  function demarrerModificationArticles(session, order) {
+    const commandes = commandesEnCoursDuClient(session.fromPhone);
+    if (session.cart.length && !panierEgalCommande(session.cart, commandes)) {
+      return sh.t(session,
+        "Vous avez déjà un panier en cours (" + session.cart.length + " article(s)). Terminez-le ou videz-le d'abord (tapez « panier »), puis revenez modifier votre commande.",
+        "You already have a cart in progress (" + session.cart.length + " item(s)). Please finish or empty it first (type \"cart\"), then come back to edit your order.");
+    }
+    session.cart = order.items.map((it) => ({
+      productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille,
+      quantite: it.quantite, prixUnitaire: it.prixUnitaire
+    }));
+    session.editOrderId = order.id;
+    session.pendingOrderId = null;
+    session.stage = "viewing_cart";
+    return afficherPanierTexte(session, session.cart);
+  }
+
+  function terminerModificationArticles(session) {
+    const o = state.orders.filter((x) => x.id === session.editOrderId)[0];
+    if (!o || o.statut !== "Nouvelle") {
+      const ref = o ? orderRef(o) : "";
+      session.editOrderId = null;
+      session.cart = [];
+      session.stage = "idle";
+      return sh.t(session,
+        "La commande " + ref + " a été confirmée entre-temps : elle ne peut plus être modifiée ici. Pour toute demande, contactez un conseiller.",
+        "Order " + ref + " has been confirmed in the meantime: it can no longer be changed here. Please contact an advisor for any request.");
+    }
+    o.items = session.cart.map((it) => ({
+      productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille,
+      quantite: it.quantite, prixUnitaire: it.prixUnitaire, prix: it.prixUnitaire * it.quantite
+    }));
+    o.prix = itemsTotal(o.items);
+    o.modifieeParClientLe = new Date().toISOString();
+    saveState();
+    session.editOrderId = null;
+    session.cart = [];
+    session.pendingOrderId = o.id;
+    session.telephone = o.telephone;
+    session.adresse = o.adresse;
+    session.modeLivraison = o.modeLivraison || "livraison";
+    session.stage = "awaiting_order_confirmation";
+    return recapitulatifCommande(session, o, "Votre commande a bien été modifiée. Voici le récapitulatif", "Your order has been updated. Here's the summary");
+  }
+
+  // ---------------- Etape 73 : « A relancer » (tableau de bord marchand) ----------------
+  // Deux sortes de clients a relancer : un PANIER abandonne (articles ajoutes, plus de message depuis le delai) et une commande restee
+  // « Nouvelle » (le client n'a jamais repondu « oui »). Le marchand relance depuis son propre WhatsApp (lien wa.me) : rien n'est envoye
+  // par le bot, aucun cout Meta. Le delai est regle par le marchand (Parametre `delaiRelanceHeures`, 24 h par defaut).
+  const DELAIS_RELANCE_HEURES = [2, 6, 12, 24, 48, 72];
+  const DELAI_RELANCE_DEFAUT_HEURES = 24;
+  const RELANCE_DUREE_MAX_MS = 30 * 24 * 60 * 60 * 1000;
+  function delaiRelanceHeures() {
+    const h = state && state.settings ? Number(state.settings.delaiRelanceHeures) : NaN;
+    return DELAIS_RELANCE_HEURES.indexOf(h) !== -1 ? h : DELAI_RELANCE_DEFAUT_HEURES;
+  }
+  function definirDelaiRelanceHeures(h) {
+    const v = Number(h);
+    if (!state || DELAIS_RELANCE_HEURES.indexOf(v) === -1) return false;
+    state.settings.delaiRelanceHeures = v;
+    saveState();
+    return true;
+  }
+  function aRelancer() {
+    const delaiH = delaiRelanceHeures();
+    const delaiMs = delaiH * 60 * 60 * 1000;
+    const maintenant = Date.now();
+    const out = { delaiHeures: delaiH, delaisPossibles: DELAIS_RELANCE_HEURES.slice(), paniers: [], commandes: [] };
+    if (!state) return out;
+    const relances = state.relancesPaniers || {};
+    Object.keys(sessions).forEach((tel) => {
+      if (tel === PHONE_SIMULATEUR) return;
+      const s = sessions[tel];
+      if (!s || !s.cart || !s.cart.length || s.editOrderId) return;
+      const activite = persistance.activiteDe(tel);
+      if (!activite) return;
+      const age = maintenant - activite;
+      if (age < delaiMs || age > RELANCE_DUREE_MAX_MS) return;
+      if (relances[tel] && new Date(relances[tel]).getTime() >= activite) return; // deja relance depuis son dernier message
+      // Le reste d'un panier deja transforme en commande n'est pas un panier abandonne : la commande, elle, apparait plus bas.
+      if (panierEgalCommande(s.cart, state.orders.filter((o) => o.fromWhatsapp === tel && o.statut !== "Annulée"))) return;
+      out.paniers.push({
+        type: "panier", cle: tel, telephone: tel, langue: sh.langueSession(s),
+        articles: s.cart.map((it) => ({ produit: it.produit, quantite: it.quantite })),
+        nbArticles: s.cart.length, total: itemsTotal(s.cart), derniereActiviteISO: new Date(activite).toISOString()
+      });
+    });
+    state.orders.forEach((o) => {
+      if (o.statut !== "Nouvelle" || o.source === "simulateur" || !o.fromWhatsapp || o.relanceLe) return;
+      const age = maintenant - new Date(o.dateISO).getTime();
+      if (age < delaiMs || age > RELANCE_DUREE_MAX_MS) return;
+      out.commandes.push({
+        type: "commande", cle: String(o.id), id: o.id, ref: orderRef(o), telephone: o.fromWhatsapp, telephoneContact: o.telephone || null,
+        langue: o.langue === "en" ? "en" : "fr", articles: (o.items || []).map((it) => ({ produit: it.produit, quantite: it.quantite })),
+        total: o.prix, dateISO: o.dateISO
+      });
+    });
+    out.paniers.sort((a, b) => String(a.derniereActiviteISO).localeCompare(String(b.derniereActiviteISO)));
+    out.commandes.sort((a, b) => String(a.dateISO).localeCompare(String(b.dateISO)));
+    return out;
+  }
+  // Le marchand vient de relancer ce client : l'entree disparait de la liste (le panier reapparaitrait si le client revenait puis repartait).
+  function marquerRelance(type, cle, parQui) {
+    if (!state) return false;
+    if (type === "commande") {
+      const o = state.orders.filter((x) => String(x.id) === String(cle))[0];
+      if (!o || o.statut !== "Nouvelle") return false;
+      o.relanceLe = new Date().toISOString(); o.relancePar = parQui || null;
+      saveState();
+      return true;
+    }
+    if (type === "panier") {
+      if (!sessions[cle] || !(sessions[cle].cart || []).length) return false;
+      if (!state.relancesPaniers) state.relancesPaniers = {};
+      state.relancesPaniers[cle] = new Date().toISOString();
+      saveState();
+      return true;
+    }
+    return false;
+  }
+
   function recapitulatifCommande(session, order, introFr, introEn) {
     const libelle = sh.t(session, session.modeLivraison === "retrait" ? "Retrait" : "Livraison", session.modeLivraison === "retrait" ? "Pickup" : "Delivery");
     return sh.t(session,
@@ -683,6 +908,118 @@ function createCatalogEngine(merchantKey, options) {
             );
       }
       // sinon : on laisse le message continuer dans le traitement normal ci-dessous
+    }
+
+    // Etape 73 : « Ma commande » (tape librement, ou ligne « Ma commande » des menus WhatsApp), reconnu a tout moment du parcours d'achat
+    // - meme principe que « panier » juste apres. Les commandes « Nouvelle » sont modifiables par le client ; les autres sont verrouillees.
+    if (["idle", "awaiting_quantity", "awaiting_more_items", "viewing_cart", "viewing_orders", "managing_order", "awaiting_order_confirmation"].indexOf(session.stage) !== -1 && sh.demandeVoirCommande(text)) {
+      if (session.stage === "awaiting_quantity") { session.productId = null; session.couleur = null; session.taille = null; session.quantite = null; }
+      trace.entites = { "Réponse client": text };
+      trace.action = "Client consulte ses commandes en cours (Ma commande)";
+      const reponseCmd = afficherMesCommandes(session);
+      logTrace(session, trace);
+      return reponseCmd;
+    }
+
+    // Choix de la commande a gerer (plusieurs commandes « Nouvelle »), ou simple consultation si toutes sont verrouillees.
+    if (session.stage === "viewing_orders") {
+      trace.entites = { "Réponse client": text };
+      const commandes = commandesEnCoursDuClient(session.fromPhone);
+      const cite = sh.refCommandeCitee(text);
+      const choisie = cite !== null ? commandes.filter((o) => o.id === cite)[0] : null;
+      if (choisie) {
+        if (choisie.statut === "Nouvelle") {
+          session.stage = "managing_order";
+          session.pendingOrderId = choisie.id;
+          session.modeLivraison = choisie.modeLivraison || session.modeLivraison;
+          trace.action = "Client choisit de gérer la commande " + orderRef(choisie);
+          logTrace(session, trace);
+          return detailCommande(session, choisie) + "\n\n" + textesActionsCommande(session);
+        }
+        trace.action = "Commande " + orderRef(choisie) + " déjà confirmée — verrouillée";
+        logTrace(session, trace);
+        return sh.t(session, MSG_COMMANDE_VERROUILLEE_FR, MSG_COMMANDE_VERROUILLEE_EN);
+      }
+      if (/catalogue|continu|achat|boutique|shop|browse|retour|back/i.test(text) || matchProduct(text)) {
+        const produit = matchProduct(text);
+        session.stage = "idle";
+        trace.action = produit ? "Client nomme un article depuis Ma commande — traitement immédiat" : "Client quitte Ma commande — retour au catalogue";
+        logTrace(session, trace);
+        if (produit) return processMessage(session, text);
+        return retourCatalogue(session, "Très bien.", "Sure.");
+      }
+      trace.action = "Réponse non comprise dans Ma commande — rappel des options";
+      logTrace(session, trace);
+      const nouvelles = commandes.filter((o) => o.statut === "Nouvelle");
+      return nouvelles.length
+        ? sh.t(session, "Indiquez le numéro de la commande à gérer (exemple : " + orderRef(nouvelles[0]) + "), ou contactez un conseiller.", "Tell me the number of the order to manage (e.g. " + orderRef(nouvelles[0]) + "), or contact an advisor.")
+        : sh.t(session, MSG_COMMANDE_VERROUILLEE_FR, MSG_COMMANDE_VERROUILLEE_EN);
+    }
+
+    // Une commande « Nouvelle » ouverte depuis Ma commande : confirmer, modifier articles, modifier coordonnees, annuler.
+    if (session.stage === "managing_order" || session.stage === "awaiting_order_cancel_confirm") {
+      trace.entites = { "Réponse client": text };
+      const o = state.orders.filter((x) => x.id === session.pendingOrderId)[0];
+      if (!o || o.statut !== "Nouvelle") {
+        session.pendingOrderId = null;
+        trace.action = "Commande plus modifiable (confirmée ou annulée entre-temps)";
+        logTrace(session, trace);
+        session.stage = "idle";
+        return sh.t(session, "Cette commande n'est plus en attente. " + MSG_COMMANDE_VERROUILLEE_FR, "This order is no longer pending. " + MSG_COMMANDE_VERROUILLEE_EN);
+      }
+      const tn = String(text || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+      const commandesClient = commandesEnCoursDuClient(session.fromPhone);
+
+      if (session.stage === "awaiting_order_cancel_confirm") {
+        if (parseAffirmative(text)) {
+          applyStatusChange(o, "Annulée", "Annulée par le client");
+          if (panierEgalCommande(session.cart, [o])) session.cart = [];
+          session.pendingOrderId = null;
+          trace.action = "Client annule sa commande " + orderRef(o) + " (statut Nouvelle -> Annulée)";
+          logTrace(session, trace);
+          return retourCatalogue(session, "C'est fait, votre commande " + orderRef(o) + " est annulée.", "Done, your order " + orderRef(o) + " is cancelled.");
+        }
+        session.stage = "managing_order";
+        trace.action = "Client garde sa commande " + orderRef(o);
+        logTrace(session, trace);
+        return sh.t(session, "Très bien, la commande " + orderRef(o) + " est conservée. ", "Sure, order " + orderRef(o) + " is kept. ") + textesActionsCommande(session);
+      }
+
+      if (/annul|cancel/.test(tn)) {
+        session.stage = "awaiting_order_cancel_confirm";
+        trace.action = "Client demande l'annulation de " + orderRef(o) + " — confirmation demandée";
+        logTrace(session, trace);
+        return sh.t(session, "Voulez-vous vraiment annuler la commande " + orderRef(o) + " ? (oui / non)", "Do you really want to cancel order " + orderRef(o) + "? (yes / no)");
+      }
+      if (/article|produit|quantite|ajout|retir|supprim|\bitems?\b|products?|\badd\b|remove/.test(tn)) {
+        const rep = demarrerModificationArticles(session, o);
+        trace.action = session.editOrderId ? "Client modifie les articles de " + orderRef(o) : "Modification des articles refusée (panier en cours)";
+        logTrace(session, trace);
+        return rep;
+      }
+      if (/coordonn|numero|telephone|\btel\b|adresse|address|phone|details/.test(tn)) {
+        session.stage = "awaiting_order_correction";
+        session.modeLivraison = o.modeLivraison || session.modeLivraison;
+        trace.action = "Client modifie ses coordonnées (commande " + orderRef(o) + ")";
+        logTrace(session, trace);
+        return questionCorrectionCommande(session, o);
+      }
+      if (parseAffirmative(text) || /confirm|valid/.test(tn)) {
+        const panierAGarder = panierEgalCommande(session.cart, commandesClient.filter((x) => x.id === o.id)) ? [] : session.cart.slice();
+        session.stage = "awaiting_order_confirmation";
+        const rep = processMessage(session, "oui");
+        if (panierAGarder.length) session.cart = panierAGarder;
+        return rep;
+      }
+      if (matchProduct(text)) {
+        session.stage = "idle";
+        trace.action = "Client nomme un article depuis Ma commande — traitement immédiat";
+        logTrace(session, trace);
+        return processMessage(session, text);
+      }
+      trace.action = "Réponse non comprise dans Ma commande — rappel des options";
+      logTrace(session, trace);
+      return sh.t(session, "Pour la commande " + orderRef(o) + " : ", "For order " + orderRef(o) + ": ") + textesActionsCommande(session);
     }
 
     // "panier" (tape librement ou bouton "Mon panier", voir sh.demandeVoirPanier) est reconnu a n'importe
@@ -780,6 +1117,16 @@ function createCatalogEngine(merchantKey, options) {
       trace.entites = { "Réponse client": text };
       const t = text.toLowerCase().trim();
 
+      // Etape 73 : « annuler » pendant la modification d'une commande = on garde la commande telle quelle.
+      if (session.editOrderId && /^(annul|cancel|garder|garde|laisse|keep)/.test(t)) {
+        const refEdit = refEditionEnCours(session) || "";
+        session.editOrderId = null;
+        session.cart = [];
+        trace.action = "Modification de la commande " + refEdit + " abandonnée — commande inchangée";
+        logTrace(session, trace);
+        return retourCatalogue(session, "D'accord, la commande " + refEdit + " reste telle quelle.", "Okay, order " + refEdit + " stays as it was.");
+      }
+
       const posMatch = t.match(/^([1-9][0-9]?)$/);
       if (posMatch) {
         const idx = parseInt(posMatch[1], 10) - 1;
@@ -790,7 +1137,12 @@ function createCatalogEngine(merchantKey, options) {
           if (!session.cart.length) {
             session.stage = "idle";
             session.pretPourChoix = true;
+            const refVidee = refEditionEnCours(session);
+            session.editOrderId = null; // Etape 73 : panier vide = plus de modification en cours (la commande d'origine reste inchangee)
             const liste = state.catalog.map((p) => p.nom).join(", ");
+            if (refVidee) return sh.t(session,
+              "Article retiré ✅ Votre panier est maintenant vide ; la commande " + refVidee + " reste inchangée. Quel article vous intéresse ? Nous avons : " + liste + ".",
+              "Item removed ✅ Your cart is now empty; order " + refVidee + " stays unchanged. Which item are you interested in? We have: " + liste + ".");
             return sh.t(session,
               "Article retiré ✅ Votre panier est maintenant vide. Quel article vous intéresse ? Nous avons : " + liste + ".",
               "Item removed ✅ Your cart is now empty. Which item are you interested in? We have: " + liste + "."
@@ -1451,7 +1803,16 @@ function createCatalogEngine(merchantKey, options) {
     const s = sessions[fromPhone];
     // `langue` ("fr"/"en") permet a server.js de choisir la bonne langue pour le CHROME des menus WhatsApp
     // cliquables (titres de boutons/listes, "Parler a un conseiller"...) - voir essayerEnvoyerMenuInteractif.
-    return s ? { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null, cart: s.cart || [], langue: sh.langueSession(s) } : null;
+    if (!s) return null;
+    const etat = { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null, cart: s.cart || [], langue: sh.langueSession(s) };
+    // Etape 73 : « Ma commande » (lignes de menu et listes d'actions construites par server.js).
+    try {
+      etat.nbCommandesEnCours = nbCommandesEnCours(fromPhone);
+      etat.editOrderRef = refEditionEnCours(s);
+      if (s.stage === "viewing_orders") etat.commandesVue = commandesEnCoursDuClient(fromPhone).filter((o) => o.statut === "Nouvelle").map((o) => ({ id: o.id, ref: orderRef(o), prix: o.prix, nbArticles: (o.items || []).length }));
+      if (s.stage === "managing_order") { const o = state.orders.filter((x) => x.id === s.pendingOrderId)[0]; etat.commandeActive = o ? { id: o.id, ref: orderRef(o) } : null; }
+    } catch (e) { /* jamais bloquant */ }
+    return etat;
   }
 
   // Ne renvoie JAMAIS les commandes creees par le Simulateur (source:"simulateur") — invisibles dans la
@@ -2124,6 +2485,11 @@ function createCatalogEngine(merchantKey, options) {
     getConversationsEnAttente,
     repondreConversationHumain,
     getEtatSession,
+    commandesEnCoursDuClient,
+    nbCommandesEnCours,
+    aRelancer,
+    definirDelaiRelanceHeures,
+    marquerRelance,
     definirLangueSession,
     reponseDeReprise,
     estEnPauseHumain,

@@ -137,6 +137,20 @@ function demandeVoirPanier(texte) {
   return MOTS_CLES_PANIER.some((mot) => t.includes(normaliserPourRecherche(mot)));
 }
 
+// Etape 73 : « Ma commande » (espace client, comme sur un site e-commerce). Reconnait UNIQUEMENT une demande courte et explicite de
+// consulter ses commandes en cours ("ma commande", "mes commandes", "suivre ma commande", "my order"...), jamais une phrase de commande
+// ("je veux passer une commande") : le texte doit etre quasiment ce seul groupe de mots.
+const RE_MA_COMMANDE = /^\s*(?:voir\s+|consulter\s+|suivre\s+|suivi\s+de\s+|o[uù]\s+en\s+est\s+)?(?:ma|mes|mon\s+suivi\s+de|my|view\s+my|see\s+my|track\s+my|check\s+my)\s*(?:commandes?|orders?)(?:\s+(?:en\s+cours|actuelles?|current))?\s*[.!?]*\s*$/i;
+function demandeVoirCommande(texte) {
+  const t = String(texte || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+  return RE_MA_COMMANDE.test(t) || /^\s*(?:order\s+status|mon\s+suivi|suivi\s+commande)\s*[.!?]*\s*$/i.test(t);
+}
+// « CMD-0004 » (ou « cmd 4 ») cite dans un message -> numero de commande, sinon null.
+function refCommandeCitee(texte) {
+  const m = String(texte || "").match(/\bCMD[\s-]*0*(\d{1,6})\b/i);
+  return m ? Number(m[1]) : null;
+}
+
 // ---------------- Annulation / report d'un rendez-vous (volet service) ----------------
 // Reconnait qu'un client, a tout moment de la conversation, veut annuler ou reporter SON rendez-vous
 // deja pris (et non pas simplement abandonner une selection en cours - voir parseWantsSomethingElse,
@@ -400,6 +414,8 @@ module.exports = {
   messageChoixLangue,
   demandeUnHumain,
   demandeVoirPanier,
+  demandeVoirCommande,
+  refCommandeCitee,
   detecterIntentionRdv,
   messageMiseEnRelation,
   estMessageMiseEnRelation,
