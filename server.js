@@ -27,7 +27,7 @@ const remisesLib = require("./remises");
 const { creerMoteurFacturation, METHODES: METHODES_PAIEMENT, CATEGORIES_DEPENSE } = require("./facturation");
 const cryptoUtil = require("./crypto-util");
 const { clientIp } = require("./clientip");
-const { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE } = require("./hybride");
+const { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE, JETON_VOLET_HEBERGEMENT } = require("./hybride");
 
 const app = express();
 
@@ -232,12 +232,33 @@ const phoneNumberIndex = {}; // phone_number_id WhatsApp -> merchantId
 // principal garde l'etat enregistre sous l'id du marchand (donc rien ne change pour les marchands
 // existants), le second sous une cle d'etat distincte. engines[id] = { merchant, engine (= principal),
 // moteurs: { catalogue?, service? }, routeur? (seulement si deux moteurs) }.
-function modulesDuMarchand(m) {
-  const liste = [m.type];
-  if ((m.moduleSecondaire === "catalogue" || m.moduleSecondaire === "service") && m.moduleSecondaire !== m.type) liste.push(m.moduleSecondaire);
-  return liste;
+// Etape 66 : jusqu'a TROIS volets (catalogue, service, hebergement), donc jusqu'a DEUX volets secondaires.
+// `moduleSecondaire` est une chaine « service » ou « service,hebergement » (voir db.normaliserModulesSecondaires).
+const VOLETS_VALIDES = ["catalogue", "service", "hebergement"];
+function listeSecondaires(brut, type) {
+  const norm = db.normaliserModulesSecondaires(brut);
+  return norm ? norm.split(",").filter((v) => v !== type) : [];
 }
-function cleEtatSecondaire(m) { return m.id + "::" + m.moduleSecondaire; }
+function modulesDuMarchand(m) {
+  return [m.type].concat(listeSecondaires(m.moduleSecondaire, m.type));
+}
+function cleEtatSecondaire(m, module) { return m.id + "::" + module; }
+// Demande brute (chaine, liste ou « aucun ») -> { liste } valide, ou { erreur }.
+function lireDemandeSecondaires(brut, type) {
+  if (brut === undefined || brut === null || brut === "" || brut === "aucun") return { liste: [] };
+  const entree = Array.isArray(brut) ? brut : String(brut).split(",");
+  const liste = [];
+  for (const v of entree) {
+    const t = String(v || "").trim();
+    if (!t || t === "aucun") continue;
+    if (VOLETS_VALIDES.indexOf(t) === -1) return { erreur: "moduleSecondaire doit être 'catalogue', 'service' ou 'hebergement' (deux au plus), ou null." };
+    if (t === type) return { erreur: "Le second volet doit être différent du type principal (" + type + ")." };
+    if (liste.indexOf(t) !== -1) return { erreur: "Un même volet ne peut pas être accordé deux fois." };
+    liste.push(t);
+  }
+  if (liste.length > 2) return { erreur: "Trois volets au maximum par marchand (le principal + deux autres)." };
+  return { liste };
+}
 
 function fabriquerMoteur(type, merchantKey, optionsSupplementaires) {
   const options = Object.assign(creerOptionsEngine(merchantKey), optionsSupplementaires || {});
@@ -251,9 +272,8 @@ async function construireEntree(m) {
   moteurs[m.type] = fabriquerMoteur(m.type, m.id);
   await moteurs[m.type].init();
   const modules = modulesDuMarchand(m);
-  if (modules.length > 1) {
-    const second = modules[1];
-    moteurs[second] = fabriquerMoteur(second, m.id, { cleEtat: cleEtatSecondaire(m), sansDonneesDemo: true });
+  for (const second of modules.slice(1)) {
+    moteurs[second] = fabriquerMoteur(second, m.id, { cleEtat: cleEtatSecondaire(m, second), sansDonneesDemo: true });
     await moteurs[second].init();
   }
   const entree = { merchant: m, engine: moteurs[m.type], moteurs };
@@ -276,22 +296,27 @@ function creerRouteurPourMarchand(m, moteurs) {
 // L'objet `entry` est modifie EN PLACE (les routes et boucles qui le tiennent voient le changement).
 // Retirer le second volet le MASQUE seulement : son etat reste enregistre sous sa cle (`<id>::<volet>`) et
 // n'est jamais supprime ; l'accorder a nouveau le retrouve tel quel.
-async function appliquerModuleSecondaire(entry, module) {
+async function appliquerModuleSecondaire(entry, modules) {
   const m = entry.merchant;
-  const cible = (module === "catalogue" || module === "service") && module !== m.type ? module : null;
-  const actuel = modulesDuMarchand(m)[1] || null;
-  if (cible === actuel) return;
-  if (cible) {
-    m.moduleSecondaire = cible; // d'abord : cleEtatSecondaire(m) en depend
-    const moteur = fabriquerMoteur(cible, m.id, { cleEtat: cleEtatSecondaire(m), sansDonneesDemo: true });
-    await moteur.init();
-    entry.moteurs[cible] = moteur;
-    entry.routeur = creerRouteurPourMarchand(m, entry.moteurs);
-  } else {
-    delete entry.moteurs[actuel];
-    delete entry.routeur;
-    m.moduleSecondaire = null;
+  const demande = Array.isArray(modules) ? modules : (modules ? [modules] : []);
+  const cibles = [];
+  demande.forEach((v) => { if (VOLETS_VALIDES.indexOf(v) !== -1 && v !== m.type && cibles.indexOf(v) === -1) cibles.push(v); });
+  cibles.splice(2);
+  const actuels = modulesDuMarchand(m).slice(1);
+  if (cibles.join(",") === actuels.join(",")) return;
+  for (const v of actuels) {
+    if (cibles.indexOf(v) === -1) delete entry.moteurs[v];
   }
+  for (const v of cibles) {
+    if (!entry.moteurs[v]) {
+      const moteur = fabriquerMoteur(v, m.id, { cleEtat: cleEtatSecondaire(m, v), sansDonneesDemo: true });
+      await moteur.init();
+      entry.moteurs[v] = moteur;
+    }
+  }
+  m.moduleSecondaire = cibles.join(",") || null;
+  if (Object.keys(entry.moteurs).length > 1) entry.routeur = creerRouteurPourMarchand(m, entry.moteurs);
+  else delete entry.routeur;
 }
 
 function estHybride(entry) { return !!(entry && entry.routeur); }
@@ -867,7 +892,7 @@ function detailAuditRequete(code, req) {
     case "identifiants_modifies": return { motDePasse: !!(b.motDePasse || b.generer || b.genererMotDePasse), identifiant: !!b.adminUser };
     case "marchand_actif_modifie": return { actif: b.actif };
     case "options_payantes_modifiees": return { options: b };
-    case "module_secondaire_modifie": return { moduleSecondaire: b.moduleSecondaire || null };
+    case "module_secondaire_modifie": return { moduleSecondaire: (Array.isArray(b.modulesSecondaires) ? b.modulesSecondaires.join(",") : (Array.isArray(b.moduleSecondaire) ? b.moduleSecondaire.join(",") : (b.modulesSecondaires || b.moduleSecondaire))) || null };
     case "facturation_source_modifiee": return { source: b.source || null };
     case "facturation_bascule": return {};
     case "paiement_interne_enregistre": case "avoir_interne_cree": case "remboursement_interne_enregistre": return { facture: p.fid, montant: b.montant != null ? Number(b.montant) || null : null };
@@ -1138,7 +1163,7 @@ app.get("/api/journal/global", protegerAcces, async (req, res) => {
 app.get("/api/marchands", protegerAcces, (req, res) => {
   const tous = Object.values(engines).map((e) => ({
     id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
-    moduleSecondaire: modulesDuMarchand(e.merchant)[1] || null, modules: modulesDuMarchand(e.merchant),
+    moduleSecondaire: modulesDuMarchand(e.merchant)[1] || null, modulesSecondaires: modulesDuMarchand(e.merchant).slice(1), modules: modulesDuMarchand(e.merchant),
     phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false,
     logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null,
     numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null,
@@ -1188,16 +1213,11 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
   const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification, moduleSecondaire } = req.body || {};
   if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
   if (type !== "catalogue" && type !== "service" && type !== "hebergement") return res.status(400).json({ erreur: "type doit être 'catalogue', 'service' ou 'hebergement'." });
-  // Etape 65 : le type « hebergement » n'existe qu'en volet UNIQUE pour l'instant (hybride + hebergement : Etape 66).
-  if (type === "hebergement" && moduleSecondaire !== undefined && moduleSecondaire !== null && moduleSecondaire !== "" && moduleSecondaire !== "aucun") {
-    return res.status(400).json({ erreur: "Le type 'hebergement' ne peut pas encore être combiné avec un second volet." });
-  }
-  // Marchand HYBRIDE (Etape 48) : second volet accorde des la creation — reserve au super-administrateur
-  // (cette route l'est deja en entier), jamais deductible d'une autre source.
-  if (moduleSecondaire !== undefined && moduleSecondaire !== null && moduleSecondaire !== "") {
-    if (moduleSecondaire !== "catalogue" && moduleSecondaire !== "service") return res.status(400).json({ erreur: "moduleSecondaire doit être 'catalogue' ou 'service'." });
-    if (moduleSecondaire === type) return res.status(400).json({ erreur: "Le second volet doit être différent du type principal." });
-  }
+  // Marchand HYBRIDE (Etape 48, generalise a trois volets a l'Etape 66) : volets secondaires accordes des la
+  // creation - reserve au super-administrateur (cette route l'est deja en entier), jamais deductible d'une
+  // autre source.
+  const demandeSecondaires = lireDemandeSecondaires(moduleSecondaire, type);
+  if (demandeSecondaires.erreur) return res.status(400).json({ erreur: demandeSecondaires.erreur });
   if (engines[id]) return res.status(409).json({ erreur: "Un marchand avec cet id existe déjà." });
   if (!adminUser || !adminPassword) return res.status(400).json({ erreur: "adminUser et adminPassword sont requis pour créer les identifiants de connexion du marchand." });
   const merchant = {
@@ -1206,7 +1226,7 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
     adminUser,
     adminPassword: bcrypt.hashSync(String(adminPassword), 10),
     phoneNotification: phoneNotification || null,
-    moduleSecondaire: moduleSecondaire === "catalogue" || moduleSecondaire === "service" ? moduleSecondaire : null,
+    moduleSecondaire: demandeSecondaires.liste.join(",") || null,
     // Marchand tout juste cree : n'a jamais connu l'ancien regroupement de roles employe (commandes dans
     // conversations, tableaudebord/rapports dans parametres - voir migrerRolesEmployes dans db.js), donc
     // rien a migrer pour lui. Sans ce marquage explicite, un futur redemarrage du serveur risquerait de
@@ -1497,15 +1517,15 @@ app.put("/api/marchands/:id/module-secondaire", protegerAcces, async (req, res) 
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const brut = (req.body || {}).moduleSecondaire;
-  const demande = brut === undefined || brut === null || brut === "" || brut === "aucun" ? null : brut;
-  if (demande !== null && demande !== "catalogue" && demande !== "service") return res.status(400).json({ erreur: "moduleSecondaire doit être 'catalogue', 'service' ou null." });
-  if (demande !== null && entry.merchant.type === "hebergement") return res.status(400).json({ erreur: "Un marchand de type 'hebergement' ne peut pas encore avoir de second volet." });
-  if (demande !== null && demande === entry.merchant.type) return res.status(400).json({ erreur: "Le second volet doit être différent du type principal (" + entry.merchant.type + ")." });
-  const avant = modulesDuMarchand(entry.merchant)[1] || null;
+  const corps = req.body || {};
+  const brut = corps.modulesSecondaires !== undefined ? corps.modulesSecondaires : corps.moduleSecondaire;
+  const lecture = lireDemandeSecondaires(brut, entry.merchant.type);
+  if (lecture.erreur) return res.status(400).json({ erreur: lecture.erreur });
+  const demande = lecture.liste;
+  const avant = modulesDuMarchand(entry.merchant).slice(1);
   try {
-    if (demande !== avant) {
-      const maj = await db.updateMerchantFields(req.params.id, { moduleSecondaire: demande });
+    if (demande.join(",") !== avant.join(",")) {
+      const maj = await db.updateMerchantFields(req.params.id, { moduleSecondaire: demande.join(",") || null });
       if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
       await appliquerModuleSecondaire(entry, demande);
     }
@@ -1513,9 +1533,9 @@ app.put("/api/marchands/:id/module-secondaire", protegerAcces, async (req, res) 
     console.error(`[${req.params.id}] Echec du changement de module secondaire :`, erreur);
     return res.status(500).json({ erreur: "Impossible de modifier le second volet." });
   }
-  res.locals.audit = { detail: { avant, apres: demande } };
-  console.log(`[${req.params.id}] Module secondaire modifié par ${req.auth.adminUser} : ${avant || "aucun"} -> ${demande || "aucun"}.`);
-  res.json({ id: req.params.id, moduleSecondaire: demande, modules: modulesDuMarchand(entry.merchant) });
+  res.locals.audit = { detail: { avant: avant.join(",") || null, apres: demande.join(",") || null } };
+  console.log(`[${req.params.id}] Volets secondaires modifiés par ${req.auth.adminUser} : ${avant.join("+") || "aucun"} -> ${demande.join("+") || "aucun"}.`);
+  res.json({ id: req.params.id, moduleSecondaire: demande[0] || null, modulesSecondaires: demande, modules: modulesDuMarchand(entry.merchant) });
 });
 
 // ---------------- Facturation INTEGREE (Etapes 54-56) ----------------
@@ -2818,7 +2838,9 @@ app.post("/api/:id/rendezvous/:apptId/izyfacture/paiement", protegerAcces, async
 // repondent que pour un marchand de type hebergement ; le type lui-meme n'est accorde que par le
 // super-administrateur a la creation (POST /api/marchands, reserve au super-administrateur).
 function entreeHebergement(req, res) {
-  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return null;
+  let entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return null;
+  // Etape 66 : sur un marchand a plusieurs volets, ces routes visent toujours le volet hebergement.
+  entry = vueEntree(entry, "hebergement");
   if (entry.engine.type !== "hebergement") { res.status(400).json({ erreur: "Ce marchand n'est pas de type hébergement." }); return null; }
   return entry;
 }
@@ -3608,9 +3630,9 @@ app.post("/webhook", async (req, res) => {
     if (estHybride(entreeComplete)) {
       const decision = entreeComplete.routeur.traiter(from, texteRecu);
       if (decision.type === "menu") {
-        console.log(`[${merchantId}] Marchand hybride : menu produits / rendez-vous envoye a ${from}.`);
+        console.log(`[${merchantId}] Marchand hybride : menu des volets envoye a ${from}.`);
         const menuEnvoye = await envoyerBoutonsWhatsApp(from, phoneNumberId, decision.texte, decision.boutons.map((b) => ({
-          id: b.volet === "catalogue" ? ID_VOLET_CATALOGUE : ID_VOLET_SERVICE, title: b.title
+          id: b.volet === "catalogue" ? ID_VOLET_CATALOGUE : b.volet === "hebergement" ? ID_VOLET_HEBERGEMENT : ID_VOLET_SERVICE, title: b.title
         }))).catch(() => false);
         if (!menuEnvoye) await envoyerMessageWhatsApp(from, decision.texte, phoneNumberId);
         return;
@@ -3688,6 +3710,7 @@ const ID_LANG_FR = "IZY_LANG_FR";
 // Menu a deux boutons d'un marchand hybride (Etape 47, voir hybride.js).
 const ID_VOLET_CATALOGUE = "IZY_VOLET_CAT";
 const ID_VOLET_SERVICE = "IZY_VOLET_SVC";
+const ID_VOLET_HEBERGEMENT = "IZY_VOLET_HEB";
 // Etape 64 : ligne cliquable « Menu principal » (marchand hybride) - equivalent du texte « menu principal » deja gere par hybride.js.
 const ID_MENU_PRINCIPAL = "IZY_MENU_PRINCIPAL";
 const ID_LANG_EN = "IZY_LANG_EN";
@@ -3781,7 +3804,7 @@ function lignesMonRendezVous(marchand, telephone, etat) {
 }
 
 // Etape 64 : pour un marchand HYBRIDE (au moins deux volets utilisables), ligne « Menu principal » qui ramene au menu
-// a deux boutons (produits / rendez-vous). Vide pour un marchand a un seul volet : rien ne change pour lui.
+// a deux ou trois boutons (produits / rendez-vous / chambres). Vide pour un marchand a un seul volet : rien ne change pour lui.
 // Etape 65 : libelles de la liste d'accueil selon le type (catalogue : articles ; service : services ; hebergement : chambres).
 function libellesListeAccueil(marchand, etat) {
   const type = marchand.engine.type;
@@ -3794,7 +3817,7 @@ function ligneMenuPrincipal(marchand, etat) {
   try {
     if (!marchand || !marchand.routeur || typeof marchand.routeur.voletsUtilisables !== "function") return [];
     if (marchand.routeur.voletsUtilisables().length < 2) return [];
-    return [{ id: ID_MENU_PRINCIPAL, title: tW(etat, "◀ Menu principal", "◀ Main menu"), description: tW(etat, "Produits ou rendez-vous", "Products or appointments") }];
+    return [{ id: ID_MENU_PRINCIPAL, title: tW(etat, "◀ Menu principal", "◀ Main menu"), description: tW(etat, "Changer de rubrique", "Switch section") }];
   } catch (e) { return []; }
 }
 
@@ -3877,6 +3900,7 @@ function resoudreTexteInteractif(marchand, interactive) {
   if (id === ID_LANG_EN) return "en";
   if (id === ID_VOLET_CATALOGUE) return JETON_VOLET_CATALOGUE; // choix du volet (marchand hybride, voir hybride.js)
   if (id === ID_VOLET_SERVICE) return JETON_VOLET_SERVICE;
+  if (id === ID_VOLET_HEBERGEMENT) return JETON_VOLET_HEBERGEMENT;
   if (id === ID_MENU_PRINCIPAL) return "menu principal"; // Etape 64 : reconnu par hybride.js (RE_MENU_PRINCIPAL)
   if (id === ID_HUMAIN) return "un conseiller";
   if (id === ID_CONTACT_ECRIT) return "réponse écrite ici";

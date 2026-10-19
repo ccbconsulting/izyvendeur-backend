@@ -247,6 +247,18 @@ async function migrerRolesEmployes(marchands) {
   return marchands;
 }
 
+// Etape 66 : le champ `moduleSecondaire` (colonne module_secondaire) contient jusqu'a DEUX volets secondaires
+// separes par une virgule ("service", "service,hebergement"...). Valeur inconnue ou doublon : ignore.
+function normaliserModulesSecondaires(brut) {
+  const liste = Array.isArray(brut) ? brut : String(brut || "").split(",");
+  const vus = [];
+  liste.forEach((v) => {
+    const t = String(v || "").trim();
+    if ((t === "catalogue" || t === "service" || t === "hebergement") && vus.indexOf(t) === -1) vus.push(t);
+  });
+  return vus.slice(0, 2).join(",") || null;
+}
+
 function defaultMerchantFromEnv() {
   // Migration automatique : recree le marchand historique "default" a partir des variables
   // d'environnement existantes, pour que les installations deja en production ne perdent rien.
@@ -330,7 +342,8 @@ function rowToMerchant(row) {
     derniereErreurAlerte: row.derniere_erreur_alerte || null,
     filigraneLogoActif: row.filigrane_logo_actif !== false,
     optionCaissePos: row.option_caisse_pos === true,
-    moduleSecondaire: row.module_secondaire === "catalogue" || row.module_secondaire === "service" ? row.module_secondaire : null
+    // Etape 66 : liste (max 2) de volets secondaires separes par une virgule, ex. "service,hebergement".
+    moduleSecondaire: normaliserModulesSecondaires(row.module_secondaire)
   };
 }
 
@@ -343,7 +356,7 @@ async function insertMerchant(m) {
       // rolesMigres absent (nouveau marchand cree via l'API, voir server.js POST /api/marchands) -> on
       // suppose qu'il n'a jamais connu l'ancien regroupement de roles, donc toutes les cles de migration
       // connues sont deja "appliquees" par defaut (rien a migrer pour un marchand qui vient de naitre).
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null), m.filigraneLogoActif !== false, !!m.optionCaissePos, m.moduleSecondaire || null]
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null), m.filigraneLogoActif !== false, !!m.optionCaissePos, normaliserModulesSecondaires(m.moduleSecondaire)]
     );
     return;
   }
@@ -416,7 +429,7 @@ async function updateMerchantFields(id, patch) {
     if (patch.optionFacturationIzyfacture !== undefined) m.optionFacturationIzyfacture = !!patch.optionFacturationIzyfacture;
     if (patch.filigraneLogoActif !== undefined) m.filigraneLogoActif = !!patch.filigraneLogoActif;
     if (patch.optionCaissePos !== undefined) m.optionCaissePos = !!patch.optionCaissePos;
-    if (patch.moduleSecondaire !== undefined) m.moduleSecondaire = patch.moduleSecondaire || null;
+    if (patch.moduleSecondaire !== undefined) m.moduleSecondaire = normaliserModulesSecondaires(patch.moduleSecondaire);
     // Dernier echec de livraison d'alerte signale par Meta (voir POST /webhook, Etape 25) - `null` explicite
     // accepte (efface volontairement l'ancien echec affiche), jamais reecrit avec une valeur "vide" par erreur.
     if (patch.derniereErreurAlerte !== undefined) m.derniereErreurAlerte = patch.derniereErreurAlerte || null;
@@ -453,7 +466,7 @@ async function updateMerchantFields(id, patch) {
   if (patch.optionFacturationIzyfacture !== undefined) liste[idx].optionFacturationIzyfacture = !!patch.optionFacturationIzyfacture;
   if (patch.filigraneLogoActif !== undefined) liste[idx].filigraneLogoActif = !!patch.filigraneLogoActif;
   if (patch.optionCaissePos !== undefined) liste[idx].optionCaissePos = !!patch.optionCaissePos;
-  if (patch.moduleSecondaire !== undefined) liste[idx].moduleSecondaire = patch.moduleSecondaire || null;
+  if (patch.moduleSecondaire !== undefined) liste[idx].moduleSecondaire = normaliserModulesSecondaires(patch.moduleSecondaire);
   if (patch.derniereErreurAlerte !== undefined) liste[idx].derniereErreurAlerte = patch.derniereErreurAlerte || null;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
@@ -821,6 +834,7 @@ async function journalLister(filtre) {
 }
 
 module.exports = {
+  normaliserModulesSecondaires,
   initRegistry,
   addMerchant,
   updateMerchantFields,

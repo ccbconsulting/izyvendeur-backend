@@ -1,10 +1,11 @@
-// IzyVendeur - Routage d'un marchand HYBRIDE (Etape 47) : un meme numero WhatsApp, deux volets
-// (catalogue = produits, service = rendez-vous) servis par DEUX moteurs distincts.
+// IzyVendeur - Routage d'un marchand HYBRIDE (Etape 47, generalise a TROIS volets a l'Etape 66) : un meme
+// numero WhatsApp, jusqu'a trois volets (catalogue = produits, service = rendez-vous, hebergement = chambres)
+// servis par autant de moteurs distincts.
 //
 // Le routeur ne remplace aucun moteur : il decide, pour chaque message d'un client, a QUEL moteur le donner,
 // et gere seulement ce qui est commun aux deux volets :
 //   - la porte de langue (une seule fois, puis la langue est imposee aux deux moteurs) ;
-//   - le menu a deux boutons « produits / rendez-vous » juste apres le choix de langue ;
+//   - le menu a deux ou trois boutons « produits / rendez-vous / chambres » juste apres le choix de langue ;
 //   - les paniers separes : chaque moteur garde sa propre session, un client peut passer d'un volet a l'autre
 //     sans rien perdre dans l'autre ;
 //   - la pause « conversation avec un humain » : tant qu'elle est en cours dans un volet, le client y reste
@@ -21,6 +22,8 @@ const sh = require("./shared");
 // resoudreTexteInteractif) : evite de dependre de la langue du titre du bouton.
 const JETON_VOLET_CATALOGUE = "__volet_catalogue__";
 const JETON_VOLET_SERVICE = "__volet_service__";
+const JETON_VOLET_HEBERGEMENT = "__volet_hebergement__";
+const VOLETS_CONNUS = ["catalogue", "service", "hebergement"];
 
 function norm(texte) {
   return String(texte || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -37,6 +40,12 @@ const RE_VEUT_RDV = /\b(rendez[\s-]?vous|rdv|appointment|booking)\b/;
 const RE_VEUT_PRODUITS = /\b(commander|acheter|panier|catalogue|buy|cart|shop)\b/;
 const RE_CHOIX_PRODUITS = /\b(produits?|articles?|boutique|acheter|achat|commander|catalogue|shop|buy|products?|items?|order)\b/;
 const RE_CHOIX_RDV = /\b(rendez[\s-]?vous|rdv|reserver|reservation|soins?|prestations?|services?|appointments?|booking|book)\b/;
+// Volet hebergement (Etape 66). Dans les bascules AUTOMATIQUES, « reservation » / « booking » seuls ne suffisent
+// pas (ils peuvent viser une chambre OU un rendez-vous) : on exige « rendez-vous / rdv / appointment » pour le
+// volet service des qu'un volet hebergement existe, et un couple verbe de reservation + chambre pour les chambres.
+const RE_RDV_STRICT = /\b(rendez[\s-]?vous|rdv|appointments?)\b/;
+const RE_VEUT_HEB_AUTO = /\b(chambres?|rooms?|suites?)\b.*\b(disponibles?|available|libres?|reserver|book)\b|\b(reserver|book|booking|reservation|louer|rent)\b.*\b(chambres?|rooms?|suites?)\b|\b(nuitees?|hebergement|accommodation)\b/;
+const RE_CHOIX_HEB = /\b(chambres?|rooms?|suites?|hotel|hebergement|sejour|nuitees?|nuits?|nights?|stay|accommodation|lodging)\b/;
 // Lien de commande genere par /admin (« Bonjour, je suis intéressé(e) par : X » / « Hello, I'm interested in: X »).
 const RE_LIEN_COMMANDE = /(int[eé]ress[eé](\(e\))? par\s*:|interested in\s*:)/i;
 
@@ -44,7 +53,8 @@ function libelleBoutons(langue, volets) {
   const en = langue === "en";
   const titres = {
     catalogue: en ? "🛍️ Our products" : "🛍️ Nos produits",
-    service: en ? "📅 Appointments" : "📅 Rendez-vous"
+    service: en ? "📅 Appointments" : "📅 Rendez-vous",
+    hebergement: en ? "🛏️ Rooms" : "🛏️ Chambres"
   };
   return volets.map((v) => ({ volet: v, title: titres[v] }));
 }
@@ -54,6 +64,7 @@ function texteMenu(langue, volets) {
   const lignes = volets.map((v, i) => {
     const num = (i + 1) + "️⃣ ";
     if (v === "catalogue") return num + (en ? "Browse our products" : "Voir nos produits");
+    if (v === "hebergement") return num + (en ? "Book a room" : "Réserver une chambre");
     return num + (en ? "Book an appointment" : "Prendre un rendez-vous");
   });
   return (en ? "What would you like to do?" : "Que souhaitez-vous faire ?") + "\n" + lignes.join("\n");
@@ -65,8 +76,8 @@ function texteIndiceMenu(langue) {
     : "\n\n(Pour revenir à ce choix à tout moment, écrivez « menu principal ».)";
 }
 
-// `moteurs` : { catalogue?: engine, service?: engine } (au moins les deux pour un marchand hybride) ;
-// `principal` : "catalogue" | "service" (le `type` du marchand : le volet d'ou part la porte de langue et celui
+// `moteurs` : { catalogue?, service?, hebergement? } (au moins deux pour un marchand hybride) ;
+// `principal` : "catalogue" | "service" | "hebergement" (le `type` du marchand : le volet d'ou part la porte de langue et celui
 // qui recoit une demande d'humain avant tout choix) ; `deps.journaliser(tel, de, texte)` (facultatif).
 function creerRouteur(moteurs, principal, deps) {
   const etats = {}; // telephone -> { etape: "langue" | "menu" | "volet", volet, langue, texteInitial }
@@ -82,7 +93,9 @@ function creerRouteur(moteurs, principal, deps) {
     const m = moteurs[type];
     if (!m) return 0;
     try {
-      return type === "catalogue" ? (m.getCatalog() || []).length : (m.getServices() || []).length;
+      if (type === "catalogue") return (m.getCatalog() || []).length;
+      if (type === "hebergement") return (m.getChambres() || []).length;
+      return (m.getServices() || []).length;
     } catch (e) { return 0; }
   }
   function voletsUtilisables() {
@@ -184,7 +197,13 @@ function creerRouteur(moteurs, principal, deps) {
           journaliser(tel, "client", brut);
           return versMoteur(tel, "catalogue", texteInitial, { sansJournalClient: true });
         }
-        if (volets.indexOf("service") !== -1 && RE_VEUT_RDV.test(norm(texteInitial)) && !RE_VEUT_PRODUITS.test(norm(texteInitial))) {
+        const ni = norm(texteInitial);
+        const avecHeb = volets.indexOf("hebergement") !== -1;
+        if (avecHeb && RE_VEUT_HEB_AUTO.test(ni) && !RE_RDV_STRICT.test(ni) && !RE_VEUT_PRODUITS.test(ni)) {
+          journaliser(tel, "client", brut);
+          return versMoteur(tel, "hebergement", texteInitial, { sansJournalClient: true });
+        }
+        if (volets.indexOf("service") !== -1 && (avecHeb ? RE_RDV_STRICT.test(ni) : RE_VEUT_RDV.test(ni)) && !RE_VEUT_PRODUITS.test(ni) && !(avecHeb && RE_VEUT_HEB_AUTO.test(ni))) {
           journaliser(tel, "client", brut);
           return versMoteur(tel, "service", texteInitial, { sansJournalClient: true });
         }
@@ -215,11 +234,17 @@ function creerRouteur(moteurs, principal, deps) {
       let choisi = null;
       if (brut === JETON_VOLET_CATALOGUE) choisi = "catalogue";
       else if (brut === JETON_VOLET_SERVICE) choisi = "service";
-      else if (/^\s*[12]\s*$/.test(brut)) choisi = volets[Number(brut.trim()) - 1] || null;
+      else if (brut === JETON_VOLET_HEBERGEMENT) choisi = "hebergement";
+      else if (/^\s*[123]\s*$/.test(brut)) choisi = volets[Number(brut.trim()) - 1] || null;
       else {
-        const p = RE_CHOIX_PRODUITS.test(n), r = RE_CHOIX_RDV.test(n);
-        if (p && !r) choisi = "catalogue";
-        else if (r && !p) choisi = "service";
+        // Un mot n'est retenu que s'il designe UN SEUL des volets proposes. Quand un volet hebergement est
+        // propose, « reserver / reservation / book » seuls ne designent plus le volet rendez-vous.
+        const avecHeb = volets.indexOf("hebergement") !== -1;
+        const trouves = [];
+        if (volets.indexOf("catalogue") !== -1 && RE_CHOIX_PRODUITS.test(n)) trouves.push("catalogue");
+        if (volets.indexOf("service") !== -1 && (avecHeb ? RE_RDV_STRICT.test(n) || /\b(soins?|prestations?|services?)\b/.test(n) : RE_CHOIX_RDV.test(n))) trouves.push("service");
+        if (avecHeb && (RE_CHOIX_HEB.test(n) || (volets.indexOf("service") === -1 && /\b(reserver|reservation|book|booking)\b/.test(n)))) trouves.push("hebergement");
+        if (trouves.length === 1) choisi = trouves[0];
       }
       if (!choisi || volets.indexOf(choisi) === -1) {
         return decisionMenu(tel, langue === "en" ? "Sorry, I didn't catch that. Please choose:" : "Désolé, je n'ai pas compris. Choisissez :");
@@ -257,15 +282,22 @@ function creerRouteur(moteurs, principal, deps) {
     }
 
     // Bascules automatiques, uniquement quand le moteur actuel n'attend aucune reponse precise (stage "idle").
-    const autre = volets.find((v) => v !== volet);
-    if (autre && stageDe(volet, tel) === "idle") {
-      const intention = sh.detecterIntentionRdv(brut);
-      if (autre === "service" && (intention || (RE_VEUT_RDV.test(n) && !RE_VEUT_PRODUITS.test(n)))) {
-        return versMoteur(tel, "service", brut);
+    // On ne bascule que si le message designe UN SEUL des autres volets ; en cas de doute on reste ou l'on est.
+    const autres = volets.filter((v) => v !== volet);
+    if (autres.length && stageDe(volet, tel) === "idle") {
+      const avecHeb = volets.indexOf("hebergement") !== -1;
+      const cibles = [];
+      for (const v of autres) {
+        if (v === "service") {
+          if (avecHeb) { if (RE_RDV_STRICT.test(n) && !RE_VEUT_PRODUITS.test(n) && !RE_VEUT_HEB_AUTO.test(n)) cibles.push(v); }
+          else if (sh.detecterIntentionRdv(brut) || (RE_VEUT_RDV.test(n) && !RE_VEUT_PRODUITS.test(n))) cibles.push(v);
+        } else if (v === "catalogue") {
+          if (RE_VEUT_PRODUITS.test(n) && !RE_VEUT_RDV.test(n) && !RE_VEUT_HEB_AUTO.test(n)) cibles.push(v);
+        } else if (v === "hebergement") {
+          if (RE_VEUT_HEB_AUTO.test(n) && !RE_RDV_STRICT.test(n) && !RE_VEUT_PRODUITS.test(n)) cibles.push(v);
+        }
       }
-      if (autre === "catalogue" && RE_VEUT_PRODUITS.test(n) && !RE_VEUT_RDV.test(n)) {
-        return versMoteur(tel, "catalogue", brut);
-      }
+      if (cibles.length === 1) return versMoteur(tel, cibles[0], brut);
     }
 
     return { type: "moteur", volet, texte: brut, suffixe: null };
@@ -277,4 +309,4 @@ function creerRouteur(moteurs, principal, deps) {
   return { traiter, oublier, voletActif, voletsUtilisables, etatDe: (tel) => (etats[tel] ? Object.assign({}, etats[tel]) : null) };
 }
 
-module.exports = { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE };
+module.exports = { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE, JETON_VOLET_HEBERGEMENT, VOLETS_CONNUS };

@@ -482,6 +482,11 @@ const I18N = {
     act_module_secondaire_modifie: "Second volet (hybride) modifié",
     voletCatalogue: "Catalogue",
     voletService: "Rendez-vous",
+    voletHebergement: "Chambres",
+    groupeHebergement: "Chambres",
+    ongletParametresHebHyb: "Paramètres chambres",
+    roleRendezvousEtReservations: "Rendez-vous & réservations (chambres)",
+    optionModuleAjoutHebergement: "Ajouter les chambres (réservations de séjours)",
     typeHebergement: "hébergement",
     ongletChambres: "Chambres",
     ongletSejours: "Réservations",
@@ -556,7 +561,7 @@ const I18N = {
     h3ChambresTop: "Types de chambre les plus demandés",
     h3ProchainesArrivees: "Arrivées des 7 prochains jours",
     msgAucuneArriveeProche: "Aucune arrivée prévue dans les 7 prochains jours.",
-    noteOptionsHebergement: "Ce marchand est de type hébergement : les options payantes du catalogue, la facturation et le second volet ne s'appliquent pas encore (prévus à l'étape suivante).",
+    noteOptionsHebergement: "Ce marchand est de type hébergement : les options payantes du catalogue s'appliquent seulement s'il a aussi le volet catalogue ; la facturation des séjours n'est pas encore disponible.",
     act_chambres_modifiees: "Chambres modifiées",
     act_chambres_importees: "Chambres importées (fichier)",
     act_sejour_cree: "Réservation créée (comptoir)",
@@ -565,20 +570,20 @@ const I18N = {
     typeHybrideLibelle: "{a} + {b}",
     ongletParametresCatalogueHyb: "Paramètres catalogue",
     ongletParametresServiceHyb: "Paramètres rendez-vous",
-    h3ModuleSecondaire: "Second volet (marchand hybride)",
-    noteModuleSecondaire: "Permet à ce marchand d'avoir catalogue ET rendez-vous derrière le même numéro WhatsApp. Le client choisit son parcours après la langue. Retirer le second volet le masque (clients, onglets, rappels) mais ne supprime AUCUNE donnée : il réapparaît tel quel si vous le rendez. Réservé au super-administrateur.",
-    labelModuleSecondaire: "Second volet",
+    h3ModuleSecondaire: "Volets supplémentaires (marchand hybride)",
+    noteModuleSecondaire: "Permet à ce marchand d'avoir jusqu'à trois volets (catalogue, rendez-vous, chambres) derrière le même numéro WhatsApp. Le client choisit son parcours après la langue. Retirer le second volet le masque (clients, onglets, rappels) mais ne supprime AUCUNE donnée : il réapparaît tel quel si vous le rendez. Réservé au super-administrateur.",
+    labelModuleSecondaire: "Volets supplémentaires",
     optionModuleAucun: "Aucun (marchand à un seul volet)",
     optionModuleAjoutCatalogue: "Ajouter le catalogue (produits, commandes)",
     optionModuleAjoutService: "Ajouter les rendez-vous (services, rendez-vous)",
     btnEnregistrerModule: "Enregistrer le second volet",
-    alertModuleEnregistre: "Second volet enregistré.",
-    confirmRetirerModule: "Retirer le second volet ? Il sera masqué pour les clients et dans /admin, mais ses données sont conservées.",
-    promptModuleSecondaire: "Second volet (facultatif, super-administrateur uniquement) : tapez 'catalogue' ou 'service' pour créer un marchand HYBRIDE, ou laissez vide.",
+    alertModuleEnregistre: "Volets enregistrés.",
+    confirmRetirerModule: "Retirer un volet ? Il sera masqué pour les clients et dans /admin, mais ses données sont conservées.",
+    promptModuleSecondaire: "Volets supplémentaires (facultatif, super-administrateur uniquement) : 'catalogue', 'service' ou 'hebergement' (deux au plus, séparés par une virgule, ex. service,hebergement) pour créer un marchand HYBRIDE, ou laissez vide.",
     alertModuleSecondaireIdentique: "Le second volet doit être différent du type principal.",
     descIzyfactureHybride: "Connectez IzyVendeur à votre compte IzyFacture : une facture officielle est créée automatiquement quand une commande est confirmée ET quand un rendez-vous est marqué « Honoré » (factures séparées). Une commande ou un rendez-vous annulé après facturation génère un avoir. La clé est chiffrée avant d'être enregistrée et n'est jamais réaffichée en clair.",
     labelIzyfactureAutoHybride: "Créer automatiquement la facture (commande confirmée ou rendez-vous « Honoré »)",
-    noteSimulateurHybride: "Ce marchand a deux volets : le Simulateur suit exactement le parcours d'un vrai client (langue, puis choix produits / rendez-vous).",
+    noteSimulateurHybride: "Ce marchand a plusieurs volets : le Simulateur suit exactement le parcours d'un vrai client (langue, puis choix produits / rendez-vous / chambres).",
     labelVoletConversation: "Volet",
     act_identifiants_modifies: "Identifiants modifiés",
     act_employe_cree: "Employé créé",
@@ -1453,6 +1458,11 @@ const I18N = {
     act_module_secondaire_modifie: "Second section (hybrid) changed",
     voletCatalogue: "Catalog",
     voletService: "Appointments",
+    voletHebergement: "Rooms",
+    groupeHebergement: "Rooms",
+    ongletParametresHebHyb: "Room settings",
+    roleRendezvousEtReservations: "Appointments & bookings (rooms)",
+    optionModuleAjoutHebergement: "Add rooms (stay bookings)",
     typeHebergement: "Lodging",
     ongletChambres: "Rooms",
     ongletSejours: "Bookings",
@@ -1527,7 +1537,7 @@ const I18N = {
     h3ChambresTop: "Most requested room types",
     h3ProchainesArrivees: "Arrivals in the next 7 days",
     msgAucuneArriveeProche: "No arrivals scheduled in the next 7 days.",
-    noteOptionsHebergement: "This merchant is a lodging merchant: catalog paid options, invoicing and the second module do not apply yet (planned for the next step).",
+    noteOptionsHebergement: "This merchant is a lodging merchant: the catalog paid options only apply if it also has the catalog section; invoicing of stays is not available yet.",
     act_chambres_modifiees: "Rooms edited",
     act_chambres_importees: "Rooms imported (file)",
     act_sejour_cree: "Booking created (front desk)",
@@ -1536,20 +1546,20 @@ const I18N = {
     typeHybrideLibelle: "{a} + {b}",
     ongletParametresCatalogueHyb: "Catalog settings",
     ongletParametresServiceHyb: "Appointment settings",
-    h3ModuleSecondaire: "Second section (hybrid merchant)",
-    noteModuleSecondaire: "Lets this merchant offer catalog AND appointments behind the same WhatsApp number. The customer picks their path after the language. Removing the second section hides it (customers, tabs, reminders) but deletes NO data: it comes back as it was if you restore it. Super-administrator only.",
-    labelModuleSecondaire: "Second section",
+    h3ModuleSecondaire: "Additional sections (hybrid merchant)",
+    noteModuleSecondaire: "Lets this merchant offer up to three sections (catalog, appointments, rooms) behind the same WhatsApp number. The customer picks their path after the language. Removing the second section hides it (customers, tabs, reminders) but deletes NO data: it comes back as it was if you restore it. Super-administrator only.",
+    labelModuleSecondaire: "Additional sections",
     optionModuleAucun: "None (single-section merchant)",
     optionModuleAjoutCatalogue: "Add the catalog (products, orders)",
     optionModuleAjoutService: "Add appointments (services, appointments)",
     btnEnregistrerModule: "Save the second section",
-    alertModuleEnregistre: "Second section saved.",
-    confirmRetirerModule: "Remove the second section? It will be hidden from customers and from /admin, but its data is kept.",
-    promptModuleSecondaire: "Second section (optional, super-administrator only): type 'catalogue' or 'service' to create a HYBRID merchant, or leave empty.",
+    alertModuleEnregistre: "Sections saved.",
+    confirmRetirerModule: "Remove a section? It will be hidden from customers and from /admin, but its data is kept.",
+    promptModuleSecondaire: "Additional sections (optional, super-administrator only): 'catalogue', 'service' or 'hebergement' (two at most, comma-separated, e.g. service,hebergement) to create a HYBRID merchant, or leave empty.",
     alertModuleSecondaireIdentique: "The second section must differ from the main type.",
     descIzyfactureHybride: "Connect IzyVendeur to your IzyFacture account: an official invoice is created automatically when an order is confirmed AND when an appointment is marked \"Completed\" (separate invoices). An order or appointment cancelled after invoicing generates a credit note. The key is encrypted before being stored and is never shown again in full.",
     labelIzyfactureAutoHybride: "Automatically create the invoice (order confirmed or appointment \"Completed\")",
-    noteSimulateurHybride: "This merchant has two sections: the Simulator follows exactly what a real customer goes through (language, then products / appointments choice).",
+    noteSimulateurHybride: "This merchant has several sections: the Simulator follows exactly what a real customer goes through (language, then products / appointments / rooms choice).",
     labelVoletConversation: "Section",
     act_identifiants_modifies: "Credentials changed",
     act_employe_cree: "Employee created",
@@ -2162,12 +2172,14 @@ function libelleJour(j) {
   return map[j] ? t(map[j]) : j;
 }
 function libelleTypeMarchand(type) { return type === "service" ? t("typeService") : type === "hebergement" ? t("typeHebergement") : t("typeCatalogue"); }
-// Etape 48 : un marchand HYBRIDE a deux volets (`modules` = [principal, second], fournis par GET /api/marchands).
+// Etape 48/66 : un marchand HYBRIDE a deux ou trois volets (`modules` = [principal, second, troisieme], fournis par GET /api/marchands).
+function libelleVoletCle(v) { return v === "service" ? "voletService" : v === "hebergement" ? "voletHebergement" : "voletCatalogue"; }
 function modulesAdmin(m) { m = m || marchandActif; return m && Array.isArray(m.modules) && m.modules.length ? m.modules : [m ? m.type : "catalogue"]; }
 function estHybrideAdmin(m) { return modulesAdmin(m).length > 1; }
 function libelleMarchandType(m) {
   const mods = modulesAdmin(m);
-  return mods.length > 1 ? t("typeHybrideLibelle", { a: libelleTypeMarchand(mods[0]), b: libelleTypeMarchand(mods[1]) }) : libelleTypeMarchand(m.type);
+  // Etape 66 : jusqu'a trois volets (le troisieme est simplement ajoute au libelle « A + B »).
+  return mods.length > 1 ? t("typeHybrideLibelle", { a: libelleTypeMarchand(mods[0]), b: libelleTypeMarchand(mods[1]) }) + (mods[2] ? " + " + libelleTypeMarchand(mods[2]) : "") : libelleTypeMarchand(m.type);
 }
 // Volet (« catalogue » / « service ») de l'onglet affiche, pour un marchand hybride : ajoute ?volet= aux
 // appels qui en ont besoin (voir api() ci-dessous). null hors marchand hybride et pour les onglets communs.
@@ -2406,8 +2418,9 @@ document.getElementById("btnNouveauMarchand").onclick = async () => {
   const nom = prompt(t("promptNomMarchand"), id) || id;
   const type = (prompt(t("promptTypeMarchand"), "catalogue") || "").trim();
   // Second volet (marchand hybride) : propose uniquement ici, dans l'ecran du super-administrateur.
+  // Etape 66 : jusqu'a deux volets secondaires, separes par une virgule (ex. « service,hebergement »).
   const moduleSecondaire = (prompt(t("promptModuleSecondaire"), "") || "").trim();
-  if (moduleSecondaire && moduleSecondaire === type) { alert(t("alertModuleSecondaireIdentique")); return; }
+  if (moduleSecondaire && moduleSecondaire.split(",").map((x) => x.trim()).indexOf(type) !== -1) { alert(t("alertModuleSecondaireIdentique")); return; }
   const phoneNumberId = prompt(t("promptPhoneNumberIdCreation")) || null;
   const adminUser = prompt(t("promptAdminUser"), id) || id;
   const adminPassword = prompt(t("promptAdminPassword"));
@@ -2502,16 +2515,17 @@ function rolesDisponiblesBase() {
   // "Rapports" dans /admin, desormais deux onglets distincts, marchand catalogue uniquement.
   if (estHybrideAdmin()) {
     // Marchand hybride : les roles des DEUX volets (un employe garde le sien et ne voit que ses onglets).
-    return [
-      ["catalogue", t("roleCatalogue")],
-      ["commandes", t("roleCommandes")],
-      ["rendezvous", t("roleRendezvous")],
-      ["conversations", t("roleConversationsService")],
-      ["tableaudebord", t("roleTableauDeBord")],
-      ["rapports", t("roleRapports")],
-      ["inventaire", t("roleInventaire")],
-      ["parametres", t("roleParametres")]
-    ].concat(modulesAdmin().indexOf("catalogue") !== -1 && marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : []);
+    // Etape 66 : seuls les roles des volets que ce marchand possede (catalogue / rendez-vous / chambres).
+    const mods = modulesAdmin();
+    const aCat = mods.indexOf("catalogue") !== -1, aSvc = mods.indexOf("service") !== -1, aHeb = mods.indexOf("hebergement") !== -1;
+    return [].concat(
+      aCat ? [["catalogue", t("roleCatalogue")], ["commandes", t("roleCommandes")]] : [],
+      aSvc || aHeb ? [["rendezvous", aSvc && aHeb ? t("roleRendezvousEtReservations") : (aHeb ? t("roleReservations") : t("roleRendezvous"))]] : [],
+      [["conversations", t("roleConversationsService")], ["tableaudebord", t("roleTableauDeBord")]],
+      aCat ? [["rapports", t("roleRapports")], ["inventaire", t("roleInventaire")]] : [],
+      [["parametres", t("roleParametres")]],
+      aCat && marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : []
+    );
   }
   if (marchandActif.type === "hebergement") {
     return [
@@ -2573,14 +2587,24 @@ function construireOnglets() {
     ["rendezvous", t("ongletRendezvous"), renderRendezvous, "rendezvous", "service"],
     ["parametresService", t("ongletParametresServiceHyb"), renderParametresService, "parametres", "service"]
   ];
+  // Etape 66 : onglets du volet hebergement quand il est l'un des volets d'un marchand hybride.
+  const ongletsHeb = () => [
+    ["chambres", t("ongletChambres"), renderChambres, "rendezvous", "hebergement"],
+    ["sejours", t("ongletSejours"), renderSejours, "rendezvous", "hebergement"],
+    ["calendrier", t("ongletCalendrier"), renderCalendrierChambres, "rendezvous", "hebergement"],
+    ["parametresHeb", t("ongletParametresHebHyb"), renderParametresHebergement, "parametres", "hebergement"]
+  ];
+  const ongletsDuVolet = { catalogue: ongletsCatalogue, service: ongletsService, hebergement: ongletsHeb };
+  // Roles operationnels exiges pour le Simulateur complet : celui de CHAQUE volet (voir simulateurHybrideAutorise cote serveur).
+  const permissionsDesVolets = modulesAdmin().map((v) => (v === "catalogue" ? "catalogue" : "rendezvous"));
   let onglets = hybride
     ? [
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord", null]
       ].concat(
-        modulesAdmin()[0] === "service" ? ongletsService().concat(ongletsCatalogue()) : ongletsCatalogue().concat(ongletsService()),
+        modulesAdmin().reduce((acc, v) => acc.concat(ongletsDuVolet[v] ? ongletsDuVolet[v]() : []), []),
         [
-          // Visible si le role « conversations » OU les deux roles operationnels (voir simulateurHybrideAutorise cote serveur).
-          ["simulateur", t("ongletSimulateur"), renderSimulateur, (roles) => roles.indexOf("conversations") !== -1 || (roles.indexOf("catalogue") !== -1 && roles.indexOf("rendezvous") !== -1), null],
+          // Visible si le role « conversations » OU les roles operationnels de tous les volets.
+          ["simulateur", t("ongletSimulateur"), renderSimulateur, (roles) => roles.indexOf("conversations") !== -1 || permissionsDesVolets.every((p) => roles.indexOf(p) !== -1), null],
           ["conversations", t("ongletConversations"), renderConversations, "conversations", null],
           marchandActif.facturationInterneVisible ? ["facturation", t("ongletFacturation"), renderFacturation, ["facturation", "comptable"], null] : null,
           ["employes", t("ongletEmployes"), renderEmployes, "gestion", null],
@@ -2649,8 +2673,8 @@ function construireOnglets() {
   // Les boutons d'onglet restent TOUS dans le DOM (allerVersOnglet() et les tuiles du Tableau de bord continuent de
   // fonctionner) ; seuls ceux du groupe actif sont affiches. Marchand a un seul volet : rien n'est regroupe.
   const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
-    services: "rdv", rendezvous: "rdv", parametresService: "rdv", simulateur: "echanges", conversations: "echanges", facturation: "admin", employes: "admin", journal: "admin", compte: "admin" };
-  const LIBELLE_GROUPE = { dashboard: t("ongletTableauDeBord"), produits: t("groupeProduits"), rdv: t("groupeRdv"), echanges: t("groupeEchanges"), admin: t("groupeAdmin") };
+    services: "rdv", rendezvous: "rdv", parametresService: "rdv", chambres: "hebergement", sejours: "hebergement", calendrier: "hebergement", parametresHeb: "hebergement", simulateur: "echanges", conversations: "echanges", facturation: "admin", employes: "admin", journal: "admin", compte: "admin" };
+  const LIBELLE_GROUPE = { dashboard: t("ongletTableauDeBord"), produits: t("groupeProduits"), rdv: t("groupeRdv"), hebergement: t("groupeHebergement"), echanges: t("groupeEchanges"), admin: t("groupeAdmin") };
   const barreGroupes = document.getElementById("barreGroupes");
   const ordreGroupes = [];
   if (hybride) onglets.forEach((o) => { const g = GROUPE_DE[o[0]] || "admin"; if (ordreGroupes.indexOf(g) === -1) ordreGroupes.push(g); });
@@ -4160,7 +4184,7 @@ function blocIzyfactureHtml(etat, estService) {
 // Le bloc IzyFacture existe dans Parametres des deux types de marchand (catalogue ET service, Etape 46) :
 // apres une sauvegarde on redessine donc le bon ecran.
 function rafraichirParametresMarchand() {
-  if (estHybrideAdmin()) return voletCourant === "service" ? renderParametresService() : renderParametresCatalogue();
+  if (estHybrideAdmin()) return voletCourant === "service" ? renderParametresService() : voletCourant === "hebergement" ? renderParametresHebergement() : renderParametresCatalogue();
   if (marchandActif.type === "hebergement") return renderParametresHebergement();
   if (marchandActif.type === "service") return renderParametresService();
   return renderParametresCatalogue();
@@ -5219,7 +5243,7 @@ async function renderConversations() {
         "<div class='carte-produit'>" +
           "<div style='display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;'>" +
             "<strong>" + esc(c.telephone) + "</strong>" +
-            (estHybrideAdmin() && c.volet ? "<span class='raison'>" + t("labelVoletConversation") + " : " + t(c.volet === "service" ? "voletService" : "voletCatalogue") + "</span>" : "") +
+            (estHybrideAdmin() && c.volet ? "<span class='raison'>" + t("labelVoletConversation") + " : " + t(libelleVoletCle(c.volet)) + "</span>" : "") +
             "<span class='raison'>" + formaterDureeDepuis(c.depuisISO) + "</span>" +
           "</div>" +
           "<div style='max-height:160px; overflow-y:auto; margin:10px 0; padding:8px; background:#f6f7f9; border-radius:6px; font-size:0.9em;'>" +
@@ -5449,7 +5473,7 @@ async function renderTableauDeBord() {
   }
 
   const sectionsDash = voletsDash.map((v, i) =>
-    (hybrideDash ? "<h2 style='margin-top:26px; border-bottom:2px solid #e3e6ea; padding-bottom:4px;'>" + t(v === "service" ? "voletService" : "voletCatalogue") + "</h2>" : "") +
+    (hybrideDash ? "<h2 style='margin-top:26px; border-bottom:2px solid #e3e6ea; padding-bottom:4px;'>" + t(libelleVoletCle(v)) + "</h2>" : "") +
     (v === "hebergement" ? sectionDashboardHeb(donneesDash[i]) : sectionDashboard(donneesDash[i], v !== "service"))
   ).join("");
   zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode + sectionsDash;
@@ -5517,7 +5541,7 @@ async function renderSimulateur() {
     champ.addEventListener("keydown", (e) => { if (e.key === "Enter") envoyer(); });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-volet-bouton]"), (b) => {
       // Meme jeton que celui produit par un vrai clic sur le bouton WhatsApp (voir hybride.js).
-      b.onclick = () => envoyer(b.dataset.voletBouton === "service" ? "__volet_service__" : "__volet_catalogue__", b.textContent);
+      b.onclick = () => envoyer(b.dataset.voletBouton === "service" ? "__volet_service__" : b.dataset.voletBouton === "hebergement" ? "__volet_hebergement__" : "__volet_catalogue__", b.textContent);
     });
     document.getElementById("btnResetSimu").onclick = async () => {
       try {
@@ -6329,7 +6353,13 @@ function brancherBlocNumeroPublic() {
 // blocNumeroPublicHtml()/brancherBlocNumeroPublic() dans renderCompte() ci-dessous, tous gardes par
 // marchandActif.optionStockIllimite / optionLienCommande / optionNotificationsStatut.
 function blocOptionsPayantesHtml() {
-  if (marchandActif.type === "hebergement") return "<h3>" + t("h3OptionsPayantes") + "</h3><p class='raison'>" + t("noteOptionsHebergement") + "</p>";
+  const principalHeb = marchandActif.type === "hebergement";
+  // Etape 66 : un marchand dont le volet principal est l'hebergement n'a les options du catalogue que s'il a AUSSI
+  // le volet catalogue ; la facturation de sejours n'existe pas encore. Le choix des volets reste propose au
+  // super-administrateur seul (blocModuleSecondaireHtml renvoie "" pour tout autre role).
+  if (principalHeb && modulesAdmin().indexOf("catalogue") === -1) {
+    return "<h3>" + t("h3OptionsPayantes") + "</h3><p class='raison'>" + t("noteOptionsHebergement") + "</p>" + blocModuleSecondaireHtml();
+  }
   return "<h3>" + t("h3OptionsPayantes") + "</h3>" +
     "<p class='raison'>" + t("noteOptionsPayantes") + "</p>" +
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionStockIllimite'" + (marchandActif.optionStockIllimite ? " checked" : "") + " /> " + t("labelOptionStockIllimite") + "</label>" +
@@ -6337,8 +6367,7 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionNotifStatut'" + (marchandActif.optionNotificationsStatut ? " checked" : "") + " /> " + t("labelOptionNotifStatut") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaissePos'" + (marchandActif.optionCaissePos ? " checked" : "") + " /> " + t("labelOptionCaissePos") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
-    blocSourceFacturationHtml() +
-    blocCleComptableHtml() +
+    (principalHeb ? "" : blocSourceFacturationHtml() + blocCleComptableHtml()) +
     blocModuleSecondaireHtml();
 }
 
@@ -6457,28 +6486,27 @@ function brancherBlocSourceFacturation() {
 // toute facon la route a tout autre role (403).
 function blocModuleSecondaireHtml() {
   if (!moi || moi.role !== "superadmin") return "";
-  const autre = marchandActif.type === "service" ? "catalogue" : "service";
-  const actuel = modulesAdmin()[1] || "";
+  // Etape 66 : une case par volet AUTRE que le principal (donc au plus deux : trois volets au total).
+  const actuels = modulesAdmin().slice(1);
+  const autres = ["catalogue", "service", "hebergement"].filter((v) => v !== marchandActif.type);
+  const cleAjout = { catalogue: "optionModuleAjoutCatalogue", service: "optionModuleAjoutService", hebergement: "optionModuleAjoutHebergement" };
   return "<h3>" + t("h3ModuleSecondaire") + "</h3>" +
     "<p class='raison'>" + t("noteModuleSecondaire") + "</p>" +
     "<label>" + t("labelModuleSecondaire") + "</label>" +
-    "<select id='champModuleSecondaire'>" +
-      "<option value=''" + (actuel === "" ? " selected" : "") + ">" + t("optionModuleAucun") + "</option>" +
-      "<option value='" + autre + "'" + (actuel === autre ? " selected" : "") + ">" + t(autre === "service" ? "optionModuleAjoutService" : "optionModuleAjoutCatalogue") + "</option>" +
-    "</select>" +
+    autres.map((v) => "<label style='display:block;margin-bottom:6px;'><input type='checkbox' class='champVoletSecondaire' value='" + v + "'" + (actuels.indexOf(v) !== -1 ? " checked" : "") + " /> " + t(cleAjout[v]) + "</label>").join("") +
     "<div style='margin-top:10px;'><button id='btnSauverModuleSecondaire' class='principal'>" + t("btnEnregistrerModule") + "</button></div>";
 }
 function brancherBlocModuleSecondaire() {
   const bouton = document.getElementById("btnSauverModuleSecondaire");
   if (!bouton) return;
   bouton.onclick = async () => {
-    const valeur = document.getElementById("champModuleSecondaire").value || null;
-    const actuel = modulesAdmin()[1] || null;
-    if (valeur === actuel) return;
-    if (!valeur && !confirm(t("confirmRetirerModule"))) return;
+    const valeur = Array.prototype.filter.call(document.querySelectorAll(".champVoletSecondaire"), (c) => c.checked).map((c) => c.value);
+    const actuel = modulesAdmin().slice(1);
+    if (valeur.join(",") === actuel.join(",") || (valeur.slice().sort().join(",") === actuel.slice().sort().join(","))) return;
+    if (actuel.some((v) => valeur.indexOf(v) === -1) && !confirm(t("confirmRetirerModule"))) return;
     const idMarchand = marchandActif.id;
     try {
-      await api("/api/marchands/" + idMarchand + "/module-secondaire", { method: "PUT", body: JSON.stringify({ moduleSecondaire: valeur }) });
+      await api("/api/marchands/" + idMarchand + "/module-secondaire", { method: "PUT", body: JSON.stringify({ modulesSecondaires: valeur }) });
       alert(t("alertModuleEnregistre"));
       await demarrer();
       if (marchands.some((m) => m.id === idMarchand)) choisirMarchand(idMarchand);
@@ -6486,7 +6514,7 @@ function brancherBlocModuleSecondaire() {
   };
 }
 function brancherBlocOptionsPayantes() {
-  if (marchandActif.type === "hebergement") return;
+  if (marchandActif.type === "hebergement" && modulesAdmin().indexOf("catalogue") === -1) { brancherBlocModuleSecondaire(); return; }
   brancherBlocModuleSecondaire();
   brancherBlocSourceFacturation();
   brancherBlocCleComptable();
