@@ -545,6 +545,14 @@ const I18N = {
     labelHeureArrivee: "Heure d'arrivée (à partir de)",
     labelHeureDepart: "Heure de départ (avant)",
     labelDelaiAnnulation: "Délai d'annulation / de report (heures avant l'arrivée)",
+    h3ListesDatesHeures: "Choix du jour et de l'heure",
+    labelListesRdv: "Proposer des listes de jours et d'heures",
+    labelListesHeb: "Proposer des listes de dates d'arrivée et de nuits",
+    noteListesRdv: "Quand la case est cochée, le client choisit son jour puis son heure dans des menus déroulants WhatsApp (matin / après-midi / soir quand il y a beaucoup d'heures). Il peut toujours écrire la date et l'heure à la main. Décochez pour revenir à la saisie libre seule.",
+    noteListesHeb: "Quand la case est cochée, le client choisit sa date d'arrivée puis le nombre de nuits dans des menus déroulants WhatsApp. Il peut toujours écrire ses dates à la main. Décochez pour revenir à la saisie libre seule.",
+    jdListesDatesHeures: "Listes de jours et d'heures : {v}",
+    jdListesActives: "activées",
+    jdListesInactives: "désactivées",
     h3DelaiAnnulation: "Annulation et report par le client",
     labelDelaiAnnulationRdv: "Délai d'annulation / de report (heures avant le rendez-vous)",
     noteDelaiAnnulationRdv: "0 = la cliente peut annuler ou reporter jusqu'au rendez-vous. Exemple : 24 → moins de 24 h avant, elle ne peut plus le faire seule. Ne concerne que les rendez-vous « Confirmé ».",
@@ -1530,6 +1538,14 @@ const I18N = {
     labelHeureArrivee: "Check-in time (from)",
     labelHeureDepart: "Check-out time (before)",
     labelDelaiAnnulation: "Cancellation / rescheduling deadline (hours before arrival)",
+    h3ListesDatesHeures: "Choosing the day and time",
+    labelListesRdv: "Offer day and time lists",
+    labelListesHeb: "Offer arrival date and number-of-nights lists",
+    noteListesRdv: "When ticked, the customer picks the day then the time from WhatsApp dropdown menus (morning / afternoon / evening when there are many times). They can still type the date and time by hand. Untick to go back to free typing only.",
+    noteListesHeb: "When ticked, the customer picks the arrival date then the number of nights from WhatsApp dropdown menus. They can still type their dates by hand. Untick to go back to free typing only.",
+    jdListesDatesHeures: "Day and time lists: {v}",
+    jdListesActives: "on",
+    jdListesInactives: "off",
     h3DelaiAnnulation: "Cancellation and rescheduling by the customer",
     labelDelaiAnnulationRdv: "Cancellation / rescheduling deadline (hours before the appointment)",
     noteDelaiAnnulationRdv: "0 = the customer can cancel or reschedule until the appointment. Example: 24 → less than 24 h before, she can no longer do it herself. Only applies to \"Confirmed\" appointments.",
@@ -4522,6 +4538,16 @@ async function ouvrirDialogueDeplacerRdv(a, apres) {
 // Etape 67 : delai limite d'annulation / report par le client + mode au-dela du delai. Meme bloc pour les
 // rendez-vous et les chambres. Regle par marchand, reglable par le proprietaire ET par le super-administrateur
 // (qui le voit dans les Parametres du marchand choisi et retrouve chaque modification, avec son auteur, au Journal).
+// Etape 68 : case « Proposer des listes de jours et d'heures » (cochee par defaut). Reglable par le proprietaire, un employe
+// ayant le role Parametres et le super-administrateur ; ce n'est pas une option payante.
+function blocListesDatesHeuresHtml(p, genre) {
+  const pre = genre === "heb" ? "heb" : "rdv";
+  const coche = p.listesDatesHeures !== false;
+  return "<h3>" + t("h3ListesDatesHeures") + "</h3>" +
+    "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='" + pre + "Listes'" + (coche ? " checked" : "") + " /> " + t(genre === "heb" ? "labelListesHeb" : "labelListesRdv") + "</label>" +
+    "<p class='raison'>" + t(genre === "heb" ? "noteListesHeb" : "noteListesRdv") + "</p>";
+}
+
 function blocDelaiAnnulationHtml(p, genre) {
   const pre = genre === "heb" ? "heb" : "rdv";
   const mode = p.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
@@ -4565,6 +4591,7 @@ async function renderParametresService() {
       ).join("") +
     "</select>" +
     "<p class='raison'>" + t("noteFuseau") + "</p>" +
+    blocListesDatesHeuresHtml(parametres, "rdv") +
     blocDelaiAnnulationHtml(parametres, "rdv") +
     "<h3>" + t("h3HorairesOuverture") + "</h3>" +
     "<p class='raison'>" + t("notePause") + "</p>" +
@@ -4643,6 +4670,7 @@ async function renderParametresService() {
           horaires: nouvHoraires,
           praticiens: nouvPraticiens,
           fuseau: document.getElementById("fuseauRdv").value,
+          listesDatesHeures: document.getElementById("rdvListes").checked,
           delaiAnnulationHeures: Number(document.getElementById("rdvDelai").value) || 0,
           modeDelaiDepasse: document.getElementById("rdvModeDelai").value,
           autoConfirmMessage: document.getElementById("msgConfirm").value,
@@ -4953,6 +4981,7 @@ async function renderParametresHebergement() {
     "<p class='raison'>" + t("noteFuseau") + "</p>" +
     "<label>" + t("labelHeureArrivee") + "</label><input type='time' id='hebHeureArrivee' value='" + esc(p.heureArrivee || "14:00") + "' />" +
     "<label>" + t("labelHeureDepart") + "</label><input type='time' id='hebHeureDepart' value='" + esc(p.heureDepart || "12:00") + "' />" +
+    blocListesDatesHeuresHtml(p, "heb") +
     blocDelaiAnnulationHtml(p, "heb") +
     "<label>" + t("labelNuitsMax") + "</label><input type='number' min='1' id='hebNuitsMax' value='" + (Number(p.nuitsMax) || 30) + "' />" +
     "<label>" + t("labelAvanceMax") + "</label><input type='number' min='1' id='hebAvanceMax' value='" + (Number(p.avanceMaxJours) || 365) + "' />" +
@@ -4971,6 +5000,7 @@ async function renderParametresHebergement() {
           fuseau: document.getElementById("fuseauHeb").value,
           heureArrivee: document.getElementById("hebHeureArrivee").value,
           heureDepart: document.getElementById("hebHeureDepart").value,
+          listesDatesHeures: document.getElementById("hebListes").checked,
           delaiAnnulationHeures: Number(document.getElementById("hebDelai").value) || 0,
           modeDelaiDepasse: document.getElementById("hebModeDelai").value,
           nuitsMax: Number(document.getElementById("hebNuitsMax").value) || 30,
@@ -6825,6 +6855,7 @@ function detailJournalHtml(ligne) {
   if (Array.isArray(d.roles) && d.roles.length) out.push(t("jdRoles", { r: esc(d.roles.join(", ")) }));
   if (d.motDePasse === true) out.push(t("jdMotDePasseChange"));
   if (Array.isArray(d.champs) && d.champs.length) out.push(t("jdChamps", { c: esc(d.champs.join(", ")) }));
+  if (d.listesDatesHeures != null) out.push(t("jdListesDatesHeures", { v: t(d.listesDatesHeures ? "jdListesActives" : "jdListesInactives") }));
   if (d.delaiAnnulationHeures != null) out.push(t("jdDelaiAnnulation", { h: d.delaiAnnulationHeures, m: t(d.modeDelaiDepasse === "accepter" ? "optionModeAccepter" : "optionModeRefuser") }));
   if (d.fichier) out.push(t("jdFichier", { f: esc(d.fichier) }));
   if (d.cible) out.push(t("jdCible", { c: esc(d.cible) }));

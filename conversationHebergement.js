@@ -59,6 +59,7 @@ function reglagesParDefaut() {
     notePaiementEn: "Payment on site, on arrival.",
     delaiAnnulationHeures: 0, // 0 = pas de delai : le client peut annuler / reporter jusqu'a l'arrivee
     modeDelaiDepasse: "refuser", // Etape 67 : "refuser" (renvoi vers un conseiller) ou "accepter" (annulation marquee « tardive »)
+    listesDatesHeures: true, // Etape 68 : listes deroulantes d'arrivees puis de nuits proposees au client (case a cocher)
     nuitsMax: NUITS_MAX_DEFAUT,
     avanceMaxJours: AVANCE_MAX_JOURS_DEFAUT,
     fuseau: sh.FUSEAU_PAR_DEFAUT
@@ -839,11 +840,91 @@ function createHebergementEngine(merchantKey, options) {
         ? s.choixIds.map((id) => sejourParId(id)).filter(Boolean).map((x) => ({ ref: refSejour(x), detail: x.chambre + " — " + formatCourt(x.arrivee, s) + " → " + formatCourt(x.depart, s) }))
         : null,
       libelleChoix: { fr: "Vos réservations", en: "Your bookings" },
+      choixDate: choixDateDe(fromPhone), // Etape 68 : "arrivee" | "nuits" | null
       langue: sh.langueSession(s)
     };
   }
 
   // ---------------- API pour /admin ----------------
+  // ---------------- Etape 68 : listes d'arrivees puis de nuits (menus deroulants WhatsApp) ----------------
+  // Le moteur ne fait que calculer ce qui est libre pour la chambre choisie ; server.js construit les listes et renvoie
+  // le choix du client comme du texte ordinaire (« AAAA-MM-JJ » pour l'arrivee, « 3 nuits » / « 3 nights » ensuite) que ce
+  // moteur comprend deja. La saisie libre reste possible a tout moment. Reglage : settings.listesDatesHeures (vrai par defaut).
+  function listesActives() { return !state || !state.settings || state.settings.listesDatesHeures !== false; }
+  function contexteListes(fromPhone) {
+    if (!state || !listesActives()) return null;
+    const s = sessions[fromPhone];
+    if (!s || s.stage !== "awaiting_dates") return null;
+    const chambre = s.chambreId ? chambreParId(s.chambreId) : null;
+    return chambre ? { s, chambre } : null;
+  }
+  function avecReport(session, fn) {
+    const avant = ignorerSejourId;
+    ignorerSejourId = session.reportSejourId || null;
+    try { return fn(); } finally { ignorerSejourId = avant; }
+  }
+  // Nombre de nuits consecutives libres a partir de `arriveeIso` (plafonne a `plafond`).
+  function nuitsLibresDepuis(chambre, arriveeIso, plafond, pourSim) {
+    let n = 0;
+    while (n < plafond && disponible(chambre, arriveeIso, dt.ajouterJours(arriveeIso, n + 1), pourSim)) n++;
+    return n;
+  }
+  function nuitsMaxReglage() { return parseInt(reg().nuitsMax, 10) || NUITS_MAX_DEFAUT; }
+  // Etape a proposer : "arrivee" (aucune date donnee), "nuits" (arrivee connue, duree manquante) ou null.
+  function choixDateDe(fromPhone) {
+    const ctx = contexteListes(fromPhone);
+    if (!ctx) return null;
+    if (!ctx.s.arrivee) return "arrivee";
+    if (!ctx.s.depart && !ctx.s.nuits) return "nuits";
+    return null;
+  }
+  // Jours d'arrivee possibles (au moins une nuit libre), par pages de 7 : { jours:[{id,label,description}], suite, page } ou null.
+  function getChoixArrivees(fromPhone, page) {
+    const ctx = contexteListes(fromPhone);
+    if (!ctx || choixDateDe(fromPhone) !== "arrivee") return null;
+    return avecReport(ctx.s, () => {
+      const pourSim = fromPhone === PHONE_SIMULATEUR;
+      const auj = aujourdhuiISO();
+      const horizon = Math.min(parseInt(reg().avanceMaxJours, 10) || AVANCE_MAX_JOURS_DEFAUT, 90);
+      const trouves = [];
+      for (let i = 0; i < horizon; i++) {
+        const jour = dt.ajouterJours(auj, i);
+        if (disponible(ctx.chambre, jour, dt.ajouterJours(jour, 1), pourSim)) trouves.push({ jour, i });
+      }
+      const pg = Math.max(0, parseInt(page, 10) || 0);
+      const part = trouves.slice(pg * 7, pg * 7 + 7);
+      const plafond = Math.min(nuitsMaxReglage(), 14);
+      return {
+        page: pg,
+        suite: trouves.length > pg * 7 + 7,
+        jours: part.map((j) => {
+          const n = nuitsLibresDepuis(ctx.chambre, j.jour, plafond, pourSim);
+          return {
+            id: j.jour,
+            label: formatCourt(j.jour, ctx.s),
+            description: (j.i === 0 ? sh.t(ctx.s, "Aujourd'hui — ", "Today — ") : j.i === 1 ? sh.t(ctx.s, "Demain — ", "Tomorrow — ") : "") +
+              (n >= plafond ? sh.t(ctx.s, "Disponible", "Available") : sh.t(ctx.s, "Jusqu'à " + libelleNuits(n, ctx.s), "Up to " + libelleNuits(n, ctx.s)))
+          };
+        })
+      };
+    });
+  }
+  // Durees possibles apres l'arrivee choisie : 1 a 7 nuits (moins si la chambre n'est plus libre ou si nuitsMax est plus bas).
+  function getChoixNuits(fromPhone) {
+    const ctx = contexteListes(fromPhone);
+    if (!ctx || choixDateDe(fromPhone) !== "nuits") return null;
+    return avecReport(ctx.s, () => {
+      const pourSim = fromPhone === PHONE_SIMULATEUR;
+      const max = nuitsLibresDepuis(ctx.chambre, ctx.s.arrivee, Math.min(nuitsMaxReglage(), 7), pourSim);
+      const options = [];
+      for (let n = 1; n <= max; n++) {
+        const depart = dt.ajouterJours(ctx.s.arrivee, n);
+        options.push({ id: String(n), nuits: n, label: libelleNuits(n, ctx.s), description: sh.t(ctx.s, "Départ le ", "Departure ") + formatCourt(depart, ctx.s) });
+      }
+      return { arriveeLabel: formatJour(ctx.s.arrivee, ctx.s), options };
+    });
+  }
+
   function getChambres() { return state ? state.chambres : []; }
   function getSettings() { return state ? state.settings : {}; }
 
@@ -881,6 +962,7 @@ function createHebergementEngine(merchantKey, options) {
     ["heureArrivee", "heureDepart"].forEach((k) => { if (sain[k] !== undefined && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(sain[k]))) delete sain[k]; });
     if (sain.delaiAnnulationHeures !== undefined) { const h = parseFloat(sain.delaiAnnulationHeures); sain.delaiAnnulationHeures = Number.isFinite(h) && h >= 0 ? Math.min(h, 720) : 0; }
     if (sain.modeDelaiDepasse !== undefined) sain.modeDelaiDepasse = sain.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
+    if (sain.listesDatesHeures !== undefined) sain.listesDatesHeures = !(sain.listesDatesHeures === false || sain.listesDatesHeures === "false" || sain.listesDatesHeures === 0);
     if (sain.nuitsMax !== undefined) { const n = parseInt(sain.nuitsMax, 10); sain.nuitsMax = Number.isFinite(n) && n >= 1 ? Math.min(n, 365) : NUITS_MAX_DEFAUT; }
     if (sain.avanceMaxJours !== undefined) { const n = parseInt(sain.avanceMaxJours, 10); sain.avanceMaxJours = Number.isFinite(n) && n >= 1 ? Math.min(n, 1095) : AVANCE_MAX_JOURS_DEFAUT; }
     state.settings = Object.assign({}, state.settings, sain);
@@ -1083,6 +1165,8 @@ function createHebergementEngine(merchantKey, options) {
     init,
     handleMessage,
     getEtatSession,
+    getChoixArrivees,
+    getChoixNuits,
     nbSejoursAVenir,
     definirLangueSession,
     reponseDeReprise,

@@ -2297,3 +2297,19 @@ Le délai ne concerne que les rendez-vous / séjours **« Confirmé »** : un «
 **Abandonné sur votre décision.** Point D (prévenir automatiquement la cliente quand la gérante déplace ou annule depuis /admin) : la gérante prévient elle-même la cliente ; rien n'est codé.
 
 Fichiers modifiés : `conversationService.js`, `conversationHebergement.js`, `server.js` (journal), `public/admin.html`. Aucune migration, aucune variable d'environnement. Prochaine étape : listes de jours et d'heures (Étape 68).
+
+## Étape 68 — Listes déroulantes de jours et d'heures (rendez-vous) et d'arrivées et de nuits (chambres)
+
+**Rendez-vous.** Quand le bot demande « Quel jour et à quelle heure ? », le client reçoit une **liste de jours** (7 jours libres par page, « Voir plus de jours », « Autre date (à écrire) », « Contacter un conseiller »). Il touche un jour, puis choisit son **heure** dans une seconde liste. S'il y a **plus de 8 créneaux** ce jour-là, une liste intermédiaire propose **Matin / Après-midi / Soir** (les moments vides sont masqués). Seuls les jours et heures réellement libres sont proposés (horaires, pause, durée du service, praticien, rendez-vous déjà pris). Chaque liste respecte la limite WhatsApp de 10 lignes ; une tranche de plus de 8 heures est paginée (« Voir plus d'heures »). Pendant un **report**, le créneau actuel de la cliente ne se bloque pas lui-même.
+
+**Chambres.** Après le choix de la chambre : liste des **dates d'arrivée** possibles (où la chambre est libre au moins une nuit, avec « Jusqu'à N nuits » ou « Disponible »), puis liste du **nombre de nuits** (1 à 7, limité par la disponibilité et par le « nombre de nuits maximum » du marchand), avec la date de départ en description. « Autre durée (à écrire) » permet un séjour plus long.
+
+**Saisie libre conservée.** Le client peut toujours écrire (« vendredi à 10h », « 25/10 à 14h30 », « 21 octobre », « du 12 au 15 novembre »). Les dates écrites en chiffres (« 21/10 », « 21-10-2026 ») ou avec le nom du mois (« 21 octobre », « October 21 ») sont maintenant comprises pour les rendez-vous. Un choix dans une liste devenue périmée (la conversation a avancé) reçoit un message poli au lieu d'une erreur ; un créneau pris par quelqu'un d'autre entre l'affichage et le clic donne les alternatives habituelles.
+
+**Case à cocher par marchand.** Dans **Paramètres** (rendez-vous) et **Paramètres** (chambres) : « Proposer des listes de jours et d'heures » / « …de dates d'arrivée et de nuits », **cochée par défaut** (y compris pour les marchands existants). Décochée, le bot revient à la saisie libre seule. Réglable par le propriétaire, un employé ayant le rôle « parametres » **et par vous** (sélectionnez le marchand) ; chaque changement est tracé au **Journal** avec son auteur (« Listes de jours et d'heures : activées / désactivées »). Ce n'est pas une option payante : rien à accorder.
+
+**Sécurité inchangée.** Les types et volets restent accordés par le seul super-administrateur ; cette étape n'ajoute aucun droit.
+
+**Technique.** Aucune migration, aucune variable d'environnement, aucun nouveau modèle Meta. Le moteur calcule seulement ce qui est libre (`getChoixJours`, `getChoixHeures`, `getChoixArrivees`, `getChoixNuits`) ; `server.js` bâtit les listes et traduit le clic en texte compris par le moteur (jeton interne `__creneau:AAAA-MM-JJ HH:MM__` pour les rendez-vous, `AAAA-MM-JJ` puis « N nuits » pour les chambres). Le Simulateur n'affiche pas de listes cliquables (comme pour les autres listes). Les calendriers natifs WhatsApp (Flows) restent une option plus lourde, non retenue pour l'instant.
+
+Fichiers modifiés : `conversationService.js`, `conversationHebergement.js`, `server.js`, `public/admin.html`.

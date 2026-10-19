@@ -911,6 +911,7 @@ function detailAuditRequete(code, req) {
       const d = { champs: cleCorpsAudit(b) };
       if (b.delaiAnnulationHeures !== undefined) d.delaiAnnulationHeures = Number(b.delaiAnnulationHeures) || 0;
       if (b.modeDelaiDepasse !== undefined) d.modeDelaiDepasse = b.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
+      if (b.listesDatesHeures !== undefined) d.listesDatesHeures = !(b.listesDatesHeures === false || b.listesDatesHeures === "false" || b.listesDatesHeures === 0); // Etape 68
       return d;
     }
     case "infos_marchand_modifiees": case "izyfacture_parametres_modifies":
@@ -3604,6 +3605,9 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
+    // Etape 68 : navigation des listes de jours / heures / arrivees / nuits (voir gererNavigationDates).
+    if (idInteractifClique && await gererNavigationDates(marchand, from, phoneNumberId, idInteractifClique, merchantId)) return;
+
     // Un clic sur une liste/un bouton (voir essayerEnvoyerMenuInteractif plus bas) arrive comme
     // message.type === "interactive" plutot que du texte libre - on le traduit en texte equivalent AVANT
     // de l'envoyer au moteur de conversation, qui n'a besoin de rien savoir de plus (meme logique de
@@ -3733,6 +3737,19 @@ const PREFIXE_RETIRER_PANIER = "IZY_DELCART_";
 const PREFIXE_CATEGORIE = "IZY_CAT_";
 const PREFIXE_VOIR_PLUS_CATEGORIES = "IZY_PLUSCATS_"; // pagination de la LISTE DES CATEGORIES elle-meme (rare, >9 categories)
 const PREFIXE_VOIR_PLUS_DANS_CAT = "IZY_PLUSINCAT_"; // pagination DANS une categorie deja choisie : suffixe "<catIndex>_<offset>"
+// Etape 68 : listes deroulantes de jours / heures (rendez-vous) et d'arrivees / nuits (chambres). Tout est sans etat : les
+// ids portent la date. Un clic sur une heure, une arrivee ou une duree est converti en texte pour le moteur (voir
+// resoudreTexteInteractif) ; les autres clics sont de la pure navigation (gererNavigationDates).
+const PREFIXE_JOUR = "IZY_JOUR_";            // + AAAA-MM-JJ
+const PREFIXE_JOURS_PAGE = "IZY_JOURS_";     // + numero de page (liste des jours)
+const PREFIXE_TRANCHE = "IZY_TRANCHE_";      // + AAAA-MM-JJ_m|a|s
+const PREFIXE_HEURES = "IZY_HEURES_";        // + AAAA-MM-JJ_m|a|s|t_page
+const PREFIXE_HEURE = "IZY_HEURE_";          // + AAAA-MM-JJ_HHMM
+const PREFIXE_ARRIVEE = "IZY_ARR_";          // + AAAA-MM-JJ
+const PREFIXE_ARRIVEES_PAGE = "IZY_ARRS_";   // + numero de page (liste des arrivees)
+const PREFIXE_NUITS = "IZY_NUITS_";          // + nombre de nuits
+const ID_AUTRE_DATE = "IZY_AUTRE_DATE";
+const ID_AUTRES_JOURS = "IZY_AUTRES_JOURS";
 const ID_RETOUR_CATEGORIES = "IZY_RETOUR_CATS"; // "◀ Toutes les categories" depuis la liste d'une categorie
 // Choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact, conversation.js /
 // conversationService.js) : 2 boutons proposes juste apres une demande d'humain.
@@ -3891,6 +3908,181 @@ async function envoyerEcranArticlesCategorie(destinataire, phoneNumberId, marcha
   );
 }
 
+// ---------------- Etape 68 : listes de jours / heures / arrivees / nuits ----------------
+// Chaque liste respecte la limite WhatsApp de 10 lignes : au plus 7 jours (ou 8 heures) + « Voir plus » + « Autre date »
+// + « Contacter un conseiller ». La saisie libre reste toujours possible (le texte du message l'indique).
+const TRANCHES_HORAIRES = {
+  m: { fr: "Matin", en: "Morning", descFr: "Avant 12h", descEn: "Before 12 pm", dans: (h) => h < 12 },
+  a: { fr: "Après-midi", en: "Afternoon", descFr: "De 12h à 18h", descEn: "12 pm to 6 pm", dans: (h) => h >= 12 && h < 18 },
+  s: { fr: "Soir", en: "Evening", descFr: "À partir de 18h", descEn: "From 6 pm", dans: (h) => h >= 18 }
+};
+function ligneConseillerListe(etat) {
+  return { id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") };
+}
+function ligneAutreDate(etat, duree) {
+  return { id: ID_AUTRE_DATE, title: duree ? tW(etat, "Autre durée (à écrire)", "Other length (type it)") : tW(etat, "Autre date (à écrire)", "Other date (type it)") };
+}
+function invitationListe(texte, etat, avecHeure) {
+  const fin = avecHeure
+    ? tW(etat, "\n\nChoisissez dans la liste, ou écrivez le jour et l'heure.", "\n\nPick from the list, or type the day and time.")
+    : tW(etat, "\n\nChoisissez dans la liste, ou écrivez vos dates.", "\n\nPick from the list, or type your dates.");
+  return tronquerTexte(String(texte), 1000 - fin.length) + fin;
+}
+async function envoyerListeJoursRdv(destinataire, phoneNumberId, marchand, page, texteCorps, etat) {
+  const d = typeof marchand.engine.getChoixJours === "function" ? marchand.engine.getChoixJours(destinataire, page) : null;
+  if (!d || !d.jours.length) return false;
+  const rows = d.jours.map((j) => ({ id: PREFIXE_JOUR + j.id, title: tronquerTexte(j.label, 24), description: tronquerTexte(j.description, 72) }));
+  if (d.suite) rows.push({ id: PREFIXE_JOURS_PAGE + (d.page + 1), title: tW(etat, "Voir plus de jours ▸", "See more days ▸") });
+  rows.push(ligneAutreDate(etat, false));
+  rows.push(ligneConseillerListe(etat));
+  return envoyerListeWhatsApp(destinataire, phoneNumberId, texteCorps, tW(etat, "Choisir un jour", "Choose a day"), [{ title: tW(etat, "Jours disponibles", "Available days"), rows }]);
+}
+// Heures libres d'un jour. Renvoie "ok" (liste envoyee), "perime" (la conversation n'est plus a cette etape) ou "complet"
+// (plus aucun creneau ce jour-la). Plus de 8 creneaux : d'abord les tranches Matin / Apres-midi / Soir (si au moins deux
+// sont non vides), puis les heures de la tranche, par pages.
+async function envoyerListeHeures(destinataire, phoneNumberId, marchand, jourIso, tranche, page, etat, texteCorps) {
+  const d = typeof marchand.engine.getChoixHeures === "function" ? marchand.engine.getChoixHeures(destinataire, jourIso) : null;
+  if (!d) return "perime";
+  if (!d.creneaux.length) return "complet";
+  const retour = { id: ID_AUTRES_JOURS, title: tW(etat, "◀ Autres jours", "◀ Other days") };
+  if (!tranche && d.creneaux.length > 8) {
+    const groupes = ["m", "a", "s"].map((k) => ({ k, n: d.creneaux.filter((c) => TRANCHES_HORAIRES[k].dans(c.heure)).length })).filter((g) => g.n > 0);
+    if (groupes.length >= 2) {
+      const rows = groupes.map((g) => ({
+        id: PREFIXE_TRANCHE + jourIso + "_" + g.k,
+        title: tW(etat, TRANCHES_HORAIRES[g.k].fr, TRANCHES_HORAIRES[g.k].en),
+        description: tW(etat, TRANCHES_HORAIRES[g.k].descFr, TRANCHES_HORAIRES[g.k].descEn) + " — " + tW(etat, g.n + (g.n > 1 ? " créneaux" : " créneau"), g.n + (g.n > 1 ? " slots" : " slot"))
+      }));
+      rows.push(retour, ligneConseillerListe(etat));
+      const corps = texteCorps || tW(etat, "Quel moment de la journée vous convient le " + d.jourLabel + " ?", "What time of day suits you on " + d.jourLabel + "?");
+      const ok = await envoyerListeWhatsApp(destinataire, phoneNumberId, corps, tW(etat, "Choisir un moment", "Choose a period"), [{ title: tronquerTexte(d.jourLabel, 24), rows }]);
+      return ok ? "ok" : "echec";
+    }
+  }
+  const t = tranche || "t";
+  const creneaux = t === "t" ? d.creneaux : d.creneaux.filter((c) => TRANCHES_HORAIRES[t] && TRANCHES_HORAIRES[t].dans(c.heure));
+  if (!creneaux.length) return "complet";
+  const debut = page > 0 ? page * 7 : 0;
+  const reste = creneaux.length - debut;
+  const affiches = reste <= 8 ? creneaux.slice(debut) : creneaux.slice(debut, debut + 7);
+  const rows = affiches.map((c) => ({ id: PREFIXE_HEURE + jourIso + "_" + c.id.replace(":", ""), title: tronquerTexte(c.label, 24), description: tronquerTexte(d.jourLabel, 72) }));
+  if (reste > 8) rows.push({ id: PREFIXE_HEURES + jourIso + "_" + t + "_" + (page + 1), title: tW(etat, "Voir plus d'heures ▸", "See more times ▸") });
+  rows.push(retour, ligneConseillerListe(etat));
+  const corps = texteCorps || tW(etat, "Quelle heure vous convient le " + d.jourLabel + " ?", "What time suits you on " + d.jourLabel + "?");
+  const ok = await envoyerListeWhatsApp(destinataire, phoneNumberId, corps, tW(etat, "Choisir une heure", "Choose a time"), [{ title: tronquerTexte(d.jourLabel, 24), rows }]);
+  return ok ? "ok" : "echec";
+}
+async function envoyerListeArrivees(destinataire, phoneNumberId, marchand, page, texteCorps, etat) {
+  const d = typeof marchand.engine.getChoixArrivees === "function" ? marchand.engine.getChoixArrivees(destinataire, page) : null;
+  if (!d || !d.jours.length) return false;
+  const rows = d.jours.map((j) => ({ id: PREFIXE_ARRIVEE + j.id, title: tronquerTexte(j.label, 24), description: tronquerTexte(j.description, 72) }));
+  if (d.suite) rows.push({ id: PREFIXE_ARRIVEES_PAGE + (d.page + 1), title: tW(etat, "Voir plus de dates ▸", "See more dates ▸") });
+  rows.push(ligneAutreDate(etat, false));
+  rows.push(ligneConseillerListe(etat));
+  return envoyerListeWhatsApp(destinataire, phoneNumberId, texteCorps, tW(etat, "Choisir l'arrivée", "Choose arrival"), [{ title: tW(etat, "Dates d'arrivée", "Arrival dates"), rows }]);
+}
+async function envoyerListeNuits(destinataire, phoneNumberId, marchand, texteCorps, etat) {
+  const d = typeof marchand.engine.getChoixNuits === "function" ? marchand.engine.getChoixNuits(destinataire) : null;
+  if (!d || !d.options.length) return false;
+  const rows = d.options.map((o) => ({ id: PREFIXE_NUITS + o.nuits, title: tronquerTexte(o.label, 24), description: tronquerTexte(o.description, 72) }));
+  rows.push(ligneAutreDate(etat, true));
+  rows.push(ligneConseillerListe(etat));
+  return envoyerListeWhatsApp(destinataire, phoneNumberId, texteCorps, tW(etat, "Choisir la durée", "Choose length"), [{ title: tW(etat, "Nombre de nuits", "Number of nights"), rows }]);
+}
+
+// Clics de NAVIGATION des listes ci-dessus (aucun changement d'etat de la conversation, comme les categories), et
+// detection des listes perimees (la conversation a avance entre l'envoi de la liste et le clic). Renvoie true si le
+// clic est entierement traite ici ; false = laisser le moteur le recevoir (heure, arrivee ou duree choisie).
+async function gererNavigationDates(marchand, from, phoneNumberId, id, merchantId) {
+  if (!id || !marchand || !marchand.engine || typeof marchand.engine.getEtatSession !== "function") return false;
+  const estDate = [PREFIXE_JOUR, PREFIXE_JOURS_PAGE, PREFIXE_TRANCHE, PREFIXE_HEURES, PREFIXE_HEURE, PREFIXE_ARRIVEE, PREFIXE_ARRIVEES_PAGE, PREFIXE_NUITS].some((p) => id.indexOf(p) === 0) || id === ID_AUTRE_DATE || id === ID_AUTRES_JOURS;
+  if (!estDate) return false;
+  const etat = marchand.engine.getEtatSession(from);
+  const journaliser = (client, bot) => {
+    if (client) db.logConversationMessage(merchantId, from, "client", client).catch(() => {});
+    if (bot) db.logConversationMessage(merchantId, from, "bot", bot).catch(() => {});
+  };
+  const perime = async () => {
+    const msg = tW(etat, "Cette liste n'est plus d'actualité. Poursuivez la conversation ci-dessus, ou écrivez « menu » pour recommencer.", "This list is no longer current. Please carry on with the conversation above, or write \"menu\" to start over.");
+    journaliser(null, msg);
+    await envoyerMessageWhatsApp(from, msg, phoneNumberId);
+    return true;
+  };
+  const estService = marchand.engine.type === "service";
+  const estHeb = marchand.engine.type === "hebergement";
+
+  if (id === ID_AUTRE_DATE) {
+    if (!etat) return perime();
+    const msg = estHeb
+      ? (etat.choixDate === "nuits" ? tW(etat, "Écrivez le nombre de nuits ou votre date de départ (ex : 4 nuits, ou départ le 15 novembre).", "Write the number of nights or your departure date (e.g. 4 nights, or leaving 15 November).")
+        : tW(etat, "Écrivez vos dates de séjour (ex : du 12 au 15 novembre, ou vendredi pour 2 nuits).", "Write your stay dates (e.g. from 12 to 15 November, or Friday for 2 nights)."))
+      : tW(etat, "Écrivez le jour et l'heure souhaités (ex : vendredi à 10h, ou 25/10 à 14h30).", "Write the day and time you would like (e.g. Friday at 10am, or 25/10 at 2:30 pm).");
+    journaliser(tW(etat, "Autre date", "Other date"), msg);
+    await envoyerMessageWhatsApp(from, msg, phoneNumberId);
+    return true;
+  }
+
+  if (id === ID_AUTRES_JOURS || id.indexOf(PREFIXE_JOURS_PAGE) === 0) {
+    const page = id === ID_AUTRES_JOURS ? 0 : Number(id.slice(PREFIXE_JOURS_PAGE.length)) || 0;
+    const corps = tW(etat, "Quel jour vous convient ?", "Which day suits you?");
+    const ok = estService ? await envoyerListeJoursRdv(from, phoneNumberId, marchand, page, corps, etat).catch(() => false) : false;
+    if (!ok) return perime();
+    journaliser(id === ID_AUTRES_JOURS ? tW(etat, "Autres jours", "Other days") : tW(etat, "Voir plus de jours", "See more days"), corps);
+    return true;
+  }
+
+  if (id.indexOf(PREFIXE_JOUR) === 0 || id.indexOf(PREFIXE_TRANCHE) === 0 || id.indexOf(PREFIXE_HEURES) === 0) {
+    if (!estService) return perime();
+    let jourIso, tranche = null, page = 0, libelle;
+    if (id.indexOf(PREFIXE_JOUR) === 0) { jourIso = id.slice(PREFIXE_JOUR.length); libelle = jourIso; }
+    else if (id.indexOf(PREFIXE_TRANCHE) === 0) { const r = id.slice(PREFIXE_TRANCHE.length).split("_"); jourIso = r[0]; tranche = r[1] || null; libelle = jourIso + " " + (tranche || ""); }
+    else { const r = id.slice(PREFIXE_HEURES.length).split("_"); jourIso = r[0]; tranche = r[1] || null; page = Number(r[2]) || 0; libelle = jourIso + " " + (tranche || ""); }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(jourIso)) return perime();
+    if (tranche && !TRANCHES_HORAIRES[tranche] && tranche !== "t") tranche = null;
+    const resultat = await envoyerListeHeures(from, phoneNumberId, marchand, jourIso, tranche, page, etat).catch(() => "echec");
+    if (resultat === "perime") return perime();
+    if (resultat === "complet") {
+      const msg = tW(etat, "Désolée, il n'y a plus de place ce jour-là. Choisissez un autre jour :", "Sorry, there is nothing left that day. Please pick another day:");
+      journaliser(libelle, msg);
+      const ok = await envoyerListeJoursRdv(from, phoneNumberId, marchand, 0, msg, etat).catch(() => false);
+      if (!ok) await envoyerMessageWhatsApp(from, msg, phoneNumberId);
+      return true;
+    }
+    if (resultat === "echec") {
+      await envoyerMessageWhatsApp(from, tW(etat, "Écrivez l'heure souhaitée (ex : 10h30).", "Write the time you would like (e.g. 10:30 am)."), phoneNumberId);
+      return true;
+    }
+    journaliser(libelle, tW(etat, "Quelle heure vous convient ?", "What time suits you?"));
+    return true;
+  }
+
+  if (id.indexOf(PREFIXE_ARRIVEES_PAGE) === 0) {
+    if (!estHeb) return perime();
+    const page = Number(id.slice(PREFIXE_ARRIVEES_PAGE.length)) || 0;
+    const corps = tW(etat, "Voici d'autres dates d'arrivée possibles :", "Here are more possible arrival dates:");
+    const ok = await envoyerListeArrivees(from, phoneNumberId, marchand, page, corps, etat).catch(() => false);
+    if (!ok) return perime();
+    journaliser(tW(etat, "Voir plus de dates", "See more dates"), corps);
+    return true;
+  }
+
+  // Heure, arrivee ou duree choisie : le moteur la recevra comme du texte - sauf si la liste est perimee.
+  if (id.indexOf(PREFIXE_HEURE) === 0) {
+    const r = id.slice(PREFIXE_HEURE.length).split("_");
+    if (!estService || !marchand.engine.getChoixHeures(from, r[0])) return perime();
+    return false;
+  }
+  if (id.indexOf(PREFIXE_ARRIVEE) === 0) {
+    if (!estHeb || !etat || etat.choixDate !== "arrivee") return perime();
+    return false;
+  }
+  if (id.indexOf(PREFIXE_NUITS) === 0) {
+    if (!estHeb || !etat || etat.choixDate !== "nuits") return perime();
+    return false;
+  }
+  return false;
+}
+
 // Traduit l'id d'une ligne de liste ou d'un bouton cliques par le client en texte equivalent - le moteur
 // de conversation n'en sait rien, il recoit exactement ce qu'il recevrait si le client avait tape ce
 // texte lui-meme (voir matchProduct/matchService/matchCouleur/matchTaille/demandeUnHumain/
@@ -3925,6 +4117,13 @@ function resoudreTexteInteractif(marchand, interactive) {
   if (id === ID_PANIER_TERMINER) return "terminé";
   if (id.indexOf(PREFIXE_RETIRER_PANIER) === 0) return String(Number(id.slice(PREFIXE_RETIRER_PANIER.length)) + 1); // position 1-based dans le panier
   if (id.indexOf(PREFIXE_CRENEAU) === 0) return String(Number(id.slice(PREFIXE_CRENEAU.length)) + 1); // "1"/"2"/"3"
+  // Etape 68 : heure / arrivee / duree choisies dans les listes -> jeton ou texte que le moteur comprend deja.
+  if (id.indexOf(PREFIXE_HEURE) === 0) {
+    const r = id.slice(PREFIXE_HEURE.length).split("_");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(r[0]) && /^\d{4}$/.test(r[1] || "")) return "__creneau:" + r[0] + " " + r[1].slice(0, 2) + ":" + r[1].slice(2) + "__";
+  }
+  if (id.indexOf(PREFIXE_ARRIVEE) === 0) return id.slice(PREFIXE_ARRIVEE.length); // « AAAA-MM-JJ »
+  if (id.indexOf(PREFIXE_NUITS) === 0) { const n = Number(id.slice(PREFIXE_NUITS.length)) || 1; return n + (n > 1 ? " nuits" : " nuit"); }
 
   // Id d'un article ou d'un service connu : on renvoie son nom exact, que matchProduct()/matchService()
   // reconnaissent deja nativement (il figure toujours dans leurs mots-cles). Sinon (couleur/taille/
@@ -4160,6 +4359,18 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
       { id: "2", title: tW(etat, "2 personnes", "2 people") },
       { id: "3", title: tW(etat, "3 personnes", "3 people") }
     ]);
+  }
+
+  // Etape 68 : le client doit donner un jour/une heure (rendez-vous) ou ses dates (chambres) -> liste deroulante, sauf si le
+  // marchand a decoche l'option (le moteur ne renvoie alors aucun `choixDate`) ou si rien n'est disponible (texte seul).
+  if (marchand.engine.type === "service" && etat.choixDate === true) {
+    if (await envoyerListeJoursRdv(destinataire, phoneNumberId, marchand, 0, invitationListe(texte, etat, true), etat)) return true;
+  }
+  if (marchand.engine.type === "hebergement" && etat.choixDate === "arrivee") {
+    if (await envoyerListeArrivees(destinataire, phoneNumberId, marchand, 0, invitationListe(texte, etat, false), etat)) return true;
+  }
+  if (marchand.engine.type === "hebergement" && etat.choixDate === "nuits") {
+    if (await envoyerListeNuits(destinataire, phoneNumberId, marchand, invitationListe(texte, etat, false), etat)) return true;
   }
 
   if (etat.stage === "awaiting_slot_choice" && etat.proposedSlots && etat.proposedSlots.length) {

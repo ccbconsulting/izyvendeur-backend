@@ -131,6 +131,8 @@ function seedState() {
       dureeCreneauMinutes: DEFAULT_DUREE_CRENEAU_MINUTES,
       autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE,
       autoConfirmMessageEn: "",
+      // Etape 68 : listes de jours et d'heures (menus deroulants WhatsApp) proposees a la cliente (case a cocher).
+      listesDatesHeures: true,
       // Etape 67 : delai limite d'annulation / report par la cliente (heures avant le rendez-vous ; 0 = aucune
       // limite) et ce qui se passe au-dela : "refuser" (renvoi vers un conseiller) ou "accepter" (le rendez-vous
       // est annule / deplace mais marque « annulation tardive » pour la gerante). Regle par marchand.
@@ -204,6 +206,7 @@ function createServiceEngine(merchantKey, options) {
     if (!state.settings.autoConfirmMessage) state.settings.autoConfirmMessage = DEFAULT_AUTO_CONFIRM_MESSAGE;
     if (typeof state.settings.autoConfirmMessageEn !== "string") state.settings.autoConfirmMessageEn = "";
     if (!Array.isArray(state.settings.praticiens)) state.settings.praticiens = [];
+    if (typeof state.settings.listesDatesHeures !== "boolean") state.settings.listesDatesHeures = true; // Etape 68 : listes de jours/heures actives par defaut
     if (!state.appointments) state.appointments = [];
     if (!sh.fuseauValide(state.settings.fuseau)) state.settings.fuseau = sh.FUSEAU_PAR_DEFAUT;
     migrerFuseauRendezvous();
@@ -407,7 +410,51 @@ function createServiceEngine(merchantKey, options) {
   function ajouterJours(d, n) { return sh.ajouterJoursFuseau(d, n, fz()); }
   function jourSemaine(d) { return sh.partiesFuseau(d, fz()).jourSemaine; }
 
+  // Etape 68 : jeton interne produit par server.js quand le client choisit un jour puis une heure dans les listes
+  // WhatsApp (« __creneau:2026-10-21 10:30__ ») - jour et heure exacts, sans aucune heuristique de lecture.
+  const RE_JETON_CRENEAU = /^__creneau:(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})__$/;
+  function lireJetonCreneau(text) {
+    const m = RE_JETON_CRENEAU.exec(String(text == null ? "" : text).trim());
+    return m ? { annee: +m[1], mois: +m[2], jour: +m[3], h: +m[4], m: +m[5] } : null;
+  }
+  const MOIS_NUMERO = {
+    janvier: 1, janv: 1, fevrier: 2, fevr: 2, mars: 3, avril: 4, avr: 4, mai: 5, juin: 6, juillet: 7, juil: 7,
+    aout: 8, septembre: 9, sept: 9, octobre: 10, oct: 10, novembre: 11, nov: 11, decembre: 12, dec: 12,
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
+  };
+  const RE_MOIS = "janvier|janv|fevrier|fevr|mars|avril|avr|mai|juin|juillet|juil|aout|septembre|sept|octobre|oct|novembre|nov|decembre|dec|january|february|march|april|may|june|july|august|september|october|november|december";
+  // Date ecrite en chiffres (« 21/10 », « 21-10-2026 ») ou avec le nom du mois (« 21 octobre », « Oct 21 ») -> instant
+  // de minuit du jour dans le fuseau du marchand, ou null. Sans annee : l'annee en cours, ou la suivante si la date
+  // est passee depuis plus de 30 jours (« 5/1 » ecrit en octobre = janvier prochain).
+  function lireDateEcrite(text, now) {
+    const t = sansAccents(String(text)).toLowerCase();
+    let jour = null, mois = null, annee = null;
+    let m = t.match(/\b(\d{1,2})\s*[\/\-]\s*(\d{1,2})(?:\s*[\/\-]\s*(\d{4}|\d{2}))?\b/);
+    if (m) { jour = +m[1]; mois = +m[2]; if (m[3]) annee = m[3].length === 2 ? 2000 + +m[3] : +m[3]; }
+    if (jour === null) {
+      m = t.match(new RegExp("\\b(\\d{1,2})(?:er|st|nd|rd|th)?\\s+(?:de\\s+|of\\s+)?(" + RE_MOIS + ")\\b(?:\\s+(\\d{4}))?"));
+      if (m) { jour = +m[1]; mois = MOIS_NUMERO[m[2]]; if (m[3]) annee = +m[3]; }
+    }
+    if (jour === null) {
+      m = t.match(new RegExp("\\b(" + RE_MOIS + ")\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s*,?\\s+(\\d{4}))?"));
+      if (m) { mois = MOIS_NUMERO[m[1]]; jour = +m[2]; if (m[3]) annee = +m[3]; }
+    }
+    if (jour === null || !mois || mois < 1 || mois > 12 || jour < 1 || jour > 31) return null;
+    const auj = sh.partiesFuseau(now, fz());
+    const construire = (a) => {
+      const d = sh.dateDepuisPartiesFuseau(a, mois, jour, 0, 0, fz());
+      const p = sh.partiesFuseau(d, fz());
+      return p.annee === a && p.mois === mois && p.jour === jour ? d : null;
+    };
+    let d = construire(annee || auj.annee);
+    if (!d) return null;
+    if (!annee && d.getTime() < startOfDay(now).getTime() - 30 * 86400000) d = construire(auj.annee + 1) || d;
+    return d;
+  }
+
   function parseRequestedDate(text, now) {
+    const jeton = lireJetonCreneau(text);
+    if (jeton) return sh.dateDepuisPartiesFuseau(jeton.annee, jeton.mois, jeton.jour, 0, 0, fz());
     const t = text.toLowerCase();
     if (/\bapr[eè]s[- ]?demain\b/.test(t) || /\bday after tomorrow\b/.test(t)) return ajouterJours(startOfDay(now), 2);
     if (/\bdemain\b/.test(t) || /\btomorrow\b/.test(t)) return ajouterJours(startOfDay(now), 1);
@@ -422,12 +469,14 @@ function createServiceEngine(merchantKey, options) {
         return ajouterJours(startOfDay(now), delta);
       }
     }
-    return null;
+    return lireDateEcrite(text, now);
   }
 
   // Renvoie { h, m } (heure murale, sans date) - a recombiner avec un jour par l'appelant (composer()).
   // Francais : "10h", "10h30", "10:30" ; anglais : "10am", "2:30 pm", "noon" ; "midi" dans les deux langues.
   function parseRequestedTime(text) {
+    const jeton = lireJetonCreneau(text);
+    if (jeton) return { h: jeton.h, m: jeton.m };
     const t = text.toLowerCase();
     const ampm = t.match(/\b(\d{1,2})(?:[:.h](\d{2}))?\s*([ap])\.?\s?m\b\.?/);
     if (ampm) {
@@ -582,6 +631,85 @@ function createServiceEngine(merchantKey, options) {
       return capitalize(DAY_KEYS_EN[p.jourSemaine]).slice(0, 3) + " " + p.jour + " " + MOIS_COURTS_EN[p.mois - 1] + " " + h12 + ":" + mi + (p.heure < 12 ? "a" : "p");
     }
     return capitalize(DAY_KEYS[p.jourSemaine]).slice(0, 3) + " " + String(p.jour).padStart(2, "0") + "/" + String(p.mois).padStart(2, "0") + " " + p.heure + "h" + (mi === "00" ? "" : mi);
+  }
+
+  // ---------------- Etape 68 : listes de jours puis d'heures (menus deroulants WhatsApp) ----------------
+  // Le moteur ne fait que CALCULER ce qui est libre ; server.js construit les listes cliquables et renvoie le choix du
+  // client sous forme du jeton « __creneau:AAAA-MM-JJ HH:MM__ » (voir lireJetonCreneau). La saisie libre reste
+  // possible a tout moment. Reglage du marchand : settings.listesDatesHeures (vrai par defaut).
+  const pad2 = (n) => String(n).padStart(2, "0");
+  function listesActives() { return !state || !state.settings || state.settings.listesDatesHeures !== false; }
+  function isoJour(d) { const p = sh.partiesFuseau(d, fz()); return p.annee + "-" + pad2(p.mois) + "-" + pad2(p.jour); }
+  function jourDepuisISO(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
+    if (!m) return null;
+    const d = sh.dateDepuisPartiesFuseau(+m[1], +m[2], +m[3], 0, 0, fz());
+    const p = sh.partiesFuseau(d, fz());
+    return p.annee === +m[1] && p.mois === +m[2] && p.jour === +m[3] ? d : null;
+  }
+  function libelleJourCourt(d, session) {
+    const p = sh.partiesFuseau(d, fz());
+    if (sh.langueSession(session) === "en") return capitalize(DAY_KEYS_EN[p.jourSemaine]).slice(0, 3) + " " + p.jour + " " + MOIS_COURTS_EN[p.mois - 1];
+    return capitalize(DAY_KEYS[p.jourSemaine]).slice(0, 3) + " " + pad2(p.jour) + "/" + pad2(p.mois);
+  }
+  function libelleHeure(d, session) {
+    const p = sh.partiesFuseau(d, fz());
+    if (sh.langueSession(session) === "en") return (p.heure % 12 === 0 ? 12 : p.heure % 12) + ":" + pad2(p.minute) + (p.heure < 12 ? " AM" : " PM");
+    return p.heure + "h" + (p.minute === 0 ? "" : pad2(p.minute));
+  }
+  // Session eligible aux listes : etape « jour et heure » (ou choix parmi des propositions) d'un service connu.
+  function contexteListes(fromPhone) {
+    if (!state || !listesActives()) return null;
+    const s = sessions[fromPhone];
+    if (!s || (s.stage !== "awaiting_datetime" && s.stage !== "awaiting_slot_choice")) return null;
+    const service = serviceActuel(s);
+    return service ? { s, service } : null;
+  }
+  function avecReport(session, fn) {
+    const avant = ignorerApptId;
+    ignorerApptId = session.reportApptId || null; // un rendez-vous en cours de report ne bloque pas son propre creneau
+    try { return fn(); } finally { ignorerApptId = avant; }
+  }
+  // Jours ayant au moins un creneau libre (60 jours max), par pages de 7 : { jours:[{id,label,description}], suite, page } ou null.
+  function getChoixJours(fromPhone, page) {
+    const ctx = contexteListes(fromPhone);
+    if (!ctx) return null;
+    return avecReport(ctx.s, () => {
+      const now = new Date();
+      const trouves = [];
+      let cur = startOfDay(now);
+      for (let i = 0; i < 60; i++) {
+        const libres = freeSlotsForDay(cur, ctx.service.dureeMinutes, now, ctx.s.praticienId || null);
+        if (libres.length) trouves.push({ date: cur, nb: libres.length, i });
+        cur = ajouterJours(cur, 1);
+      }
+      const pg = Math.max(0, parseInt(page, 10) || 0);
+      const part = trouves.slice(pg * 7, pg * 7 + 7);
+      return {
+        page: pg,
+        suite: trouves.length > pg * 7 + 7,
+        jours: part.map((j) => ({
+          id: isoJour(j.date),
+          label: libelleJourCourt(j.date, ctx.s),
+          description: (j.i === 0 ? sh.t(ctx.s, "Aujourd'hui — ", "Today — ") : j.i === 1 ? sh.t(ctx.s, "Demain — ", "Tomorrow — ") : "") +
+            sh.t(ctx.s, j.nb + (j.nb > 1 ? " créneaux libres" : " créneau libre"), j.nb + (j.nb > 1 ? " free slots" : " free slot"))
+        }))
+      };
+    });
+  }
+  // Creneaux libres d'un jour : { jourId, jourLabel, creneaux:[{id:"HH:MM", label, heure}] } ou null.
+  function getChoixHeures(fromPhone, jourIso) {
+    const ctx = contexteListes(fromPhone);
+    const jour = jourDepuisISO(jourIso);
+    if (!ctx || !jour) return null;
+    return avecReport(ctx.s, () => {
+      const libres = freeSlotsForDay(jour, ctx.service.dureeMinutes, new Date(), ctx.s.praticienId || null);
+      return {
+        jourId: jourIso,
+        jourLabel: libelleJourCourt(jour, ctx.s),
+        creneaux: libres.map((d) => { const p = sh.partiesFuseau(d, fz()); return { id: pad2(p.heure) + ":" + pad2(p.minute), label: libelleHeure(d, ctx.s), heure: p.heure }; })
+      };
+    });
   }
 
   function matchSlotChoice(text, proposedSlots) {
@@ -1227,7 +1355,11 @@ function createServiceEngine(merchantKey, options) {
   function traiterMessage(fromPhone, text, opts) {
     if (!state) return sh.t(sessions[fromPhone], "Le service redémarre, un instant s'il vous plaît...", "The service is restarting, one moment please...");
 
-    if (!(opts && opts.sansJournalClient)) journaliser(fromPhone, "client", text);
+    if (!(opts && opts.sansJournalClient)) {
+      const jeton = lireJetonCreneau(text);
+      const jourJeton = jeton ? sh.dateDepuisPartiesFuseau(jeton.annee, jeton.mois, jeton.jour, jeton.h, jeton.m, fz()) : null;
+      journaliser(fromPhone, "client", jourJeton ? formatSlot(jourJeton, sessions[fromPhone]) : text);
+    }
 
     // Reponse du client au choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact,
     // pose juste apres une demande d'humain ci-dessous) : verifiee AVANT pauseHumainActive() car la pause
@@ -1386,6 +1518,8 @@ function createServiceEngine(merchantKey, options) {
       rdvChoix: s.stage === "awaiting_rdv_choice" && s.choixRdvIds
         ? s.choixRdvIds.map((id) => rdvParId(id)).filter(Boolean).map((a) => ({ ref: orderRef(a), detail: a.service + " — " + formatSlot(new Date(a.dateISO), s) }))
         : null,
+      // Etape 68 : le client doit donner un jour et une heure -> server.js peut proposer la liste des jours.
+      choixDate: s.stage === "awaiting_datetime" && !!contexteListes(fromPhone),
       langue: sh.langueSession(s)
     } : null;
   }
@@ -1621,6 +1755,7 @@ function createServiceEngine(merchantKey, options) {
     if (sain.fuseau !== undefined && !sh.fuseauValide(sain.fuseau)) delete sain.fuseau;
     if (sain.delaiAnnulationHeures !== undefined) { const h = parseFloat(sain.delaiAnnulationHeures); sain.delaiAnnulationHeures = Number.isFinite(h) && h >= 0 ? Math.min(h, 720) : 0; }
     if (sain.modeDelaiDepasse !== undefined) sain.modeDelaiDepasse = sain.modeDelaiDepasse === "accepter" ? "accepter" : "refuser";
+    if (sain.listesDatesHeures !== undefined) sain.listesDatesHeures = !(sain.listesDatesHeures === false || sain.listesDatesHeures === "false" || sain.listesDatesHeures === 0);
     state.settings = Object.assign({}, state.settings, sain);
     saveState();
     return state.settings;
@@ -1748,6 +1883,8 @@ function createServiceEngine(merchantKey, options) {
     getConversationsEnAttente,
     repondreConversationHumain,
     getEtatSession,
+    getChoixJours,
+    getChoixHeures,
     nbRdvsAVenir,
     definirLangueSession,
     reponseDeReprise,
