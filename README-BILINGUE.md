@@ -2343,3 +2343,22 @@ Pour un marchand **hybride** (deux ou trois volets), le premier écran « Que so
 Correction au passage : le titre de section « Que souhaitez-vous faire ? » (26 caractères) dépassait la limite de 24 caractères de WhatsApp, ce qui aurait fait refuser la liste de l'étape 70 pour les clients à plus de 3 choix ; il devient « Que voulez-vous faire ? ».
 
 Fichier modifié : `server.js` (aucune migration, aucune variable d'environnement). Le Simulateur de /admin continue d'afficher ce menu sous forme de boutons.
+
+## Étape 72 — Détail des rendez-vous et réservations, retour au menu principal, sauvegarde des conversations
+
+**1. Le client voit ce qu'il a réservé.** Quand il touche « Mon rendez-vous » ou « Ma réservation » (dans « Mon espace »), le message commence maintenant par le détail :
+- rendez-vous : référence, service, date et heure, praticien s'il y en a un, prix, statut (« confirmé » ou « à confirmer ») ; jusqu'à cinq s'il en a plusieurs ;
+- chambre : référence, type de chambre, dates d'arrivée et de départ, nombre de nuits et de personnes, prix total, statut.
+Puis viennent ses choix : **Annuler, Reporter, Contacter un conseiller**. Ces choix sont désormais une **liste déroulante** (bouton « Mes options ») et non plus trois boutons : la liste laisse la place à la ligne **« ◀ Menu principal »**.
+
+**2. Retour au menu principal depuis « Mon espace ».** Pour un marchand hybride, la ligne « ◀ Menu principal » figure aussi dans l'écran « Mon rendez-vous / Ma réservation » et dans la vue du panier (« Gérer mon panier »). Un marchand à un seul volet n'a pas ce menu : rien ne change pour lui.
+
+**3. Sauvegarde des conversations des clients (le panier ne disparaît plus au redémarrage).** Le fil de chaque conversation (panier en cours, question en attente, langue, volet choisi chez un marchand hybride, rendez-vous ou séjour « Nouvelle » qui attend le « oui » du client, pause « conseiller ») était gardé en mémoire seulement : un déploiement ou un redémarrage de Render le faisait perdre. Il est maintenant enregistré dans une **table séparée `sessions_clients`** (créée automatiquement au premier démarrage, une petite ligne par client et par volet), et rechargé au démarrage. Les ordres d'écriture partent en arrière-plan et ne ralentissent aucune réponse ; à l'arrêt demandé par Render, le serveur laisse finir les sauvegardes en cours (quelques millisecondes).
+Durées de vie (appliquées au démarrage puis toutes les 6 heures) :
+- **panier** et commande « Nouvelle » en attente de confirmation : conservés jusqu'à **30 jours** sans message (et jusqu'à la confirmation) ;
+- **rendez-vous ou séjour « Nouvelle »** qui attend le « oui » : conservé jusqu'à la date du rendez-vous ou du séjour ;
+- toute autre saisie intermédiaire (quantité, couleur, adresse, créneau proposé…) : abandonnée après **24 heures** sans message (le panier, lui, reste) ;
+- la langue choisie : **90 jours** ; au-delà, la ligne est supprimée. Une session sans rien à retenir est supprimée tout de suite.
+**Le journal des conversations (onglet Historique de /admin, table `conversation_log`) n'est ni modifié ni purgé** par ces règles, et le Simulateur n'est jamais sauvegardé. Rien à régler dans /admin, aucune option payante, aucune variable d'environnement. En mode local (sans PostgreSQL), la sauvegarde est désactivée par défaut (le dev et les tests ne se contaminent pas) ; `IZY_SESSIONS_LOCALES=1` l'active dans un fichier `sessions-clients.json`.
+
+Fichiers modifiés : `server.js`, `db.js`, `hybride.js`, `conversation.js`, `conversationService.js`, `conversationHebergement.js`. **Nouveau fichier : `sessionsPersistantes.js`** (à copier avec les autres).

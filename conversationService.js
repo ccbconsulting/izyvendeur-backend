@@ -16,6 +16,7 @@
 
 const { SEED_SERVICES, SERVICE_KEYWORDS, DEFAULT_HORAIRES, DEFAULT_DUREE_CRENEAU_MINUTES, DEFAULT_AUTO_CONFIRM_MESSAGE } = require("./services");
 const db = require("./db");
+const sessionsPersistantes = require("./sessionsPersistantes");
 const sh = require("./shared");
 const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
@@ -198,6 +199,24 @@ function createServiceEngine(merchantKey, options) {
   // demonstration (le marchand n'a encore rien configure dans ce volet). Absents = comportement d'avant.
   const cleEtat = (options && options.cleEtat) || merchantKey;
 
+  // Etape 72 : sauvegarde des sessions de conversation (voir sessionsPersistantes.js). Un rendez-vous « Nouvelle » qui
+  // attend le « oui » du client reste en attente jusqu'a l'heure du rendez-vous ; toute autre saisie intermediaire est
+  // abandonnee apres 24 h sans message ; la langue choisie est gardee 90 jours.
+  const persistance = sessionsPersistantes.creer({
+    cle: cleEtat, sessions, conversationsHumain, ignorer: [PHONE_SIMULATEUR],
+    regle: (s, age) => {
+      const J = sessionsPersistantes.JOUR_MS;
+      if (age > sessionsPersistantes.DUREE_MAX_JOURS * J) return null;
+      if (age <= J) return s;
+      if (s.stage === "awaiting_confirmation" && s.pendingAppointmentId && state) {
+        const a = (state.appointments || []).find((x) => x.id === s.pendingAppointmentId);
+        if (a && a.statut === "Nouvelle" && new Date(a.dateISO) > new Date()) return s;
+      }
+      const neuve = freshSession(s); neuve.fromPhone = s.fromPhone;
+      return neuve;
+    }
+  });
+
   async function init() {
     state = await db.initMerchantState(cleEtat, options && options.sansDonneesDemo ? seedStateVide : seedState);
     if (!state.settings) state.settings = seedState().settings;
@@ -210,6 +229,7 @@ function createServiceEngine(merchantKey, options) {
     if (!state.appointments) state.appointments = [];
     if (!sh.fuseauValide(state.settings.fuseau)) state.settings.fuseau = sh.FUSEAU_PAR_DEFAUT;
     migrerFuseauRendezvous();
+    await persistance.charger();
   }
 
   // ---------------- Fuseau horaire (Etape 44) ----------------
@@ -1278,6 +1298,24 @@ function createServiceEngine(merchantKey, options) {
     return rdvsAVenirDuClient(telephone).length;
   }
 
+  // Etape 72 : detail des rendez-vous a venir d'un client (cinq au plus), affiche au-dessus des choix de l'ecran
+  // « Mon rendez-vous » pour que la cliente voie ce qu'elle va annuler ou reporter. Chaine vide s'il n'y en a aucun.
+  function detailRdvsAVenir(telephone) {
+    if (!state || !telephone) return "";
+    const s = sessions[telephone] || {};
+    const liste = rdvsAVenirDuClient(telephone);
+    if (!liste.length) return "";
+    const lignes = liste.slice(0, 5).map((a) => {
+      const details = [formatSlot(new Date(a.dateISO), s)];
+      if (a.praticienNom) details.push(a.praticienNom);
+      if (a.prix) details.push(formatFcfa(a.prix));
+      details.push(a.statut === "Confirmé" ? sh.t(s, "confirmé", "confirmed") : sh.t(s, "à confirmer", "to be confirmed"));
+      return "• " + orderRef(a) + " — " + a.service + "\n   " + details.join(" · ");
+    });
+    const plusieurs = liste.length > 1;
+    return sh.t(s, plusieurs ? "Vos rendez-vous :" : "Votre rendez-vous :", plusieurs ? "Your appointments:" : "Your appointment:") + "\n" + lignes.join("\n") + (liste.length > 5 ? "\n…" : "");
+  }
+
   function gererAnnulationOuReport(session, intention, confirmer) {
     // Un report deja en cours (nouveau creneau provisoire) est abandonne : on repart de l'etat reel des rendez-vous.
     abandonnerReportEnCours(session);
@@ -1354,6 +1392,7 @@ function createServiceEngine(merchantKey, options) {
   function handleMessage(fromPhone, text, opts) {
     const reponse = traiterMessage(fromPhone, text, opts);
     if (reponse && sessions[fromPhone]) sessions[fromPhone].derniereReponse = reponse;
+    persistance.enregistrer(fromPhone);
     return reponse;
   }
 
@@ -1498,6 +1537,7 @@ function createServiceEngine(merchantKey, options) {
     s.langue = langue === "en" ? "en" : "fr";
     s.gateLangueEnvoyee = true;
     delete s.texteAvantLangue;
+    persistance.enregistrer(fromPhone);
     return s.langue;
   }
 
@@ -1886,6 +1926,7 @@ function createServiceEngine(merchantKey, options) {
   return {
     type: "service",
     init,
+    balayerSessions: () => persistance.balayer(),
     getAppointmentById,
     enregistrerEtatIzyFacture,
     handleMessage,
@@ -1902,6 +1943,7 @@ function createServiceEngine(merchantKey, options) {
     getChoixJours,
     getChoixHeures,
     nbRdvsAVenir,
+    detailRdvsAVenir,
     definirLangueSession,
     reponseDeReprise,
     estEnPauseHumain,

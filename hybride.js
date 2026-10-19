@@ -17,6 +17,7 @@
 // server.js execute (envoi du menu a deux boutons, appel du bon moteur). Ainsi il se teste seul.
 
 const sh = require("./shared");
+const sessionsPersistantes = require("./sessionsPersistantes");
 
 // Jetons produits par server.js a partir d'un clic sur l'un des deux boutons du menu (voir
 // resoudreTexteInteractif) : evite de dependre de la langue du titre du bouton.
@@ -81,6 +82,17 @@ function texteIndiceMenu(langue) {
 // qui recoit une demande d'humain avant tout choix) ; `deps.journaliser(tel, de, texte)` (facultatif).
 function creerRouteur(moteurs, principal, deps) {
   const etats = {}; // telephone -> { etape: "langue" | "menu" | "volet", volet, langue, texteInitial }
+  // Etape 72 : etat de routage sauvegarde (voir sessionsPersistantes.js) pour survivre a un redemarrage. Sans `deps.cle`
+  // (anciens appels, tests unitaires), rien n'est sauvegarde. Une porte de langue laissee ouverte plus de 24 h est oubliee.
+  const persistance = sessionsPersistantes.creer({
+    cle: (deps && deps.cle) || "_routeur_sans_cle", sessions: etats, ignorer: ["SIMULATEUR"],
+    regle: (e, age) => {
+      if (age > sessionsPersistantes.DUREE_MAX_JOURS * sessionsPersistantes.JOUR_MS) return null;
+      if (e.etape === "langue" && age > sessionsPersistantes.JOUR_MS) return null;
+      return e;
+    }
+  });
+  const persister = !!(deps && deps.cle);
   const journaliser = (deps && deps.journaliser) || (() => {});
 
   function types() { return Object.keys(moteurs).filter((t) => moteurs[t]); }
@@ -319,7 +331,15 @@ function creerRouteur(moteurs, principal, deps) {
   // Efface l'etat de routage d'un numero (bouton « Reinitialiser » du Simulateur de /admin).
   function oublier(tel) { delete etats[tel]; }
 
-  return { traiter, oublier, entrerDansVolet, voletActif, voletsUtilisables, etatDe: (tel) => (etats[tel] ? Object.assign({}, etats[tel]) : null) };
+  return {
+    traiter: (tel, brut) => { const d = traiter(tel, brut); if (persister) persistance.enregistrer(tel); return d; },
+    oublier: (tel) => { oublier(tel); if (persister) persistance.enregistrer(tel); },
+    entrerDansVolet: (tel, volet, viaMenu) => { const r = entrerDansVolet(tel, volet, viaMenu); if (persister) persistance.enregistrer(tel); return r; },
+    voletActif, voletsUtilisables,
+    etatDe: (tel) => (etats[tel] ? Object.assign({}, etats[tel]) : null),
+    chargerSessions: () => (persister ? persistance.charger() : Promise.resolve(0)),
+    balayerSessions: () => { if (persister) persistance.balayer(); }
+  };
 }
 
 module.exports = { creerRouteur, JETON_VOLET_CATALOGUE, JETON_VOLET_SERVICE, JETON_VOLET_HEBERGEMENT, VOLETS_CONNUS };

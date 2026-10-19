@@ -12,6 +12,7 @@
 const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, DEFAULT_AUTO_CONFIRM_MESSAGE_EN, SEED_CATALOG } = require("./catalog");
 const remisesLib = require("./remises");
 const db = require("./db");
+const sessionsPersistantes = require("./sessionsPersistantes");
 const sh = require("./shared");
 const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
@@ -173,6 +174,27 @@ function createCatalogEngine(merchantKey, options) {
   // demonstration (le marchand n'a encore rien configure dans ce volet). Absents = comportement d'avant.
   const cleEtat = (options && options.cleEtat) || merchantKey;
 
+  // Etape 72 : sauvegarde des sessions de conversation (voir sessionsPersistantes.js). Durees de vie : une saisie
+  // intermediaire (quantite, couleur, adresse...) est abandonnee apres 24 h sans message ; le PANIER et la commande en
+  // attente de confirmation sont conserves jusqu'a 30 jours ; la langue choisie 90 jours.
+  const persistance = sessionsPersistantes.creer({
+    cle: cleEtat, sessions, conversationsHumain, ignorer: [PHONE_SIMULATEUR],
+    regle: (s, age) => {
+      const J = sessionsPersistantes.JOUR_MS;
+      if (age > sessionsPersistantes.DUREE_MAX_JOURS * J) return null;
+      if (age <= J) return s;
+      const aUnPanier = (s.cart && s.cart.length) || s.pendingOrderId;
+      if (aUnPanier && age <= 30 * J) {
+        if (s.stage === "idle" && !s.pendingChoice && !s.attenteChoixContactHumain) return s;
+        if (s.stage === "awaiting_order_confirmation" || s.stage === "awaiting_order_correction") return s;
+        const neuve = freshSession(s); neuve.cart = s.cart || []; neuve.fromPhone = s.fromPhone;
+        return neuve;
+      }
+      const neuve = freshSession(s); neuve.fromPhone = s.fromPhone;
+      return neuve;
+    }
+  });
+
   // A appeler une seule fois, au demarrage du serveur, AVANT de traiter le moindre message pour ce marchand.
   async function init() {
     state = await db.initMerchantState(cleEtat, options && options.sansDonneesDemo ? seedStateVide : seedState);
@@ -184,6 +206,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.settings.caisse) state.settings.caisse = Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
     if (!state.caisseSessions) state.caisseSessions = [];
     if (!state.nextCaisseSessionId) state.nextCaisseSessionId = 1;
+    await persistance.charger();
   }
 
   function saveState() {
@@ -1238,6 +1261,7 @@ function createCatalogEngine(merchantKey, options) {
   function handleMessage(fromPhone, text, opts) {
     const reponse = traiterMessage(fromPhone, text, opts);
     if (reponse && sessions[fromPhone]) sessions[fromPhone].derniereReponse = reponse;
+    persistance.enregistrer(fromPhone);
     return reponse;
   }
 
@@ -1402,6 +1426,7 @@ function createCatalogEngine(merchantKey, options) {
     s.langue = langue === "en" ? "en" : "fr";
     s.gateLangueEnvoyee = true;
     delete s.texteAvantLangue;
+    persistance.enregistrer(fromPhone);
     return s.langue;
   }
 
@@ -2077,6 +2102,7 @@ function createCatalogEngine(merchantKey, options) {
   return {
     type: "catalogue",
     init,
+    balayerSessions: () => persistance.balayer(),
     handleMessage,
     getOrders,
     getOrderById,

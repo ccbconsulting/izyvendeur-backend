@@ -601,6 +601,124 @@ async function persistMerchantState(merchantKey, state) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(toutEtats, null, 2));
 }
 
+// ---------------- Sessions de conversation des clients (Etape 72) ----------------
+//
+// Le fil d'une conversation (panier en cours, question en attente, langue choisie, rendez-vous « Nouvelle » en
+// attente du « oui »...) n'etait gardee qu'en memoire : un redemarrage de Render (deploiement, plantage, mise en
+// veille) la faisait disparaitre. On la garde maintenant dans une table SEPAREE (une petite ligne par client et par
+// moteur) plutot que dans l'etat du marchand, qui est reecrit en entier a chaque sauvegarde. `cle` est la cle d'etat
+// du moteur (identifiant du marchand, ou « <id>::<volet> », ou « <id>::routeur »).
+//
+//   - PostgreSQL : table sessions_clients (merchant_key, telephone) -> data JSONB.
+//   - Mode local (sans DATABASE_URL) : fichier sessions-clients.json, UNIQUEMENT si IZY_SESSIONS_LOCALES=1 (sinon
+//     rien n'est garde, comme avant : les tests et le dev local ne se contaminent pas entre deux demarrages).
+//
+// Ce n'est PAS le journal des conversations (table conversation_log, consultable dans /admin) : celui-ci n'est jamais
+// modifie ni purge par ces fonctions.
+
+const SESSIONS_FILE = path.join(__dirname, "sessions-clients.json");
+const SESSIONS_FICHIER_ACTIF = process.env.IZY_SESSIONS_LOCALES === "1";
+let sessionsTablePrete = false;
+let sessionsFichier = null; // cache memoire du fichier : { [cle]: { [telephone]: { data, updatedAtMs } } }
+let sessionsFichierTimer = null;
+
+async function ensureSessionsTable() {
+  if (sessionsTablePrete) return;
+  await pool.query(
+    "CREATE TABLE IF NOT EXISTS sessions_clients (" +
+      "merchant_key TEXT NOT NULL, " +
+      "telephone TEXT NOT NULL, " +
+      "data JSONB NOT NULL, " +
+      "updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), " +
+      "PRIMARY KEY (merchant_key, telephone)" +
+    ")"
+  );
+  sessionsTablePrete = true;
+}
+
+function lireSessionsFichier() {
+  if (sessionsFichier) return sessionsFichier;
+  try {
+    sessionsFichier = fs.existsSync(SESSIONS_FILE) ? (JSON.parse(fs.readFileSync(SESSIONS_FILE, "utf8")) || {}) : {};
+  } catch (e) { sessionsFichier = {}; }
+  return sessionsFichier;
+}
+function planifierEcritureSessionsFichier() {
+  if (sessionsFichierTimer) return;
+  sessionsFichierTimer = setTimeout(() => {
+    sessionsFichierTimer = null;
+    try { fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsFichier || {})); } catch (e) { console.error("Ecriture de sessions-clients.json impossible :", e); }
+  }, 200);
+  if (sessionsFichierTimer.unref) sessionsFichierTimer.unref();
+}
+
+// Ecrit tout de suite le fichier local des sessions s'il y a une ecriture differee en attente (arret propre du serveur).
+function viderSessionsFichier() {
+  if (!sessionsFichierTimer) return;
+  clearTimeout(sessionsFichierTimer);
+  sessionsFichierTimer = null;
+  try { fs.writeFileSync(SESSIONS_FILE, JSON.stringify(sessionsFichier || {})); } catch (e) { console.error("Ecriture de sessions-clients.json impossible :", e); }
+}
+
+// -> [{ telephone, data, updatedAtMs }]
+async function chargerSessionsClients(cle) {
+  if (pool) {
+    await ensureSessionsTable();
+    const res = await pool.query("SELECT telephone, data, updated_at FROM sessions_clients WHERE merchant_key = $1", [cle]);
+    return res.rows.map((r) => ({ telephone: r.telephone, data: r.data, updatedAtMs: new Date(r.updated_at).getTime() }));
+  }
+  if (!SESSIONS_FICHIER_ACTIF) return [];
+  const f = lireSessionsFichier()[cle] || {};
+  return Object.keys(f).map((tel) => ({ telephone: tel, data: f[tel].data, updatedAtMs: f[tel].updatedAtMs }));
+}
+
+async function enregistrerSessionClient(cle, telephone, data) {
+  if (pool) {
+    await ensureSessionsTable();
+    await pool.query(
+      "INSERT INTO sessions_clients (merchant_key, telephone, data, updated_at) VALUES ($1, $2, $3, now()) " +
+        "ON CONFLICT (merchant_key, telephone) DO UPDATE SET data = $3, updated_at = now()",
+      [cle, telephone, data]
+    );
+    return;
+  }
+  if (!SESSIONS_FICHIER_ACTIF) return;
+  const tout = lireSessionsFichier();
+  if (!tout[cle]) tout[cle] = {};
+  tout[cle][telephone] = { data, updatedAtMs: Date.now() };
+  planifierEcritureSessionsFichier();
+}
+
+async function supprimerSessionClient(cle, telephone) {
+  if (pool) {
+    await ensureSessionsTable();
+    await pool.query("DELETE FROM sessions_clients WHERE merchant_key = $1 AND telephone = $2", [cle, telephone]);
+    return;
+  }
+  if (!SESSIONS_FICHIER_ACTIF) return;
+  const tout = lireSessionsFichier();
+  if (tout[cle] && tout[cle][telephone]) { delete tout[cle][telephone]; planifierEcritureSessionsFichier(); }
+}
+
+// Supprime les sessions sans activite depuis plus de `jours` jours (toutes cles confondues). Renvoie le nombre supprime.
+async function purgerSessionsClients(jours) {
+  const j = Math.max(1, Number(jours) || 90);
+  if (pool) {
+    await ensureSessionsTable();
+    const res = await pool.query("DELETE FROM sessions_clients WHERE updated_at < now() - ($1 || ' days')::interval", [String(j)]);
+    return res.rowCount || 0;
+  }
+  if (!SESSIONS_FICHIER_ACTIF) return 0;
+  const tout = lireSessionsFichier();
+  const limite = Date.now() - j * 86400000;
+  let n = 0;
+  Object.keys(tout).forEach((cle) => Object.keys(tout[cle]).forEach((tel) => {
+    if ((tout[cle][tel].updatedAtMs || 0) < limite) { delete tout[cle][tel]; n++; }
+  }));
+  if (n) planifierEcritureSessionsFichier();
+  return n;
+}
+
 // ---------------- Journal complet des conversations (client <-> bot/marchand) ----------------
 //
 // Contrairement a `conversationsHumain` (memoire seulement, dans shared.js - juste pour la mise en
@@ -844,6 +962,11 @@ module.exports = {
   deleteEmploye,
   initMerchantState,
   persistMerchantState,
+  viderSessionsFichier,
+  chargerSessionsClients,
+  enregistrerSessionClient,
+  supprimerSessionClient,
+  purgerSessionsClients,
   logConversationMessage,
   getConversationSummaries,
   getConversationHistory,

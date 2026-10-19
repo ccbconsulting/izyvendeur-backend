@@ -15,6 +15,7 @@
 // moteurs : createHebergementEngine(merchantKey, options).
 
 const db = require("./db");
+const sessionsPersistantes = require("./sessionsPersistantes");
 const sh = require("./shared");
 const dt = require("./datesSejour");
 const { formatFcfa, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
@@ -78,6 +79,24 @@ function createHebergementEngine(merchantKey, options) {
   const nomMarchandOption = (options && options.nomMarchand) || (() => "");
   const journaliserOption = (options && options.journaliser) || (async () => {});
   const cleEtat = (options && options.cleEtat) || merchantKey;
+
+  // Etape 72 : sauvegarde des sessions de conversation (voir sessionsPersistantes.js). Une reservation « Nouvelle » qui
+  // attend le « oui » du client reste en attente jusqu'a la date du sejour ; toute autre saisie intermediaire est
+  // abandonnee apres 24 h sans message ; la langue choisie est gardee 90 jours.
+  const persistance = sessionsPersistantes.creer({
+    cle: cleEtat, sessions, conversationsHumain, ignorer: [PHONE_SIMULATEUR],
+    regle: (s, age) => {
+      const J = sessionsPersistantes.JOUR_MS;
+      if (age > sessionsPersistantes.DUREE_MAX_JOURS * J) return null;
+      if (age <= J) return s;
+      if (s.stage === "awaiting_confirmation" && s.pendingSejourId && state) {
+        const x = (state.sejours || []).find((y) => y.id === s.pendingSejourId);
+        if (x && x.statut === "Nouvelle" && x.depart > aujourdhuiISO()) return s;
+      }
+      const neuve = freshSession(s); neuve.fromPhone = s.fromPhone;
+      return neuve;
+    }
+  });
   let ignorerSejourId = null; // sejour en cours de report : ne bloque pas sa propre place
 
   function journaliser(telephone, de, texte) {
@@ -92,6 +111,7 @@ function createHebergementEngine(merchantKey, options) {
     if (!state.nextId) state.nextId = 1;
     state.settings = Object.assign(reglagesParDefaut(), state.settings || {});
     if (!sh.fuseauValide(state.settings.fuseau)) state.settings.fuseau = sh.FUSEAU_PAR_DEFAUT;
+    await persistance.charger();
   }
 
   function saveState() {
@@ -507,6 +527,22 @@ function createHebergementEngine(merchantKey, options) {
       .sort((a, b) => (a.arrivee < b.arrivee ? -1 : a.arrivee > b.arrivee ? 1 : a.id - b.id));
   }
   function nbSejoursAVenir(telephone) { return sejoursAVenirDuClient(telephone).length; }
+  // Etape 72 : detail des sejours a venir d'un client (cinq au plus), affiche au-dessus des choix de l'ecran
+  // « Ma reservation ». Chaine vide s'il n'y en a aucun.
+  function detailSejoursAVenir(telephone) {
+    if (!state || !telephone) return "";
+    const s = sessions[telephone] || {};
+    const liste = sejoursAVenirDuClient(telephone);
+    if (!liste.length) return "";
+    const lignes = liste.slice(0, 5).map((x) => {
+      const details = [sh.t(s, "du ", "from ") + formatCourt(x.arrivee, s) + sh.t(s, " au ", " to ") + formatCourt(x.depart, s) + " (" + libelleNuits(x.nuits, s) + ")", libellePersonnes(x.personnes || 1, s)];
+      if (x.total) details.push(formatFcfa(x.total));
+      details.push(x.statut === "Confirmé" ? sh.t(s, "confirmée", "confirmed") : sh.t(s, "à confirmer", "to be confirmed"));
+      return "• " + refSejour(x) + " — " + x.chambre + "\n   " + details.join(" · ");
+    });
+    const plusieurs = liste.length > 1;
+    return sh.t(s, plusieurs ? "Vos réservations :" : "Votre réservation :", plusieurs ? "Your bookings:" : "Your booking:") + "\n" + lignes.join("\n") + (liste.length > 5 ? "\n…" : "");
+  }
 
   function modeDelai() { return reg().modeDelaiDepasse === "accepter" ? "accepter" : "refuser"; }
   // Etape 67 : seul un sejour « Confirmé » est soumis au delai ; en mode « accepter », le client peut annuler /
@@ -727,6 +763,7 @@ function createHebergementEngine(merchantKey, options) {
   function handleMessage(fromPhone, text, opts) {
     const reponse = traiterMessage(fromPhone, text, opts);
     if (reponse && sessions[fromPhone]) sessions[fromPhone].derniereReponse = reponse;
+    persistance.enregistrer(fromPhone);
     return reponse;
   }
 
@@ -831,6 +868,7 @@ function createHebergementEngine(merchantKey, options) {
     s.langue = langue === "en" ? "en" : "fr";
     s.gateLangueEnvoyee = true;
     delete s.texteAvantLangue;
+    persistance.enregistrer(fromPhone);
     return s.langue;
   }
   function estEnPauseHumain(fromPhone) {
@@ -1179,11 +1217,13 @@ function createHebergementEngine(merchantKey, options) {
   return {
     type: "hebergement",
     init,
+    balayerSessions: () => persistance.balayer(),
     handleMessage,
     getEtatSession,
     getChoixArrivees,
     getChoixNuits,
     nbSejoursAVenir,
+    detailSejoursAVenir,
     definirLangueSession,
     reponseDeReprise,
     estEnPauseHumain,

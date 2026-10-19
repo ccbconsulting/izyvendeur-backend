@@ -281,12 +281,13 @@ async function construireEntree(m) {
   // Toujours charge ; c'est la SOURCE choisie par le super-administrateur qui decide s'il sert ou non.
   entree.facturation = creerMoteurFacturation(m.id);
   await entree.facturation.init();
-  if (modules.length > 1) entree.routeur = creerRouteurPourMarchand(m, moteurs);
+  if (modules.length > 1) { entree.routeur = creerRouteurPourMarchand(m, moteurs); await entree.routeur.chargerSessions(); }
   return entree;
 }
 
 function creerRouteurPourMarchand(m, moteurs) {
   return creerRouteur(moteurs, m.type, {
+    cle: m.id + "::routeur", // Etape 72 : etat de routage sauvegarde (menu, volet courant, langue)
     // Le Simulateur de /admin ne laisse jamais de trace dans le vrai journal des conversations.
     journaliser: (tel, de, texte) => { if (tel !== "SIMULATEUR") db.logConversationMessage(m.id, tel, de, texte).catch(() => {}); }
   });
@@ -315,7 +316,7 @@ async function appliquerModuleSecondaire(entry, modules) {
     }
   }
   m.moduleSecondaire = cibles.join(",") || null;
-  if (Object.keys(entry.moteurs).length > 1) entry.routeur = creerRouteurPourMarchand(m, entry.moteurs);
+  if (Object.keys(entry.moteurs).length > 1) { entry.routeur = creerRouteurPourMarchand(m, entry.moteurs); await entry.routeur.chargerSessions(); }
   else delete entry.routeur;
 }
 
@@ -3613,13 +3614,19 @@ app.post("/webhook", async (req, res) => {
     if (idInteractifClique === ID_MON_RDV && (marchand.engine.type === "service" || marchand.engine.type === "hebergement")) {
       const etatPourLangue = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
       const heb = marchand.engine.type === "hebergement";
-      const texteCorps = heb ? tW(etatPourLangue, "Que souhaitez-vous faire de votre réservation ?", "What would you like to do with your booking?") : tW(etatPourLangue, "Que souhaitez-vous faire de votre rendez-vous ?", "What would you like to do with your appointment?");
+      const question = heb ? tW(etatPourLangue, "Que souhaitez-vous faire de votre réservation ?", "What would you like to do with your booking?") : tW(etatPourLangue, "Que souhaitez-vous faire de votre rendez-vous ?", "What would you like to do with your appointment?");
+      // Etape 72 : le client voit d'abord CE qu'il a reserve (service/chambre, date, prix, statut), puis ses choix.
+      let detail = "";
+      try { detail = (heb ? marchand.engine.detailSejoursAVenir : marchand.engine.detailRdvsAVenir)(from) || ""; } catch (e) { detail = ""; }
+      const texteCorps = (detail ? detail + "\n\n" : "") + question;
       db.logConversationMessage(merchantId, from, "client", heb ? tW(etatPourLangue, "Ma réservation", "My booking") : tW(etatPourLangue, "Mon rendez-vous", "My appointment")).catch(() => {});
-      const envoye = await envoyerBoutonsWhatsApp(from, phoneNumberId, texteCorps, [
-        { id: ID_RDV_ANNULER, title: tW(etatPourLangue, "Annuler", "Cancel") },
-        { id: ID_RDV_REPORTER, title: tW(etatPourLangue, "Reporter", "Reschedule") },
-        { id: ID_HUMAIN, title: tW(etatPourLangue, "Contacter un conseiller", "Contact an advisor") }
-      ]).catch(() => false);
+      // Liste (et non plus 3 boutons) : elle laisse la place a « Menu principal » pour un marchand hybride.
+      const lignesEspace = [
+        { id: ID_RDV_ANNULER, title: tW(etatPourLangue, "Annuler", "Cancel"), description: heb ? tW(etatPourLangue, "Annuler ma réservation", "Cancel my booking") : tW(etatPourLangue, "Annuler mon rendez-vous", "Cancel my appointment") },
+        { id: ID_RDV_REPORTER, title: tW(etatPourLangue, "Reporter", "Reschedule"), description: heb ? tW(etatPourLangue, "Changer les dates", "Change the dates") : tW(etatPourLangue, "Changer la date ou l'heure", "Change the date or time") },
+        { id: ID_HUMAIN, title: tW(etatPourLangue, "Contacter un conseiller", "Contact an advisor"), description: tW(etatPourLangue, "Être mis en relation avec l'équipe", "Get connected with our team") }
+      ].concat(ligneMenuPrincipal(marchand, etatPourLangue));
+      const envoye = await envoyerListeWhatsApp(from, phoneNumberId, texteCorps, tW(etatPourLangue, "Mes options", "My options"), [{ title: tW(etatPourLangue, "Mon espace", "My space"), rows: lignesEspace }]).catch(() => false);
       if (envoye) db.logConversationMessage(merchantId, from, "bot", texteCorps).catch(() => {});
       else await envoyerMessageWhatsApp(from, texteCorps + "\n" + tW(etatPourLangue, "Écrivez « annuler » ou « reporter ».", "Write \"cancel\" or \"reschedule\"."), phoneNumberId);
       return;
@@ -4382,6 +4389,7 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
     rows.push({ id: ID_PANIER_CONTINUER, title: tronquerTexte(tW(etat, "🛍️ Continuer mes achats", "🛍️ Keep shopping"), 24) });
     rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte(tW(etat, "✅ Terminer ma commande", "✅ Complete my order"), 24) });
     rows.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
+    ligneMenuPrincipal(marchand, etat).forEach((l) => rows.push(l)); // Etape 72 : retour au menu principal (marchand hybride)
     return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Gérer mon panier", "Manage my cart"), [{ title: tW(etat, "Votre panier", "Your cart"), rows }]);
   }
 
@@ -5007,6 +5015,29 @@ async function envoyerRappelsPourTousLesMarchands() {
   }
 }
 
+// Etape 72 : durees de vie des sessions de conversation sauvegardees (voir sessionsPersistantes.js). Toutes les 6 heures,
+// chaque moteur applique ses regles (saisie intermediaire oubliee apres 24 h, panier apres 30 jours...) et la base
+// supprime les sessions sans aucun message depuis 90 jours. Le journal des conversations n'est jamais touche.
+const INTERVALLE_BALAYAGE_SESSIONS_MS = 6 * 60 * 60 * 1000;
+async function balayerSessionsClients() {
+  for (const merchantId of Object.keys(engines)) {
+    const entry = engines[merchantId];
+    if (!entry) continue;
+    try {
+      Object.keys(entry.moteurs || {}).forEach((v) => { if (entry.moteurs[v] && typeof entry.moteurs[v].balayerSessions === "function") entry.moteurs[v].balayerSessions(); });
+      if (entry.routeur && typeof entry.routeur.balayerSessions === "function") entry.routeur.balayerSessions();
+    } catch (erreur) {
+      console.error(`[${merchantId}] Echec du balayage des sessions :`, erreur);
+    }
+  }
+  try {
+    const n = await db.purgerSessionsClients(90);
+    if (n) console.log(`Sessions clients : ${n} session(s) sans activite depuis 90 jours supprimee(s).`);
+  } catch (erreur) {
+    console.error("Echec de la purge des sessions clients :", erreur);
+  }
+}
+
 // On attend que le registre des marchands + l'etat de chacun soient charges avant d'accepter la moindre
 // requete. Voir chargerMarchands() / db.js.
 async function demarrer() {
@@ -5025,6 +5056,10 @@ async function demarrer() {
     );
   }, INTERVALLE_RAPPELS_MS);
 
+  // Etape 72 : durees de vie des sessions sauvegardees (premier passage au demarrage, puis toutes les 6 heures).
+  balayerSessionsClients().catch((erreur) => console.error("Echec du premier balayage des sessions :", erreur));
+  setInterval(() => { balayerSessionsClients().catch((erreur) => console.error("Echec du balayage des sessions :", erreur)); }, INTERVALLE_BALAYAGE_SESSIONS_MS);
+
   // Meme principe pour le reessai des facturations IzyFacture en attente (voir plus haut).
   reessayerFacturationsIzyFactureEnAttente().catch((erreur) =>
     console.error("Echec du premier passage de reessai IzyFacture :", erreur)
@@ -5035,6 +5070,22 @@ async function demarrer() {
     );
   }, INTERVALLE_REESSAIS_IZYFACTURE_MS);
 }
+
+// Etape 72 : a l'arret demande par Render (deploiement) ou par un Ctrl+C, on laisse finir les sauvegardes de sessions deja
+// lancees (quelques millisecondes) avant de quitter, pour ne pas perdre le dernier message d'un client.
+let arretEnCours = false;
+async function arretPropre(signal) {
+  if (arretEnCours) return;
+  arretEnCours = true;
+  console.log(`Signal ${signal} recu : fin des sauvegardes de sessions en cours...`);
+  try {
+    await Promise.race([require("./sessionsPersistantes").attendreEcritures(), new Promise((r) => setTimeout(r, 4000))]);
+    db.viderSessionsFichier();
+  } catch (e) { /* on quitte quand meme */ }
+  process.exit(0);
+}
+process.on("SIGTERM", () => { arretPropre("SIGTERM"); });
+process.on("SIGINT", () => { arretPropre("SIGINT"); });
 
 demarrer().catch((erreur) => {
   console.error("Echec du demarrage du serveur :", erreur);
