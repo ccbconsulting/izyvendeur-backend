@@ -2408,3 +2408,22 @@ Le siège exact n'est pas choisi par le client : comme en avion, il choisit la c
 **Pas encore fait (prévu plus tard).** Attribution automatique du siège exact, contrôle à l'embarquement et statut de départ (retards), paiement Mobile Money automatique, QR code sur le billet, fret, ventes en gros.
 
 Fichiers modifiés : `server.js`, `hybride.js`, `db.js`, `public/admin.html`. **Nouveau fichier : `conversationTransport.js`** (à copier avec les autres). Aucune migration SQL ; variable d'environnement `ENCRYPTION_KEY` à vérifier (voir 6).
+
+## Étape 75 — Import CSV du volet Billets (lignes et tarifs, puis départs et quotas)
+
+Deux imports, dans les onglets **Lignes et tarifs** et **Départs** de /admin (bloc « Importer … depuis un fichier CSV » en bas de page, avec le lien **« Télécharger le modèle »** : c'est l'exemple train Douala – Yaoundé + navette d'aéroport, à compléter). Mêmes droits que la modification à la main (rôle Rendez-vous / réservations) ; le volet lui-même reste accordé par le super-administrateur seul.
+
+**Fichier 1 — lignes et tarifs** (une ligne du fichier = une ligne de transport). Colonnes : `Ligne ; Type ; Arrêts ; Classes ; Tarifs` (ordre libre, accents et majuscules ignorés ; séparateur « ; » ou « , »).
+- Arrêts : `Douala (0) > Édéa (66) > Eséka (150) > Yaoundé (263)` (distance en km depuis le départ, entre parenthèses ; sans aucune distance, les arrêts sont équidistants).
+- Classes : `Premium (fenêtre/couloir) | Première classe (fenêtre/couloir)` ; sans parenthèses = pas de choix de côté (navette).
+- Tarifs : `Premium = 6000 / 11000 | Première classe = 9000 / 15000` (prix de bout en bout, aller simple / aller-retour). Les prix des arrêts intermédiaires sont calculés selon la distance, arrondis à 500 FCFA, comme le générateur de /admin ; ils restent modifiables ensuite à la main.
+- Type : train, navette, car (ou bus), autre.
+
+**Fichier 2 — départs et quotas** (importer d'abord les lignes). Colonnes : `Ligne ; Sens ; Heure ; Jours ; Passages ; Quotas`.
+- Sens : aller ou retour. Heure : `06:30` ou `6h30`. Jours : `tous` ou `lun,mar,mer,jeu,ven,sam,dim`.
+- Passages (facultatif) : `Douala=06:30 | Édéa=07:30 | …`.
+- Quotas : `Premium = 20/20 | Première classe = 10/10` (places fenêtre / couloir vendues sur WhatsApp) ; un seul nombre pour une classe à côté la partage en deux ; `Standard = 14` pour une classe sans choix de côté.
+
+**Règles.** L'import **fusionne** et n'écrase jamais : une ligne déjà présente (même nom) ou un départ déjà présent (même ligne, sens et heure) est ignoré et signalé. Les lignes fautives sont ignorées avec leur numéro de ligne et la raison (« ligne 4 (Express) : tarif pour une classe inconnue… »), les lignes valides sont importées. 200 lignes de fichier au maximum. L'import est tracé au Journal d'activité (« Lignes de transport importées », « Départs de transport importés »).
+
+Fichiers modifiés : `server.js`, `public/admin.html`. **Nouveau fichier : `importTransport.js`** (à copier avec les autres). Aucune migration, aucune variable d'environnement.

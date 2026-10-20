@@ -22,6 +22,7 @@ const createCatalogEngine = require("./conversation");
 const createServiceEngine = require("./conversationService");
 const createHebergementEngine = require("./conversationHebergement");
 const createTransportEngine = require("./conversationTransport");
+const importTransport = require("./importTransport");
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
 const remisesLib = require("./remises");
@@ -844,6 +845,8 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/transport/lignes": "transport_lignes_modifiees",
   "POST /api/:id/transport/lignes/:ligneId/generer-tarifs": "transport_tarifs_generes",
   "PUT /api/:id/transport/departs": "transport_departs_modifies",
+  "POST /api/:id/transport/lignes/importer": "transport_lignes_importees",
+  "POST /api/:id/transport/departs/importer": "transport_departs_importes",
   "PUT /api/:id/transport/reservations/:resId/statut": "transport_reservation_statut_modifie",
   "POST /api/:id/transport/reservations/:resId/envoyer-billet": "transport_billet_envoye",
   "POST /api/:id/transport/manifeste": "transport_manifeste_consulte",
@@ -894,6 +897,7 @@ function detailAuditRequete(code, req) {
     case "transport_tarifs_generes": return { ligne: p.ligneId };
     case "transport_lignes_modifiees": return { lignes: Array.isArray(b) ? b.length : null };
     case "transport_departs_modifies": return { departs: Array.isArray(b) ? b.length : null };
+    case "transport_lignes_importees": case "transport_departs_importes": return { fichier: req.file ? req.file.originalname : null };
     case "chambres_importees": return { fichier: req.file ? req.file.originalname : null };
     case "services_importes": return { fichier: req.file ? req.file.originalname : null };
     case "facture_creee": case "paiement_facture_enregistre":
@@ -3053,6 +3057,40 @@ app.post("/api/:id/transport/manifeste", protegerAcces, (req, res) => {
   const m = entry.engine.getManifeste(String(b.departId || ""), String(b.date || ""), true);
   if (!m) return res.status(404).json({ erreur: "Départ ou date introuvable." });
   res.json(m);
+});
+// Etape 75 : import CSV (fusion, jamais d'ecrasement). Fichier 1 : lignes + arrets + classes + tarifs ; fichier 2 : departs + quotas.
+// Modeles telechargeables (= l'exemple train Douala - Yaounde + navette d'aeroport).
+app.get("/api/:id/transport/modele/:quoi", protegerAcces, (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  const lignes = req.params.quoi === "lignes";
+  if (!lignes && req.params.quoi !== "departs") return res.status(404).json({ erreur: "Modèle inconnu." });
+  res.set("Content-Type", "text/csv; charset=utf-8");
+  res.set("Content-Disposition", "attachment; filename=\"modele_import_" + (lignes ? "lignes" : "departs") + "_transport.csv\"");
+  res.send(lignes ? importTransport.MODELE_LIGNES : importTransport.MODELE_DEPARTS);
+});
+app.post("/api/:id/transport/lignes/importer", protegerAcces, uploadFichierCatalogue.single("fichier"), (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"fichier\" attendu)." });
+  const actuelles = entry.engine.getLignes();
+  const r = importTransport.analyserLignes(req.file.buffer.toString("utf8"), actuelles, { parserLigneCsv }, createTransportEngine.calculerTarifs);
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  if (!r.nouvelles.length) return res.json({ ajoutes: 0, doublonsIgnores: r.doublons, erreurs: r.erreurs });
+  const m = entry.engine.updateLignes(actuelles.concat(r.nouvelles));
+  if (m.erreur) return res.status(400).json({ erreur: m.erreur });
+  res.json({ ajoutes: r.nouvelles.length, doublonsIgnores: r.doublons, erreurs: r.erreurs });
+});
+app.post("/api/:id/transport/departs/importer", protegerAcces, uploadFichierCatalogue.single("fichier"), (req, res) => {
+  const entry = entreeTransport(req, res); if (!entry) return;
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"fichier\" attendu)." });
+  const lignes = entry.engine.getLignes();
+  const ids = new Set(lignes.map((l) => l.id));
+  const actuels = entry.engine.getDeparts().filter((d) => ids.has(d.ligneId));
+  const r = importTransport.analyserDeparts(req.file.buffer.toString("utf8"), lignes, actuels, { parserLigneCsv });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  if (!r.nouveaux.length) return res.json({ ajoutes: 0, doublonsIgnores: r.doublons, erreurs: r.erreurs });
+  const m = entry.engine.updateDeparts(actuels.concat(r.nouveaux));
+  if (m.erreur) return res.status(400).json({ erreur: m.erreur });
+  res.json({ ajoutes: r.nouveaux.length, doublonsIgnores: r.doublons, erreurs: r.erreurs });
 });
 app.post("/api/:id/transport/exemple", protegerAcces, (req, res) => {
   const entry = entreeTransport(req, res); if (!entry) return;

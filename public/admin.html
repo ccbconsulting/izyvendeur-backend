@@ -1334,7 +1334,17 @@ const I18N = {
     act_transport_manifeste_consulte: "Manifeste consulté (CNI visibles)",
     act_transport_exemple_charge: "Exemple de transport chargé",
     trpLabelIndiff: "indifférent",
-    btnFiltrerTrp: "Filtrer"
+    btnFiltrerTrp: "Filtrer",
+    trpImportTitreLignes: "Importer des lignes depuis un fichier CSV",
+    trpImportNoteLignes: "Une ligne du fichier = une ligne de transport. Colonnes : Ligne ; Type (train, navette, car) ; Arrêts (Douala (0) > Édéa (66) > Yaoundé (263), distance en km entre parenthèses) ; Classes (Premium (fenêtre/couloir) | Standard) ; Tarifs (Premium = 6000 / 11000 | Standard = 5000 : prix de bout en bout, simple / aller-retour). Les prix des arrêts intermédiaires sont calculés selon la distance. Une ligne déjà présente (même nom) est ignorée : rien n'est écrasé. Enregistrez vos modifications en cours avant d'importer.",
+    trpImportTitreDeparts: "Importer des départs depuis un fichier CSV",
+    trpImportNoteDeparts: "Importez d'abord les lignes. Une ligne du fichier = un départ. Colonnes : Ligne (nom exact) ; Sens (aller ou retour) ; Heure (06:30) ; Jours (tous, ou lun,mar,mer…) ; Passages, facultatif (Douala=06:30 | Édéa=07:30) ; Quotas (Premium = 20/20 | Première classe = 10/10 : places fenêtre/couloir vendues sur WhatsApp ; un seul nombre pour une classe sans choix de côté). Un départ déjà présent (même ligne, sens et heure) est ignoré. Enregistrez vos modifications en cours avant d'importer.",
+    btnImporterTrp: "Importer",
+    btnModeleTrp: "Télécharger le modèle (exemple à compléter)",
+    trpImportResultatLignes: "{ajoutes} ligne(s) ajoutée(s).",
+    trpImportResultatDeparts: "{ajoutes} départ(s) ajouté(s).",
+    act_transport_lignes_importees: "Lignes de transport importées (fichier)",
+    act_transport_departs_importes: "Départs de transport importés (fichier)"
   },
   en: {
     admin: "Admin",
@@ -2481,7 +2491,17 @@ const I18N = {
     act_transport_manifeste_consulte: "Manifest viewed (ID numbers visible)",
     act_transport_exemple_charge: "Transport example loaded",
     trpLabelIndiff: "no preference",
-    btnFiltrerTrp: "Filter"
+    btnFiltrerTrp: "Filter",
+    trpImportTitreLignes: "Import routes from a CSV file",
+    trpImportNoteLignes: "One file row = one transport route. Columns: Ligne (route); Type (train, navette, car); Arrêts (stops: Douala (0) > Édéa (66) > Yaoundé (263), distance in km in brackets); Classes (Premium (fenêtre/couloir) | Standard); Tarifs (fares: Premium = 6000 / 11000 | Standard = 5000: end-to-end price, one-way / return). Intermediate-stop fares are calculated from the distance. A route already present (same name) is skipped: nothing is overwritten. Save your pending changes before importing.",
+    trpImportTitreDeparts: "Import departures from a CSV file",
+    trpImportNoteDeparts: "Import the routes first. One file row = one departure. Columns: Ligne (exact route name); Sens (aller = outbound or retour = return); Heure (06:30); Jours (tous = every day, or lun,mar,mer…); Passages, optional (Douala=06:30 | Édéa=07:30); Quotas (Premium = 20/20 | Première classe = 10/10: window/aisle seats sold on WhatsApp; a single number for a class without side choice). A departure already present (same route, direction and time) is skipped. Save your pending changes before importing.",
+    btnImporterTrp: "Import",
+    btnModeleTrp: "Download the template (example to fill in)",
+    trpImportResultatLignes: "{ajoutes} route(s) added.",
+    trpImportResultatDeparts: "{ajoutes} departure(s) added.",
+    act_transport_lignes_importees: "Transport routes imported (file)",
+    act_transport_departs_importes: "Transport departures imported (file)"
   }
 };
 
@@ -5425,6 +5445,36 @@ function trpCalculerTarifs(ligne, base) {
   return out;
 }
 
+// ---- Import CSV (Etape 75) : bloc commun aux onglets Lignes et Departs ----
+function trpBlocImportHtml(quoi) {
+  const l = quoi === "lignes";
+  return "<div class='bloc-import-services' style='margin-top:26px;'><h3>" + t(l ? "trpImportTitreLignes" : "trpImportTitreDeparts") + "</h3>" +
+    "<p class='raison'>" + t(l ? "trpImportNoteLignes" : "trpImportNoteDeparts") + "</p>" +
+    "<input type='file' accept='.csv,text/csv' id='trpFichierImport' /> <button type='button' id='btnTrpImporter'>" + t("btnImporterTrp") + "</button> " +
+    "<a id='lienModeleTrp' href='/api/" + esc(marchandActif.id) + "/transport/modele/" + quoi + "' download>" + t("btnModeleTrp") + "</a></div>";
+}
+function trpBrancherImport(quoi, apres) {
+  const bouton = document.getElementById("btnTrpImporter");
+  if (!bouton) return;
+  bouton.onclick = async () => {
+    const fichier = document.getElementById("trpFichierImport").files[0];
+    if (!fichier) { alert(t("alertChoisirFichierImport")); return; }
+    const donnees = new FormData();
+    donnees.append("fichier", fichier);
+    bouton.disabled = true;
+    try {
+      const reponse = await fetch("/api/" + marchandActif.id + "/transport/" + quoi + "/importer", { method: "POST", body: donnees });
+      const j = await reponse.json();
+      if (!reponse.ok) throw new Error(j.erreur || reponse.statusText);
+      let message = t(quoi === "lignes" ? "trpImportResultatLignes" : "trpImportResultatDeparts", { ajoutes: j.ajoutes });
+      if (j.doublonsIgnores && j.doublonsIgnores.length) message += t("msgImportDoublons", { n: j.doublonsIgnores.length, noms: j.doublonsIgnores.join(", ") });
+      if (j.erreurs && j.erreurs.length) message += t("msgImportErreurs", { n: j.erreurs.length, details: j.erreurs.join(" / ") });
+      alert(message);
+      apres();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); bouton.disabled = false; }
+  };
+}
+
 // ---- Lignes et tarifs ----
 async function renderTransportLignes() {
   const zone = document.getElementById("contenuOnglet");
@@ -5517,7 +5567,9 @@ async function renderTransportLignes() {
       (local.length ? local.map(htmlLigne).join("") : "<p class='raison'>" + t("trpAucuneLigne") + "</p>" +
         "<p><button type='button' data-a='exemple'>" + t("btnChargerExempleTrp") + "</button></p><p class='raison'>" + t("trpNoteExemple") + "</p>") +
       "<div><button type='button' data-a='ajout-ligne'>" + t("btnAjouterLigne") + "</button> " +
-      "<button type='button' id='btnSauverLignesTrp' class='principal' data-a='sauver'>" + t("enregistrer") + "</button></div>";
+      "<button type='button' id='btnSauverLignesTrp' class='principal' data-a='sauver'>" + t("enregistrer") + "</button></div>" +
+      trpBlocImportHtml("lignes");
+    trpBrancherImport("lignes", renderTransportLignes);
   }
   function surSaisie(ev) {
     const el = ev.target, f = el.dataset && el.dataset.f;
@@ -5658,7 +5710,7 @@ async function renderTransportDeparts() {
       "<h2>" + t("trpDepartsTitre") + "</h2><p class='raison'>" + t("trpNoteDeparts") + "</p>" +
       (!lignes.length ? "<p class='raison'>" + t("trpAucuneLigne") + "</p>"
         : (local.length ? local.map(htmlDepart).join("") : "<p class='raison'>" + t("trpAucunDepart") + "</p>") +
-          "<div><button type='button' data-a='ajout'>" + t("btnAjouterDepart") + "</button> <button type='button' class='principal' data-a='sauver'>" + t("enregistrer") + "</button></div>") +
+          "<div><button type='button' data-a='ajout'>" + t("btnAjouterDepart") + "</button> <button type='button' class='principal' data-a='sauver'>" + t("enregistrer") + "</button></div>" + trpBlocImportHtml("departs")) +
       (departs.some((d) => ligneDe[d.ligneId]) ?
         "<h3 style='margin-top:26px;'>" + t("trpOccupationTitre") + "</h3><p class='raison'>" + t("trpNoteOccupation") + "</p>" +
         "<div style='display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;'>" +
@@ -5667,6 +5719,7 @@ async function renderTransportDeparts() {
           "<div><label>" + t("trpLabelDate") + "</label><input type='date' id='trpOccDate' value='" + trpAujourdhui() + "' /></div>" +
           "<div><button type='button' id='btnVoirOccupation'>" + t("btnVoirOccupation") + "</button></div>" +
         "</div><div id='trpOccResultat'></div>" : "");
+    trpBrancherImport("departs", renderTransportDeparts);
     const bo = document.getElementById("btnVoirOccupation");
     if (bo) bo.onclick = async () => {
       const dep = document.getElementById("trpOccDepart").value, date = document.getElementById("trpOccDate").value;
