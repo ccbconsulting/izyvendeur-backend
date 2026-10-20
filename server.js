@@ -340,6 +340,20 @@ function vueEntree(entry, type) {
 // s'appliquent aux deux volets et utilisent `?volet=` (principal par defaut).
 const VOLET_DE_PERMISSION = { catalogue: "catalogue", commandes: "catalogue", caisse: "catalogue", inventaire: "catalogue", rapports: "catalogue", rendezvous: "service" };
 // Permission employe du role operationnel de chaque type de volet (l'hebergement partage « rendezvous » : reservations).
+// ---- Etape 76 : numeros d'alerte supplementaires (option payante, quota fixe par le SEUL super-administrateur) ----
+// Le numero historique (phoneNotification) reste a part ; les numeros supplementaires n'ont d'effet que dans la limite du quota :
+// un quota ramene a 0 (ou reduit) coupe aussitot les envois vers les numeros en trop, sans rien effacer.
+const PLAFOND_NUMEROS_NOTIFICATION_SUPP = Math.max(1, parseInt(process.env.MAX_NUMEROS_NOTIFICATION_SUPP, 10) || 50);
+function chiffresTel(t) { return String(t == null ? "" : t).replace(/\D/g, ""); }
+function quotaNumerosSupp(merchant) { const n = merchant && merchant.nbNumerosNotificationSupp; return Number.isInteger(n) && n > 0 ? Math.min(n, PLAFOND_NUMEROS_NOTIFICATION_SUPP) : 0; }
+function numerosAlerteDe(merchant) {
+  const liste = []; const vus = new Set();
+  const ajouter = (n) => { const c = chiffresTel(n); if (!c || vus.has(c)) return; vus.add(c); liste.push(String(n).trim()); };
+  ajouter(merchant && merchant.phoneNotification);
+  ((merchant && Array.isArray(merchant.numerosNotificationSupp)) ? merchant.numerosNotificationSupp : []).slice(0, quotaNumerosSupp(merchant)).forEach(ajouter);
+  return liste;
+}
+
 function permissionDuVolet(t) { return t === "service" || t === "hebergement" || t === "transport" ? "rendezvous" : "catalogue"; }
 function vuePourRequete(req, entry, permission) {
   if (!entry || !entry.moteurs || Object.keys(entry.moteurs).length < 2) return entry;
@@ -399,35 +413,42 @@ function creerOptionsEngine(merchantKey) {
     // et seulement ici, qu'on sait s'il faut passer par un template ou par du texte libre de secours.
     notifierMarchand: async (typeAlerte, params) => {
       const entry = engines[merchantKey];
-      if (!entry || !entry.merchant.phoneNotification) return;
+      if (!entry) return;
+      // Etape 76 : l'alerte part vers le numero historique ET vers les numeros supplementaires autorises par le quota
+      // (meme alerte pour tous). L'echec d'un numero n'empeche jamais l'envoi aux autres.
+      const destinataires = numerosAlerteDe(entry.merchant);
+      if (!destinataires.length) return;
       const config = TEMPLATES_ALERTE_MARCHAND[typeAlerte];
       if (!config) {
         console.error(`[${merchantKey}] Type d'alerte marchand inconnu : "${typeAlerte}".`);
         return;
       }
-      const destinataire = entry.merchant.phoneNotification;
       const phoneNumberId = entry.merchant.phoneNumberId;
       const parametresNettoyes = params.map(nettoyerPourTemplate);
-
-      const envoiTemplateReussi = await envoyerTemplateWhatsApp(
-        destinataire,
-        phoneNumberId,
-        config.nom,
-        config.langue,
-        parametresNettoyes,
-        config.parametresNoms
-      );
-
-      if (!envoiTemplateReussi) {
-        // Repli : texte libre, qui ne passera que si ce numero a deja ecrit au bot dans les 24h
-        // (fenetre WhatsApp). Utile pendant que le template est en attente d'approbation par Meta, ou si
-        // son nom/sa langue ne correspond pas exactement a ce qui est configure ci-dessus.
-        console.warn(
-          `[${merchantKey}] Repli en texte libre pour la notification marchand ` +
-          `(le template "${config.nom}" a echoue ou n'est pas encore approuve).`
-        );
-        await envoyerMessageWhatsApp(destinataire, config.texteLibreRepli(params), phoneNumberId);
-      }
+      await Promise.all(destinataires.map(async (destinataire) => {
+        try {
+          const envoiTemplateReussi = await envoyerTemplateWhatsApp(
+            destinataire,
+            phoneNumberId,
+            config.nom,
+            config.langue,
+            parametresNettoyes,
+            config.parametresNoms
+          );
+          if (!envoiTemplateReussi) {
+            // Repli : texte libre, qui ne passera que si ce numero a deja ecrit au bot dans les 24h
+            // (fenetre WhatsApp). Utile pendant que le template est en attente d'approbation par Meta, ou si
+            // son nom/sa langue ne correspond pas exactement a ce qui est configure ci-dessus.
+            console.warn(
+              `[${merchantKey}] Repli en texte libre pour la notification marchand ` +
+              `(le template "${config.nom}" a echoue ou n'est pas encore approuve).`
+            );
+            await envoyerMessageWhatsApp(destinataire, config.texteLibreRepli(params), phoneNumberId);
+          }
+        } catch (erreur) {
+          console.error(`[${merchantKey}] Echec de l'alerte vers un numero de notification :`, erreur);
+        }
+      }));
     },
     // Enregistre durablement un message dans le journal complet des conversations (voir db.js) - alimente
     // l'onglet "Historique" de /admin. Ne leve jamais : une erreur ici ne doit jamais interrompre l'envoi
@@ -853,6 +874,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/transport/exemple": "transport_exemple_charge",
   "PUT /api/:id/parametres": "parametres_modifies",
   "PUT /api/:id/notification": "notification_modifiee",
+  "PUT /api/:id/numeros-notification": "numeros_notification_modifies",
   "PUT /api/:id/numero-whatsapp-public": "numero_public_modifie",
   "PUT /api/:id/filigrane-logo": "filigrane_modifie",
   "POST /api/marchands/:id/tester-alerte": "alerte_testee",
@@ -913,6 +935,7 @@ function detailAuditRequete(code, req) {
     case "employe_supprime": return { employe: (res_locals_employe(entry, p.employeId)) };
     case "identifiants_modifies": return { motDePasse: !!(b.motDePasse || b.generer || b.genererMotDePasse), identifiant: !!b.adminUser };
     case "marchand_actif_modifie": return { actif: b.actif };
+    case "numeros_notification_modifies": return { nombre: Array.isArray(b.numeros) ? b.numeros.length : null };
     case "options_payantes_modifiees": return { options: b };
     case "module_secondaire_modifie": return { moduleSecondaire: (Array.isArray(b.modulesSecondaires) ? b.modulesSecondaires.join(",") : (Array.isArray(b.moduleSecondaire) ? b.moduleSecondaire.join(",") : (b.modulesSecondaires || b.moduleSecondaire))) || null };
     case "facturation_source_modifiee": return { source: b.source || null };
@@ -1196,6 +1219,10 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
     moduleSecondaire: modulesDuMarchand(e.merchant)[1] || null, modulesSecondaires: modulesDuMarchand(e.merchant).slice(1), modules: modulesDuMarchand(e.merchant),
     phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false,
+    // Etape 76 : quota (fixe par le seul super-administrateur ; 0 = option fermee) et liste des numeros d'alerte supplementaires.
+    nbNumerosNotificationSupp: quotaNumerosSupp(e.merchant),
+    numerosNotificationSupp: quotaNumerosSupp(e.merchant) > 0 || req.auth.role === "superadmin" ? (Array.isArray(e.merchant.numerosNotificationSupp) ? e.merchant.numerosNotificationSupp : []) : [],
+    plafondNumerosNotificationSupp: PLAFOND_NUMEROS_NOTIFICATION_SUPP,
     logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null,
     numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null,
     optionStockIllimite: e.merchant.optionStockIllimite === true, optionLienCommande: e.merchant.optionLienCommande === true,
@@ -1513,8 +1540,17 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, nbNumerosNotification } = req.body || {};
   const patch = {};
+  // Etape 76 : nombre de numeros d'alerte supplementaires accordes a ce marchand (0 = option fermee). Reserve au super-administrateur
+  // (toute la route l'est) ; le marchand remplit ensuite la liste dans cette limite (PUT /api/:id/numeros-notification).
+  if (nbNumerosNotification !== undefined) {
+    const n = Number(nbNumerosNotification);
+    if (!Number.isInteger(n) || n < 0 || n > PLAFOND_NUMEROS_NOTIFICATION_SUPP) {
+      return res.status(400).json({ erreur: "nbNumerosNotification doit être un entier entre 0 et " + PLAFOND_NUMEROS_NOTIFICATION_SUPP + "." });
+    }
+    patch.nbNumerosNotificationSupp = n;
+  }
   if (optionStockIllimite !== undefined) patch.optionStockIllimite = !!optionStockIllimite;
   if (optionLienCommande !== undefined) patch.optionLienCommande = !!optionLienCommande;
   if (optionNotificationsStatut !== undefined) patch.optionNotificationsStatut = !!optionNotificationsStatut;
@@ -1535,8 +1571,9 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionNotificationsStatut = maj.optionNotificationsStatut;
   entry.merchant.optionFacturationIzyfacture = maj.optionFacturationIzyfacture;
   entry.merchant.optionCaissePos = maj.optionCaissePos;
-  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}.`);
-  res.json({ id: req.params.id, optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos });
+  entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
+  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -3146,6 +3183,32 @@ app.put("/api/:id/notification", protegerAcces, async (req, res) => {
   res.json({ id: req.params.id, phoneNotification: maj.phoneNotification });
 });
 
+// Etape 76 : numeros d'alerte SUPPLEMENTAIRES (option payante). Le quota est fixe par le seul super-administrateur
+// (PUT /api/marchands/:id/options-payantes) ; ici, le marchand (ou le super-administrateur) remplit la liste dans cette limite.
+// Quota a 0 : refuse pour tout le monde (le super-administrateur doit d'abord ouvrir l'option). Tous ces numeros recoivent
+// les memes alertes que le numero principal (commande, conseiller humain, rendez-vous, sejour...).
+app.put("/api/:id/numeros-notification", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  const quota = quotaNumerosSupp(entry.merchant);
+  if (quota < 1) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const brut = (req.body || {}).numeros;
+  if (!Array.isArray(brut)) return res.status(400).json({ erreur: "numeros doit être une liste de numéros." });
+  const propres = []; const vus = new Set(chiffresTel(entry.merchant.phoneNotification) ? [chiffresTel(entry.merchant.phoneNotification)] : []);
+  for (let i = 0; i < brut.length; i++) {
+    const texte = String(brut[i] == null ? "" : brut[i]).trim();
+    if (!texte) continue;
+    const c = chiffresTel(texte);
+    if (c.length < 8 || c.length > 15 || /[^\d\s+().-]/.test(texte)) return res.status(400).json({ erreur: "Numéro invalide : « " + texte.slice(0, 30) + " » (8 à 15 chiffres, avec l'indicatif du pays, ex. 237670000000)." });
+    if (vus.has(c)) return res.status(400).json({ erreur: "Numéro en double (ou identique au numéro principal) : « " + texte.slice(0, 30) + " »." });
+    vus.add(c); propres.push(c);
+  }
+  if (propres.length > quota) return res.status(400).json({ erreur: "Ce marchand peut avoir " + quota + " numéro(s) supplémentaire(s) au maximum." });
+  const maj = await db.updateMerchantFields(req.params.id, { numerosNotificationSupp: propres });
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  entry.merchant.numerosNotificationSupp = maj.numerosNotificationSupp;
+  res.json({ id: req.params.id, numeros: maj.numerosNotificationSupp, quota });
+});
+
 // -- Numero WhatsApp "public" du marchand (celui que ses clients contactent reellement) : sert UNIQUEMENT
 // a generer les liens de commande wa.me par article (bouton "Copier le lien" dans /admin > Catalogue,
 // demande le 15 septembre 2026 pour les marchands qui postent leurs articles dans des groupes WhatsApp et
@@ -3192,7 +3255,14 @@ app.put("/api/:id/filigrane-logo", protegerAcces, async (req, res) => {
 // habituelles qui, contrairement a elles, remontent le detail au lieu de se contenter de logguer).
 app.post("/api/marchands/:id/tester-alerte", protegerAcces, async (req, res) => {
   const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
-  const destinataire = entry.merchant.phoneNotification;
+  // Etape 76 : `numero` (facultatif) teste l'un des numeros supplementaires autorises ; sans lui, le numero principal.
+  const numeroDemande = req.body && req.body.numero ? String(req.body.numero) : null;
+  const destinataire = numeroDemande
+    ? numerosAlerteDe(entry.merchant).filter((n) => chiffresTel(n) === chiffresTel(numeroDemande))[0] || null
+    : entry.merchant.phoneNotification;
+  if (numeroDemande && !destinataire) {
+    return res.status(400).json({ erreur: "Ce numéro ne fait pas partie des numéros d'alerte de ce marchand." });
+  }
   if (!destinataire) {
     return res.status(400).json({ erreur: "Configurez d'abord un numéro de notification ci-dessus avant de tester l'alerte." });
   }
@@ -3634,9 +3704,9 @@ app.post("/webhook", async (req, res) => {
         // l'alerte maintenant" (voir GET /api/marchands) - sans ca, un marchand n'a aucun moyen de savoir
         // POURQUOI une VRAIE alerte echoue, contrairement au bouton de test qui lui montre deja le detail
         // d'un echec immediat (mais jamais d'un echec survenant apres coup, cote livraison).
-        if (marchandStatut && marchandStatut.merchant.phoneNotification) {
+        if (marchandStatut && numerosAlerteDe(marchandStatut.merchant).length) {
           const chiffres = (txt) => String(txt || "").replace(/\D/g, "");
-          if (chiffres(marchandStatut.merchant.phoneNotification) === chiffres(detail.destinataire)) {
+          if (numerosAlerteDe(marchandStatut.merchant).some((n) => chiffres(n) === chiffres(detail.destinataire))) {
             db.updateMerchantFields(merchantIdStatut, { derniereErreurAlerte: detail })
               .then((maj) => { if (maj) marchandStatut.merchant.derniereErreurAlerte = maj.derniereErreurAlerte; })
               .catch((err) => console.error(`[${merchantIdStatut}] Echec d'enregistrement de la derniere erreur d'alerte :`, err));

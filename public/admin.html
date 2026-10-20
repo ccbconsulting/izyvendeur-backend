@@ -1344,7 +1344,19 @@ const I18N = {
     trpImportResultatLignes: "{ajoutes} ligne(s) ajoutée(s).",
     trpImportResultatDeparts: "{ajoutes} départ(s) ajouté(s).",
     act_transport_lignes_importees: "Lignes de transport importées (fichier)",
-    act_transport_departs_importes: "Départs de transport importés (fichier)"
+    act_transport_departs_importes: "Départs de transport importés (fichier)",
+    h3NumerosSupp: "Numéros d'alerte supplémentaires",
+    noteNumerosSuppSuperadmin: "Option payante : nombre de numéros supplémentaires que ce marchand peut ajouter pour recevoir les mêmes alertes que le numéro principal (nouvelle commande, demande de conseiller, rendez-vous, séjour, billet). 0 = option fermée. Seul le super-administrateur peut modifier ce nombre ; le marchand remplit ensuite la liste dans cette limite. Si vous réduisez le nombre, les numéros en trop cessent de recevoir les alertes (ils ne sont pas effacés).",
+    labelNbNumerosSupp: "Nombre de numéros supplémentaires autorisés (0 à {max})",
+    alertNbNumerosEnregistre: "Nombre de numéros enregistré.",
+    noteNumerosSuppMarchand: "Vous pouvez ajouter jusqu'à {n} numéro(s) en plus du numéro principal. Ils reçoivent les mêmes alertes. Écrivez chaque numéro avec l'indicatif du pays (ex. 237670000000), enregistrez, puis testez chacun : une personne qui n'a jamais écrit au bot ne reçoit l'alerte que si le modèle de message est approuvé par Meta.",
+    labelNumeroSupp: "Numéro supplémentaire {i}",
+    btnAjouterNumeroSupp: "Ajouter un numéro",
+    btnTesterNumero: "Tester",
+    alertNumerosSuppEnregistres: "Numéros enregistrés.",
+    noteNumerosEnTrop: "{n} numéro(s) dépassent le quota actuel et ne reçoivent plus d'alertes.",
+    alertEnregistrerAvantTester: "Enregistrez d'abord la liste avant de tester ce numéro.",
+    act_numeros_notification_modifies: "Numéros d'alerte supplémentaires modifiés"
   },
   en: {
     admin: "Admin",
@@ -2501,7 +2513,19 @@ const I18N = {
     trpImportResultatLignes: "{ajoutes} route(s) added.",
     trpImportResultatDeparts: "{ajoutes} departure(s) added.",
     act_transport_lignes_importees: "Transport routes imported (file)",
-    act_transport_departs_importes: "Transport departures imported (file)"
+    act_transport_departs_importes: "Transport departures imported (file)",
+    h3NumerosSupp: "Additional alert numbers",
+    noteNumerosSuppSuperadmin: "Paid option: number of additional numbers this merchant can add to receive the same alerts as the main number (new order, advisor request, appointment, stay, ticket). 0 = option closed. Only the super-administrator can change this number; the merchant then fills the list within that limit. If you lower it, the extra numbers stop receiving alerts (they are not deleted).",
+    labelNbNumerosSupp: "Number of additional numbers allowed (0 to {max})",
+    alertNbNumerosEnregistre: "Number of numbers saved.",
+    noteNumerosSuppMarchand: "You can add up to {n} number(s) besides the main number. They receive the same alerts. Write each number with the country code (e.g. 237670000000), save, then test each one: a person who has never written to the bot only receives the alert if the message template is approved by Meta.",
+    labelNumeroSupp: "Additional number {i}",
+    btnAjouterNumeroSupp: "Add a number",
+    btnTesterNumero: "Test",
+    alertNumerosSuppEnregistres: "Numbers saved.",
+    noteNumerosEnTrop: "{n} number(s) exceed the current limit and no longer receive alerts.",
+    alertEnregistrerAvantTester: "Save the list first before testing this number.",
+    act_numeros_notification_modifies: "Additional alert numbers changed"
   }
 };
 
@@ -7692,6 +7716,85 @@ function brancherBlocTesterAlerte() {
   };
 }
 
+// ---------------- Numeros d'alerte supplementaires (Etape 76) : option payante, quota fixe par le SEUL super-administrateur ----------------
+// Le super-administrateur choisit combien de numeros le marchand peut ajouter (0 = option fermee, invisible pour le marchand) ;
+// le marchand remplit la liste dans cette limite. Tous ces numeros recoivent les memes alertes que le numero principal.
+function blocNumerosSuppHtml() {
+  const quota = Number(marchandActif.nbNumerosNotificationSupp) || 0;
+  const superadmin = moi && moi.role === "superadmin";
+  if (!superadmin && quota < 1) return ""; // jamais visible pour un marchand ou un employe tant que l'option n'est pas ouverte
+  let h = "<h3>" + t("h3NumerosSupp") + "</h3>";
+  if (superadmin) {
+    const max = Number(marchandActif.plafondNumerosNotificationSupp) || 50;
+    h += "<p class='raison'>" + t("noteNumerosSuppSuperadmin") + "</p>" +
+      "<label>" + t("labelNbNumerosSupp", { max: max }) + "</label>" +
+      "<input type='number' min='0' max='" + max + "' id='champNbNumerosSupp' value='" + quota + "' /> " +
+      "<button id='btnSauverNbNumeros' class='principal'>" + t("enregistrer") + "</button>";
+  }
+  if (quota >= 1) {
+    h += "<p class='raison'>" + t("noteNumerosSuppMarchand", { n: quota }) + "</p><div id='listeNumerosSupp'></div>";
+  }
+  return h;
+}
+function brancherBlocNumerosSupp() {
+  const quota = Number(marchandActif.nbNumerosNotificationSupp) || 0;
+  const btnQuota = document.getElementById("btnSauverNbNumeros");
+  if (btnQuota) btnQuota.onclick = async () => {
+    try {
+      const n = parseInt(document.getElementById("champNbNumerosSupp").value, 10);
+      await api("/api/marchands/" + marchandActif.id + "/options-payantes", { method: "PUT", body: JSON.stringify({ nbNumerosNotification: Number.isFinite(n) ? n : 0 }) });
+      alert(t("alertNbNumerosEnregistre"));
+      const idMarchand = marchandActif.id;
+      await demarrer();
+      if (marchands.some((m) => m.id === idMarchand)) choisirMarchand(idMarchand);
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  const zone = document.getElementById("listeNumerosSupp");
+  if (!zone || quota < 1) return;
+  const enregistres = (marchandActif.numerosNotificationSupp || []).slice();
+  let local = enregistres.slice();
+  function redraw() {
+    const enTrop = Math.max(0, enregistres.length - quota);
+    zone.innerHTML =
+      (enTrop ? "<p class='erreur'>" + esc(t("noteNumerosEnTrop", { n: enTrop })) + "</p>" : "") +
+      local.map((n, i) =>
+        "<div style='margin-bottom:6px;'><label style='display:inline-block;min-width:170px;'>" + esc(t("labelNumeroSupp", { i: i + 1 })) + "</label> " +
+        "<input class='champNumeroSupp' data-i='" + i + "' value=\"" + esc(n) + "\" /> " +
+        "<button type='button' data-tester='" + i + "'>" + t("btnTesterNumero") + "</button> " +
+        "<button type='button' class='danger' data-suppr='" + i + "'>×</button></div>"
+      ).join("") +
+      (local.length < quota ? "<button type='button' id='btnAjouterNumeroSupp'>" + t("btnAjouterNumeroSupp") + "</button> " : "") +
+      "<button type='button' id='btnSauverNumerosSupp' class='principal'>" + t("enregistrer") + "</button>";
+    Array.prototype.forEach.call(zone.querySelectorAll(".champNumeroSupp"), (inp) => { inp.oninput = () => { local[Number(inp.dataset.i)] = inp.value; }; });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr]"), (b) => { b.onclick = () => { local.splice(Number(b.dataset.suppr), 1); redraw(); }; });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-tester]"), (b) => {
+      b.onclick = async () => {
+        const valeur = String(local[Number(b.dataset.tester)] || "").replace(/\D/g, "");
+        if (!valeur || !enregistres.some((x) => String(x).replace(/\D/g, "") === valeur)) { alert(t("alertEnregistrerAvantTester")); return; }
+        b.disabled = true;
+        try {
+          const rep = await api("/api/marchands/" + marchandActif.id + "/tester-alerte", { method: "POST", body: JSON.stringify({ numero: valeur }) });
+          if (rep.canal === "template") alert(t("testAlerteSuccesTemplate", { nom: rep.nomTemplate, numero: rep.destinataire }));
+          else if (rep.canal === "texte_libre") alert(t("testAlertePartiel", { nom: rep.nomTemplate, numero: rep.destinataire }));
+          else alert(t("testAlerteEchec", { nom: rep.nomTemplate, numero: rep.destinataire }) + (rep.detailTemplate && rep.detailTemplate.erreur ? "\n" + rep.detailTemplate.erreur : ""));
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
+        b.disabled = false;
+      };
+    });
+    const ajout = document.getElementById("btnAjouterNumeroSupp");
+    if (ajout) ajout.onclick = () => { local.push(""); redraw(); };
+    document.getElementById("btnSauverNumerosSupp").onclick = async () => {
+      try {
+        const rep = await api("/api/" + marchandActif.id + "/numeros-notification", { method: "PUT", body: JSON.stringify({ numeros: local.filter((x) => String(x).trim() !== "") }) });
+        marchandActif.numerosNotificationSupp = rep.numeros;
+        alert(t("alertNumerosSuppEnregistres"));
+        renderCompte();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+  redraw();
+}
+
 async function renderCompte() {
   const zone = document.getElementById("contenuOnglet");
 
@@ -7716,12 +7819,14 @@ async function renderCompte() {
       "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
       "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
       blocTesterAlerteHtml() +
+      blocNumerosSuppHtml() +
       (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "") +
       blocLogoHtml() +
       blocImageAccueilWhatsappHtml() +
       blocQrHtml();
     brancherBlocOptionsPayantes();
     brancherBlocTesterAlerte();
+    brancherBlocNumerosSupp();
     if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
     brancherBlocLogo();
     brancherBlocImageAccueilWhatsapp();
@@ -7806,11 +7911,13 @@ async function renderCompte() {
     "<input id='champNotification' value=\"" + esc(marchandActif.phoneNotification || "") + "\" />" +
     "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
     blocTesterAlerteHtml() +
+    blocNumerosSuppHtml() +
     (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "") +
     blocLogoHtml() +
     blocImageAccueilWhatsappHtml() +
     blocQrHtml();
   brancherBlocTesterAlerte();
+  brancherBlocNumerosSupp();
   if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
   brancherBlocLogo();
   brancherBlocImageAccueilWhatsapp();

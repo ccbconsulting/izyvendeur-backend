@@ -2427,3 +2427,23 @@ Deux imports, dans les onglets **Lignes et tarifs** et **Départs** de /admin (b
 **Règles.** L'import **fusionne** et n'écrase jamais : une ligne déjà présente (même nom) ou un départ déjà présent (même ligne, sens et heure) est ignoré et signalé. Les lignes fautives sont ignorées avec leur numéro de ligne et la raison (« ligne 4 (Express) : tarif pour une classe inconnue… »), les lignes valides sont importées. 200 lignes de fichier au maximum. L'import est tracé au Journal d'activité (« Lignes de transport importées », « Départs de transport importés »).
 
 Fichiers modifiés : `server.js`, `public/admin.html`. **Nouveau fichier : `importTransport.js`** (à copier avec les autres). Aucune migration, aucune variable d'environnement.
+
+## Étape 76 — Numéros d'alerte supplémentaires (option payante, accordée par le super-administrateur seul)
+
+Jusqu'ici une seule personne (le « numéro de notification » du marchand) recevait les alertes de nouvelle commande, de demande d'humain, etc. Cette étape permet d'ajouter d'autres numéros qui reçoivent **exactement les mêmes alertes** (aucun routage par type d'alerte).
+
+**1. Option payante, réservée au super-administrateur.** Dans « Mon compte » du marchand, le bloc **« Numéros d'alerte supplémentaires »** affiche, pour le super-administrateur uniquement, le champ **« Nombre de numéros supplémentaires autorisés »** (0 à 50 ; 0 = option fermée). C'est lui qui choisit combien de numéros chaque marchand peut ajouter. Tant que ce nombre est à 0, **ni le marchand ni ses employés ne voient quoi que ce soit** : ni le bloc, ni la liste enregistrée (l'API ne la renvoie pas non plus). Le marchand ne peut jamais modifier son propre quota (réponse 403). Le réglage est tracé au Journal sous « options payantes » (invisible pour le marchand).
+
+**2. Le marchand remplit sa liste dans la limite du quota.** Une fois le quota ouvert, le marchand voit la liste (ajout, suppression, enregistrement). Les numéros sont ramenés à leurs chiffres (8 à 15, avec l'indicatif pays, ex. 237670000000) ; un numéro invalide, en double ou identique au numéro principal est refusé avec un message clair. Le journal du marchand affiche « Numéros d'alerte modifiés ».
+
+**3. Bouton « Tester » par numéro.** Chaque numéro enregistré a son bouton de test (même mécanisme que le test du numéro principal : template d'alerte). Tester d'abord, car un numéro faux ou inactif ne génère aucune erreur visible côté marchand.
+
+**4. Réduction du quota sans perte.** Si le super-administrateur baisse le quota (ex. 5 → 2), la liste du marchand est conservée telle quelle mais seuls les premiers numéros (dans l'ordre de la liste) reçoivent les alertes ; le marchand voit un avertissement « n numéro(s) au-delà du quota ne reçoivent plus les alertes ». Remonter le quota les réactive.
+
+**5. Envoi.** Chaque alerte part vers le numéro principal + les numéros supplémentaires actifs, en parallèle ; l'échec d'un numéro n'empêche pas les autres. Le suivi des échecs de livraison (encadré « Dernier échec de livraison détecté ») prend en compte tous les numéros.
+
+**À savoir.** Chaque numéro supplémentaire déclenche des conversations WhatsApp facturées par Meta : c'est la raison d'être de l'option payante. Le template d'alerte fonctionne vers n'importe quel numéro ; le texte libre de secours n'arrive que si la personne a écrit au bot dans les dernières 24 h, d'où l'intérêt du test.
+
+**Plafond.** 50 par marchand par défaut, modifiable avec la variable d'environnement `MAX_NUMEROS_NOTIFICATION_SUPP` (facultative).
+
+Fichiers modifiés : `server.js`, `db.js`, `public/admin.html`. Aucun nouveau fichier. **Migration SQL automatique** au démarrage (deux colonnes ajoutées à `merchants` par `ADD COLUMN IF NOT EXISTS` : `nb_numeros_notification_supp`, `numeros_notification_supp`) ; rien à faire à la main.
