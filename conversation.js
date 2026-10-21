@@ -11,6 +11,7 @@
 
 const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, DEFAULT_AUTO_CONFIRM_MESSAGE_EN, SEED_CATALOG } = require("./catalog");
 const remisesLib = require("./remises");
+const venteGros = require("./venteGros");
 const db = require("./db");
 const sessionsPersistantes = require("./sessionsPersistantes");
 const sh = require("./shared");
@@ -150,6 +151,8 @@ function createCatalogEngine(merchantKey, options) {
   const conversationsHumain = {}; // memoire seulement (comme `sessions`) - voir shared.js
   const envoyer = (options && options.envoyer) || (async () => {});
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
+  // Etape 78 : true si le super-administrateur a debloque l'option payante « Vente en gros » pour ce marchand (fournie par server.js).
+  const grosActif = (options && typeof options.venteGrosActive === "function") ? options.venteGrosActive : () => false;
   // `options.envoyerImage(destinataire, url, legende)` envoie une photo d'article via WhatsApp (voir
   // storage.js pour l'hebergement, server.js pour l'appel a l'API Graph). No-op si non fourni (compatible
   // avec d'anciens appels/tests qui ne passent pas cette option).
@@ -187,11 +190,11 @@ function createCatalogEngine(merchantKey, options) {
       if (aUnPanier && age <= 30 * J) {
         if (s.stage === "idle" && !s.pendingChoice && !s.attenteChoixContactHumain) return s;
         if (s.stage === "awaiting_order_confirmation" || s.stage === "awaiting_order_correction") return s;
-        const neuve = freshSession(s); neuve.cart = s.cart || []; neuve.fromPhone = s.fromPhone;
+        const neuve = freshSession(s); neuve.gros = null; neuve.cart = s.cart || []; neuve.fromPhone = s.fromPhone;
         if (s.editOrderId && neuve.cart.length) neuve.editOrderId = s.editOrderId; // Etape 73 : le panier est la copie d'une commande en cours de modification
         return neuve;
       }
-      const neuve = freshSession(s); neuve.fromPhone = s.fromPhone;
+      const neuve = freshSession(s); neuve.gros = null; neuve.fromPhone = s.fromPhone;
       return neuve;
     }
   });
@@ -202,6 +205,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.settings) state.settings = { autoConfirmMessage: DEFAULT_AUTO_CONFIRM_MESSAGE };
     if (!state.inventorySnapshots) state.inventorySnapshots = [];
     if (!state.listeAttenteReassort) state.listeAttenteReassort = [];
+    state.gros = venteGros.assurer(state.gros); // Etape 78
     // Retro-compatibilite (29 sept 2026) pour un marchand deja existant avant l'ajout des sessions de
     // caisse : jamais de migration forcee de son etat, juste des valeurs de depart s'il ne les a pas encore.
     if (!state.settings.caisse) state.settings.caisse = Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
@@ -241,6 +245,10 @@ function createCatalogEngine(merchantKey, options) {
       // une adresse de retrait en boutique, voir retraitConfigure() plus bas - sinon la question n'est
       // jamais posee et modeLivraison reste "livraison" par defaut sur la commande, comme avant).
       modeLivraison: null,
+      // Etape 78 (vente en gros) : grossiste identifie { id, nom, methode } (conserve apres une commande, perdu apres 24 h d'inactivite),
+      // question « etes-vous grossiste ? » deja posee dans ce parcours.
+      gros: precedente ? (precedente.gros || null) : null,
+      grosDemande: false,
       // true UNIQUEMENT quand la reponse de CE tour est un "quel article vous interesse ?" (les autres
       // moments ou stage vaut aussi "idle" - ex: en plein choix de couleur/taille, ou juste apres un
       // "merci pour votre commande" - ne doivent PAS re-proposer la liste des articles). Voir
@@ -300,9 +308,191 @@ function createCatalogEngine(merchantKey, options) {
   // Texte du panier avec position numerotee de chaque article, pour que le client puisse en retirer un en
   // indiquant simplement son numero (voir le stage "viewing_cart" plus bas) - utilise a la fois pour
   // l'affichage initial et pour le rappel apres une action (retrait, numero invalide, texte incompris...).
+
+  // ---------------- Etape 78 : vente en gros ----------------
+  // Option payante debloquee par le super-administrateur seul (voir server.js, optionVenteGros). Les prix de gros viennent de la grille
+  // du marchand (state.gros.regles, voir venteGros.js) : le panier est RETARIFE a chaque changement, a partir du prix de detail du
+  // catalogue. Un grossiste reconnu (numero WhatsApp, code ou numero saisi) obtient le prix de gros sans minimum ; un client ordinaire
+  // l'obtient quand le total de pieces de sa commande (toutes tailles melangees) atteint le palier.
+  const GROS_ESSAIS_MAX = 3;
+  const GROS_VERROU_MS = 30 * 60 * 1000;
+  const grosEssais = {}; // telephone -> { n, jusqua } (memoire seulement)
+  const RE_TARIFS_GROS = /(tarifs?|prix|grille|conditions?|offres?)\s+(de\s+|du\s+|en\s+)?gros|wholesale\s+(prices?|rates?|tariffs?|offers?)|^\s*gros\s*$/i;
+  const RE_DEVENIR_GROSSISTE = /devenir\s+(un\s+|une\s+)?grossiste|become\s+(a\s+)?wholesaler|je\s+(veux|voudrais|souhaite)\s+(etre|être)\s+grossiste/i;
+
+  function grosOperationnel() {
+    return grosActif() && !!state && venteGros.assurer(state.gros).regles.length > 0;
+  }
+  function grossisteDeSession(session) {
+    if (!session.gros) return null;
+    if (!grosActif() || !state) { session.gros = null; return null; }
+    const g = venteGros.assurer(state.gros).grossistes.filter((x) => x.id === session.gros.id)[0];
+    if (!g || g.actif === false) { session.gros = null; return null; }
+    return g;
+  }
+  // Numero WhatsApp deja enregistre comme grossiste : reconnu sans rien demander au client.
+  function reconnaitreGrossiste(session) {
+    if (!grosActif() || !state || session.gros) return;
+    if (!session.fromPhone || session.fromPhone === PHONE_SIMULATEUR) return;
+    const g = venteGros.trouverParTelephone(state.gros, session.fromPhone);
+    if (g) session.gros = { id: g.id, nom: g.nom, methode: "telephone" };
+  }
+  function retarifer(session) {
+    if (!grosOperationnel()) { session.grosManque = null; return null; }
+    const estG = !!grossisteDeSession(session);
+    const items = session.cart.map((it) => {
+      const v = findVariant(it.productId, it.couleur, it.taille);
+      return { productId: it.productId, taille: it.taille, prixDetail: v ? v.prix : (it.prixDetail || it.prixUnitaire), quantite: it.quantite };
+    });
+    const r = venteGros.tarifer(state.gros, items, estG);
+    session.cart.forEach((it, i) => {
+      it.prixUnitaire = r.prix[i];
+      if (r.appliques[i]) { it.prixDetail = items[i].prixDetail; it.gros = true; } else { delete it.prixDetail; delete it.gros; }
+    });
+    session.grosManque = r.manque;
+    return r;
+  }
+  // Ligne d'information sous le total d'un panier : prix de gros applique, ou combien d'articles manquent pour l'obtenir.
+  function noteGrosPanier(session) {
+    if (!grosOperationnel()) return "";
+    const appliques = session.cart.some((it) => it.gros);
+    const g = grossisteDeSession(session);
+    if (appliques) {
+      return "\n" + (g
+        ? sh.t(session, "Prix de gros appliqués (" + g.nom + ").", "Wholesale prices applied (" + g.nom + ").")
+        : sh.t(session, "Prix de gros appliqués.", "Wholesale prices applied.")) + noteManque(session, true);
+    }
+    return noteManque(session, false);
+  }
+  function noteManque(session, deja) {
+    const m = session.grosManque;
+    if (!m || !(m.pieces > 0) || grossisteDeSession(session)) return "";
+    return "\n" + (deja
+      ? sh.t(session, "Astuce : ajoutez " + m.pieces + " article" + (m.pieces > 1 ? "s" : "") + " pour débloquer d'autres prix de gros.", "Tip: add " + m.pieces + " more item" + (m.pieces > 1 ? "s" : "") + " to unlock further wholesale prices.")
+      : sh.t(session, "Astuce : ajoutez " + m.pieces + " article" + (m.pieces > 1 ? "s" : "") + " pour obtenir le prix de gros.", "Tip: add " + m.pieces + " more item" + (m.pieces > 1 ? "s" : "") + " to get the wholesale price."));
+  }
+  function messageTarifsGros(session) {
+    const en = sh.langueSession(session) === "en";
+    const lignes = venteGros.lignesTarifs(state.gros, state.catalog, !en, formatFcfa);
+    return sh.t(session,
+      "Nos tarifs de gros (le nombre de pièces se compte sur l'ensemble de votre commande, toutes tailles confondues) :\n" + lignes.join("\n") +
+        "\n\nVous êtes déjà grossiste ? Votre numéro est reconnu automatiquement, sinon indiquez votre code au moment de valider. Pour devenir grossiste, écrivez *devenir grossiste*.",
+      "Our wholesale prices (the number of pieces is counted across your whole order, all sizes together):\n" + lignes.join("\n") +
+        "\n\nAlready a wholesaler? Your number is recognised automatically, otherwise give your code when you check out. To become a wholesaler, write *become a wholesaler*.");
+  }
+  // Question posee UNE fois par parcours, avant le recapitulatif, a un client dont le numero n'est pas connu comme grossiste.
+  function porteGrossiste(session) {
+    if (!grosOperationnel() || grossisteDeSession(session) || session.grosDemande) return null;
+    const g = venteGros.assurer(state.gros);
+    if (!g.demanderAuxInconnus || !g.grossistes.some((x) => x.actif !== false)) return null;
+    const e = grosEssais[session.fromPhone];
+    if (e && e.jusqua > Date.now()) return null;
+    session.grosDemande = true;
+    session.stage = "awaiting_grossiste";
+    session.pendingChoice = { type: "grossiste", options: ["Oui", "Non"] };
+    return sh.t(session,
+      "Avant de finaliser : êtes-vous grossiste chez nous ? Répondez *oui* ou *non*.",
+      "Before we finish: are you one of our wholesalers? Reply *yes* or *no*.");
+  }
+  function traiterVenteGros(session, text, trace) {
+    const tel = session.fromPhone;
+    if (session.stage === "awaiting_grossiste") {
+      trace.entites = { "Réponse client": text };
+      if (parseAffirmative(text)) {
+        session.stage = "awaiting_code_grossiste";
+        trace.action = "Client se déclare grossiste — code demandé";
+        logTrace(session, trace);
+        return sh.t(session,
+          "Parfait ! Envoyez-moi votre code grossiste (exemple : G-XXXXXX) ou le numéro de téléphone sous lequel vous êtes enregistré(e). Tapez *non* pour continuer sans.",
+          "Great! Send me your wholesaler code (e.g. G-XXXXXX) or the phone number you are registered under. Type *no* to continue without.");
+      }
+      if (parseNegative(text)) {
+        trace.action = "Client n'est pas grossiste — suite du parcours au tarif normal ou palier";
+        const suite = finaliserPanier(session);
+        logTrace(session, trace);
+        return suite;
+      }
+      if (matchProduct(text)) { session.stage = "idle"; session.grosDemande = false; trace.action = "Client nomme un article — retour au parcours d'achat"; logTrace(session, trace); return processMessage(session, text); }
+      trace.action = "Réponse non comprise — question grossiste répétée";
+      logTrace(session, trace);
+      session.pendingChoice = { type: "grossiste", options: ["Oui", "Non"] };
+      return sh.t(session, "Êtes-vous grossiste chez nous ? Répondez *oui* ou *non*.", "Are you one of our wholesalers? Reply *yes* or *no*.");
+    }
+    if (session.stage === "awaiting_code_grossiste") {
+      trace.entites = { "Réponse client": "(code grossiste masqué)" };
+      const t = String(text || "").trim();
+      if (parseNegative(t) || /^(annul|cancel|passer|skip|continu)/i.test(t)) {
+        trace.action = "Client renonce au code grossiste — suite du parcours";
+        const suite = finaliserPanier(session);
+        logTrace(session, trace);
+        return suite;
+      }
+      const candidats = [t].concat(t.split(/[\s,;:]+/).filter(Boolean));
+      let trouve = null, methode = null;
+      for (const c of candidats) {
+        const parCode = venteGros.trouverParCode(state.gros, c);
+        if (parCode) { trouve = parCode; methode = "code"; break; }
+        if (venteGros.cleTelephone(c)) {
+          const parTel = venteGros.trouverParTelephone(state.gros, c);
+          if (parTel) { trouve = parTel; methode = "numero_saisi"; break; }
+        }
+      }
+      const e = grosEssais[tel] = grosEssais[tel] || { n: 0, jusqua: 0 };
+      if (trouve) {
+        delete grosEssais[tel];
+        session.gros = { id: trouve.id, nom: trouve.nom, methode };
+        trace.action = "Grossiste identifié (" + methode + ") : " + trouve.nom;
+        const suite = finaliserPanier(session);
+        logTrace(session, trace);
+        return sh.t(session, "Merci " + trouve.nom + " ! Vos prix de gros sont appliqués ✅\n\n", "Thank you " + trouve.nom + "! Your wholesale prices are applied ✅\n\n") + suite;
+      }
+      e.n += 1;
+      if (e.n >= GROS_ESSAIS_MAX) {
+        e.n = 0; e.jusqua = Date.now() + GROS_VERROU_MS;
+        trace.action = "Code grossiste non reconnu " + GROS_ESSAIS_MAX + " fois — suite du parcours au tarif normal";
+        const suite = finaliserPanier(session);
+        logTrace(session, trace);
+        return sh.t(session,
+          "Ce code n'est pas reconnu. Nous continuons au tarif normal ; si vous êtes grossiste, un conseiller peut vous aider (tapez *conseiller*).\n\n",
+          "This code is not recognised. We will continue at the standard price; if you are a wholesaler, an advisor can help (type *advisor*).\n\n") + suite;
+      }
+      trace.action = "Code grossiste non reconnu (essai " + e.n + "/" + GROS_ESSAIS_MAX + ")";
+      logTrace(session, trace);
+      return sh.t(session,
+        "Ce code n'est pas reconnu (essai " + e.n + "/" + GROS_ESSAIS_MAX + "). Renvoyez-le, ou tapez *non* pour continuer au tarif normal.",
+        "This code is not recognised (attempt " + e.n + "/" + GROS_ESSAIS_MAX + "). Send it again, or type *no* to continue at the standard price.");
+    }
+    if (["idle", "awaiting_more_items", "viewing_cart"].indexOf(session.stage) !== -1 && grosOperationnel()) {
+      if (RE_DEVENIR_GROSSISTE.test(text)) {
+        const maintenant = Date.now();
+        if (!session.grosDemandeEnvoyeeLe || maintenant - session.grosDemandeEnvoyeeLe > 6 * 3600 * 1000) {
+          session.grosDemandeEnvoyeeLe = maintenant;
+          notifierMarchand("humain", [tel, "Demande pour devenir grossiste : " + text]).catch((erreur) =>
+            console.error("[" + merchantKey + "] Echec de la notification marchand (devenir grossiste) :", erreur));
+        }
+        trace.entites = { "Réponse client": text };
+        trace.action = "Client demande à devenir grossiste — marchand alerté";
+        logTrace(session, trace);
+        if (session.stage === "idle") session.pretPourChoix = true;
+        return sh.t(session,
+          "Votre demande a bien été transmise : notre équipe vous recontactera pour vous proposer un statut de grossiste. En attendant, vous pouvez continuer vos achats.",
+          "Your request has been forwarded: our team will contact you about wholesaler status. Meanwhile you can keep shopping.");
+      }
+      if (RE_TARIFS_GROS.test(text)) {
+        trace.entites = { "Réponse client": text };
+        trace.action = "Client consulte les tarifs de gros";
+        logTrace(session, trace);
+        if (session.stage === "idle") session.pretPourChoix = true;
+        return messageTarifsGros(session);
+      }
+    }
+    return null;
+  }
+
   function afficherPanierTexte(session, cart) {
+    if (cart === session.cart) retarifer(session);
     const items = describeItemsNumbered(cart);
-    const total = formatFcfa(itemsTotal(cart));
+    const total = formatFcfa(itemsTotal(cart)) + (cart === session.cart ? noteGrosPanier(session) : "");
     const editRef = refEditionEnCours(session);
     const prefixeEdition = editRef ? sh.t(session,
       "✏️ Vous modifiez la commande " + editRef + " (tapez *annuler* pour la garder telle quelle).\n\n",
@@ -339,7 +529,7 @@ function createCatalogEngine(merchantKey, options) {
 
   function messageRecapPanier(session, cart) {
     const items = describeItems(cart);
-    const total = formatFcfa(itemsTotal(cart));
+    const total = formatFcfa(itemsTotal(cart)) + noteGrosPanier(session);
     return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + sh.t(session,
       " Voici votre panier :\n" + items + "\nTotal : " + total + "\n\nPour finaliser, envoyez-moi votre numéro (exemple : 6xxxxxxxx) et votre adresse de livraison.",
       " Here's your cart:\n" + items + "\nTotal: " + total + "\n\nTo finish, please send me your phone number (e.g. 6xxxxxxxx) and delivery address."
@@ -365,7 +555,7 @@ function createCatalogEngine(merchantKey, options) {
   // points d'appel dans processMessage, sur l'abandon du panier).
   function messageChoixModeLivraison(session, cart) {
     const items = describeItems(cart);
-    const total = formatFcfa(itemsTotal(cart));
+    const total = formatFcfa(itemsTotal(cart)) + noteGrosPanier(session);
     return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + sh.t(session,
       " Voici votre panier :\n" + items + "\nTotal : " + total + "\n\nSouhaitez-vous une livraison à domicile, ou un retrait en boutique ?",
       " Here's your cart:\n" + items + "\nTotal: " + total + "\n\nWould you like home delivery, or in-store pickup?"
@@ -380,6 +570,11 @@ function createCatalogEngine(merchantKey, options) {
     // Etape 73 : le panier est la copie d'une commande « Nouvelle » que le client modifie -> on met a jour CETTE commande
     // (pas de nouvelle commande, pas de nouvelle collecte telephone/adresse).
     if (session.editOrderId) return terminerModificationArticles(session);
+    // Etape 78 : grossiste reconnu par son numero, ou question « etes-vous grossiste ? » avant le recapitulatif.
+    reconnaitreGrossiste(session);
+    const porte = porteGrossiste(session);
+    if (porte) return porte;
+    retarifer(session);
     if (retraitConfigure()) {
       session.stage = "awaiting_mode_livraison";
       session.pendingChoice = { type: "mode_livraison", options: ["Livraison", "Retrait en boutique"] };
@@ -514,6 +709,8 @@ function createCatalogEngine(merchantKey, options) {
   }
 
   function createOrderFromCart(sess) {
+    reconnaitreGrossiste(sess);
+    retarifer(sess);
     const items = sess.cart.map((it) => ({
       productId: it.productId,
       produit: it.produit,
@@ -521,7 +718,8 @@ function createCatalogEngine(merchantKey, options) {
       taille: it.taille,
       quantite: it.quantite,
       prixUnitaire: it.prixUnitaire,
-      prix: it.prixUnitaire * it.quantite
+      prix: it.prixUnitaire * it.quantite,
+      prixDetail: it.gros ? it.prixDetail : undefined
     }));
     const total = itemsTotal(items);
     const order = {
@@ -573,6 +771,13 @@ function createCatalogEngine(merchantKey, options) {
       // pour l'instant (seul le dernier recu est montre), mais conserve pour ne rien perdre.
       izyfacturePaiements: []
     };
+    // Etape 78 : commande de gros (grossiste identifie, et/ou prix de gros appliques) - tracee pour le marchand.
+    const grossisteCmd = grossisteDeSession(sess);
+    if (grossisteCmd) order.grossiste = { id: grossisteCmd.id, nom: grossisteCmd.nom, methode: (sess.gros && sess.gros.methode) || "telephone" };
+    if (items.some((x) => x.prixDetail !== undefined)) {
+      order.venteGros = true;
+      order.economieGros = items.reduce((sm, x) => sm + (x.prixDetail !== undefined ? (x.prixDetail - x.prixUnitaire) * x.quantite : 0), 0);
+    }
     state.orders.push(order);
     saveState();
     return order;
@@ -740,6 +945,7 @@ function createCatalogEngine(merchantKey, options) {
       productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille,
       quantite: it.quantite, prixUnitaire: it.prixUnitaire
     }));
+    if (order.grossiste && order.grossiste.id && !session.gros) session.gros = { id: order.grossiste.id, nom: order.grossiste.nom, methode: order.grossiste.methode };
     session.editOrderId = order.id;
     session.pendingOrderId = null;
     session.stage = "viewing_cart";
@@ -757,6 +963,7 @@ function createCatalogEngine(merchantKey, options) {
         "La commande " + ref + " a été confirmée entre-temps : elle ne peut plus être modifiée ici. Pour toute demande, contactez un conseiller.",
         "Order " + ref + " has been confirmed in the meantime: it can no longer be changed here. Please contact an advisor for any request.");
     }
+    retarifer(session);
     o.items = session.cart.map((it) => ({
       productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille,
       quantite: it.quantite, prixUnitaire: it.prixUnitaire, prix: it.prixUnitaire * it.quantite
@@ -908,6 +1115,13 @@ function createCatalogEngine(merchantKey, options) {
             );
       }
       // sinon : on laisse le message continuer dans le traitement normal ci-dessous
+    }
+
+    // Etape 78 : vente en gros (reconnaissance du grossiste, question « etes-vous grossiste ? », code, tarifs de gros, « devenir grossiste »).
+    if (grosActif()) {
+      reconnaitreGrossiste(session);
+      const reponseGros = traiterVenteGros(session, text, trace);
+      if (reponseGros !== null) return reponseGros;
     }
 
     // Etape 73 : « Ma commande » (tape librement, ou ligne « Ma commande » des menus WhatsApp), reconnu a tout moment du parcours d'achat
@@ -1078,13 +1292,17 @@ function createCatalogEngine(merchantKey, options) {
         );
       }
       session.cart.push({ productId: product0.id, produit: product0.nom, couleur: variant0.couleur, taille: variant0.taille, quantite: qty, prixUnitaire: variant0.prix });
+      reconnaitreGrossiste(session);
+      retarifer(session);
+      const ajoute = session.cart[session.cart.length - 1];
+      const noteAjout = noteGrosPanier(session);
       session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
       session.stage = "awaiting_more_items";
       trace.action = "Article ajouté au panier — proposition d'ajouter un autre article";
       logTrace(session, trace);
       return ouverture(session, OUVERTURES_AJOUT, OUVERTURES_AJOUT_EN) + sh.t(session,
-        " Ajouté au panier ✅ " + qty + " × " + joindreVariante(" ", product0.nom, variant0.couleur, variant0.taille) + " — " + formatFcfa(variant0.prix * qty) + ".\nSouhaitez-vous ajouter un autre article, voir votre panier, ou terminer votre commande ?",
-        " Added to cart ✅ " + qty + " × " + joindreVariante(" ", product0.nom, variant0.couleur, variant0.taille) + " — " + formatFcfa(variant0.prix * qty) + ".\nWould you like to add another item, view your cart, or complete your order?"
+        " Ajouté au panier ✅ " + qty + " × " + joindreVariante(" ", product0.nom, variant0.couleur, variant0.taille) + " — " + formatFcfa(ajoute.prixUnitaire * qty) + (ajoute.gros ? " (prix de gros)" : "") + "." + noteAjout + "\nSouhaitez-vous ajouter un autre article, voir votre panier, ou terminer votre commande ?",
+        " Added to cart ✅ " + qty + " × " + joindreVariante(" ", product0.nom, variant0.couleur, variant0.taille) + " — " + formatFcfa(ajoute.prixUnitaire * qty) + (ajoute.gros ? " (wholesale price)" : "") + "." + noteAjout + "\nWould you like to add another item, view your cart, or complete your order?"
       );
     }
 
@@ -1640,7 +1858,7 @@ function createCatalogEngine(merchantKey, options) {
   function traiterMessage(fromPhone, text, opts) {
     if (!state) return "Le service redémarre, un instant s'il vous plaît... / The service is restarting, please hold on...";
 
-    if (!(opts && opts.sansJournalClient)) journaliser(fromPhone, "client", text);
+    if (!(opts && opts.sansJournalClient)) journaliser(fromPhone, "client", sessions[fromPhone] && sessions[fromPhone].stage === "awaiting_code_grossiste" ? "(code grossiste)" : text);
 
     // Reponse du client au choix "reponse ecrite ici" / "etre rappele(e)" (voir sh.messageChoixContact,
     // pose juste apres une demande d'humain ci-dessous) : verifiee AVANT pauseHumainActive() car la pause
@@ -1805,6 +2023,7 @@ function createCatalogEngine(merchantKey, options) {
     // cliquables (titres de boutons/listes, "Parler a un conseiller"...) - voir essayerEnvoyerMenuInteractif.
     if (!s) return null;
     const etat = { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null, cart: s.cart || [], langue: sh.langueSession(s) };
+    try { etat.grosDispo = grosOperationnel(); } catch (e) { etat.grosDispo = false; } // Etape 78 : ligne « Tarifs de gros » des menus
     // Etape 73 : « Ma commande » (lignes de menu et listes d'actions construites par server.js).
     try {
       etat.nbCommandesEnCours = nbCommandesEnCours(fromPhone);
@@ -2373,8 +2592,14 @@ function createCatalogEngine(merchantKey, options) {
 
   // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
   // jamais un article decompte puis un autre refuse en cours de route.
-  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise }) {
+  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros }) {
     if (!state) return { erreur: "Marchand introuvable." };
+    let grossisteVente = null;
+    if (grossisteId) {
+      if (!grosActif()) return { erreur: "La vente en gros n'est pas activée pour ce marchand.", statut: 403 };
+      grossisteVente = venteGros.assurer(state.gros).grossistes.filter((x) => x.id === grossisteId && x.actif !== false)[0];
+      if (!grossisteVente) return { erreur: "Grossiste introuvable ou désactivé." };
+    }
     if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Aucun article dans la vente." };
     if (MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
       return { erreur: "Mode de paiement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
@@ -2408,6 +2633,13 @@ function createCatalogEngine(merchantKey, options) {
       items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, prixUnitaire: v.prix, prix: v.prix * quantite, _variant: v, _remise: ligne.remise });
     }
 
+    // Etape 78 : prix de gros (grille du marchand) calcules cote serveur ; un grossiste identifie n'a aucun minimum.
+    if (grosOperationnel()) {
+      const rg = venteGros.tarifer(state.gros, items.map((it) => ({ productId: it.productId, taille: it.taille, prixDetail: it.prixUnitaire, quantite: it.quantite })), !!grossisteVente);
+      items.forEach((it, i) => {
+        if (rg.appliques[i]) { it.prixDetail = it.prixUnitaire; it.prixUnitaire = rg.prix[i]; it.prix = rg.prix[i] * it.quantite; it.gros = true; }
+      });
+    }
     // Remises (Etape 59) : calculees AVANT de toucher au stock. Le net de la vente reste le seul montant
     // qui compte ailleurs (rapports, journal comptable) ; le brut et le detail des remises sont conserves.
     const calcul = remisesLib.appliquer(items.map((it) => ({ brut: it.prixUnitaire * it.quantite, remise: it._remise })), remiseGlobale);
@@ -2424,7 +2656,7 @@ function createCatalogEngine(merchantKey, options) {
     // Decremente reellement le stock, seulement maintenant que TOUTES les lignes ci-dessus sont validees.
     items.forEach((it) => { it._variant.stockReel = Math.max(0, it._variant.stockReel - it.quantite); });
 
-    const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, prixUnitaire: it.prixUnitaire, prixBrut: it.prixBrut, remiseLigne: it.remiseLigne, prix: it.prix }));
+    const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, prixUnitaire: it.prixUnitaire, prixBrut: it.prixBrut, remiseLigne: it.remiseLigne, prix: it.prix, prixDetail: it.gros ? it.prixDetail : undefined }));
     const order = {
       id: state.nextId++,
       dateISO: new Date().toISOString(),
@@ -2455,14 +2687,74 @@ function createCatalogEngine(merchantKey, options) {
       izyfactureRecuNumero: null,
       izyfacturePaiements: []
     };
+    if (grossisteVente) order.grossiste = { id: grossisteVente.id, nom: grossisteVente.nom, methode: methodeGros || "caisse" };
+    if (items.some((x) => x.gros)) {
+      order.venteGros = true;
+      order.economieGros = items.reduce((sm, x) => sm + (x.gros ? (x.prixDetail - x.prixUnitaire) * x.quantite : 0), 0);
+    }
     state.orders.push(order);
     saveState();
     return { order };
   }
 
+
+  // ---------------- Etape 78 : vente en gros - API pour server.js ----------------
+  function getGros() { return state ? venteGros.assurer(state.gros) : null; }
+  function enregistrerGros() { saveState(); }
+  function definirReglesGros(regles) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const v = venteGros.validerRegles(regles, state.catalog.map((p) => p.id));
+    if (v.erreur) return v;
+    venteGros.assurer(state.gros).regles = v.regles;
+    saveState();
+    return { regles: v.regles };
+  }
+  function definirConfigGros(cfg) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const g = venteGros.assurer(state.gros);
+    if (cfg.criteresCaisse !== undefined) {
+      if (!Array.isArray(cfg.criteresCaisse) || !cfg.criteresCaisse.length || cfg.criteresCaisse.some((c) => venteGros.CRITERES_VALIDES.indexOf(c) === -1)) {
+        return { erreur: "Choisissez au moins un critère de recherche valide (nom, code, téléphone)." };
+      }
+      g.criteresCaisse = venteGros.normaliserCriteres(cfg.criteresCaisse);
+    }
+    if (cfg.demanderAuxInconnus !== undefined) g.demanderAuxInconnus = !!cfg.demanderAuxInconnus;
+    saveState();
+    return { criteresCaisse: g.criteresCaisse, demanderAuxInconnus: g.demanderAuxInconnus };
+  }
+  function ajouterGrossiste(entree) { if (!state) return { erreur: "Marchand introuvable." }; const r = venteGros.ajouterGrossiste(state.gros, entree); if (!r.erreur) saveState(); return r; }
+  function modifierGrossiste(id, patch) { if (!state) return { erreur: "Marchand introuvable." }; const r = venteGros.modifierGrossiste(state.gros, id, patch); if (!r.erreur) saveState(); return r; }
+  function retirerGrossiste(id) { if (!state) return { erreur: "Marchand introuvable." }; const r = venteGros.retirerGrossiste(state.gros, id); if (!r.erreur) saveState(); return r; }
+  function regenererCodeGrossiste(id) { if (!state) return { erreur: "Marchand introuvable." }; const r = venteGros.regenererCode(state.gros, id); if (!r.erreur) saveState(); return r; }
+  function importerGrossistes(lignes) { if (!state) return { erreur: "Marchand introuvable." }; const r = venteGros.importerGrossistes(state.gros, lignes); if (r.ajoutes.length) saveState(); return r; }
+  // Caisse : critere(s) choisi(s) par le proprietaire. Ne renvoie QUE les grossistes trouves (jamais la liste).
+  function rechercherGrossisteCaisse(saisie) {
+    if (!state) return [];
+    const g = venteGros.assurer(state.gros);
+    return venteGros.rechercher(g, saisie, g.criteresCaisse);
+  }
+  function grossistePourVente(id) {
+    if (!state) return null;
+    return venteGros.assurer(state.gros).grossistes.filter((x) => x.id === id && x.actif !== false)[0] || null;
+  }
+  // Apercu des prix de la caisse (meme calcul que creerVentePos) : lignes [{ productId, couleur, taille, quantite }].
+  function apercuPrixGros(lignes, grossisteId) {
+    if (!state || !grosOperationnel()) return { actif: false, lignes: [] };
+    const g = grossisteId ? grossistePourVente(grossisteId) : null;
+    const items = (lignes || []).map((l) => {
+      const v = findVariant(l && l.productId, l && l.couleur, l && l.taille);
+      return { productId: l && l.productId, taille: l && l.taille, prixDetail: v ? v.prix : 0, quantite: Number(l && l.quantite) || 0 };
+    });
+    const r = venteGros.tarifer(state.gros, items, !!g);
+    return { actif: true, grossiste: g ? { id: g.id, nom: g.nom } : null, totalPieces: r.totalPieces, manque: r.manque,
+      lignes: items.map((it, i) => ({ prixUnitaire: r.prix[i], prixDetail: it.prixDetail, gros: r.appliques[i] })) };
+  }
+
   return {
     type: "catalogue",
     init,
+    getGros, enregistrerGros, definirReglesGros, definirConfigGros, ajouterGrossiste, modifierGrossiste, retirerGrossiste, regenererCodeGrossiste,
+    importerGrossistes, rechercherGrossisteCaisse, grossistePourVente, apercuPrixGros,
     balayerSessions: () => persistance.balayer(),
     handleMessage,
     getOrders,

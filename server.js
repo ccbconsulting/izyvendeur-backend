@@ -374,6 +374,8 @@ function vuePourRequete(req, entry, permission) {
 // marchand change de numero/notification apres coup.
 function creerOptionsEngine(merchantKey) {
   return {
+    // Etape 78 : option payante « Vente en gros » (debloquee par le seul super-administrateur) lue en direct par le moteur catalogue.
+    venteGrosActive: () => { const e = engines[merchantKey]; return !!(e && e.merchant && e.merchant.optionVenteGros === true); },
     // Etape 60 : nom commercial du marchand pour l'accueil du moteur rendez-vous ("Bienvenue chez <nom>").
     nomMarchand: () => { const e = engines[merchantKey]; return (e && e.merchant && e.merchant.nom) || ""; },
     envoyer: async (destinataire, texte) => {
@@ -880,6 +882,14 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/parametres": "parametres_modifies",
   "PUT /api/:id/notification": "notification_modifiee",
   "PUT /api/:id/numeros-notification": "numeros_notification_modifies",
+  "PUT /api/:id/gros/regles": "gros_tarifs_modifies",
+  "PUT /api/:id/gros/config": "gros_config_modifiee",
+  "POST /api/:id/gros/grossistes": "grossiste_ajoute",
+  "PUT /api/:id/gros/grossistes/:gid": "grossiste_modifie",
+  "DELETE /api/:id/gros/grossistes/:gid": "grossiste_retire",
+  "POST /api/:id/gros/grossistes/:gid/regenerer-code": "grossiste_code_regenere",
+  "POST /api/:id/gros/importer": "grossistes_importes",
+  "POST /api/:id/pos/gros/identifier": "grossiste_identifie_caisse",
   "PUT /api/:id/numero-whatsapp-public": "numero_public_modifie",
   "PUT /api/:id/filigrane-logo": "filigrane_modifie",
   "POST /api/marchands/:id/tester-alerte": "alerte_testee",
@@ -937,6 +947,14 @@ function detailAuditRequete(code, req) {
     case "services_importes": return { fichier: req.file ? req.file.originalname : null };
     case "facture_creee": case "paiement_facture_enregistre":
       return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
+    case "gros_tarifs_modifies": return { tarifs: Array.isArray(b.regles) ? b.regles.length : null };
+    case "gros_config_modifiee": return { criteres: Array.isArray(b.criteresCaisse) ? b.criteresCaisse : null, demanderAuxInconnus: b.demanderAuxInconnus !== undefined ? !!b.demanderAuxInconnus : null };
+    case "grossiste_ajoute": return { grossiste: b.nom || null };
+    case "grossiste_modifie": case "grossiste_retire": case "grossiste_code_regenere": {
+      const gr = entry && entry.moteurs.catalogue && entry.moteurs.catalogue.getGros().grossistes.filter((x) => x.id === p.gid)[0];
+      return { grossiste: gr ? gr.nom : p.gid || null };
+    }
+    case "grossistes_importes": return { fichier: req.file ? req.file.originalname : null };
     case "vente_caisse_remise": return { tentative: "remise", motif: b.motifRemise || null };
     case "facture_caisse_creee": return { vente: p.orderId };
     case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null, plafondRemise: b.plafondRemise !== undefined ? b.plafondRemise : null };
@@ -1268,7 +1286,9 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     // "Caisse POS" (option payante, 29 septembre 2026 - meme principe que les 4 precedentes) : tant que le
     // super-administrateur ne l'a pas debloquee ici, l'onglet Caisse reste invisible cote marchand (voir
     // admin.html) ET POST /api/:id/pos/vente refuse toute action (voir plus bas).
-    optionCaissePos: e.merchant.optionCaissePos === true
+    optionCaissePos: e.merchant.optionCaissePos === true,
+    // Etape 78 : « Vente en gros » (option payante, debloquee par le seul super-administrateur ; invisible cote marchand tant que fermee).
+    optionVenteGros: e.merchant.optionVenteGros === true
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -1553,7 +1573,7 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, nbNumerosNotification } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, nbNumerosNotification } = req.body || {};
   const patch = {};
   // Etape 76 : nombre de numeros d'alerte supplementaires accordes a ce marchand (0 = option fermee). Reserve au super-administrateur
   // (toute la route l'est) ; le marchand remplit ensuite la liste dans cette limite (PUT /api/:id/numeros-notification).
@@ -1576,6 +1596,7 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
     patch.optionFacturationIzyfacture = !!optionFacturationIzyfacture;
   }
   if (optionCaissePos !== undefined) patch.optionCaissePos = !!optionCaissePos;
+  if (optionVenteGros !== undefined) patch.optionVenteGros = !!optionVenteGros;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
   const maj = await db.updateMerchantFields(req.params.id, patch);
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
@@ -1584,9 +1605,10 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionNotificationsStatut = maj.optionNotificationsStatut;
   entry.merchant.optionFacturationIzyfacture = maj.optionFacturationIzyfacture;
   entry.merchant.optionCaissePos = maj.optionCaissePos;
+  entry.merchant.optionVenteGros = maj.optionVenteGros === true;
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
-  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos });
+  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -2468,19 +2490,31 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise } = req.body || {};
+  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise, jetonGrossiste } = req.body || {};
+  // Etape 78 : un grossiste n'est jamais designe par le navigateur lui-meme (id libre) mais par un jeton court emis par
+  // POST /api/:id/pos/gros/identifier pour CE caissier et CE marchand, apres une recherche reussie selon les criteres du proprietaire.
+  let grossisteId = null;
+  if (jetonGrossiste) {
+    const jg = lireJetonGrossiste(req, jetonGrossiste);
+    if (!jg) return res.status(403).json({ erreur: "Identification du grossiste expirée ou invalide : recommencez la recherche." });
+    grossisteId = jg.grossisteId;
+  }
   const resultat = entry.engine.creerVentePos({
-    lignes, modePaiement, referencePaiement, caissier: req.auth.adminUser, remiseGlobale, motifRemise,
+    lignes, modePaiement, referencePaiement, caissier: req.auth.adminUser, remiseGlobale, motifRemise, grossisteId, methodeGros: "caisse",
     verifierRemise: (info) => controleRemise(req, info.pourcentEffectif)
   });
   if (resultat.erreur) return res.status(resultat.statut || 400).json({ erreur: resultat.erreur });
+  if (jetonGrossiste) jetonsGrossiste.delete(jetonGrossiste); // usage unique : consomme seulement apres une vente reussie
+  const extraGros = [];
+  if (resultat.order.grossiste) extraGros.push({ action: "vente_caisse_gros", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), grossiste: resultat.order.grossiste.nom, economie: resultat.order.economieGros || 0 } });
   // Etape 59 : seules les ventes avec remise sont tracees dans le journal d'audit (pas chaque vente).
   const rm = resultat.order.remise;
   // Chaque vente reste journalisee comme avant (« vente_caisse ») ; une vente avec remise ajoute une ligne dediee
   // « vente_caisse_remise » (brut, remise, pourcentage, motif) pour retrouver facilement les remises accordees.
   if (rm) {
-    res.locals.auditExtra = [{ action: "vente_caisse_remise", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), brut: resultat.order.prixBrut, remise: rm.montant, pourcent: rm.pourcentEffectif, motif: rm.motif } }];
+    extraGros.push({ action: "vente_caisse_remise", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), brut: resultat.order.prixBrut, remise: rm.montant, pourcent: rm.pourcentEffectif, motif: rm.motif } });
   }
+  if (extraGros.length) res.locals.auditExtra = extraGros;
   res.status(201).json(resultat.order);
 });
 
@@ -3301,6 +3335,161 @@ app.put("/api/:id/numeros-notification", protegerAcces, async (req, res) => {
   res.json({ id: req.params.id, numeros: maj.numerosNotificationSupp, quota });
 });
 
+// -- Etape 78 : VENTE EN GROS (option payante, debloquee par le SEUL super-administrateur - voir options-payantes) --
+// Tout ce qui concerne la grille, la liste des grossistes et leurs codes est reserve au PROPRIETAIRE (et au super-administrateur) ;
+// un employe n'y a jamais acces. A la caisse, l'employe ne fait que chercher UN grossiste selon les criteres fixes par le
+// proprietaire et n'obtient jamais la liste ni les codes.
+function entreeGros(req, res, permission, reserveGestionnaire) {
+  let entry = getMarchandAutorise(req, res, permission); if (!entry) return null;
+  if (entry.moteurs && entry.moteurs.catalogue && entry.engine.type !== "catalogue") entry = vueEntree(entry, "catalogue"); // marchand hybride : toujours le volet catalogue
+  if (entry.engine.type !== "catalogue") { res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." }); return null; }
+  if (!entry.merchant.optionVenteGros) { res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." }); return null; }
+  if (reserveGestionnaire && !estGestionnaireDuMarchand(req, req.params.id)) { res.status(403).json({ erreur: "Réservé au propriétaire." }); return null; }
+  return entry;
+}
+const jetonsGrossiste = new Map(); // jeton -> { merchantId, user, grossisteId, expire }
+const echecsRechercheGros = new Map(); // merchantId|user -> { n, jusqua, debut }
+const GROS_JETON_MS = 30 * 60 * 1000;
+const GROS_ECHECS_MAX = 8;
+const GROS_ECHECS_FENETRE_MS = 10 * 60 * 1000;
+function nettoyerJetonsGrossiste() { const t = Date.now(); for (const [k, v] of jetonsGrossiste) if (v.expire <= t) jetonsGrossiste.delete(k); }
+function lireJetonGrossiste(req, jeton) {
+  nettoyerJetonsGrossiste();
+  const j = jetonsGrossiste.get(String(jeton));
+  if (!j || j.merchantId !== req.params.id || j.user !== req.auth.adminUser) return null;
+  return j;
+}
+function csvCellule(v) { const t = String(v == null ? "" : v); return /[";\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }
+
+app.get("/api/:id/gros", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const g = entry.engine.getGros();
+  res.json({ regles: g.regles, grossistes: g.grossistes, criteresCaisse: g.criteresCaisse, demanderAuxInconnus: g.demanderAuxInconnus });
+});
+app.put("/api/:id/gros/regles", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const r = entry.engine.definirReglesGros((req.body || {}).regles);
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json({ regles: r.regles });
+});
+app.put("/api/:id/gros/config", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.engine.definirConfigGros({ criteresCaisse: b.criteresCaisse, demanderAuxInconnus: b.demanderAuxInconnus });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json(r);
+});
+app.post("/api/:id/gros/grossistes", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const r = entry.engine.ajouterGrossiste(req.body || {});
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.status(201).json(r.grossiste);
+});
+app.put("/api/:id/gros/grossistes/:gid", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.engine.modifierGrossiste(req.params.gid, { nom: b.nom, telephone: b.telephone, note: b.note, actif: b.actif });
+  if (r.erreur) return res.status(r.erreur === "Grossiste introuvable." ? 404 : 400).json({ erreur: r.erreur });
+  res.json(r.grossiste);
+});
+app.delete("/api/:id/gros/grossistes/:gid", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const r = entry.engine.retirerGrossiste(req.params.gid);
+  if (r.erreur) return res.status(404).json({ erreur: r.erreur });
+  res.json({ ok: true });
+});
+app.post("/api/:id/gros/grossistes/:gid/regenerer-code", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const r = entry.engine.regenererCodeGrossiste(req.params.gid);
+  if (r.erreur) return res.status(404).json({ erreur: r.erreur });
+  res.json(r.grossiste);
+});
+app.post("/api/:id/gros/importer", protegerAcces, uploadFichierCatalogue.single("fichier"), (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"fichier\" attendu)." });
+  const texte = req.file.buffer.toString("utf8").replace(/^﻿/, "");
+  const lignes = texte.split(/\r\n|\n|\r/).filter((l) => l.trim() !== "");
+  if (!lignes.length) return res.status(400).json({ erreur: "Fichier vide." });
+  if (lignes.length > 5001) return res.status(400).json({ erreur: "Fichier trop long (5 000 grossistes maximum par import)." });
+  const separateur = lignes[0].indexOf(";") !== -1 ? ";" : (lignes[0].indexOf("\t") !== -1 ? "\t" : ",");
+  const entetes = parserLigneCsv(lignes[0], separateur).map((h) => sansAccents(h).toLowerCase());
+  const idx = (m) => entetes.findIndex((h) => h.indexOf(m) !== -1);
+  let iNom = idx("nom"), iTel = idx("tel"), iNote = idx("note");
+  let debut = 1;
+  if (iNom === -1) { // pas d'en-tete : colonnes dans l'ordre Nom ; Telephone ; Note
+    iNom = 0; iTel = 1; iNote = 2; debut = 0;
+  }
+  const brutes = [];
+  for (let i = debut; i < lignes.length; i++) {
+    const c = parserLigneCsv(lignes[i], separateur);
+    if (!(c[iNom] || "").trim()) continue;
+    brutes.push({ nom: c[iNom], telephone: iTel >= 0 ? c[iTel] : "", note: iNote >= 0 ? c[iNote] : "" });
+  }
+  const r = entry.engine.importerGrossistes(brutes);
+  res.json({ ajoutes: r.ajoutes.length, ignores: r.ignores.slice(0, 50), nbIgnores: r.ignores.length });
+});
+app.get("/api/:id/gros/export", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const g = entry.engine.getGros();
+  const lignes = ["Nom;Téléphone;Code;Note;Actif"].concat(g.grossistes.map((x) => [x.nom, x.telephone, x.code, x.note, x.actif === false ? "non" : "oui"].map(csvCellule).join(";")));
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="grossistes.csv"');
+  res.send("﻿" + lignes.join("\r\n") + "\r\n");
+});
+
+// Caisse : recherche d'UN grossiste selon les criteres fixes par le proprietaire (OU entre les criteres). Ne renvoie que le(s) nom(s)
+// trouve(s) et, pour chacun, un jeton a usage unique lie a ce caissier : jamais la liste, jamais un code ni un telephone.
+app.post("/api/:id/pos/gros/identifier", protegerAcces, (req, res) => {
+  const entry = entreeGros(req, res, "caisse", false); if (!entry) return;
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const cle = req.params.id + "|" + req.auth.adminUser;
+  const maintenant = Date.now();
+  let e = echecsRechercheGros.get(cle);
+  if (e && e.jusqua > maintenant) return res.status(429).json({ erreur: "Trop de recherches infructueuses : réessayez dans quelques minutes." });
+  if (!e || maintenant - e.debut > GROS_ECHECS_FENETRE_MS) { e = { n: 0, jusqua: 0, debut: maintenant }; echecsRechercheGros.set(cle, e); }
+  const saisie = String((req.body || {}).saisie == null ? "" : (req.body || {}).saisie).trim().slice(0, 80);
+  if (!saisie) return res.status(400).json({ erreur: "Saisissez le nom, le code ou le téléphone du grossiste." });
+  const trouves = entry.engine.rechercherGrossisteCaisse(saisie);
+  if (!trouves.length) {
+    e.n += 1;
+    if (e.n >= GROS_ECHECS_MAX) { e.jusqua = maintenant + GROS_ECHECS_FENETRE_MS; e.n = 0; }
+    res.locals.audit = { detail: { resultat: "aucun", criteres: entry.engine.getGros().criteresCaisse } };
+    return res.json({ trouves: [], criteres: entry.engine.getGros().criteresCaisse });
+  }
+  nettoyerJetonsGrossiste();
+  const sortie = trouves.map((gr) => {
+    const jeton = crypto.randomBytes(18).toString("hex");
+    jetonsGrossiste.set(jeton, { merchantId: req.params.id, user: req.auth.adminUser, grossisteId: gr.id, expire: maintenant + GROS_JETON_MS });
+    return { id: gr.id, nom: gr.nom, jeton };
+  });
+  e.n = 0;
+  res.locals.audit = { detail: { resultat: "trouve", grossistes: sortie.map((x) => x.nom), criteres: entry.engine.getGros().criteresCaisse } };
+  res.json({ trouves: sortie, criteres: entry.engine.getGros().criteresCaisse });
+});
+// Apercu des prix (meme calcul que la vente) : tarif de gros par palier pour un client ordinaire, ou sans minimum pour le grossiste du jeton.
+app.post("/api/:id/pos/gros/apercu", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  if (!entry.merchant.optionVenteGros) return res.json({ actif: false, lignes: [] });
+  const b = req.body || {};
+  let grossisteId = null;
+  if (b.jetonGrossiste) {
+    const jg = lireJetonGrossiste(req, b.jetonGrossiste);
+    if (!jg) return res.status(403).json({ erreur: "Identification du grossiste expirée ou invalide : recommencez la recherche." });
+    grossisteId = jg.grossisteId;
+  }
+  res.json(entry.engine.apercuPrixGros(b.lignes, grossisteId));
+});
+// Informations minimales pour l'ecran de caisse (employe compris) : l'option est-elle active, quels criteres sont autorises (libelle
+// du champ de recherche). Jamais la liste.
+app.get("/api/:id/pos/gros/config", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue" || !entry.merchant.optionVenteGros || !entry.merchant.optionCaissePos) return res.json({ actif: false });
+  const g = entry.engine.getGros();
+  res.json({ actif: true, criteres: g.criteresCaisse, nbRegles: g.regles.length });
+});
+
 // -- Numero WhatsApp "public" du marchand (celui que ses clients contactent reellement) : sert UNIQUEMENT
 // a generer les liens de commande wa.me par article (bouton "Copier le lien" dans /admin > Catalogue,
 // demande le 15 septembre 2026 pour les marchands qui postent leurs articles dans des groupes WhatsApp et
@@ -4085,6 +4274,7 @@ const PREFIXE_VOIR_PLUS = "IZY_PLUS_";
 // Panier multi-articles (moteur catalogue uniquement) : voir conversation.js (sh.demandeVoirPanier, stage
 // "viewing_cart") et essayerEnvoyerMenuInteractif plus bas.
 const ID_PANIER = "IZY_PANIER";
+const ID_TARIFS_GROS = "IZY_TARIFS_GROS"; // Etape 78 : ligne « Tarifs de gros »
 const ID_AUTRE_ARTICLE = "IZY_AUTRE";
 const ID_PANIER_CONTINUER = "IZY_PANIER_CONTINUER";
 const ID_PANIER_TERMINER = "IZY_PANIER_TERMINER";
@@ -4220,6 +4410,8 @@ function lignesMonPanier(marchand, etat) {
     if (n > 0) out.push({ id: ID_PANIER, title: tW(etat, "Mon panier (" + n + ")", "My cart (" + n + ")"), description: tW(etat, "Voir, modifier ou valider", "View, edit or complete") });
     // Etape 73 : « Ma commande » (uniquement si le client a une commande en cours) juste apres « Mon panier ».
     if (etat && etat.nbCommandesEnCours > 0) out.push(ligneMaCommande(etat));
+    // Etape 78 : « Tarifs de gros » (option payante ouverte ET grille renseignee) - visible par tous les clients, pour les inciter a devenir grossistes.
+    if (etat && etat.grosDispo) out.push({ id: ID_TARIFS_GROS, title: tW(etat, "Tarifs de gros", "Wholesale prices"), description: tW(etat, "Prix selon la quantité", "Prices by quantity") });
     return out;
   } catch (e) { return []; }
 }
@@ -4549,6 +4741,7 @@ function resoudreTexteInteractif(marchand, interactive, idForce) {
   if (id === ID_RDV_REPORTER) return "reporter mon rendez-vous";
   if (id.indexOf(PREFIXE_RDV_CHOIX) === 0) return String(Number(id.slice(PREFIXE_RDV_CHOIX.length)) + 1); // position 1-based dans la liste
   if (id === ID_PANIER) return "voir mon panier";
+  if (id === ID_TARIFS_GROS) return "tarifs de gros"; // Etape 78
   if (id === ID_MA_COMMANDE) return "ma commande"; // Etape 73
   if (id === ID_CMD_CONFIRMER) return "confirmer ma commande";
   if (id === ID_CMD_ARTICLES) return "modifier les articles";
@@ -4729,6 +4922,15 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
     const lib = libellesListeAccueil(marchand, etat);
     return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, lib.bouton, [{ title: lib.section, rows }]);
+  }
+
+  // Etape 78 : « Etes-vous grossiste ? » (2 boutons + conseiller). L'etape suivante (saisie du code) reste en texte libre.
+  if (etat.stage === "awaiting_grossiste") {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: ID_OUI, title: tW(etat, "Oui, grossiste", "Yes, wholesaler") },
+      { id: ID_NON, title: tW(etat, "Non", "No") },
+      { id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor") }
+    ]);
   }
 
   // Choix livraison vs retrait en boutique (voir conversation.js / retraitConfigure()) : seulement 2

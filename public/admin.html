@@ -842,6 +842,38 @@ const I18N = {
     theadDureeMinutes: "Durée (minutes)",
     btnAjouterService: "+ Ajouter un service",
     alertServicesEnregistres: "Services enregistrés.",
+    // Etape 78 : vente en gros
+    labelOptionVenteGros: "Vente en gros (grille de prix par palier, liste de grossistes reconnus sur WhatsApp et à la caisse, onglet Vente en gros)",
+    ongletVenteGros: "Vente en gros",
+    grosNoteTarifs: "Le nombre de pièces se compte sur l'ensemble de la commande, toutes tailles mélangées. Un grossiste enregistré obtient ces prix sans minimum, même pour une seule pièce. Si plusieurs tarifs s'appliquent, le plus précis l'emporte : article + taille, puis article, puis taille, puis tous les articles. Le prix de gros n'est jamais appliqué s'il dépasse le prix normal.",
+    grosH3Tarifs: "Tarifs de gros",
+    grosColArticle: "Article", grosTousArticles: "Tous les articles", grosColTaille: "Taille / contenance", grosTailleAide: "vide = toutes",
+    grosColSeuil: "À partir de (pièces)", grosColPrix: "Prix de gros (FCFA / pièce)",
+    grosAjouterTarif: "Ajouter un tarif", grosAucunTarif: "Aucun tarif de gros pour l'instant : tant qu'il n'y en a pas, la vente en gros reste sans effet.",
+    grosEnregistrerTarifs: "Enregistrer les tarifs", grosTarifsEnregistres: "Tarifs de gros enregistrés.",
+    grosH3Recherche: "Recherche d'un grossiste à la caisse",
+    grosNoteRecherche: "Vous choisissez ce que le caissier peut saisir pour retrouver un grossiste. Avec plusieurs critères cochés, l'un OU l'autre suffit. Le code et le téléphone doivent être saisis en entier ; le nom peut être partiel. Le caissier ne voit jamais la liste des grossistes ni leurs codes. Sur WhatsApp, le client donne son code ou son numéro (jamais son nom).",
+    grosCritere_code: "Code", grosCritere_nom: "Nom", grosCritere_telephone: "Téléphone",
+    grosCritereObligatoire: "Cochez au moins un critère.", grosConfigEnregistree: "Réglages enregistrés.",
+    grosDemanderInconnus: "WhatsApp : demander « êtes-vous grossiste ? » aux clients dont le numéro n'est pas enregistré (avant le récapitulatif)",
+    grosH3Liste: "Grossistes",
+    grosNoteListe: "Un grossiste est reconnu automatiquement sur WhatsApp par son numéro. S'il écrit depuis un autre numéro, il donne son code (généré au hasard) : communiquez-le-lui vous-même.",
+    grosFormNom: "Nom", grosFormTel: "Téléphone (avec indicatif, ex. 237670000000)", grosFormTelCourt: "Téléphone", grosFormNote: "Note", grosAjouter: "Ajouter",
+    grosColCode: "Code", grosColActif: "Actif", grosModifier: "Modifier", grosRegenerer: "Nouveau code", grosSupprimer: "Retirer", grosAnnuler: "Annuler",
+    grosConfirmRegenerer: "Générer un nouveau code ? L'ancien code ne fonctionnera plus.",
+    grosConfirmSupprimer: "Retirer ce grossiste de la liste ? Il ne sera plus reconnu.",
+    grosRechercherPlaceholder: "Rechercher (nom, téléphone, code, note)", grosNbListe: "{n} grossiste(s)", grosAffiche200: "Seuls les 200 premiers résultats sont affichés : affinez la recherche.",
+    grosImporter: "Importer une liste (CSV)", grosImportAide: "Colonnes : Nom ; Téléphone ; Note (une ligne par grossiste, séparateur ; ou ,). Un code unique est généré pour chacun. Les numéros déjà présents sont ignorés.",
+    grosImportBtn: "Importer", grosImportResultat: "{n} grossiste(s) ajouté(s).", grosImportIgnores: " {n} ligne(s) ignorée(s) : {details}",
+    grosExporter: "Télécharger la liste (CSV avec les codes)", grosAucun: "Aucun grossiste enregistré.",
+    caisseGrosTitre: "Client grossiste", caisseGrosIdentifier: "Identifier", caisseGrosAucun: "Aucun grossiste trouvé.", caisseGrosIdentifie: "Grossiste : {nom}",
+    caisseGrosRetirer: "Retirer", caisseGrosManque: "Ajoutez {n} pièce(s) pour obtenir le prix de gros.", caisseGrosPrixLabel: "prix de gros", caisseGrosChoisir: "Plusieurs résultats : choisissez.",
+    grosPh_code: "code", grosPh_nom: "nom", grosPh_telephone: "téléphone", caisseGrosPlaceholder: "Grossiste : {criteres}", caisseRecuGrossiste: "Grossiste",
+    badgeGros: "Gros",
+    act_gros_tarifs_modifies: "Tarifs de gros modifiés", act_gros_config_modifiee: "Réglages de la vente en gros modifiés", act_grossiste_ajoute: "Grossiste ajouté",
+    act_grossiste_modifie: "Grossiste modifié", act_grossiste_retire: "Grossiste retiré", act_grossiste_code_regenere: "Code grossiste régénéré", act_grossistes_importes: "Grossistes importés",
+    act_grossiste_identifie_caisse: "Grossiste recherché à la caisse", act_vente_caisse_gros: "Vente en caisse au prix de gros",
+    jdGrossiste: "Grossiste : {g}", jdGrosTarifs: "{n} tarif(s) enregistré(s)", jdGrosCriteres: "Critères : {c}", jdGrosEconomie: "Remise de gros : {m} FCFA", jdVenteRef: "Vente : {v}", jdAucunTrouve: "Aucun résultat",
     nouveauService: "Nouveau service",
 
     rendezvousTitre: "Rendez-vous ({n})",
@@ -2023,6 +2055,38 @@ const I18N = {
     theadDureeMinutes: "Duration (minutes)",
     btnAjouterService: "+ Add a service",
     alertServicesEnregistres: "Services saved.",
+    // Step 78: wholesale
+    labelOptionVenteGros: "Wholesale selling (tiered price grid, wholesaler list recognised on WhatsApp and at the register, Wholesale tab)",
+    ongletVenteGros: "Wholesale",
+    grosNoteTarifs: "The number of pieces is counted across the whole order, all sizes together. A registered wholesaler gets these prices with no minimum, even for a single piece. When several prices apply, the most specific wins: item + size, then item, then size, then all items. A wholesale price is never applied if it is higher than the normal price.",
+    grosH3Tarifs: "Wholesale prices",
+    grosColArticle: "Item", grosTousArticles: "All items", grosColTaille: "Size / volume", grosTailleAide: "empty = all",
+    grosColSeuil: "From (pieces)", grosColPrix: "Wholesale price (FCFA / piece)",
+    grosAjouterTarif: "Add a price", grosAucunTarif: "No wholesale price yet: until there is one, wholesale selling has no effect.",
+    grosEnregistrerTarifs: "Save prices", grosTarifsEnregistres: "Wholesale prices saved.",
+    grosH3Recherche: "Finding a wholesaler at the register",
+    grosNoteRecherche: "You choose what the cashier can type to find a wholesaler. With several criteria ticked, either one is enough. Code and phone must be typed in full; the name can be partial. The cashier never sees the wholesaler list or their codes. On WhatsApp, the customer gives their code or number (never their name).",
+    grosCritere_code: "Code", grosCritere_nom: "Name", grosCritere_telephone: "Phone",
+    grosCritereObligatoire: "Tick at least one criterion.", grosConfigEnregistree: "Settings saved.",
+    grosDemanderInconnus: "WhatsApp: ask \"are you a wholesaler?\" to customers whose number is not registered (before the summary)",
+    grosH3Liste: "Wholesalers",
+    grosNoteListe: "A wholesaler is recognised automatically on WhatsApp by their number. If they write from another number, they give their code (randomly generated): pass it to them yourself.",
+    grosFormNom: "Name", grosFormTel: "Phone (with country code, e.g. 237670000000)", grosFormTelCourt: "Phone", grosFormNote: "Note", grosAjouter: "Add",
+    grosColCode: "Code", grosColActif: "Active", grosModifier: "Edit", grosRegenerer: "New code", grosSupprimer: "Remove", grosAnnuler: "Cancel",
+    grosConfirmRegenerer: "Generate a new code? The old code will stop working.",
+    grosConfirmSupprimer: "Remove this wholesaler from the list? They will no longer be recognised.",
+    grosRechercherPlaceholder: "Search (name, phone, code, note)", grosNbListe: "{n} wholesaler(s)", grosAffiche200: "Only the first 200 results are shown: refine your search.",
+    grosImporter: "Import a list (CSV)", grosImportAide: "Columns: Name ; Phone ; Note (one line per wholesaler, separator ; or ,). A unique code is generated for each. Numbers already present are skipped.",
+    grosImportBtn: "Import", grosImportResultat: "{n} wholesaler(s) added.", grosImportIgnores: " {n} line(s) skipped: {details}",
+    grosExporter: "Download the list (CSV with codes)", grosAucun: "No wholesaler registered.",
+    caisseGrosTitre: "Wholesale customer", caisseGrosIdentifier: "Identify", caisseGrosAucun: "No wholesaler found.", caisseGrosIdentifie: "Wholesaler: {nom}",
+    caisseGrosRetirer: "Remove", caisseGrosManque: "Add {n} more piece(s) to get the wholesale price.", caisseGrosPrixLabel: "wholesale price", caisseGrosChoisir: "Several results: choose one.",
+    grosPh_code: "code", grosPh_nom: "name", grosPh_telephone: "phone", caisseGrosPlaceholder: "Wholesaler: {criteres}", caisseRecuGrossiste: "Wholesaler",
+    badgeGros: "Wholesale",
+    act_gros_tarifs_modifies: "Wholesale prices changed", act_gros_config_modifiee: "Wholesale settings changed", act_grossiste_ajoute: "Wholesaler added",
+    act_grossiste_modifie: "Wholesaler edited", act_grossiste_retire: "Wholesaler removed", act_grossiste_code_regenere: "Wholesaler code regenerated", act_grossistes_importes: "Wholesalers imported",
+    act_grossiste_identifie_caisse: "Wholesaler looked up at the register", act_vente_caisse_gros: "Register sale at wholesale price",
+    jdGrossiste: "Wholesaler: {g}", jdGrosTarifs: "{n} price(s) saved", jdGrosCriteres: "Criteria: {c}", jdGrosEconomie: "Wholesale saving: {m} FCFA", jdVenteRef: "Sale: {v}", jdAucunTrouve: "No result",
     nouveauService: "New service",
 
     rendezvousTitre: "Appointments ({n})",
@@ -2998,6 +3062,7 @@ function construireOnglets() {
     ["commandes", t("ongletCommandes"), renderCommandes, "commandes", "catalogue"],
     marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse", "catalogue"] : null,
     marchandActif.optionCaissePos ? ["rapportcaisse", t("ongletRapportCaisse"), renderRapportCaisse, ["caisse", "rapports"], "catalogue"] : null,
+    marchandActif.optionVenteGros ? ["gros", t("ongletVenteGros"), renderVenteGros, "gestion", "catalogue"] : null,
     ["rapports", t("ongletRapports"), renderRapports, "rapports", "catalogue"],
     ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire", "catalogue"],
     ["parametres", t("ongletParametresCatalogueHyb"), renderParametresCatalogue, "parametres", "catalogue"]
@@ -3090,6 +3155,8 @@ function construireOnglets() {
         // aux autres onglets ci-dessous qui ne dependent que du role de l'utilisateur connecte.
         marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse"] : null,
         marchandActif.optionCaissePos ? ["rapportcaisse", t("ongletRapportCaisse"), renderRapportCaisse, ["caisse", "rapports"]] : null,
+        // Etape 78 : « Vente en gros » (option payante superadmin) - onglet reserve au proprietaire / super-administrateur ("gestion").
+        marchandActif.optionVenteGros ? ["gros", t("ongletVenteGros"), renderVenteGros, "gestion"] : null,
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", t("ongletRapports"), renderRapports, "rapports"],
         ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire"],
@@ -3114,7 +3181,7 @@ function construireOnglets() {
   // Etape 64 : marchand HYBRIDE = onglets regroupes (Tableau de bord, Produits, Rendez-vous, Echanges, Administration).
   // Les boutons d'onglet restent TOUS dans le DOM (allerVersOnglet() et les tuiles du Tableau de bord continuent de
   // fonctionner) ; seuls ceux du groupe actif sont affiches. Marchand a un seul volet : rien n'est regroupe.
-  const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
+  const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", gros: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
     services: "rdv", rendezvous: "rdv", parametresService: "rdv", chambres: "hebergement", sejours: "hebergement", calendrier: "hebergement", parametresHeb: "hebergement", lignes: "transport", departs: "transport", billets: "transport", manifeste: "transport", parametresTrp: "transport", simulateur: "echanges", conversations: "echanges", facturation: "admin", employes: "admin", journal: "admin", compte: "admin" };
   const LIBELLE_GROUPE = { dashboard: t("ongletTableauDeBord"), produits: t("groupeProduits"), rdv: t("groupeRdv"), hebergement: t("groupeHebergement"), transport: t("groupeTransport"), echanges: t("groupeEchanges"), admin: t("groupeAdmin") };
   const barreGroupes = document.getElementById("barreGroupes");
@@ -3706,6 +3773,9 @@ let caisseReferencePaiement = "";
 // chaque ligne du panier (it.remVal / it.remType).
 let caisseRemiseGlobale = { type: "pourcent", valeur: "" };
 let caisseMotifRemise = "";
+// Etape 78 : grossiste identifie a la caisse { id, nom, jeton } (jeton a usage unique emis par le serveur) et dernier apercu des prix.
+let caisseGrossiste = null;
+let caisseGrosApercu = null;
 
 // Droit d'accorder des remises : proprietaire et super-administrateur toujours ; un employe seulement avec
 // le role « remises » (le serveur controle de toute facon le role ET le plafond, ce n'est qu'un confort).
@@ -3748,6 +3818,10 @@ async function renderCaisse() {
     api("/api/" + marchandActif.id + "/caisse/config"),
     api("/api/" + marchandActif.id + "/caisse/session/active")
   ]);
+  // Etape 78 : vente en gros (option payante). Le caissier ne recoit que l'etat de l'option et les criteres autorises, jamais la liste.
+  let grosConfig = { actif: false };
+  if (marchandActif.optionVenteGros) { try { grosConfig = await api("/api/" + marchandActif.id + "/pos/gros/config"); } catch (e) { grosConfig = { actif: false }; } }
+  if (!grosConfig.actif) { caisseGrossiste = null; caisseGrosApercu = null; }
 
   // Aucune session de caisse ouverte : impossible de vendre tant que le billetage de depart n'a pas ete
   // fait (29 sept 2026, meme regle appliquee cote serveur dans creerVentePos - defense en profondeur). On
@@ -3780,23 +3854,53 @@ async function renderCaisse() {
     return caissePanier.find((it) => it.productId === productId && it.couleur === couleur && it.taille === taille);
   }
 
+  // Etape 78 : prix recalcules par le SERVEUR (meme calcul que la vente) a chaque changement du panier ou du grossiste.
+  async function majPrixGros() {
+    if (!grosConfig.actif) return;
+    if (!caissePanier.length) { caisseGrosApercu = null; return; }
+    try {
+      const ap = await api("/api/" + marchandActif.id + "/pos/gros/apercu", {
+        method: "POST",
+        body: JSON.stringify({ lignes: caissePanier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite })), jetonGrossiste: caisseGrossiste ? caisseGrossiste.jeton : undefined })
+      });
+      if (ap.actif) {
+        caissePanier.forEach((it, i) => { const l = ap.lignes[i]; if (l) { it.prixUnitaire = l.prixUnitaire; it.prixDetail = l.prixDetail; it.gros = l.gros; } });
+      }
+      caisseGrosApercu = ap;
+    } catch (e) {
+      if (caisseGrossiste) { caisseGrossiste = null; alert(t("erreurPrefixe") + e.message); await majPrixGros(); }
+    }
+  }
+  async function changerPanier() { await majPrixGros(); redraw(); }
+  function grosBlocHtml() {
+    if (!grosConfig.actif) return "";
+    const ph = t("caisseGrosPlaceholder", { criteres: (grosConfig.criteres || []).map((c) => t("grosPh_" + c)).join(" / ") });
+    return "<div id='blocGrosCaisse' style='margin:8px 0 12px;padding:10px;border:1px solid #cfe3cf;border-radius:8px;background:#f6fbf6;'>" +
+      "<strong>" + t("caisseGrosTitre") + "</strong>" +
+      (caisseGrossiste
+        ? "<div style='margin-top:6px;'>" + t("caisseGrosIdentifie", { nom: "<strong>" + esc(caisseGrossiste.nom) + "</strong>" }) + " <button id='btnGrosRetirer'>" + t("caisseGrosRetirer") + "</button></div>"
+        : "<div style='margin-top:6px;'><input id='champGrosSaisie' autocomplete='off' placeholder=\"" + esc(ph) + "\" style='width:230px;' /> <button id='btnGrosIdentifier'>" + t("caisseGrosIdentifier") + "</button><div id='grosResultats' style='margin-top:6px;'></div></div>") +
+      (caisseGrosApercu && !caisseGrossiste && caisseGrosApercu.manque ? "<div class='raison' style='margin-top:6px;'>" + t("caisseGrosManque", { n: caisseGrosApercu.manque.pieces }) + "</div>" : "") +
+      "</div>";
+  }
+
   function ajouterAuPanier(l) {
     const existante = trouverLignePanier(l.productId, l.couleur, l.taille);
     const dejaAu = existante ? existante.quantite : 0;
     if (dejaAu + 1 > l.stockVirtuel) { alert(t("caisseStockInsuffisant", { n: l.stockVirtuel })); return; }
     if (existante) existante.quantite += 1;
     else caissePanier.push({ productId: l.productId, produit: l.produit, couleur: l.couleur, taille: l.taille, prixUnitaire: l.prix, quantite: 1, stockVirtuel: l.stockVirtuel, remVal: "", remType: "pourcent" });
-    redraw();
+    changerPanier();
   }
 
   function changerQuantite(idx, delta) {
     const it = caissePanier[idx];
     if (!it) return;
     const nouvelle = it.quantite + delta;
-    if (nouvelle < 1) { caissePanier.splice(idx, 1); redraw(); return; }
+    if (nouvelle < 1) { caissePanier.splice(idx, 1); changerPanier(); return; }
     if (nouvelle > it.stockVirtuel) { alert(t("caisseStockInsuffisant", { n: it.stockVirtuel })); return; }
     it.quantite = nouvelle;
-    redraw();
+    changerPanier();
   }
 
   const remiseDe = (it) => specRemiseSaisie(it.remVal, it.remType);
@@ -3859,11 +3963,12 @@ async function renderCaisse() {
         "</div>" +
         "<div style='flex:1; min-width:280px;'>" +
           "<h3>" + t("caissePanierTitre") + "</h3>" +
+          grosBlocHtml() +
           (caissePanier.length
             ? "<table class='table-donnees'><tr><th>" + t("theadArticles") + "</th><th>" + t("caisseQuantiteLabel") + "</th><th>" + t("theadTotal") + "</th><th></th></tr>" +
               caissePanier.map((it, i) =>
                 "<tr>" +
-                  "<td>" + esc(it.produit) + "<br/><span class='raison'>" + esc(it.couleur) + " " + esc(it.taille) + "</span>" +
+                  "<td>" + esc(it.produit) + "<br/><span class='raison'>" + esc(it.couleur) + " " + esc(it.taille) + (it.gros ? " · " + t("caisseGrosPrixLabel") + " " + it.prixUnitaire.toLocaleString(localeCourante()) : "") + "</span>" +
                     (peutAccorderRemises()
                       ? "<div style='margin-top:4px;white-space:nowrap;'><input type='number' min='0' step='any' data-caisse-rem-val='" + i + "' value=\"" + esc(String(it.remVal || "")) + "\" placeholder=\"" + esc(t("remiseLigneLabel")) + "\" style='width:80px;' /> <select data-caisse-rem-type='" + i + "'>" + optionsTypeRemise(it.remType) + "</select></div>"
                       : "") + "</td>" +
@@ -3912,7 +4017,7 @@ async function renderCaisse() {
       btn.onclick = () => changerQuantite(Number(btn.dataset.caisseMoins), -1);
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-retirer]"), (btn) => {
-      btn.onclick = () => { caissePanier.splice(Number(btn.dataset.caisseRetirer), 1); redraw(); };
+      btn.onclick = () => { caissePanier.splice(Number(btn.dataset.caisseRetirer), 1); changerPanier(); };
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-rem-val]"), (inp) => {
       inp.addEventListener("input", () => { caissePanier[Number(inp.dataset.caisseRemVal)].remVal = inp.value; majTotauxCaisse(); });
@@ -3933,6 +4038,27 @@ async function renderCaisse() {
     if (champReferencePaiement) {
       champReferencePaiement.addEventListener("input", () => { caisseReferencePaiement = champReferencePaiement.value; });
     }
+    // Etape 78 : identification du grossiste (criteres fixes par le proprietaire ; le serveur verifie tout).
+    const btnGrosIdentifier = document.getElementById("btnGrosIdentifier");
+    if (btnGrosIdentifier) {
+      const champGros = document.getElementById("champGrosSaisie");
+      const lancerRecherche = async () => {
+        const saisie = champGros.value.trim();
+        if (!saisie) return;
+        try {
+          const r = await api("/api/" + marchandActif.id + "/pos/gros/identifier", { method: "POST", body: JSON.stringify({ saisie }) });
+          const zoneR = document.getElementById("grosResultats");
+          if (!r.trouves.length) { zoneR.innerHTML = "<span class='raison'>" + t("caisseGrosAucun") + "</span>"; return; }
+          if (r.trouves.length === 1) { caisseGrossiste = r.trouves[0]; await changerPanier(); return; }
+          zoneR.innerHTML = "<div class='raison'>" + t("caisseGrosChoisir") + "</div>" + r.trouves.map((x, i) => "<button data-gros-choix='" + i + "' style='margin:2px 4px 2px 0;'>" + esc(x.nom) + "</button>").join("");
+          Array.prototype.forEach.call(zoneR.querySelectorAll("[data-gros-choix]"), (b) => { b.onclick = () => { caisseGrossiste = r.trouves[Number(b.dataset.grosChoix)]; changerPanier(); }; });
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
+      };
+      btnGrosIdentifier.onclick = lancerRecherche;
+      champGros.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); lancerRecherche(); } });
+    }
+    const btnGrosRetirer = document.getElementById("btnGrosRetirer");
+    if (btnGrosRetirer) btnGrosRetirer.onclick = () => { caisseGrossiste = null; changerPanier(); };
     document.getElementById("btnFermerCaisse").onclick = () => afficherFermetureCaisse(configCaisse, sessionActive);
     const champRecherche = document.getElementById("champRechercheCaisse");
     if (champRecherche) {
@@ -3967,10 +4093,12 @@ async function renderCaisse() {
               modePaiement: caisseModePaiement,
               referencePaiement: caisseReferencePaiement.trim(),
               remiseGlobale: globale || undefined,
-              motifRemise: avecRemises && aperc.remiseTotale > 0 ? caisseMotifRemise.trim() : undefined
+              motifRemise: avecRemises && aperc.remiseTotale > 0 ? caisseMotifRemise.trim() : undefined,
+              jetonGrossiste: caisseGrossiste ? caisseGrossiste.jeton : undefined
             })
           });
           caissePanier = [];
+          caisseGrossiste = null; caisseGrosApercu = null;
           caisseTexteRecherche = "";
           caisseModePaiement = "especes";
           caisseReferencePaiement = "";
@@ -3987,7 +4115,173 @@ async function renderCaisse() {
     appliquerFiltreRechercheCaisse();
   }
 
+  await majPrixGros();
   redraw();
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Etape 78 : onglet « Vente en gros » - PROPRIETAIRE et super-administrateur uniquement (permission "gestion" dans construireOnglets,
+// et chaque route /api/:id/gros* le verifie a nouveau cote serveur). N'existe pas tant que le super-administrateur n'a pas debloque
+// l'option payante « Vente en gros » (marchandActif.optionVenteGros). Les codes des grossistes ne sont montres qu'ici.
+// ---------------------------------------------------------------------------------------------------------
+let grosRecherche = "";
+async function renderVenteGros() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  let gros, catalogue;
+  try {
+    [gros, catalogue] = await Promise.all([api("/api/" + marchandActif.id + "/gros"), api("/api/" + marchandActif.id + "/catalogue")]);
+  } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(t("erreurPrefixe") + e.message) + "</p>"; return; }
+  const idm = marchandActif.id;
+  let regles = (gros.regles || []).map((r) => ({ produitId: r.produitId || "", taille: r.taille || "", seuil: r.seuil, prix: r.prix }));
+  let liste = (gros.grossistes || []).slice();
+  let criteres = (gros.criteresCaisse || ["code"]).slice();
+  let demanderInconnus = gros.demanderAuxInconnus !== false;
+  let enEdition = null;
+  const tailles = [];
+  catalogue.forEach((p) => (p.variantes || []).forEach((v) => { if (v.taille && v.taille !== "-" && tailles.indexOf(v.taille) === -1) tailles.push(v.taille); }));
+
+  zone.innerHTML =
+    "<h2>" + t("ongletVenteGros") + "</h2>" +
+    "<p class='raison'>" + t("grosNoteTarifs") + "</p>" +
+    "<h3>" + t("grosH3Tarifs") + "</h3><div id='grosZoneTarifs'></div>" +
+    "<h3 style='margin-top:26px;'>" + t("grosH3Recherche") + "</h3><div id='grosZoneRecherche'></div>" +
+    "<h3 style='margin-top:26px;'>" + t("grosH3Liste") + "</h3><div id='grosZoneListe'></div>";
+  const datalist = "<datalist id='grosListeTailles'>" + tailles.map((x) => "<option value=\"" + esc(x) + "\"></option>").join("") + "</datalist>";
+
+  function dessinerTarifs() {
+    const z = document.getElementById("grosZoneTarifs");
+    z.innerHTML = datalist +
+      (regles.length
+        ? "<table class='table-donnees'><tr><th>" + t("grosColArticle") + "</th><th>" + t("grosColTaille") + "</th><th>" + t("grosColSeuil") + "</th><th>" + t("grosColPrix") + "</th><th></th></tr>" +
+          regles.map((r, i) =>
+            "<tr><td><select data-gr-art='" + i + "'><option value=''>" + t("grosTousArticles") + "</option>" + catalogue.map((p) => "<option value=\"" + esc(p.id) + "\"" + (p.id === r.produitId ? " selected" : "") + ">" + esc(p.nom) + "</option>").join("") + "</select></td>" +
+            "<td><input data-gr-taille='" + i + "' list='grosListeTailles' value=\"" + esc(r.taille) + "\" placeholder=\"" + esc(t("grosTailleAide")) + "\" style='width:150px;' /></td>" +
+            "<td><input type='number' min='1' step='1' data-gr-seuil='" + i + "' value=\"" + esc(String(r.seuil == null ? "" : r.seuil)) + "\" style='width:90px;' /></td>" +
+            "<td><input type='number' min='1' step='1' data-gr-prix='" + i + "' value=\"" + esc(String(r.prix == null ? "" : r.prix)) + "\" style='width:120px;' /></td>" +
+            "<td><button class='danger' data-gr-suppr='" + i + "'>×</button></td></tr>").join("") + "</table>"
+        : "<p class='raison'>" + t("grosAucunTarif") + "</p>") +
+      "<p><button id='btnGrosAjouterTarif'>" + t("grosAjouterTarif") + "</button> <button id='btnGrosSauverTarifs' class='principal'>" + t("grosEnregistrerTarifs") + "</button></p>";
+    Array.prototype.forEach.call(z.querySelectorAll("[data-gr-art]"), (el) => { el.onchange = () => { regles[Number(el.dataset.grArt)].produitId = el.value; }; });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-gr-taille]"), (el) => { el.addEventListener("input", () => { regles[Number(el.dataset.grTaille)].taille = el.value; }); });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-gr-seuil]"), (el) => { el.addEventListener("input", () => { regles[Number(el.dataset.grSeuil)].seuil = el.value; }); });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-gr-prix]"), (el) => { el.addEventListener("input", () => { regles[Number(el.dataset.grPrix)].prix = el.value; }); });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-gr-suppr]"), (el) => { el.onclick = () => { regles.splice(Number(el.dataset.grSuppr), 1); dessinerTarifs(); }; });
+    document.getElementById("btnGrosAjouterTarif").onclick = () => { regles.push({ produitId: "", taille: "", seuil: 10, prix: "" }); dessinerTarifs(); };
+    document.getElementById("btnGrosSauverTarifs").onclick = async () => {
+      try {
+        const r = await api("/api/" + idm + "/gros/regles", { method: "PUT", body: JSON.stringify({ regles: regles.map((x) => ({ produitId: x.produitId || null, taille: x.taille, seuil: x.seuil, prix: x.prix })) }) });
+        regles = r.regles.map((x) => ({ produitId: x.produitId || "", taille: x.taille || "", seuil: x.seuil, prix: x.prix }));
+        alert(t("grosTarifsEnregistres"));
+        dessinerTarifs();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+
+  function dessinerRecherche() {
+    const z = document.getElementById("grosZoneRecherche");
+    z.innerHTML =
+      "<p class='raison'>" + t("grosNoteRecherche") + "</p>" +
+      ["code", "nom", "telephone"].map((c) => "<label style='margin-right:18px;'><input type='checkbox' data-gr-crit='" + c + "'" + (criteres.indexOf(c) !== -1 ? " checked" : "") + " /> " + t("grosCritere_" + c) + "</label>").join("") +
+      "<div style='margin-top:10px;'><label><input type='checkbox' id='champGrosDemander'" + (demanderInconnus ? " checked" : "") + " /> " + t("grosDemanderInconnus") + "</label></div>" +
+      "<p><button id='btnGrosSauverConfig' class='principal'>" + t("enregistrer") + "</button></p>";
+    document.getElementById("btnGrosSauverConfig").onclick = async () => {
+      const choisis = Array.prototype.map.call(z.querySelectorAll("[data-gr-crit]:checked"), (el) => el.dataset.grCrit);
+      if (!choisis.length) { alert(t("grosCritereObligatoire")); return; }
+      try {
+        const r = await api("/api/" + idm + "/gros/config", { method: "PUT", body: JSON.stringify({ criteresCaisse: choisis, demanderAuxInconnus: document.getElementById("champGrosDemander").checked }) });
+        criteres = r.criteresCaisse; demanderInconnus = r.demanderAuxInconnus;
+        alert(t("grosConfigEnregistree"));
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+
+  function dessinerListe() {
+    const z = document.getElementById("grosZoneListe");
+    const q = normaliserRecherche(grosRecherche);
+    const filtres = liste.filter((g) => !q || normaliserRecherche(g.nom).indexOf(q) !== -1 || String(g.telephone || "").indexOf(grosRecherche.trim()) !== -1 || normaliserRecherche(g.code).indexOf(q) !== -1 || normaliserRecherche(g.note).indexOf(q) !== -1);
+    const affiches = filtres.slice(0, 200);
+    z.innerHTML =
+      "<p class='raison'>" + t("grosNoteListe") + "</p>" +
+      "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;'>" +
+        "<div><label>" + t("grosFormNom") + "</label><br/><input id='champGrosNom' style='width:170px;' /></div>" +
+        "<div><label>" + t("grosFormTel") + "</label><br/><input id='champGrosTel' style='width:200px;' /></div>" +
+        "<div><label>" + t("grosFormNote") + "</label><br/><input id='champGrosNote' style='width:180px;' /></div>" +
+        "<button id='btnGrosAjouter' class='principal'>" + t("grosAjouter") + "</button>" +
+      "</div>" +
+      "<div style='display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;'>" +
+        "<input id='champGrosRecherche' type='search' value=\"" + esc(grosRecherche) + "\" placeholder=\"" + esc(t("grosRechercherPlaceholder")) + "\" style='width:280px;' />" +
+        "<span class='raison'>" + t("grosNbListe", { n: liste.length }) + "</span>" +
+        "<a id='lienGrosExport' href='/api/" + esc(idm) + "/gros/export'>" + t("grosExporter") + "</a>" +
+      "</div>" +
+      "<div style='margin-bottom:14px;padding:10px;border:1px dashed #bbb;border-radius:8px;'><strong>" + t("grosImporter") + "</strong><p class='raison' style='margin:4px 0;'>" + t("grosImportAide") + "</p>" +
+        "<input type='file' id='champGrosFichier' accept='.csv,.txt' /> <button id='btnGrosImporter'>" + t("grosImportBtn") + "</button></div>" +
+      (affiches.length
+        ? "<table class='table-donnees'><tr><th>" + t("grosFormNom") + "</th><th>" + t("grosFormTelCourt") + "</th><th>" + t("grosColCode") + "</th><th>" + t("grosFormNote") + "</th><th>" + t("grosColActif") + "</th><th></th></tr>" +
+          affiches.map((g) => g.id === enEdition
+            ? "<tr><td><input data-ge-nom value=\"" + esc(g.nom) + "\" style='width:140px;' /></td><td><input data-ge-tel value=\"" + esc(g.telephone || "") + "\" style='width:140px;' /></td><td><code>" + esc(g.code) + "</code></td><td><input data-ge-note value=\"" + esc(g.note || "") + "\" style='width:150px;' /></td><td></td><td><button data-ge-ok='" + esc(g.id) + "' class='principal'>" + t("enregistrer") + "</button> <button data-ge-annuler>" + t("grosAnnuler") + "</button></td></tr>"
+            : "<tr" + (g.actif === false ? " style='opacity:0.55;'" : "") + "><td>" + esc(g.nom) + "</td><td>" + esc(g.telephone || "—") + "</td><td><code>" + esc(g.code) + "</code></td><td>" + esc(g.note || "") + "</td>" +
+              "<td><input type='checkbox' data-g-actif='" + esc(g.id) + "'" + (g.actif !== false ? " checked" : "") + " /></td>" +
+              "<td style='white-space:nowrap;'><button data-g-edit='" + esc(g.id) + "'>" + t("grosModifier") + "</button> <button data-g-code='" + esc(g.id) + "'>" + t("grosRegenerer") + "</button> <button class='danger' data-g-suppr='" + esc(g.id) + "'>" + t("grosSupprimer") + "</button></td></tr>").join("") + "</table>" +
+          (filtres.length > affiches.length ? "<p class='raison'>" + t("grosAffiche200") + "</p>" : "")
+        : "<p class='raison'>" + t("grosAucun") + "</p>");
+    const maj = (g) => { const i = liste.findIndex((x) => x.id === g.id); if (i !== -1) liste[i] = g; };
+    document.getElementById("champGrosRecherche").addEventListener("input", (ev) => {
+      grosRecherche = ev.target.value; dessinerListe();
+      const c = document.getElementById("champGrosRecherche"); c.focus(); c.setSelectionRange(c.value.length, c.value.length);
+    });
+    document.getElementById("btnGrosAjouter").onclick = async () => {
+      try {
+        const g = await api("/api/" + idm + "/gros/grossistes", { method: "POST", body: JSON.stringify({ nom: document.getElementById("champGrosNom").value, telephone: document.getElementById("champGrosTel").value, note: document.getElementById("champGrosNote").value }) });
+        liste.push(g); dessinerListe();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+    document.getElementById("btnGrosImporter").onclick = async () => {
+      const f = document.getElementById("champGrosFichier").files[0];
+      if (!f) { alert(t("alertChoisirFichierImport")); return; }
+      const donnees = new FormData(); donnees.append("fichier", f);
+      try {
+        const rep = await fetch("/api/" + idm + "/gros/importer", { method: "POST", body: donnees });
+        const j = await rep.json();
+        if (!rep.ok) throw new Error(j.erreur || rep.statusText);
+        let message = t("grosImportResultat", { n: j.ajoutes });
+        if (j.nbIgnores) message += t("grosImportIgnores", { n: j.nbIgnores, details: (j.ignores || []).slice(0, 5).map((x) => x.nom + " (" + x.motif + ")").join(" / ") });
+        alert(message);
+        renderVenteGros();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+    Array.prototype.forEach.call(z.querySelectorAll("[data-g-edit]"), (b) => { b.onclick = () => { enEdition = b.dataset.gEdit; dessinerListe(); }; });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-ge-annuler]"), (b) => { b.onclick = () => { enEdition = null; dessinerListe(); }; });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-ge-ok]"), (b) => {
+      b.onclick = async () => {
+        try {
+          const g = await api("/api/" + idm + "/gros/grossistes/" + encodeURIComponent(b.dataset.geOk), { method: "PUT", body: JSON.stringify({ nom: z.querySelector("[data-ge-nom]").value, telephone: z.querySelector("[data-ge-tel]").value, note: z.querySelector("[data-ge-note]").value }) });
+          maj(g); enEdition = null; dessinerListe();
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
+      };
+    });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-g-actif]"), (c) => {
+      c.onchange = async () => {
+        try { maj(await api("/api/" + idm + "/gros/grossistes/" + encodeURIComponent(c.dataset.gActif), { method: "PUT", body: JSON.stringify({ actif: c.checked }) })); dessinerListe(); }
+        catch (e) { alert(t("erreurPrefixe") + e.message); c.checked = !c.checked; }
+      };
+    });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-g-code]"), (b) => {
+      b.onclick = async () => {
+        if (!confirm(t("grosConfirmRegenerer"))) return;
+        try { maj(await api("/api/" + idm + "/gros/grossistes/" + encodeURIComponent(b.dataset.gCode) + "/regenerer-code", { method: "POST" })); dessinerListe(); }
+        catch (e) { alert(t("erreurPrefixe") + e.message); }
+      };
+    });
+    Array.prototype.forEach.call(z.querySelectorAll("[data-g-suppr]"), (b) => {
+      b.onclick = async () => {
+        if (!confirm(t("grosConfirmSupprimer"))) return;
+        try { await api("/api/" + idm + "/gros/grossistes/" + encodeURIComponent(b.dataset.gSuppr), { method: "DELETE" }); liste = liste.filter((x) => x.id !== b.dataset.gSuppr); dessinerListe(); }
+        catch (e) { alert(t("erreurPrefixe") + e.message); }
+      };
+    });
+  }
+  dessinerTarifs(); dessinerRecherche(); dessinerListe();
 }
 
 // Ecran de confirmation apres un encaissement reussi - remplace tout le contenu de l'onglet (rien d'autre
@@ -4004,6 +4298,7 @@ function afficherRecuCaisse(commande) {
       "<p><strong>" + t("theadNumero") + " :</strong> CMD-" + String(commande.id).padStart(4, "0") + "</p>" +
       "<p><strong>" + t("theadDateCourt") + " :</strong> " + esc(new Date(commande.dateISO).toLocaleString(localeCourante())) + "</p>" +
       "<p><strong>" + t("caisseRecuVendeur") + " :</strong> " + esc(commande.caissier || "") + "</p>" +
+      (commande.grossiste ? "<p><strong>" + t("caisseRecuGrossiste") + " :</strong> " + esc(commande.grossiste.nom) + "</p>" : "") +
       "<table class='table-donnees'><tr><th>" + t("theadArticles") + "</th><th>" + t("caisseQuantiteLabel") + "</th><th>" + t("theadTotal") + "</th></tr>" +
         (commande.items || []).map((it) =>
           "<tr><td>" + esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ")" +
@@ -4396,7 +4691,8 @@ async function renderCommandes() {
       "<tr>" +
         "<td>CMD-" + String(o.id).padStart(4, "0") + "</td>" +
         "<td>" + esc(new Date(o.dateISO).toLocaleString(localeCourante())) + "</td>" +
-        "<td>" + (o.items || []).map((it) => esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ") ×" + it.quantite).join("<br/>") + "</td>" +
+        "<td>" + (o.items || []).map((it) => esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ") ×" + it.quantite).join("<br/>") +
+          (o.grossiste || o.venteGros ? "<div><span style='background:#e6f4ea; color:#1e6b34; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeGros") + (o.grossiste ? " · " + esc(o.grossiste.nom) : "") + "</span></div>" : "") + "</td>" +
         "<td>" + (o.items || []).reduce((somme, it) => somme + (Number(it.quantite) || 0), 0) + "</td>" +
         "<td>" + (o.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
         "<td>" + (o.source === "pos"
@@ -7563,6 +7859,7 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionLienCommande'" + (marchandActif.optionLienCommande ? " checked" : "") + " /> " + t("labelOptionLienCommande") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionNotifStatut'" + (marchandActif.optionNotificationsStatut ? " checked" : "") + " /> " + t("labelOptionNotifStatut") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaissePos'" + (marchandActif.optionCaissePos ? " checked" : "") + " /> " + t("labelOptionCaissePos") + "</label>" +
+    "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionVenteGros'" + (marchandActif.optionVenteGros ? " checked" : "") + " /> " + t("labelOptionVenteGros") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
     (principalHeb ? "" : blocSourceFacturationHtml() + blocCleComptableHtml()) +
     blocModuleSecondaireHtml();
@@ -7723,7 +8020,8 @@ function brancherBlocOptionsPayantes() {
           optionStockIllimite: document.getElementById("champOptionStockIllimite").checked,
           optionLienCommande: document.getElementById("champOptionLienCommande").checked,
           optionNotificationsStatut: document.getElementById("champOptionNotifStatut").checked,
-          optionCaissePos: document.getElementById("champOptionCaissePos").checked
+          optionCaissePos: document.getElementById("champOptionCaissePos").checked,
+          optionVenteGros: document.getElementById("champOptionVenteGros").checked
         })
       });
       alert(t("alertOptionsEnregistrees"));
@@ -8071,6 +8369,14 @@ function detailJournalHtml(ligne) {
   if (d.cible) out.push(t("jdCible", { c: esc(d.cible) }));
   if (d.telephone) out.push(t("jdTelephone", { t: esc(d.telephone) }));
   if (d.lignes != null) out.push(t("jdLignes", { n: d.lignes }));
+  // Etape 78 : vente en gros
+  if (typeof d.grossiste === "string" && d.grossiste) out.push(t("jdGrossiste", { g: esc(d.grossiste) }));
+  if (Array.isArray(d.grossistes) && d.grossistes.length) out.push(t("jdGrossiste", { g: esc(d.grossistes.join(", ")) }));
+  if (d.resultat === "aucun") out.push(t("jdAucunTrouve"));
+  if (d.tarifs != null) out.push(t("jdGrosTarifs", { n: d.tarifs }));
+  if (Array.isArray(d.criteres) && d.criteres.length) out.push(t("jdGrosCriteres", { c: esc(d.criteres.map((c) => t("grosCritere_" + c)).join(", ")) }));
+  if (d.economie) out.push(t("jdGrosEconomie", { m: Number(d.economie).toLocaleString(localeCourante()) }));
+  if (d.vente) out.push(t("jdVenteRef", { v: esc(d.vente) }));
   return out.map((x) => "<div>" + x + "</div>").join("");
 }
 
