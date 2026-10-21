@@ -23,6 +23,7 @@ const createServiceEngine = require("./conversationService");
 const createHebergementEngine = require("./conversationHebergement");
 const createTransportEngine = require("./conversationTransport");
 const importTransport = require("./importTransport");
+const photosElements = require("./photosElements"); // Etape 77 : photos des services et des chambres (3 max)
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
 const remisesLib = require("./remises");
@@ -852,6 +853,10 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/catalogue/importer": "catalogue_importe",
   "POST /api/:id/catalogue/:productId/photos": "photo_ajoutee",
   "DELETE /api/:id/catalogue/:productId/photos": "photo_supprimee",
+  "POST /api/:id/services/:serviceId/photos": "photo_service_ajoutee",
+  "DELETE /api/:id/services/:serviceId/photos": "photo_service_supprimee",
+  "POST /api/:id/chambres/:chambreId/photos": "photo_chambre_ajoutee",
+  "DELETE /api/:id/chambres/:chambreId/photos": "photo_chambre_supprimee",
   "PUT /api/:id/commandes/:orderId/statut": "commande_statut_modifie",
   "PUT /api/:id/commandes/:orderId/coordonnees": "commande_coordonnees_modifiees",
   "PUT /api/:id/services": "services_modifies",
@@ -906,6 +911,14 @@ function detailAuditRequete(code, req) {
   };
   switch (code) {
     case "photo_ajoutee": case "photo_supprimee": return { art: nomArticle(), productId: p.productId || null };
+    case "photo_service_ajoutee": case "photo_service_supprimee": {
+      const sv = entry && entry.moteurs.service && entry.moteurs.service.getServices().filter((x) => x.id === p.serviceId)[0];
+      return { elem: sv ? sv.nom : null };
+    }
+    case "photo_chambre_ajoutee": case "photo_chambre_supprimee": {
+      const ch = entry && entry.moteurs.hebergement && entry.moteurs.hebergement.getChambres().filter((x) => x.id === p.chambreId)[0];
+      return { elem: ch ? ch.nom : null };
+    }
     case "commande_statut_modifie": return { commande: p.orderId, statut: b.statut || null };
     case "commande_coordonnees_modifiees": return { commande: p.orderId, champs: [b.telephone != null ? "telephone" : null, b.adresse != null ? "adresse" : null].filter(Boolean) };
     case "rendezvous_statut_modifie": return { rendezvous: p.apptId, statut: b.statut || null };
@@ -2752,9 +2765,50 @@ app.get("/api/:id/services", protegerAcces, (req, res) => {
 app.put("/api/:id/services", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
   if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  const avant = (entry.engine.getServices() || []).map((x) => ({ id: x.id, photos: (x.photos || []).slice() }));
   const nouveau = entry.engine.updateServices(req.body);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
+  // Etape 77 : un service supprime emporte ses photos (menage best-effort sur R2).
+  entry.engine.photosOrphelinesServices(avant, nouveau).forEach((u) => { storage.supprimerPhotoProduit(u).catch(() => {}); });
   res.json(nouveau);
+});
+
+// Etape 77 : photos d'un service (3 maximum). Meme hebergement (Cloudflare R2) et memes regles que les photos d'articles :
+// un(e) employe(e) avec le role « rendezvous » peut AJOUTER, seul le proprietaire / super-administrateur peut SUPPRIMER.
+// Le bot envoie ces photos au client au moment ou il choisit le service (voir conversationService.js).
+app.post("/api/:id/services/:serviceId/photos", protegerAcces, uploadPhoto.single("photo"), async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  if (!storage.estConfigure()) {
+    return res.status(503).json({ erreur: "Hébergement des photos non configuré sur le serveur (variables R2_* manquantes sur Render). Voir le README, section « Photos des articles »." });
+  }
+  const service = entry.engine.getServices().filter((x) => x.id === req.params.serviceId)[0];
+  if (!service) return res.status(404).json({ erreur: "Service introuvable (enregistrez d'abord la liste des services)." });
+  if ((service.photos || []).length >= photosElements.MAX_PHOTOS) return res.status(409).json({ erreur: "3 photos au maximum par service : supprimez-en une avant d'en ajouter." });
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"photo\" requis)." });
+  try {
+    const url = await storage.uploaderPhotoProduit({ merchantKey: req.params.id, productId: "service-" + service.id, buffer: req.file.buffer, mimeType: req.file.mimetype });
+    const r = entry.engine.ajouterPhotoService(service.id, url);
+    if (r.statut !== "ok") {
+      await storage.supprimerPhotoProduit(url).catch(() => {});
+      return res.status(r.statut === "plein" ? 409 : r.statut === "introuvable" ? 404 : 400).json({ erreur: r.statut === "plein" ? "3 photos au maximum par service : supprimez-en une avant d'en ajouter." : "Photo non ajoutée." });
+    }
+    res.status(201).json({ url, service: r.service });
+  } catch (erreur) {
+    res.status(400).json({ erreur: erreur.message || "Échec de l'envoi de la photo." });
+  }
+});
+
+app.delete("/api/:id/services/:serviceId/photos", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "rendezvous"); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  if (entry.engine.type !== "service") return res.status(400).json({ erreur: "Ce marchand n'est pas de type service." });
+  const { url } = req.body || {};
+  if (!url) return res.status(400).json({ erreur: "url requise." });
+  const service = entry.engine.supprimerPhotoService(req.params.serviceId, url);
+  if (!service) return res.status(404).json({ erreur: "Service introuvable." });
+  await storage.supprimerPhotoProduit(url).catch(() => {}); // best-effort
+  res.json({ ok: true, service });
 });
 
 // Etape 61 : import en masse des services depuis un fichier CSV (meme principe que le catalogue). Colonnes (ordre
@@ -2920,9 +2974,47 @@ app.get("/api/:id/chambres", protegerAcces, (req, res) => {
 
 app.put("/api/:id/chambres", protegerAcces, (req, res) => {
   const entry = entreeHebergement(req, res); if (!entry) return;
+  const avant = (entry.engine.getChambres() || []).map((x) => ({ id: x.id, photos: (x.photos || []).slice() }));
   const nouveau = entry.engine.updateChambres(req.body);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
+  // Etape 77 : un type de chambre supprime emporte ses photos (menage best-effort sur R2).
+  entry.engine.photosOrphelinesChambres(avant, nouveau).forEach((u) => { storage.supprimerPhotoProduit(u).catch(() => {}); });
   res.json(nouveau);
+});
+
+// Etape 77 : photos d'un type de chambre (3 maximum), memes regles que celles des services (ajout : role « rendezvous » ;
+// suppression : proprietaire / super-administrateur). Envoyees au client quand il choisit la chambre.
+app.post("/api/:id/chambres/:chambreId/photos", protegerAcces, uploadPhoto.single("photo"), async (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  if (!storage.estConfigure()) {
+    return res.status(503).json({ erreur: "Hébergement des photos non configuré sur le serveur (variables R2_* manquantes sur Render). Voir le README, section « Photos des articles »." });
+  }
+  const chambre = entry.engine.getChambres().filter((x) => x.id === req.params.chambreId)[0];
+  if (!chambre) return res.status(404).json({ erreur: "Type de chambre introuvable (enregistrez d'abord la liste des chambres)." });
+  if ((chambre.photos || []).length >= photosElements.MAX_PHOTOS) return res.status(409).json({ erreur: "3 photos au maximum par type de chambre : supprimez-en une avant d'en ajouter." });
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"photo\" requis)." });
+  try {
+    const url = await storage.uploaderPhotoProduit({ merchantKey: req.params.id, productId: "chambre-" + chambre.id, buffer: req.file.buffer, mimeType: req.file.mimetype });
+    const r = entry.engine.ajouterPhotoChambre(chambre.id, url);
+    if (r.statut !== "ok") {
+      await storage.supprimerPhotoProduit(url).catch(() => {});
+      return res.status(r.statut === "plein" ? 409 : r.statut === "introuvable" ? 404 : 400).json({ erreur: r.statut === "plein" ? "3 photos au maximum par type de chambre : supprimez-en une avant d'en ajouter." : "Photo non ajoutée." });
+    }
+    res.status(201).json({ url, chambre: r.chambre });
+  } catch (erreur) {
+    res.status(400).json({ erreur: erreur.message || "Échec de l'envoi de la photo." });
+  }
+});
+
+app.delete("/api/:id/chambres/:chambreId/photos", protegerAcces, async (req, res) => {
+  const entry = entreeHebergement(req, res); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  const { url } = req.body || {};
+  if (!url) return res.status(400).json({ erreur: "url requise." });
+  const chambre = entry.engine.supprimerPhotoChambre(req.params.chambreId, url);
+  if (!chambre) return res.status(404).json({ erreur: "Type de chambre introuvable." });
+  await storage.supprimerPhotoProduit(url).catch(() => {}); // best-effort
+  res.json({ ok: true, chambre });
 });
 
 // Import CSV des types de chambre. Colonnes (ordre libre, casse/accents ignores) : "Nom", "Nombre" (de chambres),

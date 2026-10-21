@@ -18,6 +18,7 @@ const db = require("./db");
 const sessionsPersistantes = require("./sessionsPersistantes");
 const sh = require("./shared");
 const dt = require("./datesSejour");
+const photosEl = require("./photosElements");
 const { formatFcfa, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
 const STATUTS_BLOQUANTS = ["Confirmé", "Arrivé"];   // occupent une chambre
@@ -76,6 +77,9 @@ function createHebergementEngine(merchantKey, options) {
   const humanHintDonne = {};
   const envoyer = (options && options.envoyer) || (async () => {});
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
+  // Etape 77 : photos des chambres (3 max), envoyees au client quand il choisit le type de chambre. Voir photosElements.js.
+  const envoyerImage = (options && options.envoyerImage) || (async () => {});
+  const memoirePhotos = {}; // telephone -> { idChambre: horodatage du dernier envoi }
   const nomMarchandOption = (options && options.nomMarchand) || (() => "");
   const journaliserOption = (options && options.journaliser) || (async () => {});
   const cleEtat = (options && options.cleEtat) || merchantKey;
@@ -760,8 +764,27 @@ function createHebergementEngine(merchantKey, options) {
   }
 
   // ---------------- Point d'entree d'un message ----------------
+  // Etape 77 : le client vient de CHOISIR un type de chambre qui a des photos -> on les lui envoie (3 max), nom / prix
+  // par nuit / capacite en legende sur la premiere. Jamais pour le Simulateur ; jamais lors d'un report (connu).
+  function envoyerPhotosChambreChoisie(fromPhone, idAvant) {
+    if (fromPhone === PHONE_SIMULATEUR || !state) return;
+    const session = sessions[fromPhone];
+    if (!session || session.reportSejourId || !session.chambreId) return;
+    if (!memoirePhotos[fromPhone]) memoirePhotos[fromPhone] = {};
+    const aEnvoyerListe = photosEl.aEnvoyer(memoirePhotos[fromPhone], idAvant ? [idAvant] : [], [session.chambreId],
+      (id) => chambreParId(id),
+      (c) => c.nom + " - " + formatFcfa(prixNuit(c)) + sh.t(session, " / nuit", " / night") + " (" + sh.t(session, "jusqu'à ", "up to ") + libellePersonnes(capaciteChambre(c), session) + ")",
+      Date.now());
+    aEnvoyerListe.forEach((p) => {
+      Promise.resolve().then(() => envoyerImage(fromPhone, p.url, p.legende)).catch((erreur) =>
+        console.error("[" + merchantKey + "] Echec de l'envoi d'une photo de chambre :", erreur));
+    });
+  }
+
   function handleMessage(fromPhone, text, opts) {
+    const idAvant = sessions[fromPhone] ? sessions[fromPhone].chambreId : null;
     const reponse = traiterMessage(fromPhone, text, opts);
+    try { envoyerPhotosChambreChoisie(fromPhone, idAvant); } catch (e) { console.error("[" + merchantKey + "] Photos de chambre (ignore) :", e); }
     if (reponse && sessions[fromPhone]) sessions[fromPhone].derniereReponse = reponse;
     persistance.enregistrer(fromPhone);
     return reponse;
@@ -1003,10 +1026,31 @@ function createHebergementEngine(merchantKey, options) {
         description: String(c.description == null ? "" : c.description).trim().slice(0, 200)
       });
     }
+    // Etape 77 : les photos ne se modifient que par leurs routes dediees (jamais par le corps de cette liste).
+    photosEl.conserverPhotos(state.chambres, propres);
     state.chambres = propres;
     saveState();
     return state.chambres;
   }
+
+  // Etape 77 : photos d'un type de chambre (3 max). Renvoie { statut: "ok"|"plein"|"doublon"|"introuvable", chambre }.
+  function ajouterPhotoChambre(chambreId, url) {
+    if (!state) return { statut: "introuvable" };
+    const c = chambreParId(chambreId);
+    if (!c) return { statut: "introuvable" };
+    const r = photosEl.ajouter(c, url);
+    if (r === "ok") saveState();
+    return { statut: r, chambre: c };
+  }
+  function supprimerPhotoChambre(chambreId, url) {
+    if (!state) return null;
+    const c = chambreParId(chambreId);
+    if (!c) return null;
+    photosEl.retirer(c, url);
+    saveState();
+    return c;
+  }
+  function photosOrphelinesChambres(avant, apres) { return photosEl.photosOrphelines(avant, apres); }
 
   function updateSettings(patch) {
     if (!state) return;
@@ -1219,6 +1263,9 @@ function createHebergementEngine(merchantKey, options) {
     init,
     balayerSessions: () => persistance.balayer(),
     handleMessage,
+    ajouterPhotoChambre,
+    supprimerPhotoChambre,
+    photosOrphelinesChambres,
     getEtatSession,
     getChoixArrivees,
     getChoixNuits,

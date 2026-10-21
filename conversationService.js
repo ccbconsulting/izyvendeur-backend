@@ -18,6 +18,7 @@ const { SEED_SERVICES, SERVICE_KEYWORDS, DEFAULT_HORAIRES, DEFAULT_DUREE_CRENEAU
 const db = require("./db");
 const sessionsPersistantes = require("./sessionsPersistantes");
 const sh = require("./shared");
+const photosEl = require("./photosElements");
 const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
 const STOPWORDS = ["de", "du", "des", "la", "le", "les", "en", "à", "au", "aux", "et", "un", "une", "pour", "avec", "and", "the", "with", "for", "of"];
@@ -163,6 +164,9 @@ function createServiceEngine(merchantKey, options) {
   const conversationsHumain = {}; // memoire seulement (comme `sessions`) - voir shared.js
   const envoyer = (options && options.envoyer) || (async () => {});
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
+  // Etape 77 : photos des services (3 max), envoyees au client quand il choisit le service. Voir photosElements.js.
+  const envoyerImage = (options && options.envoyerImage) || (async () => {});
+  const memoirePhotos = {}; // telephone -> { idService: horodatage du dernier envoi }
   // Etape 60 : nom commercial du marchand, lu a chaque usage (il peut etre renomme dans /admin) pour
   // personnaliser l'accueil ("Bienvenue chez <nom>"). Sans l'option (tests, ancien appelant) : accueil inchange.
   const nomMarchandOption = (options && options.nomMarchand) || (() => "");
@@ -1389,8 +1393,32 @@ function createServiceEngine(merchantKey, options) {
   // On retient la derniere reponse de CHAQUE client (voir reponseDeReprise) : un client d'un marchand hybride qui
   // quitte ce volet en plein parcours (panier, saisie du nom...) retrouve exactement sa derniere question en y
   // revenant, au lieu qu'une phrase synthetique soit prise pour sa reponse (ex: « Bonjour » comme nom).
+  function idsServicesDe(session) {
+    if (!session) return [];
+    if (Array.isArray(session.serviceIds) && session.serviceIds.length) return session.serviceIds.slice();
+    return session.serviceId ? String(session.serviceId).split("+").filter(Boolean) : [];
+  }
+  // Etape 77 : le client vient de CHOISIR un (ou des) service(s) qui ont des photos -> on les lui envoie (3 max par
+  // service), avec nom / duree / prix en legende sur la premiere. Jamais pour le Simulateur (pas de vrai destinataire)
+  // ni lors d'un report de rendez-vous (il connait deja son service). Best-effort : un echec d'envoi ne gene rien.
+  function envoyerPhotosServicesChoisis(fromPhone, idsAvant) {
+    if (fromPhone === PHONE_SIMULATEUR || !state) return;
+    const session = sessions[fromPhone];
+    if (!session || session.reportApptId) return;
+    if (!memoirePhotos[fromPhone]) memoirePhotos[fromPhone] = {};
+    const aEnvoyerListe = photosEl.aEnvoyer(memoirePhotos[fromPhone], idsAvant, idsServicesDe(session),
+      (id) => state.services.filter((x) => x.id === id)[0] || null,
+      (sv) => sv.nom + " - " + sv.dureeMinutes + " min - " + formatFcfa(sv.prix), Date.now());
+    aEnvoyerListe.forEach((p) => {
+      Promise.resolve().then(() => envoyerImage(fromPhone, p.url, p.legende)).catch((erreur) =>
+        console.error("[" + merchantKey + "] Echec de l'envoi d'une photo de service :", erreur));
+    });
+  }
+
   function handleMessage(fromPhone, text, opts) {
+    const idsAvant = idsServicesDe(sessions[fromPhone]);
     const reponse = traiterMessage(fromPhone, text, opts);
+    try { envoyerPhotosServicesChoisis(fromPhone, idsAvant); } catch (e) { console.error("[" + merchantKey + "] Photos de service (ignore) :", e); }
     if (reponse && sessions[fromPhone]) sessions[fromPhone].derniereReponse = reponse;
     persistance.enregistrer(fromPhone);
     return reponse;
@@ -1819,10 +1847,30 @@ function createServiceEngine(merchantKey, options) {
 
   function updateServices(newServices) {
     if (!state || !Array.isArray(newServices)) return null;
-    state.services = newServices;
+    // Etape 77 : les photos ne se modifient que par leurs routes dediees (jamais par le corps de cette liste).
+    state.services = photosEl.conserverPhotos(state.services, newServices);
     saveState();
     return state.services;
   }
+
+  // Etape 77 : photos d'un service (3 max). Renvoie { statut: "ok"|"plein"|"doublon"|"introuvable", service }.
+  function ajouterPhotoService(serviceId, url) {
+    if (!state) return { statut: "introuvable" };
+    const sv = state.services.filter((x) => x.id === serviceId)[0];
+    if (!sv) return { statut: "introuvable" };
+    const r = photosEl.ajouter(sv, url);
+    if (r === "ok") saveState();
+    return { statut: r, service: sv };
+  }
+  function supprimerPhotoService(serviceId, url) {
+    if (!state) return null;
+    const sv = state.services.filter((x) => x.id === serviceId)[0];
+    if (!sv) return null;
+    photosEl.retirer(sv, url);
+    saveState();
+    return sv;
+  }
+  function photosOrphelinesServices(avant, apres) { return photosEl.photosOrphelines(avant, apres); }
 
   function updateAppointmentStatus(apptId, newStatus, raisonAnnulation) {
     if (!state) return null;
@@ -1935,6 +1983,9 @@ function createServiceEngine(merchantKey, options) {
     getSettings,
     updateSettings,
     updateServices,
+    ajouterPhotoService,
+    supprimerPhotoService,
+    photosOrphelinesServices,
     deplacerAppointment,
     updateAppointmentStatus,
     getConversationsEnAttente,

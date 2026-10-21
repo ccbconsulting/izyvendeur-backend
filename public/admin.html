@@ -619,6 +619,18 @@ const I18N = {
     act_caisse_fermee: "Caisse fermée",
     act_photo_ajoutee: "Photo ajoutée",
     act_photo_supprimee: "Photo supprimée",
+    act_photo_service_ajoutee: "Photo de service ajoutée",
+    act_photo_service_supprimee: "Photo de service supprimée",
+    act_photo_chambre_ajoutee: "Photo de chambre ajoutée",
+    act_photo_chambre_supprimee: "Photo de chambre supprimée",
+    jdPhotoElem: "Photo de : {e}",
+    labelPhotosElement: "Photos ({n}/{max})",
+    msgEnregistrerListeDabord: "Enregistrez d'abord la liste pour pouvoir ajouter des photos à cette nouvelle ligne.",
+    msgAucunePhotoService: "Aucune photo pour ce service — le bot n'en enverra pas tant qu'aucune n'est ajoutée.",
+    msgAucunePhotoChambre: "Aucune photo pour ce type de chambre — le bot n'en enverra pas tant qu'aucune n'est ajoutée.",
+    msgPhotosMaximum: "3 photos au maximum : supprimez-en une pour en ajouter une autre.",
+    noteServicesPhotos: "Photos (3 au maximum par service) : le bot les envoie au client au moment où il choisit le service, avec le nom, la durée et le prix.",
+    noteChambresPhotos: "Photos (3 au maximum par type de chambre) : le bot les envoie au client au moment où il choisit la chambre, avec le nom, le prix par nuit et la capacité.",
     act_commande_statut_modifie: "Statut de commande modifié",
     act_commande_coordonnees_modifiees: "Téléphone / adresse de commande modifiés",
     btnCorrigerCoordonnees: "Corriger tél./adresse",
@@ -1788,6 +1800,18 @@ const I18N = {
     act_caisse_fermee: "Register closed",
     act_photo_ajoutee: "Photo added",
     act_photo_supprimee: "Photo deleted",
+    act_photo_service_ajoutee: "Service photo added",
+    act_photo_service_supprimee: "Service photo deleted",
+    act_photo_chambre_ajoutee: "Room photo added",
+    act_photo_chambre_supprimee: "Room photo deleted",
+    jdPhotoElem: "Photo of: {e}",
+    labelPhotosElement: "Photos ({n}/{max})",
+    msgEnregistrerListeDabord: "Save the list first, then you can add photos to this new line.",
+    msgAucunePhotoService: "No photo for this service yet — the bot won't send one until you add one.",
+    msgAucunePhotoChambre: "No photo for this room type yet — the bot won't send one until you add one.",
+    msgPhotosMaximum: "3 photos maximum: delete one to add another.",
+    noteServicesPhotos: "Photos (3 maximum per service): the bot sends them to the customer when they choose the service, with its name, duration and price.",
+    noteChambresPhotos: "Photos (3 maximum per room type): the bot sends them to the customer when they choose the room, with its name, price per night and capacity.",
     act_commande_statut_modifie: "Order status changed",
     act_commande_coordonnees_modifiees: "Order phone / address changed",
     btnCorrigerCoordonnees: "Fix phone / address",
@@ -4708,15 +4732,70 @@ async function renderParametresCatalogue() {
 
 // ---------------- Marchand service (prise de rendez-vous) ----------------
 
+// ---------------- Photos des services et des chambres (Etape 77) : 3 au maximum par ligne ----------------
+// L'envoi est immediat (comme pour les articles) : la ligne doit donc deja exister cote serveur (`enregistre`). Apres un
+// envoi ou une suppression on met seulement a jour les photos de la ligne, sans recharger la liste : les modifications
+// non enregistrees du formulaire ne sont pas perdues. Seul le proprietaire / super-administrateur peut supprimer.
+const MAX_PHOTOS_ELEMENT = 3;
+function blocPhotosElementHtml(type, el, idx, enregistre) {
+  if (!enregistre) return "<p class='raison'>" + t("msgEnregistrerListeDabord") + "</p>";
+  const photos = Array.isArray(el.photos) ? el.photos : [];
+  const gestionnaire = moi.role === "marchand" || moi.role === "superadmin";
+  return "<div class='bloc-photos' data-bloc-photos='" + idx + "'><strong>" + t("labelPhotosElement", { n: photos.length, max: MAX_PHOTOS_ELEMENT }) + "</strong> " +
+    (photos.length ? "<div class='miniatures-photos'>" + photos.map((url) =>
+      "<div class='miniature'><img src=\"" + esc(url) + "\" alt='' />" + (gestionnaire ? "<button type='button' data-suppr-photo-el='" + idx + ":" + esc(url) + "' class='danger'>×</button>" : "") + "</div>"
+    ).join("") + "</div>" : "<p class='raison'>" + t(type === "service" ? "msgAucunePhotoService" : "msgAucunePhotoChambre") + "</p>") +
+    (photos.length >= MAX_PHOTOS_ELEMENT
+      ? "<p class='raison'>" + t("msgPhotosMaximum") + "</p>"
+      : "<input type='file' accept='image/png,image/jpeg,image/webp' data-fichier-photo-el='" + idx + "' /> <button type='button' data-ajouter-photo-el='" + idx + "'>" + t("btnAjouterPhoto") + "</button>") +
+    "</div>";
+}
+function brancherPhotosElements(zone, type, local, redraw) {
+  const chemin = (i) => "/api/" + marchandActif.id + "/" + (type === "service" ? "services" : "chambres") + "/" + encodeURIComponent(local[i].id) + "/photos";
+  const cle = type === "service" ? "service" : "chambre";
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-ajouter-photo-el]"), (btn) => {
+    btn.onclick = async () => {
+      const i = Number(btn.dataset.ajouterPhotoEl);
+      const fichier = zone.querySelector("[data-fichier-photo-el='" + i + "']").files[0];
+      if (!fichier) { alert(t("alertChoisirImage")); return; }
+      const donnees = new FormData();
+      donnees.append("photo", fichier);
+      btn.disabled = true;
+      try {
+        const r = await fetch(chemin(i), { method: "POST", body: donnees });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.erreur || r.statusText);
+        local[i].photos = (j[cle] && j[cle].photos) || (local[i].photos || []).concat([j.url]);
+        redraw();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); btn.disabled = false; }
+    };
+  });
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr-photo-el]"), (btn) => {
+    btn.onclick = async () => {
+      const brut = btn.dataset.supprPhotoEl;
+      const k = brut.indexOf(":");
+      const i = Number(brut.slice(0, k)), url = brut.slice(k + 1);
+      if (!confirm(t("confirmSupprimerPhoto"))) return;
+      try {
+        const j = await api(chemin(i), { method: "DELETE", body: JSON.stringify({ url }) });
+        local[i].photos = (j[cle] && j[cle].photos) || (local[i].photos || []).filter((u) => u !== url);
+        redraw();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  });
+}
+
 async function renderServices() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const services = await api("/api/" + marchandActif.id + "/services");
   let local = JSON.parse(JSON.stringify(services));
+  const idsServeur = new Set(services.map((x) => x.id)); // Etape 77 : seules les lignes deja enregistrees peuvent recevoir des photos
 
   function redraw() {
     zone.innerHTML =
       "<h2>" + t("servicesTitre") + "</h2>" +
+      "<p class='raison'>" + t("noteServicesPhotos") + "</p>" +
       "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadDureeMinutes") + "</th><th>" + t("theadPrixFcfa") + "</th><th></th></tr>" +
       local.map((s, i) =>
         "<tr>" +
@@ -4724,7 +4803,8 @@ async function renderServices() {
           "<td><input type='number' data-i='" + i + "' data-champ='dureeMinutes' value='" + s.dureeMinutes + "' /></td>" +
           "<td><input type='number' data-i='" + i + "' data-champ='prix' value='" + s.prix + "' /></td>" +
           "<td><button data-suppr='" + i + "' class='danger'>×</button></td>" +
-        "</tr>"
+        "</tr>" +
+        "<tr class='ligne-photos'><td colspan='4'>" + blocPhotosElementHtml("service", s, i, idsServeur.has(s.id)) + "</td></tr>"
       ).join("") +
       "</table>" +
       "<button id='btnAjouterService'>" + t("btnAjouterService") + "</button> " +
@@ -4746,6 +4826,7 @@ async function renderServices() {
     Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr]"), (btn) => {
       btn.onclick = () => { local.splice(Number(btn.dataset.suppr), 1); redraw(); };
     });
+    brancherPhotosElements(zone, "service", local, redraw);
     document.getElementById("btnAjouterService").onclick = () => {
       local.push({ id: "s" + Date.now(), nom: t("nouveauService"), dureeMinutes: 30, prix: 0 });
       redraw();
@@ -5145,11 +5226,13 @@ async function renderChambres() {
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const chambres = await api("/api/" + marchandActif.id + "/chambres");
   let local = JSON.parse(JSON.stringify(chambres));
+  const idsServeur = new Set(chambres.map((x) => x.id)); // Etape 77 : seules les lignes deja enregistrees peuvent recevoir des photos
   function redraw() {
     const total = local.reduce((n, c) => n + (Number(c.nombre) || 0), 0);
     zone.innerHTML =
       "<h2>" + t("chambresTitre", { n: total }) + "</h2>" +
       "<p class='raison'>" + t("noteChambres") + "</p>" +
+      "<p class='raison'>" + t("noteChambresPhotos") + "</p>" +
       "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadNombreChambres") + "</th><th>" + t("theadPrixNuit") + "</th><th>" + t("theadCapacite") + "</th><th>" + t("theadDescriptionCourte") + "</th><th></th></tr>" +
       (local.length ? local.map((c, i) =>
         "<tr>" +
@@ -5159,7 +5242,8 @@ async function renderChambres() {
           "<td><input type='number' min='1' data-i='" + i + "' data-champ='capacite' value='" + (Number(c.capacite) || 2) + "' /></td>" +
           "<td><input data-i='" + i + "' data-champ='description' value=\"" + esc(c.description || "") + "\" /></td>" +
           "<td><button data-suppr='" + i + "' class='danger'>×</button></td>" +
-        "</tr>"
+        "</tr>" +
+        "<tr class='ligne-photos'><td colspan='6'>" + blocPhotosElementHtml("chambre", c, i, idsServeur.has(c.id)) + "</td></tr>"
       ).join("") : "<tr><td colspan='6'>" + t("aucuneChambre") + "</td></tr>") +
       "</table>" +
       "<button id='btnAjouterChambre'>" + t("btnAjouterChambre") + "</button> " +
@@ -5179,6 +5263,7 @@ async function renderChambres() {
     Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr]"), (btn) => {
       btn.onclick = () => { local.splice(Number(btn.dataset.suppr), 1); redraw(); };
     });
+    brancherPhotosElements(zone, "chambre", local, redraw);
     document.getElementById("btnAjouterChambre").onclick = () => {
       local.push({ id: "c" + Date.now() + Math.floor(Math.random() * 1000), nom: t("nouvelleChambre"), nombre: 1, prix: 0, capacite: 2, description: "" });
       redraw();
@@ -7973,6 +8058,7 @@ function detailJournalHtml(ligne) {
     if (d.plus) out.push(t("jcPlus", { n: d.plus }));
   }
   if (d.art && !Array.isArray(d.changes)) out.push(t("jdPhoto", { art: esc(d.art) }));
+  if (d.elem) out.push(t("jdPhotoElem", { e: esc(d.elem) }));
   if (d.commande) out.push(t("jdCommande", { c: esc(d.commande), s: esc(d.statut || "") }));
   if (d.rendezvous) out.push(esc(d.rendezvous) + " → " + esc(d.statut || ""));
   if (d.employe) out.push(t("jdEmploye", { e: esc(d.employe) }));
