@@ -2486,23 +2486,24 @@ Les prix de gros dépendent du **nombre total de pièces de la commande, toutes 
 
 Fichiers modifiés : `conversation.js`, `server.js`, `db.js`, `public/admin.html`. **Nouveau fichier : `venteGros.js`** (à copier avec les autres). **Migration SQL automatique** au démarrage : colonne `option_vente_gros` ajoutée à `merchants` (`ADD COLUMN IF NOT EXISTS`), rien à faire à la main. Les grossistes et la grille sont rangés dans l'état du marchand (même sauvegarde que le catalogue). Aucune variable d'environnement.
 
-## Étape 78b — Vente en gros : prix de gros réservés aux grossistes identifiés, options au choix du marchand, caisse pilotée par le super-administrateur
+## Étape 78b/78c — Vente en gros : prix de gros réservés aux grossistes identifiés ; options WhatsApp ET caisse attribuées par le super-administrateur seul
 
-Retour du marchand : un client de détail qui achète 10 ou 20 pièces doit payer le prix normal ; la proposition « devenir grossiste » et la visibilité des tarifs de gros doivent être **des options** qu'il active quand il le souhaite. La caisse suit la même logique, mais **ses interrupteurs restent entre les mains du super-administrateur**.
+Retour du marchand : un client de détail qui achète 10 ou 20 pièces doit payer le prix normal ; la proposition « devenir grossiste » et la visibilité des tarifs de gros doivent être des options. Décision : **toutes ces options (WhatsApp et caisse) sont attribuées marchand par marchand par le super-administrateur seul, selon les besoins**. Le marchand ne les voit ni ne les modifie.
 
-**Nouveau comportement par défaut (tout est fermé).** Seuls les **grossistes enregistrés et identifiés** (numéro reconnu, ou code donné) obtiennent les prix de gros, sans minimum. Un client ordinaire paie le prix normal quelle que soit la quantité ; il ne voit ni ligne « Tarifs de gros », ni astuce « ajoutez N articles », ni question « êtes-vous grossiste ? », ni proposition de devenir grossiste. Un client qui connaît son code peut toujours écrire « **mon code grossiste** » (ou « je suis grossiste ») à tout moment, panier vide ou rempli (le panier est alors recalculé) ; 3 essais, puis verrou de 30 minutes, code masqué dans le journal.
+**Comportement par défaut (tout est fermé).** Seuls les **grossistes enregistrés et identifiés** (numéro reconnu, ou code donné) obtiennent les prix de gros, sans minimum. Un client ordinaire paie le prix normal quelle que soit la quantité ; il ne voit ni ligne « Tarifs de gros », ni astuce « ajoutez N articles », ni question « êtes-vous grossiste ? », ni proposition de devenir grossiste. Un client qui connaît son code peut toujours écrire « **mon code grossiste** » (ou « je suis grossiste »), panier vide ou rempli (le panier est alors recalculé) ; 3 essais, puis verrou de 30 minutes, code masqué dans le journal. Les marchands déjà en place passent à ce comportement par défaut (réglages absents = fermés).
 
-**Options du marchand (onglet « Vente en gros », propriétaire / super-administrateur), toutes décochées au départ :**
-- **Paliers automatiques** : tout client obtient le prix de gros dès que le minimum de pièces (colonne « À partir de ») est atteint. Sans cette case, la colonne ne sert pas.
-- **Tarifs de gros visibles** : ligne « Tarifs de gros » dans « Mon panier » et message « tarifs de gros ». Avec les paliers fermés, la liste montre un prix par cible, sans seuil de pièces ; l'astuce « ajoutez N articles » n'apparaît que si paliers ET tarifs visibles sont cochés.
+**Options WhatsApp (bloc « Vente en gros sur WhatsApp (super-administrateur uniquement) » de l'onglet Vente en gros, `PUT /api/:id/gros/options-whatsapp`) :**
+- **Paliers automatiques** : tout client obtient le prix de gros dès que le minimum de pièces (colonne « À partir de ») est atteint.
+- **Tarifs de gros visibles** : ligne « Tarifs de gros » dans « Mon panier » et message « tarifs de gros » (sans seuils si les paliers sont fermés ; l'astuce « ajoutez N articles » n'apparaît que si paliers ET tarifs visibles sont ouverts).
 - **Question « êtes-vous grossiste ? »** posée aux numéros inconnus avant le récapitulatif.
-- **Proposer de devenir grossiste** (texte d'invitation et demande transmise à un conseiller).
-- Critères de recherche à la caisse (Code / Nom / Téléphone, l'un OU l'autre) : inchangés, au choix du marchand, mais effectifs seulement si le super-administrateur a ouvert l'identification à la caisse.
+- **Proposer de devenir grossiste** (invitation et demande transmise à un conseiller).
 
-**Caisse : 2 interrupteurs réservés au super-administrateur** (bloc « Réglages de la caisse (super-administrateur uniquement) » de l'onglet Vente en gros, `PUT /api/:id/gros/caisse`) :
-- **Identification d'un grossiste à la caisse** (sinon `POST /pos/gros/identifier` répond 403 et le bloc « Client grossiste » n'apparaît pas) ;
-- **Paliers pour les clients non identifiés à la caisse** (sinon un client ordinaire paie le prix normal, quelle que soit la quantité).
+**Caisse (bloc « Réglages de la caisse (super-administrateur uniquement) », `PUT /api/:id/gros/caisse`) :**
+- **Identification d'un grossiste à la caisse** (sinon l'identification répond 403, le bloc « Client grossiste » n'apparaît pas, et un jeton déjà émis est refusé) ;
+- **Paliers pour les clients non identifiés à la caisse**.
 
-Ces réglages ne sont **ni lisibles ni modifiables** par le propriétaire, un employé ou un caissier : la route `GET /api/:id/gros` ne renvoie `caisse` qu'au super-administrateur, `PUT /gros/caisse` répond 403 aux autres (tentative journalisée), et l'action « Réglages de la caisse (vente en gros) modifiés » est masquée du journal du marchand. Un jeton de grossiste déjà émis n'est plus honoré si l'identification est refermée. Aucune migration : les nouveaux réglages sont rangés dans l'état du marchand (valeurs absentes = fermées, donc les marchands existants passent au nouveau comportement par défaut).
+**Ce que le marchand règle encore :** sa grille de tarifs, sa liste de grossistes (codes, import/export CSV) et les **critères de recherche à la caisse** (Code / Nom / Téléphone, l'un OU l'autre, défaut code seul), effectifs seulement si le super-administrateur a ouvert l'identification à la caisse. Les textes qu'il lit sur les paliers sont neutres (« selon la configuration de votre boutique »).
+
+**Confidentialité.** `GET /api/:id/gros` ne renvoie `options` et `caisse` qu'au super-administrateur ; les deux routes de réglage répondent 403 à tout autre (tentative journalisée) ; `PUT /gros/config` refuse (403) un propriétaire qui glisserait ces champs ; les actions « Options WhatsApp… modifiées » et « Réglages de la caisse… modifiés » sont masquées du journal du marchand. Aucune migration : les réglages sont rangés dans l'état du marchand.
 
 Fichiers modifiés : `venteGros.js`, `conversation.js`, `server.js`, `public/admin.html`. `db.js` inchangé.

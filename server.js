@@ -817,7 +817,7 @@ app.get("/admin", (req, res) => {
 const ACTIONS_SUPERADMIN_SEULEMENT = new Set([
   "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees", "module_secondaire_modifie",
   "facturation_source_modifiee", "facturation_bascule", "cle_comptable_generee", "cle_comptable_revoquee",
-  "gros_caisse_modifie" // Etape 78b : interrupteurs de caisse de la vente en gros = super-administrateur seul (invisibles du marchand)
+  "gros_whatsapp_modifie", "gros_caisse_modifie" // Etape 78b/78c : interrupteurs de caisse de la vente en gros = super-administrateur seul (invisibles du marchand)
 ]);
 
 const LIBELLES_ACTIONS_AUDIT = {
@@ -886,6 +886,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/gros/regles": "gros_tarifs_modifies",
   "PUT /api/:id/gros/config": "gros_config_modifiee",
   "PUT /api/:id/gros/caisse": "gros_caisse_modifie",
+  "PUT /api/:id/gros/options-whatsapp": "gros_whatsapp_modifie",
   "POST /api/:id/gros/grossistes": "grossiste_ajoute",
   "PUT /api/:id/gros/grossistes/:gid": "grossiste_modifie",
   "DELETE /api/:id/gros/grossistes/:gid": "grossiste_retire",
@@ -950,8 +951,9 @@ function detailAuditRequete(code, req) {
     case "facture_creee": case "paiement_facture_enregistre":
       return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
     case "gros_tarifs_modifies": return { tarifs: Array.isArray(b.regles) ? b.regles.length : null };
-    case "gros_config_modifiee": {
-      const d = { criteres: Array.isArray(b.criteresCaisse) ? b.criteresCaisse : null };
+    case "gros_config_modifiee": return { criteres: Array.isArray(b.criteresCaisse) ? b.criteresCaisse : null };
+    case "gros_whatsapp_modifie": {
+      const d = {};
       ["paliersAuto", "tarifsVisibles", "demanderAuxInconnus", "devenirGrossiste"].forEach((k) => { if (b[k] !== undefined) d[k] = !!b[k]; });
       return d;
     }
@@ -3371,10 +3373,12 @@ function csvCellule(v) { const t = String(v == null ? "" : v); return /[";\n\r]/
 app.get("/api/:id/gros", protegerAcces, (req, res) => {
   const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
   const g = entry.engine.getGros();
-  const sortie = { regles: g.regles, grossistes: g.grossistes, criteresCaisse: g.criteresCaisse, paliersAuto: g.paliersAuto === true, tarifsVisibles: g.tarifsVisibles === true,
-    demanderAuxInconnus: g.demanderAuxInconnus === true, devenirGrossiste: g.devenirGrossiste === true, caisseModifiable: req.auth.role === "superadmin" };
-  // Les reglages de la CAISSE n'appartiennent qu'au super-administrateur : le marchand ne les voit jamais.
-  if (req.auth.role === "superadmin") sortie.caisse = { identification: g.caisse.identification === true, paliers: g.caisse.paliers === true };
+  const sortie = { regles: g.regles, grossistes: g.grossistes, criteresCaisse: g.criteresCaisse, superAdmin: req.auth.role === "superadmin" };
+  // Les options WhatsApp et les reglages de la CAISSE n'appartiennent qu'au super-administrateur : le marchand ne les voit jamais.
+  if (req.auth.role === "superadmin") {
+    sortie.options = { paliersAuto: g.paliersAuto === true, tarifsVisibles: g.tarifsVisibles === true, demanderAuxInconnus: g.demanderAuxInconnus === true, devenirGrossiste: g.devenirGrossiste === true };
+    sortie.caisse = { identification: g.caisse.identification === true, paliers: g.caisse.paliers === true };
+  }
   res.json(sortie);
 });
 app.put("/api/:id/gros/regles", protegerAcces, (req, res) => {
@@ -3386,9 +3390,20 @@ app.put("/api/:id/gros/regles", protegerAcces, (req, res) => {
 app.put("/api/:id/gros/config", protegerAcces, (req, res) => {
   const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
   const b = req.body || {};
-  const r = entry.engine.definirConfigGros({ criteresCaisse: b.criteresCaisse, paliersAuto: b.paliersAuto, tarifsVisibles: b.tarifsVisibles, demanderAuxInconnus: b.demanderAuxInconnus, devenirGrossiste: b.devenirGrossiste });
+  // Le proprietaire ne regle QUE les criteres de recherche : les options de vente (WhatsApp) sont au super-administrateur.
+  if (["paliersAuto", "tarifsVisibles", "demanderAuxInconnus", "devenirGrossiste"].some((k) => b[k] !== undefined) && req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const r = entry.engine.definirConfigGros({ criteresCaisse: b.criteresCaisse });
   if (r.erreur) return res.status(400).json({ erreur: r.erreur });
-  res.json(r);
+  res.json({ criteresCaisse: r.criteresCaisse });
+});
+// Options de la vente en gros sur WhatsApp : reservees au SUPER-ADMINISTRATEUR (attribuees selon les besoins de chaque marchand).
+app.put("/api/:id/gros/options-whatsapp", protegerAcces, (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.engine.definirConfigGros({ paliersAuto: b.paliersAuto, tarifsVisibles: b.tarifsVisibles, demanderAuxInconnus: b.demanderAuxInconnus, devenirGrossiste: b.devenirGrossiste });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json({ options: { paliersAuto: r.paliersAuto, tarifsVisibles: r.tarifsVisibles, demanderAuxInconnus: r.demanderAuxInconnus, devenirGrossiste: r.devenirGrossiste } });
 });
 // Interrupteurs de la CAISSE : reserves au SUPER-ADMINISTRATEUR (ni le proprietaire ni un employe ne peuvent les lire ou les changer).
 app.put("/api/:id/gros/caisse", protegerAcces, (req, res) => {
