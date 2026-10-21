@@ -816,7 +816,8 @@ app.get("/admin", (req, res) => {
 // Actions reservees au super-administrateur : jamais montrees au marchand (il ne doit pas voir ces options).
 const ACTIONS_SUPERADMIN_SEULEMENT = new Set([
   "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees", "module_secondaire_modifie",
-  "facturation_source_modifiee", "facturation_bascule", "cle_comptable_generee", "cle_comptable_revoquee"
+  "facturation_source_modifiee", "facturation_bascule", "cle_comptable_generee", "cle_comptable_revoquee",
+  "gros_caisse_modifie" // Etape 78b : interrupteurs de caisse de la vente en gros = super-administrateur seul (invisibles du marchand)
 ]);
 
 const LIBELLES_ACTIONS_AUDIT = {
@@ -884,6 +885,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/numeros-notification": "numeros_notification_modifies",
   "PUT /api/:id/gros/regles": "gros_tarifs_modifies",
   "PUT /api/:id/gros/config": "gros_config_modifiee",
+  "PUT /api/:id/gros/caisse": "gros_caisse_modifie",
   "POST /api/:id/gros/grossistes": "grossiste_ajoute",
   "PUT /api/:id/gros/grossistes/:gid": "grossiste_modifie",
   "DELETE /api/:id/gros/grossistes/:gid": "grossiste_retire",
@@ -948,7 +950,12 @@ function detailAuditRequete(code, req) {
     case "facture_creee": case "paiement_facture_enregistre":
       return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
     case "gros_tarifs_modifies": return { tarifs: Array.isArray(b.regles) ? b.regles.length : null };
-    case "gros_config_modifiee": return { criteres: Array.isArray(b.criteresCaisse) ? b.criteresCaisse : null, demanderAuxInconnus: b.demanderAuxInconnus !== undefined ? !!b.demanderAuxInconnus : null };
+    case "gros_config_modifiee": {
+      const d = { criteres: Array.isArray(b.criteresCaisse) ? b.criteresCaisse : null };
+      ["paliersAuto", "tarifsVisibles", "demanderAuxInconnus", "devenirGrossiste"].forEach((k) => { if (b[k] !== undefined) d[k] = !!b[k]; });
+      return d;
+    }
+    case "gros_caisse_modifie": return { identification: b.identification !== undefined ? !!b.identification : null, paliers: b.paliers !== undefined ? !!b.paliers : null };
     case "grossiste_ajoute": return { grossiste: b.nom || null };
     case "grossiste_modifie": case "grossiste_retire": case "grossiste_code_regenere": {
       const gr = entry && entry.moteurs.catalogue && entry.moteurs.catalogue.getGros().grossistes.filter((x) => x.id === p.gid)[0];
@@ -3364,7 +3371,11 @@ function csvCellule(v) { const t = String(v == null ? "" : v); return /[";\n\r]/
 app.get("/api/:id/gros", protegerAcces, (req, res) => {
   const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
   const g = entry.engine.getGros();
-  res.json({ regles: g.regles, grossistes: g.grossistes, criteresCaisse: g.criteresCaisse, demanderAuxInconnus: g.demanderAuxInconnus });
+  const sortie = { regles: g.regles, grossistes: g.grossistes, criteresCaisse: g.criteresCaisse, paliersAuto: g.paliersAuto === true, tarifsVisibles: g.tarifsVisibles === true,
+    demanderAuxInconnus: g.demanderAuxInconnus === true, devenirGrossiste: g.devenirGrossiste === true, caisseModifiable: req.auth.role === "superadmin" };
+  // Les reglages de la CAISSE n'appartiennent qu'au super-administrateur : le marchand ne les voit jamais.
+  if (req.auth.role === "superadmin") sortie.caisse = { identification: g.caisse.identification === true, paliers: g.caisse.paliers === true };
+  res.json(sortie);
 });
 app.put("/api/:id/gros/regles", protegerAcces, (req, res) => {
   const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
@@ -3375,7 +3386,16 @@ app.put("/api/:id/gros/regles", protegerAcces, (req, res) => {
 app.put("/api/:id/gros/config", protegerAcces, (req, res) => {
   const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
   const b = req.body || {};
-  const r = entry.engine.definirConfigGros({ criteresCaisse: b.criteresCaisse, demanderAuxInconnus: b.demanderAuxInconnus });
+  const r = entry.engine.definirConfigGros({ criteresCaisse: b.criteresCaisse, paliersAuto: b.paliersAuto, tarifsVisibles: b.tarifsVisibles, demanderAuxInconnus: b.demanderAuxInconnus, devenirGrossiste: b.devenirGrossiste });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json(r);
+});
+// Interrupteurs de la CAISSE : reserves au SUPER-ADMINISTRATEUR (ni le proprietaire ni un employe ne peuvent les lire ou les changer).
+app.put("/api/:id/gros/caisse", protegerAcces, (req, res) => {
+  if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.engine.definirCaisseGros({ identification: b.identification, paliers: b.paliers });
   if (r.erreur) return res.status(400).json({ erreur: r.erreur });
   res.json(r);
 });
@@ -3442,6 +3462,7 @@ app.get("/api/:id/gros/export", protegerAcces, (req, res) => {
 app.post("/api/:id/pos/gros/identifier", protegerAcces, (req, res) => {
   const entry = entreeGros(req, res, "caisse", false); if (!entry) return;
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  if (entry.engine.getGros().caisse.identification !== true) return res.status(403).json({ erreur: "L'identification des grossistes à la caisse n'est pas activée." });
   const cle = req.params.id + "|" + req.auth.adminUser;
   const maintenant = Date.now();
   let e = echecsRechercheGros.get(cle);
@@ -3472,6 +3493,7 @@ app.post("/api/:id/pos/gros/apercu", protegerAcces, (req, res) => {
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
   if (!entry.merchant.optionVenteGros) return res.json({ actif: false, lignes: [] });
+  { const cg = entry.engine.getGros().caisse; if (cg.identification !== true && cg.paliers !== true) return res.json({ actif: false, lignes: [] }); }
   const b = req.body || {};
   let grossisteId = null;
   if (b.jetonGrossiste) {
@@ -3487,7 +3509,9 @@ app.get("/api/:id/pos/gros/config", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
   if (entry.engine.type !== "catalogue" || !entry.merchant.optionVenteGros || !entry.merchant.optionCaissePos) return res.json({ actif: false });
   const g = entry.engine.getGros();
-  res.json({ actif: true, criteres: g.criteresCaisse, nbRegles: g.regles.length });
+  const ident = g.caisse.identification === true, pal = g.caisse.paliers === true;
+  if (!ident && !pal) return res.json({ actif: false });
+  res.json({ actif: true, identification: ident, paliers: pal, criteres: ident ? g.criteresCaisse : [], nbRegles: g.regles.length });
 });
 
 // -- Numero WhatsApp "public" du marchand (celui que ses clients contactent reellement) : sert UNIQUEMENT

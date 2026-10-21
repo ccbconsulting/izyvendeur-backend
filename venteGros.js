@@ -7,7 +7,12 @@
 //                  taille / de cet article passe a `prix` FCFA ». Specificite : article+taille > article > taille > global.
 //   grossistes   : [{ id, nom, telephone, code, note, actif, creeLe }]  (liste privee du proprietaire)
 //   criteresCaisse : sous-ensemble de ["nom","code","telephone"] ; semantique « L'un OU l'autre » ; defaut ["code"]
-//   demanderAuxInconnus : sur WhatsApp, demander « etes-vous grossiste ? » a un client dont le numero n'est pas connu
+//   Reglages WHATSAPP (choisis par le PROPRIETAIRE, tous faux par defaut) :
+//     paliersAuto         : les paliers (a partir de N pieces) s'appliquent aussi a un client NON identifie ; faux = gros reserve aux grossistes identifies
+//     tarifsVisibles      : les clients de detail voient les tarifs de gros (ligne de menu, texte « tarifs de gros », astuce « ajoutez N articles »)
+//     demanderAuxInconnus : demander « etes-vous grossiste ? » a un client dont le numero n'est pas connu (avant le recapitulatif)
+//     devenirGrossiste    : le client peut ecrire « devenir grossiste » (alerte au marchand)
+//   caisse : { identification, paliers } reglages de la CAISSE, modifiables par le SEUL super-administrateur (faux par defaut)
 //   prochainId   : compteur
 //
 // Un grossiste ENREGISTRE obtient le prix de gros SANS minimum (meme 1 piece) ; un client ordinaire l'obtient quand le total
@@ -22,7 +27,7 @@ const MAX_GROSSISTES = 5000;
 const ALPHABET_CODE = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // sans 0/O/1/I/L : aucune confusion a la lecture
 
 function donneesParDefaut() {
-  return { regles: [], grossistes: [], criteresCaisse: CRITERES_PAR_DEFAUT.slice(), demanderAuxInconnus: true, prochainId: 1 };
+  return { regles: [], grossistes: [], criteresCaisse: CRITERES_PAR_DEFAUT.slice(), paliersAuto: false, tarifsVisibles: false, demanderAuxInconnus: false, devenirGrossiste: false, caisse: { identification: false, paliers: false }, prochainId: 1 };
 }
 
 // Complete / normalise un objet `gros` charge depuis l'etat (retro-compatibilite : absent = valeurs par defaut).
@@ -31,8 +36,12 @@ function assurer(gros) {
   if (!Array.isArray(g.regles)) g.regles = [];
   if (!Array.isArray(g.grossistes)) g.grossistes = [];
   g.criteresCaisse = normaliserCriteres(g.criteresCaisse);
-  if (g.demanderAuxInconnus === undefined) g.demanderAuxInconnus = true;
-  g.demanderAuxInconnus = g.demanderAuxInconnus !== false;
+  g.paliersAuto = g.paliersAuto === true;
+  g.tarifsVisibles = g.tarifsVisibles === true;
+  g.demanderAuxInconnus = g.demanderAuxInconnus === true;
+  g.devenirGrossiste = g.devenirGrossiste === true;
+  if (!g.caisse || typeof g.caisse !== "object") g.caisse = {};
+  g.caisse = { identification: g.caisse.identification === true, paliers: g.caisse.paliers === true };
   if (!Number.isInteger(g.prochainId) || g.prochainId < 1) g.prochainId = 1 + g.grossistes.reduce((m, x) => Math.max(m, Number(String(x.id).replace(/\D/g, "")) || 0), 0);
   return g;
 }
@@ -108,9 +117,10 @@ function specificite(r, item) {
   return (r.produitId ? 2 : 0) + (r.taille ? 1 : 0);
 }
 
-// items : [{ productId, taille, prixDetail, quantite }] ; estGrossiste : grossiste enregistre (aucun minimum).
+// items : [{ productId, taille, prixDetail, quantite }] ; estGrossiste : grossiste enregistre (aucun minimum) ;
+// paliers : les paliers s'appliquent aussi a un client non identifie (faux par defaut : gros reserve aux grossistes).
 // Renvoie { prix:[...], appliques:[bool], totalPieces, manque: null|{ pieces, seuil } } .
-function tarifer(gros, items, estGrossiste) {
+function tarifer(gros, items, estGrossiste, paliers) {
   const g = assurer(gros);
   const totalPieces = items.reduce((s, it) => s + (Number(it.quantite) || 0), 0);
   const prix = [], appliques = [];
@@ -121,9 +131,9 @@ function tarifer(gros, items, estGrossiste) {
     g.regles.forEach((r) => {
       const spec = specificite(r, it);
       if (spec < 0) return;
-      const atteint = estGrossiste || totalPieces >= r.seuil;
+      const atteint = estGrossiste || (paliers === true && totalPieces >= r.seuil);
       if (!atteint) {
-        if (r.prix < detail) { const m = r.seuil - totalPieces; if (!manque || m < manque.pieces) manque = { pieces: m, seuil: r.seuil }; }
+        if (paliers === true && !estGrossiste && r.prix < detail) { const m = r.seuil - totalPieces; if (!manque || m < manque.pieces) manque = { pieces: m, seuil: r.seuil }; }
         return;
       }
       if (!meilleur || spec > meilleur.spec || (spec === meilleur.spec && r.prix < meilleur.prix)) meilleur = { spec, prix: r.prix };
@@ -136,13 +146,20 @@ function tarifer(gros, items, estGrossiste) {
 }
 
 // Libelle d'une regle pour les messages clients : « A partir de 10 pièces — 10 ml : 2 000 FCFA ».
-function lignesTarifs(gros, catalogue, fr, formatFcfa) {
+function lignesTarifs(gros, catalogue, fr, formatFcfa, sansSeuil) {
   const g = assurer(gros);
   const noms = {};
   (catalogue || []).forEach((p) => { noms[p.id] = p.nom; });
-  const tri = g.regles.slice().sort((a, b) => a.seuil - b.seuil || sansAccents(a.taille).localeCompare(sansAccents(b.taille)) || a.prix - b.prix);
+  let source = g.regles;
+  if (sansSeuil) { // une seule ligne par cible : le prix le plus bas
+    const m = {};
+    source.forEach((r) => { const k = (r.produitId || "") + "|" + sansAccents(r.taille); if (!m[k] || r.prix < m[k].prix) m[k] = r; });
+    source = Object.keys(m).map((k) => m[k]);
+  }
+  const tri = source.slice().sort((a, b) => a.seuil - b.seuil || sansAccents(a.taille).localeCompare(sansAccents(b.taille)) || a.prix - b.prix);
   return tri.map((r) => {
     const cible = [r.produitId ? (noms[r.produitId] || "") : "", r.taille || ""].filter(Boolean).join(" ") || (fr ? "tous articles" : "all items");
+    if (sansSeuil) return "• " + cible + " : " + formatFcfa(r.prix);
     return "• " + (fr ? "À partir de " + r.seuil + " pièce" + (r.seuil > 1 ? "s" : "") : "From " + r.seuil + " piece" + (r.seuil > 1 ? "s" : "")) + " — " + cible + " : " + formatFcfa(r.prix);
   });
 }
