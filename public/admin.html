@@ -761,6 +761,13 @@ const I18N = {
     statutPhotoErreur: "✗ Échec : {msg}",
     btnEnvoyerPhotos: "Envoyer {n} photo(s)",
     btnEnvoyerPhotosAucune: "Aucune photo à envoyer",
+    noteImportPhotosService: "Sélectionnez plusieurs photos d'un coup. Nommez chaque fichier comme le service (ex. « Coupe femme.jpg ») : l'association est automatique et vous pouvez la corriger avant l'envoi. Plusieurs photos pour un même service : ajoutez -2, -3 à la fin du nom (ex. « Coupe femme-2.jpg »). 3 photos au maximum par service (celles déjà présentes comptent). Les services doivent déjà être enregistrés. JPEG, PNG ou WEBP, 5 Mo maximum par photo.",
+    noteImportPhotosChambre: "Sélectionnez plusieurs photos d'un coup. Nommez chaque fichier comme la chambre (ex. « Chambre Standard.jpg ») : l'association est automatique et vous pouvez la corriger avant l'envoi. Plusieurs photos pour une même chambre : ajoutez -2, -3 à la fin du nom (ex. « Chambre Standard-2.jpg »). 3 photos au maximum par chambre (celles déjà présentes comptent). Les chambres doivent déjà être enregistrées. JPEG, PNG ou WEBP, 5 Mo maximum par photo.",
+    theadPhotoService: "Service", theadPhotoChambre: "Chambre",
+    statutPhotoAChoisirEl: "Aucun choix — cette photo ne sera pas envoyée",
+    statutPhotoDejaNEl: "Déjà {n} photo(s) sur 3 : celle-ci sera ajoutée à la suite.",
+    statutPhotoLimite: "Limite de 3 photos atteinte pour cet élément — non envoyée (supprimez-en une avant).",
+    msgImportPhotosLimite: " {n} photo(s) non envoyée(s) : limite de 3 photos par élément atteinte.",
     msgImportPhotosOk: "{ok} photo(s) envoyée(s) avec succès.",
     msgImportPhotosEchecs: " {n} photo(s) en échec (visible dans le tableau, vous pouvez réessayer) : {noms}",
 
@@ -1988,6 +1995,13 @@ const I18N = {
     statutPhotoErreur: "✗ Failed: {msg}",
     btnEnvoyerPhotos: "Upload {n} photo(s)",
     btnEnvoyerPhotosAucune: "No photo to upload",
+    noteImportPhotosService: "Select several photos at once. Name each file after the service (e.g. “Haircut.jpg”): matching is automatic and you can correct it before sending. Several photos for the same service: add -2, -3 at the end of the name (e.g. “Haircut-2.jpg”). 3 photos maximum per service (existing ones count). Services must already be saved. JPEG, PNG or WEBP, 5 MB maximum per photo.",
+    noteImportPhotosChambre: "Select several photos at once. Name each file after the room (e.g. “Standard Room.jpg”): matching is automatic and you can correct it before sending. Several photos for the same room: add -2, -3 at the end of the name (e.g. “Standard Room-2.jpg”). 3 photos maximum per room (existing ones count). Rooms must already be saved. JPEG, PNG or WEBP, 5 MB maximum per photo.",
+    theadPhotoService: "Service", theadPhotoChambre: "Room",
+    statutPhotoAChoisirEl: "No choice — this photo will not be sent",
+    statutPhotoDejaNEl: "Already {n} photo(s) out of 3: this one will be added after them.",
+    statutPhotoLimite: "3-photo limit reached for this item — not sent (delete one first).",
+    msgImportPhotosLimite: " {n} photo(s) not sent: 3-photo limit per item reached.",
     msgImportPhotosOk: "{ok} photo(s) uploaded successfully.",
     msgImportPhotosEchecs: " {n} photo(s) failed (shown in the table, you can retry): {noms}",
 
@@ -3341,26 +3355,47 @@ function associerPhotoAArticle(nomFichier, articles) {
   return { article: null, rang: 0, source: "aucun" };
 }
 
-function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine) {
+// Etape 79 : le meme assistant sert aux services et aux chambres (parametre `genre`), avec 3 photos au maximum par
+// element (les photos deja presentes comptent) ; l'envoi reutilise les routes de l'Etape 77, aucune route nouvelle.
+function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine, genre) {
+  genre = genre || "catalogue";
+  const maxPhotos = genre === "catalogue" ? 0 : MAX_PHOTOS_ELEMENT;
+  const dossier = genre === "service" ? "services" : genre === "chambre" ? "chambres" : "catalogue";
   const articles = catalogueServeur.slice().sort((a, b) => String(a.nom).localeCompare(String(b.nom), undefined, { sensitivity: "base" }));
   const parId = {};
   articles.forEach((a) => { parId[a.id] = a; });
   let lignes = [];
   let envoiEnCours = false;
 
+  const ordreEnvoi = (x, y) =>
+    x.articleId < y.articleId ? -1 : x.articleId > y.articleId ? 1 :
+    (x.rang - y.rang) || x.fichier.name.localeCompare(y.fichier.name, undefined, { numeric: true });
+  // Limite de 3 photos par service / chambre : on garde en priorite la photo sans suffixe, puis -2, -3 ; le surplus est signale, jamais envoye.
+  function recalculerLimites() {
+    lignes.forEach((l) => { l.depasse = false; });
+    if (!maxPhotos) return;
+    const pris = {};
+    lignes.filter((l) => l.etat === "ok" && l.articleId).forEach((l) => { pris[l.articleId] = (pris[l.articleId] || 0) + 1; });
+    lignes.filter((l) => !l.invalide && l.articleId && l.etat !== "ok").sort(ordreEnvoi).forEach((l) => {
+      const a = parId[l.articleId];
+      const deja = (a && a.photos ? a.photos.length : 0) + (pris[l.articleId] || 0);
+      if (deja >= maxPhotos) l.depasse = true; else pris[l.articleId] = (pris[l.articleId] || 0) + 1;
+    });
+  }
   function libelleStatut(l) {
     if (l.etat === "ok") return "<span class='statut-photo-ok'>" + esc(t("statutPhotoOk")) + "</span>";
     if (l.etat === "envoi") return esc(t("statutPhotoEnCours"));
     if (l.etat === "erreur") return "<span class='statut-photo-ko'>" + esc(t("statutPhotoErreur", { msg: l.message })) + "</span>";
     if (l.invalide) return "<span class='statut-photo-ko'>" + esc(t("statutPhotoInvalide")) + "</span>";
-    if (!l.articleId) return "<span class='statut-photo-ko'>" + esc(t("statutPhotoAChoisir")) + "</span>";
+    if (!l.articleId) return "<span class='statut-photo-ko'>" + esc(t(maxPhotos ? "statutPhotoAChoisirEl" : "statutPhotoAChoisir")) + "</span>";
+    if (l.depasse) return "<span class='statut-photo-ko'>" + esc(t("statutPhotoLimite")) + "</span>";
     let s = l.source === "approx" ? "<span class='statut-photo-approx'>" + esc(t("statutPhotoApprox")) + "</span>"
       : l.source === "manuel" ? esc(t("statutPhotoManuel")) : esc(t("statutPhotoExact"));
     const a = parId[l.articleId];
-    if (a && a.photos && a.photos.length) s += "<div class='raison'>" + esc(t("statutPhotoDejaN", { n: a.photos.length })) + "</div>";
+    if (a && a.photos && a.photos.length) s += "<div class='raison'>" + esc(t(maxPhotos ? "statutPhotoDejaNEl" : "statutPhotoDejaN", { n: a.photos.length })) + "</div>";
     return s;
   }
-  function aEnvoyer() { return lignes.filter((l) => !l.invalide && l.articleId && l.etat !== "ok"); }
+  function aEnvoyer() { recalculerLimites(); return lignes.filter((l) => !l.invalide && l.articleId && l.etat !== "ok" && !l.depasse); }
   function majBouton() {
     const btn = document.getElementById("btnEnvoyerPhotos");
     if (!btn) return;
@@ -3375,8 +3410,9 @@ function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine) {
 
   function dessiner() {
     if (!lignes.length) { zoneEl.innerHTML = ""; return; }
+    recalculerLimites();
     zoneEl.innerHTML =
-      "<table class='table-donnees table-import-photos'><tr><th>" + t("theadPhotoApercu") + "</th><th>" + t("theadPhotoFichier") + "</th><th>" + t("theadPhotoArticle") + "</th><th>" + t("theadPhotoStatut") + "</th></tr>" +
+      "<table class='table-donnees table-import-photos'><tr><th>" + t("theadPhotoApercu") + "</th><th>" + t("theadPhotoFichier") + "</th><th>" + t(genre === "service" ? "theadPhotoService" : genre === "chambre" ? "theadPhotoChambre" : "theadPhotoArticle") + "</th><th>" + t("theadPhotoStatut") + "</th></tr>" +
       lignes.map((l, i) =>
         "<tr>" +
           "<td>" + (l.urlApercu ? "<img class='apercu-import-photo' src=\"" + esc(l.urlApercu) + "\" alt='' />" : "") + "</td>" +
@@ -3396,8 +3432,8 @@ function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine) {
         l.source = "manuel";
         l.rang = 0;
         l.etat = "attente";
-        majStatut(l);
         majBouton();
+        lignes.forEach(majStatut); // la limite de 3 peut changer le statut des autres photos
       });
     });
     document.getElementById("btnEnvoyerPhotos").onclick = envoyer;
@@ -3407,9 +3443,7 @@ function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine) {
   async function envoyer() {
     // Ordre d'envoi : article par article, puis par rang (la photo sans suffixe d'abord - c'est la 1re photo
     // de l'article, celle que le bot envoie au client), puis par nom de fichier.
-    const liste = aEnvoyer().sort((x, y) =>
-      x.articleId < y.articleId ? -1 : x.articleId > y.articleId ? 1 :
-      (x.rang - y.rang) || x.fichier.name.localeCompare(y.fichier.name, undefined, { numeric: true }));
+    const liste = aEnvoyer().sort(ordreEnvoi);
     if (!liste.length) return;
     envoiEnCours = true;
     dessiner();
@@ -3422,7 +3456,7 @@ function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine) {
       try {
         const donnees = new FormData();
         donnees.append("photo", l.fichier);
-        const r = await fetch("/api/" + marchandActif.id + "/catalogue/" + encodeURIComponent(l.articleId) + "/photos", { method: "POST", body: donnees });
+        const r = await fetch("/api/" + marchandActif.id + "/" + dossier + "/" + encodeURIComponent(l.articleId) + "/photos", { method: "POST", body: donnees });
         if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erreur || r.statusText || String(r.status)); }
         l.etat = "ok";
         ok++;
@@ -3437,6 +3471,9 @@ function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine) {
     dessiner();
     let message = t("msgImportPhotosOk", { ok: ok });
     if (echecs.length) message += t("msgImportPhotosEchecs", { n: echecs.length, noms: echecs.join(", ") });
+    recalculerLimites();
+    const nbDepasse = lignes.filter((l) => l.depasse).length;
+    if (nbDepasse) message += t("msgImportPhotosLimite", { n: nbDepasse });
     alert(message);
     // Tout est passe : on recharge le catalogue (les nouvelles miniatures apparaissent) - le tableau, lui,
     // disparait avec le rechargement. En cas d'echec partiel on le GARDE : seules les photos non envoyees
@@ -5196,7 +5233,15 @@ async function renderServices() {
         "<input type='file' accept='.csv,text/csv' id='champFichierImportServices' /> " +
         "<button id='btnImporterServices'>" + t("btnImporterServices") + "</button> " +
         "<button id='btnModeleServices'>" + t("btnModeleServices") + "</button>" +
-      "</div>";
+      "</div>" +
+      (services.length
+        ? "<div class='bloc-import-photos'>" +
+            "<h3>" + t("titreImportPhotos") + "</h3>" +
+            "<p class='raison'>" + t("noteImportPhotosService") + "</p>" +
+            "<input type='file' id='champFichiersImportPhotos' accept='image/png,image/jpeg,image/webp' multiple />" +
+            "<div id='zoneImportPhotos' style='margin-top:10px;'></div>" +
+          "</div>"
+        : "");
 
     Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
       inp.addEventListener("input", () => {
@@ -5209,6 +5254,7 @@ async function renderServices() {
       btn.onclick = () => { local.splice(Number(btn.dataset.suppr), 1); redraw(); };
     });
     brancherPhotosElements(zone, "service", local, redraw);
+    if (document.getElementById("champFichiersImportPhotos")) monterImportPhotos(services, document.getElementById("champFichiersImportPhotos"), document.getElementById("zoneImportPhotos"), () => renderServices(), "service");
     document.getElementById("btnAjouterService").onclick = () => {
       local.push({ id: "s" + Date.now(), nom: t("nouveauService"), dureeMinutes: 30, prix: 0 });
       redraw();
@@ -5635,7 +5681,15 @@ async function renderChambres() {
         "<input type='file' accept='.csv,text/csv' id='champFichierImportChambres' /> " +
         "<button id='btnImporterChambres'>" + t("btnImporterChambres") + "</button> " +
         "<button id='btnModeleChambres'>" + t("btnModeleChambres") + "</button>" +
-      "</div>";
+      "</div>" +
+      (chambres.length
+        ? "<div class='bloc-import-photos'>" +
+            "<h3>" + t("titreImportPhotos") + "</h3>" +
+            "<p class='raison'>" + t("noteImportPhotosChambre") + "</p>" +
+            "<input type='file' id='champFichiersImportPhotos' accept='image/png,image/jpeg,image/webp' multiple />" +
+            "<div id='zoneImportPhotos' style='margin-top:10px;'></div>" +
+          "</div>"
+        : "");
     Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
       inp.addEventListener("input", () => {
         const i = Number(inp.dataset.i), champ = inp.dataset.champ;
@@ -5646,6 +5700,7 @@ async function renderChambres() {
       btn.onclick = () => { local.splice(Number(btn.dataset.suppr), 1); redraw(); };
     });
     brancherPhotosElements(zone, "chambre", local, redraw);
+    if (document.getElementById("champFichiersImportPhotos")) monterImportPhotos(chambres, document.getElementById("champFichiersImportPhotos"), document.getElementById("zoneImportPhotos"), () => renderChambres(), "chambre");
     document.getElementById("btnAjouterChambre").onclick = () => {
       local.push({ id: "c" + Date.now() + Math.floor(Math.random() * 1000), nom: t("nouvelleChambre"), nombre: 1, prix: 0, capacite: 2, description: "" });
       redraw();

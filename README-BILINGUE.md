@@ -2507,3 +2507,15 @@ Retour du marchand : un client de détail qui achète 10 ou 20 pièces doit paye
 **Confidentialité.** `GET /api/:id/gros` ne renvoie `options` et `caisse` qu'au super-administrateur ; les deux routes de réglage répondent 403 à tout autre (tentative journalisée) ; `PUT /gros/config` refuse (403) un propriétaire qui glisserait ces champs ; les actions « Options WhatsApp… modifiées » et « Réglages de la caisse… modifiés » sont masquées du journal du marchand. Aucune migration : les réglages sont rangés dans l'état du marchand.
 
 Fichiers modifiés : `venteGros.js`, `conversation.js`, `server.js`, `public/admin.html`. `db.js` inchangé.
+
+## Étape 79 — Import massif de photos pour les services et les chambres
+
+Le même assistant que l'import de photos du catalogue (Étape 38) est disponible, sous la liste, dans les onglets **Services** et **Chambres** (y compris pour un marchand hybride). Il n'apparaît que s'il existe au moins un service / une chambre déjà enregistré(e).
+
+- **Rapprochement par nom de fichier**, insensible à la casse, aux accents et à la ponctuation : « Coupe femme.jpg », « coupe-femme.png », « Chambre Standard.jpg ». Plusieurs photos pour un même élément : ajouter **-2, -3** (ou « (3) ») à la fin du nom ; la photo sans suffixe est envoyée en premier, c'est celle que le bot montre en premier au client.
+- **Correction avant l'envoi** : chaque ligne a une liste déroulante pour choisir l'élément (ou « Ne pas envoyer »). Un fichier non reconnu reste « Aucun choix » et n'est pas envoyé ; un format non valide (autre que JPEG, PNG, WEBP) ou une photo de plus de 5 Mo est refusé.
+- **3 photos au maximum par service / chambre**, les photos déjà présentes comptant : le surplus est signalé « Limite de 3 photos atteinte » sur la ligne et n'est jamais envoyé ; le message de fin indique combien de photos n'ont pas été envoyées. En cas d'échec partiel, le tableau reste affiché et seules les photos non envoyées sont réessayées.
+- **Aucune route nouvelle** : l'envoi réutilise `POST /api/:id/services/:id/photos` et `/chambres/:id/photos` (Étape 77) une photo à la fois, avec les mêmes droits (propriétaire, super-administrateur ou employé « rendezvous » pour AJOUTER ; la suppression reste au propriétaire / super-administrateur), les mêmes contrôles et le même hébergement Cloudflare R2. Les lignes du formulaire non encore enregistrées ne peuvent pas recevoir de photos : enregistrez d'abord la liste.
+- Interface bilingue FR/EN.
+
+Fichier modifié : `public/admin.html` (aucun changement serveur ni base de données).
