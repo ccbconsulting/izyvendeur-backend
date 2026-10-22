@@ -852,6 +852,45 @@ const I18N = {
     // Etape 78 : vente en gros
     labelOptionVenteGros: "Vente en gros (grille de prix par palier, liste de grossistes reconnus sur WhatsApp et à la caisse, onglet Vente en gros)",
     ongletVenteGros: "Vente en gros",
+    ongletConsoMeta: "Consommation Meta",
+    act_bareme_meta_modifie: "Barème Meta modifié",
+    h3PhotosAuto: "Photos envoyées automatiquement",
+    notePhotosAuto: "Réglage réservé au super-administrateur. Quand un client choisit une chambre ou un service, le robot lui envoie cette quantité de photos : 1 (photo de couverture) ou 3 (toutes). Chaque photo est un message WhatsApp facturé par Meta : passer de 3 à 1 économise 2 messages à chaque chambre ou service consulté.",
+    labelPhotosAuto: "Photos envoyées au client",
+    optPhotos1: "1 photo (couverture) — recommandé",
+    optPhotos3: "3 photos (toutes)",
+    alertPhotosAutoEnregistre: "Réglage des photos enregistré.",
+    consoTitre: "Consommation de messagerie Meta (estimation)",
+    consoNote: "Réservé au super-administrateur. Messages envoyés par le robot, comptés d'après les accusés de Meta, et coût estimé avec le barème ci-dessous. Les messages écrits par les clients ne sont jamais facturés. La facture Meta fait foi.",
+    consoMois: "Mois",
+    consoColMarchand: "Marchand",
+    consoColService: "Réponses (service)",
+    consoColUtilitaire: "Utilitaires",
+    consoColMarketing: "Marketing",
+    consoColTotal: "Total",
+    consoColGratuits: "Gratuits restants",
+    consoColFactures: "Réponses facturées",
+    consoColCoutFcfa: "Coût estimé (FCFA)",
+    consoColCoutUsd: "USD",
+    consoColEtat: "État",
+    consoEtat_ok: "Normal",
+    consoEtat_proche: "Proche du quota gratuit",
+    consoEtat_depasse: "Quota gratuit dépassé",
+    consoEtat_cout_eleve: "Coût élevé",
+    consoTotalLigne: "Total",
+    consoVide: "Aucun message compté pour ce mois. Les compteurs démarrent dès la mise en service de cette version.",
+    consoBaremeTitre: "Barème (modifiable)",
+    consoBaremeNote: "Meta change ses tarifs le 1er janvier, avril, juillet et octobre. Tarifs en USD par message ; le taux sert à convertir en FCFA.",
+    consoB_tarifService: "Réponses libres au-delà du quota (USD)",
+    consoB_tarifUtilitaire: "Message utilitaire (USD)",
+    consoB_tarifMarketing: "Message marketing (USD)",
+    consoB_tarifAuthentification: "Message authentification (USD)",
+    consoB_quotaGratuit: "Réponses gratuites par mois et par numéro",
+    consoB_tauxFcfaParUsd: "FCFA pour 1 USD",
+    consoB_seuilAlerteFcfa: "Seuil d'alerte « coût élevé » (FCFA par mois)",
+    consoBtnEnregistrer: "Enregistrer le barème",
+    consoBtnExport: "Exporter en CSV",
+    alertBaremeEnregistre: "Barème enregistré.",
     grosNoteTarifs: "Ces prix sont réservés aux grossistes que vous avez enregistrés et identifiés : ils les obtiennent sans minimum, même pour une seule pièce. Un client ordinaire paie le prix normal, même pour 20 pièces, sauf configuration particulière de votre boutique par IzyVendeur. Si plusieurs tarifs s'appliquent, le plus précis l'emporte : article + taille, puis article, puis taille, puis tous les articles. Le prix de gros n'est jamais appliqué s'il dépasse le prix normal.",
     grosNoteSeuil: "La colonne « À partir de » n'est utilisée que si les paliers ont été activés pour votre boutique par IzyVendeur (le nombre de pièces se compte alors sur toute la commande, toutes tailles mélangées).",
     grosH3Tarifs: "Tarifs de gros",
@@ -2086,6 +2125,45 @@ const I18N = {
     // Step 78: wholesale
     labelOptionVenteGros: "Wholesale selling (tiered price grid, wholesaler list recognised on WhatsApp and at the register, Wholesale tab)",
     ongletVenteGros: "Wholesale",
+    ongletConsoMeta: "Meta usage",
+    act_bareme_meta_modifie: "Meta rate card changed",
+    h3PhotosAuto: "Photos sent automatically",
+    notePhotosAuto: "Super-administrator setting. When a customer picks a room or a service, the bot sends this many photos: 1 (cover photo) or 3 (all). Each photo is a WhatsApp message billed by Meta: going from 3 to 1 saves 2 messages every time a room or service is viewed.",
+    labelPhotosAuto: "Photos sent to the customer",
+    optPhotos1: "1 photo (cover) — recommended",
+    optPhotos3: "3 photos (all)",
+    alertPhotosAutoEnregistre: "Photo setting saved.",
+    consoTitre: "Meta messaging usage (estimate)",
+    consoNote: "Super-administrator only. Messages sent by the bot, counted from Meta's delivery receipts, and cost estimated with the rate card below. Messages written by customers are never billed. Meta's invoice is the reference.",
+    consoMois: "Month",
+    consoColMarchand: "Merchant",
+    consoColService: "Replies (service)",
+    consoColUtilitaire: "Utility",
+    consoColMarketing: "Marketing",
+    consoColTotal: "Total",
+    consoColGratuits: "Free left",
+    consoColFactures: "Billed replies",
+    consoColCoutFcfa: "Estimated cost (FCFA)",
+    consoColCoutUsd: "USD",
+    consoColEtat: "Status",
+    consoEtat_ok: "Normal",
+    consoEtat_proche: "Near the free quota",
+    consoEtat_depasse: "Free quota exceeded",
+    consoEtat_cout_eleve: "High cost",
+    consoTotalLigne: "Total",
+    consoVide: "No message counted for this month. Counters start as soon as this version is live.",
+    consoBaremeTitre: "Rate card (editable)",
+    consoBaremeNote: "Meta changes its prices on 1 January, April, July and October. Prices are in USD per message; the rate converts to FCFA.",
+    consoB_tarifService: "Free-form replies beyond the quota (USD)",
+    consoB_tarifUtilitaire: "Utility message (USD)",
+    consoB_tarifMarketing: "Marketing message (USD)",
+    consoB_tarifAuthentification: "Authentication message (USD)",
+    consoB_quotaGratuit: "Free replies per month and per number",
+    consoB_tauxFcfaParUsd: "FCFA per 1 USD",
+    consoB_seuilAlerteFcfa: "\"High cost\" alert threshold (FCFA per month)",
+    consoBtnEnregistrer: "Save the rate card",
+    consoBtnExport: "Export as CSV",
+    alertBaremeEnregistre: "Rate card saved.",
     grosNoteTarifs: "These prices are reserved for the wholesalers you registered and identified: they get them with no minimum, even for a single piece. An ordinary customer always pays the normal price, even for 20 pieces, unless IzyVendeur has configured your shop otherwise. If several prices apply, the most specific wins: item + size, then item, then size, then all items. The wholesale price is never applied if it exceeds the normal price.",
     grosNoteSeuil: "The \"From\" column is only used if tiers have been enabled for your shop by IzyVendeur (pieces are then counted over the whole order, all sizes mixed).",
     grosH3Tarifs: "Wholesale prices",
@@ -3210,6 +3288,12 @@ function construireOnglets() {
         ["compte", t("ongletCompte"), renderCompte, null]
       ].filter(Boolean);
 
+  // Etape 80 : onglet « Consommation Meta » - super-administrateur UNIQUEMENT (absent du tableau pour tout autre role).
+  if (moi && moi.role === "superadmin") {
+    const iCompte = onglets.findIndex((o) => o[0] === "compte");
+    const ongletConso = ["consometa", t("ongletConsoMeta"), renderConsoMeta, null].concat(hybride ? [null] : []);
+    onglets.splice(iCompte < 0 ? onglets.length : iCompte, 0, ongletConso);
+  }
   onglets = onglets.filter((o) => {
     const permission = o[3];
     if (permission === null) return true;
@@ -7986,13 +8070,37 @@ function brancherBlocNumeroPublic() {
 // renderCatalogue(), renderParametresCatalogue() et les deux points d'appel de
 // blocNumeroPublicHtml()/brancherBlocNumeroPublic() dans renderCompte() ci-dessous, tous gardes par
 // marchandActif.optionStockIllimite / optionLienCommande / optionNotificationsStatut.
+// ---------------- Photos envoyees automatiquement (Etape 80) : SUPER-ADMINISTRATEUR UNIQUEMENT ----------------
+// Chaque photo est un message WhatsApp facture par Meta : 1 (couverture) par defaut, 3 sur decision du super-administrateur.
+// Invisible pour un marchand ou un employe (la valeur n'est meme pas envoyee par le serveur a ces roles).
+function blocPhotosAutoHtml() {
+  if (!moi || moi.role !== "superadmin") return "";
+  if (modulesAdmin().indexOf("service") === -1 && modulesAdmin().indexOf("hebergement") === -1) return "";
+  const n = marchandActif.nbPhotosAuto === 3 ? 3 : 1;
+  return "<h3>" + t("h3PhotosAuto") + "</h3><p class='raison'>" + t("notePhotosAuto") + "</p>" +
+    "<label>" + t("labelPhotosAuto") + "</label> <select id='champPhotosAuto'><option value='1'" + (n === 1 ? " selected" : "") + ">" + t("optPhotos1") + "</option><option value='3'" + (n === 3 ? " selected" : "") + ">" + t("optPhotos3") + "</option></select> " +
+    "<button id='btnSauverPhotosAuto' class='principal'>" + t("enregistrer") + "</button>";
+}
+function brancherBlocPhotosAuto() {
+  const b = document.getElementById("btnSauverPhotosAuto");
+  if (!b) return;
+  b.onclick = async () => {
+    try {
+      await api("/api/marchands/" + marchandActif.id + "/options-payantes", { method: "PUT", body: JSON.stringify({ nbPhotosAuto: Number(document.getElementById("champPhotosAuto").value) }) });
+      alert(t("alertPhotosAutoEnregistre"));
+      const idMarchand = marchandActif.id;
+      await demarrer();
+      if (marchands.some((m) => m.id === idMarchand)) choisirMarchand(idMarchand);
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
 function blocOptionsPayantesHtml() {
   const principalHeb = marchandActif.type === "hebergement" || marchandActif.type === "transport";
   // Etape 66 : un marchand dont le volet principal est l'hebergement n'a les options du catalogue que s'il a AUSSI
   // le volet catalogue ; la facturation de sejours n'existe pas encore. Le choix des volets reste propose au
   // super-administrateur seul (blocModuleSecondaireHtml renvoie "" pour tout autre role).
   if (principalHeb && modulesAdmin().indexOf("catalogue") === -1) {
-    return "<h3>" + t("h3OptionsPayantes") + "</h3><p class='raison'>" + t(marchandActif.type === "transport" ? "noteOptionsTransport" : "noteOptionsHebergement") + "</p>" + blocModuleSecondaireHtml();
+    return "<h3>" + t("h3OptionsPayantes") + "</h3><p class='raison'>" + t(marchandActif.type === "transport" ? "noteOptionsTransport" : "noteOptionsHebergement") + "</p>" + blocModuleSecondaireHtml() + blocPhotosAutoHtml();
   }
   return "<h3>" + t("h3OptionsPayantes") + "</h3>" +
     "<p class='raison'>" + t("noteOptionsPayantes") + "</p>" +
@@ -8003,7 +8111,7 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionVenteGros'" + (marchandActif.optionVenteGros ? " checked" : "") + " /> " + t("labelOptionVenteGros") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
     (principalHeb ? "" : blocSourceFacturationHtml() + blocCleComptableHtml()) +
-    blocModuleSecondaireHtml();
+    blocModuleSecondaireHtml() + blocPhotosAutoHtml();
 }
 
 // ---------------- Source de facturation (Etape 54) : SUPER-ADMINISTRATEUR UNIQUEMENT ----------------
@@ -8149,8 +8257,9 @@ function brancherBlocModuleSecondaire() {
   };
 }
 function brancherBlocOptionsPayantes() {
-  if ((marchandActif.type === "hebergement" || marchandActif.type === "transport") && modulesAdmin().indexOf("catalogue") === -1) { brancherBlocModuleSecondaire(); return; }
+  if ((marchandActif.type === "hebergement" || marchandActif.type === "transport") && modulesAdmin().indexOf("catalogue") === -1) { brancherBlocModuleSecondaire(); brancherBlocPhotosAuto(); return; }
   brancherBlocModuleSecondaire();
+  brancherBlocPhotosAuto();
   brancherBlocSourceFacturation();
   brancherBlocCleComptable();
   document.getElementById("btnSauverOptionsPayantes").onclick = async () => {
@@ -8519,6 +8628,51 @@ function detailJournalHtml(ligne) {
   if (d.economie) out.push(t("jdGrosEconomie", { m: Number(d.economie).toLocaleString(localeCourante()) }));
   if (d.vente) out.push(t("jdVenteRef", { v: esc(d.vente) }));
   return out.map((x) => "<div>" + x + "</div>").join("");
+}
+
+// ---------------- Consommation Meta (Etape 80) : SUPER-ADMINISTRATEUR UNIQUEMENT ----------------
+// Estimation du cout de messagerie WhatsApp de chaque marchand, d'apres les accuses de Meta. Le serveur refuse (403) tout autre role.
+async function renderConsoMeta() {
+  const zone = document.getElementById("contenuOnglet");
+  const CHAMPS_B = ["tarifService", "tarifUtilitaire", "tarifMarketing", "tarifAuthentification", "quotaGratuit", "tauxFcfaParUsd", "seuilAlerteFcfa"];
+  const nf = (n) => Number(n || 0).toLocaleString(localeCourante());
+  async function charger(mois) {
+    let d;
+    try { d = await api("/api/conso-meta" + (mois ? "?mois=" + encodeURIComponent(mois) : "")); }
+    catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(t("erreurPrefixe") + e.message) + "</p>"; return; }
+    dessiner(d);
+  }
+  function dessiner(d) {
+    const mois = d.mois, liste = d.moisDisponibles.slice();
+    if (liste.indexOf(mois) === -1) liste.unshift(mois);
+    const c = (m, k) => (m.parCategorie[k] ? m.parCategorie[k].nb : 0);
+    const lignes = d.marchands.map((m) =>
+      "<tr data-conso-marchand='" + esc(m.id) + "'><td>" + esc(m.nom) + "</td><td>" + nf(c(m, "service") + c(m, "inconnu")) + "</td><td>" + nf(c(m, "utility")) + "</td><td>" +
+      nf(c(m, "marketing") + c(m, "referral_conversion")) + "</td><td><strong>" + nf(m.total) + "</strong></td><td>" + nf(m.serviceGratuitsRestants) + "</td><td>" + nf(m.serviceFactures) +
+      "</td><td><strong>" + nf(m.coutFcfa) + "</strong></td><td>" + esc(String(m.coutUsd)) + "</td><td class='conso-etat-" + esc(m.alerte) + "'>" + esc(t("consoEtat_" + m.alerte)) + "</td></tr>"
+    ).join("");
+    zone.innerHTML =
+      "<h2>" + t("consoTitre") + "</h2><p class='raison'>" + t("consoNote") + "</p>" +
+      "<p><label>" + t("consoMois") + "</label> <select id='champConsoMois'>" + liste.map((x) => "<option value='" + esc(x) + "'" + (x === mois ? " selected" : "") + ">" + esc(x) + "</option>").join("") + "</select> " +
+      "<button id='btnConsoExport'>" + t("consoBtnExport") + "</button></p>" +
+      (d.totaux.total > 0
+        ? "<div style='overflow-x:auto;'><table class='table-journal' id='tableConsoMeta'><thead><tr><th>" + t("consoColMarchand") + "</th><th>" + t("consoColService") + "</th><th>" + t("consoColUtilitaire") + "</th><th>" + t("consoColMarketing") +
+          "</th><th>" + t("consoColTotal") + "</th><th>" + t("consoColGratuits") + "</th><th>" + t("consoColFactures") + "</th><th>" + t("consoColCoutFcfa") + "</th><th>" + t("consoColCoutUsd") + "</th><th>" + t("consoColEtat") + "</th></tr></thead><tbody>" +
+          lignes + "<tr><td><strong>" + t("consoTotalLigne") + "</strong></td><td colspan='3'></td><td><strong>" + nf(d.totaux.total) + "</strong></td><td colspan='2'></td><td><strong>" + nf(d.totaux.coutFcfa) + "</strong></td><td>" + esc(String(d.totaux.coutUsd)) + "</td><td></td></tr></tbody></table></div>"
+        : "<p id='consoVide'>" + t("consoVide") + "</p>") +
+      "<h3>" + t("consoBaremeTitre") + "</h3><p class='raison'>" + t("consoBaremeNote") + "</p>" +
+      CHAMPS_B.map((k) => "<div style='margin-bottom:6px;'><label style='display:inline-block;min-width:330px;'>" + t("consoB_" + k) + "</label> <input type='number' step='any' min='0' id='champBareme_" + k + "' value='" + esc(String(d.bareme[k])) + "' /></div>").join("") +
+      "<button id='btnConsoBareme' class='principal'>" + t("consoBtnEnregistrer") + "</button>";
+    document.getElementById("champConsoMois").onchange = (ev) => charger(ev.target.value);
+    document.getElementById("btnConsoExport").onclick = () => { window.open("/api/conso-meta/export.csv?mois=" + encodeURIComponent(mois), "_blank"); };
+    document.getElementById("btnConsoBareme").onclick = async () => {
+      const corps = {};
+      CHAMPS_B.forEach((k) => { corps[k] = document.getElementById("champBareme_" + k).value; });
+      try { await api("/api/conso-meta/bareme", { method: "PUT", body: JSON.stringify(corps) }); alert(t("alertBaremeEnregistre")); charger(mois); }
+      catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+  charger(null);
 }
 
 async function renderJournal() {

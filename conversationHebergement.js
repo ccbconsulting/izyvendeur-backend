@@ -79,6 +79,8 @@ function createHebergementEngine(merchantKey, options) {
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
   // Etape 77 : photos des chambres (3 max), envoyees au client quand il choisit le type de chambre. Voir photosElements.js.
   const envoyerImage = (options && options.envoyerImage) || (async () => {});
+  // Etape 80 : nombre de photos de chambre envoyees automatiquement (1 ou 3 ; reglage du super-administrateur, fourni par server.js). Absent = 3.
+  const nbPhotosAuto = (options && typeof options.nbPhotosAuto === "function") ? options.nbPhotosAuto : () => 3;
   const memoirePhotos = {}; // telephone -> { idChambre: horodatage du dernier envoi }
   const nomMarchandOption = (options && options.nomMarchand) || (() => "");
   const journaliserOption = (options && options.journaliser) || (async () => {});
@@ -774,7 +776,7 @@ function createHebergementEngine(merchantKey, options) {
     const aEnvoyerListe = photosEl.aEnvoyer(memoirePhotos[fromPhone], idAvant ? [idAvant] : [], [session.chambreId],
       (id) => chambreParId(id),
       (c) => c.nom + " - " + formatFcfa(prixNuit(c)) + sh.t(session, " / nuit", " / night") + " (" + sh.t(session, "jusqu'à ", "up to ") + libellePersonnes(capaciteChambre(c), session) + ")",
-      Date.now());
+      Date.now(), nbPhotosAuto());
     aEnvoyerListe.forEach((p) => {
       Promise.resolve().then(() => envoyerImage(fromPhone, p.url, p.legende)).catch((erreur) =>
         console.error("[" + merchantKey + "] Echec de l'envoi d'une photo de chambre :", erreur));

@@ -51,7 +51,10 @@ function photosOrphelines(ancienneListe, nouvelleListe) {
 // Photos a envoyer pour les ids NOUVELLEMENT choisis par le client. `trouver(id)` renvoie l'element, `legende(element)`
 // son texte. `memoire` = { id: horodatage } propre a ce client (gardee en memoire par le moteur, elle survit aux
 // remises a zero de la session) : evite de renvoyer la meme photo en boucle.
-function aEnvoyer(memoire, idsAvant, idsApres, trouver, legende, maintenant) {
+// Etape 80 : `maxParElement` (1 ou 3) = nombre de photos envoyees AUTOMATIQUEMENT par element ; reglage du seul super-administrateur
+// (chaque photo est un message WhatsApp facture). Absent = 3, comme avant.
+function aEnvoyer(memoire, idsAvant, idsApres, trouver, legende, maintenant, maxParElement) {
+  const maxEl = Number.isInteger(maxParElement) && maxParElement >= 1 ? Math.min(maxParElement, MAX_PHOTOS) : MAX_PHOTOS;
   const out = [];
   if (!memoire) return out;
   const t0 = maintenant || Date.now();
@@ -62,7 +65,7 @@ function aEnvoyer(memoire, idsAvant, idsApres, trouver, legende, maintenant) {
     if (dernier && t0 - dernier < REEMISSION_MS) continue;
     const element = trouver(id);
     if (!element) continue;
-    const photos = nettoyer(element.photos);
+    const photos = nettoyer(element.photos).slice(0, maxEl);
     if (!photos.length) continue;
     const texte = legende(element);
     photos.forEach((url, i) => { if (out.length < MAX_PHOTOS_PAR_MESSAGE) out.push({ url, legende: i === 0 ? texte : null }); });

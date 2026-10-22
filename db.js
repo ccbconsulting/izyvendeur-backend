@@ -157,6 +157,9 @@ async function ensureMerchantsTable() {
   // (phone_notification) reste a part, toujours disponible.
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS nb_numeros_notification_supp INTEGER NOT NULL DEFAULT 0");
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS numeros_notification_supp JSONB NOT NULL DEFAULT '[]'::jsonb");
+  // Etape 80 : nombre de photos envoyees AUTOMATIQUEMENT quand le client choisit une chambre ou un service (1 = photo de couverture, 3 = toutes).
+  // Reglable par le SEUL super-administrateur (chaque photo est un message WhatsApp facture par Meta).
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS nb_photos_auto INTEGER NOT NULL DEFAULT 1");
 }
 
 // Cles de migration connues pour les roles employe (voir migrerRolesEmployes ci-dessous). Un marchand cree
@@ -298,7 +301,8 @@ function defaultMerchantFromEnv() {
     optionCaissePos: false,
     optionVenteGros: false,
     nbNumerosNotificationSupp: 0,
-    numerosNotificationSupp: []
+    numerosNotificationSupp: [],
+    nbPhotosAuto: 1
   };
 }
 
@@ -307,7 +311,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return migrerRolesEmployes(res.rows.map(rowToMerchant));
     }
@@ -359,7 +363,8 @@ function rowToMerchant(row) {
     moduleSecondaire: normaliserModulesSecondaires(row.module_secondaire),
     // Etape 76 : quota (super-administrateur seul) et liste (marchand) des numeros supplementaires d'alerte.
     nbNumerosNotificationSupp: Number.isInteger(row.nb_numeros_notification_supp) && row.nb_numeros_notification_supp > 0 ? row.nb_numeros_notification_supp : 0,
-    numerosNotificationSupp: Array.isArray(row.numeros_notification_supp) ? row.numeros_notification_supp.map(String) : []
+    numerosNotificationSupp: Array.isArray(row.numeros_notification_supp) ? row.numeros_notification_supp.map(String) : [],
+    nbPhotosAuto: row.nb_photos_auto === 3 ? 3 : 1
   };
 }
 
@@ -367,12 +372,12 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20::jsonb,$21,$22,$23,$24,$25,$26::jsonb) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb, izyfacture_api_key=$17, izyfacture_auto_facturation=$18, option_facturation_izyfacture=$19, derniere_erreur_alerte=$20::jsonb, filigrane_logo_actif=$21, option_caisse_pos=$22, option_vente_gros=$23, module_secondaire=$24, nb_numeros_notification_supp=$25, numeros_notification_supp=$26::jsonb",
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20::jsonb,$21,$22,$23,$24,$25,$26::jsonb,$27) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb, izyfacture_api_key=$17, izyfacture_auto_facturation=$18, option_facturation_izyfacture=$19, derniere_erreur_alerte=$20::jsonb, filigrane_logo_actif=$21, option_caisse_pos=$22, option_vente_gros=$23, module_secondaire=$24, nb_numeros_notification_supp=$25, numeros_notification_supp=$26::jsonb, nb_photos_auto=$27",
       // rolesMigres absent (nouveau marchand cree via l'API, voir server.js POST /api/marchands) -> on
       // suppose qu'il n'a jamais connu l'ancien regroupement de roles, donc toutes les cles de migration
       // connues sont deja "appliquees" par defaut (rien a migrer pour un marchand qui vient de naitre).
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null), m.filigraneLogoActif !== false, !!m.optionCaissePos, !!m.optionVenteGros, normaliserModulesSecondaires(m.moduleSecondaire), Number.isInteger(m.nbNumerosNotificationSupp) && m.nbNumerosNotificationSupp > 0 ? m.nbNumerosNotificationSupp : 0, JSON.stringify(Array.isArray(m.numerosNotificationSupp) ? m.numerosNotificationSupp : [])]
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null), m.filigraneLogoActif !== false, !!m.optionCaissePos, !!m.optionVenteGros, normaliserModulesSecondaires(m.moduleSecondaire), Number.isInteger(m.nbNumerosNotificationSupp) && m.nbNumerosNotificationSupp > 0 ? m.nbNumerosNotificationSupp : 0, JSON.stringify(Array.isArray(m.numerosNotificationSupp) ? m.numerosNotificationSupp : []), m.nbPhotosAuto === 3 ? 3 : 1]
     );
     return;
   }
@@ -390,7 +395,7 @@ async function getMerchantRecord(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -422,7 +427,7 @@ async function updateMerchantFields(id, patch) {
     // cas pour "employes" avant ce correctif : changer par ex. le numero de notification d'un marchand
     // ayant des employes les supprimait tous sans le vouloir.
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -449,6 +454,7 @@ async function updateMerchantFields(id, patch) {
     if (patch.moduleSecondaire !== undefined) m.moduleSecondaire = normaliserModulesSecondaires(patch.moduleSecondaire);
     if (patch.nbNumerosNotificationSupp !== undefined) m.nbNumerosNotificationSupp = patch.nbNumerosNotificationSupp;
     if (patch.numerosNotificationSupp !== undefined) m.numerosNotificationSupp = patch.numerosNotificationSupp;
+    if (patch.nbPhotosAuto !== undefined) m.nbPhotosAuto = patch.nbPhotosAuto === 3 ? 3 : 1;
     // Dernier echec de livraison d'alerte signale par Meta (voir POST /webhook, Etape 25) - `null` explicite
     // accepte (efface volontairement l'ancien echec affiche), jamais reecrit avec une valeur "vide" par erreur.
     if (patch.derniereErreurAlerte !== undefined) m.derniereErreurAlerte = patch.derniereErreurAlerte || null;
@@ -489,6 +495,7 @@ async function updateMerchantFields(id, patch) {
   if (patch.moduleSecondaire !== undefined) liste[idx].moduleSecondaire = normaliserModulesSecondaires(patch.moduleSecondaire);
   if (patch.nbNumerosNotificationSupp !== undefined) liste[idx].nbNumerosNotificationSupp = patch.nbNumerosNotificationSupp;
   if (patch.numerosNotificationSupp !== undefined) liste[idx].numerosNotificationSupp = patch.numerosNotificationSupp;
+  if (patch.nbPhotosAuto !== undefined) liste[idx].nbPhotosAuto = patch.nbPhotosAuto === 3 ? 3 : 1;
   if (patch.derniereErreurAlerte !== undefined) liste[idx].derniereErreurAlerte = patch.derniereErreurAlerte || null;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
@@ -973,7 +980,138 @@ async function journalLister(filtre) {
     .slice(0, limite);
 }
 
+// ============================================================================
+// Etape 80 : CONSOMMATION DE MESSAGERIE META, par marchand et par mois (super-administrateur seul).
+// Chaque message envoye par le bot (reponse, liste, boutons, photo, modele) donne lieu a un evenement « statuses / sent » de
+// Meta, qui precise la categorie (service / utility / marketing / authentication) et si le message est facturable.
+// On ne stocke que des COMPTEURS (jamais le numero du client ni le contenu). Le bareme (tarifs, taux de change, quota gratuit)
+// est reglable par le super-administrateur : Meta change ses tarifs 4 fois par an. C'est une ESTIMATION : la facture Meta fait foi.
+// ============================================================================
+const CONSO_META_FILE = path.join(__dirname, "conso-meta.json");
+const CLE_BAREME_META = "__bareme_meta__";
+let consoTableVerifiee = false;
+let consoLocale = null;
+let consoTimer = null;
+
+async function ensureConsoMetaTable() {
+  if (consoTableVerifiee) return;
+  await pool.query(
+    "CREATE TABLE IF NOT EXISTS conso_meta (" +
+      "merchant_key TEXT NOT NULL, mois TEXT NOT NULL, categorie TEXT NOT NULL, " +
+      "nb INTEGER NOT NULL DEFAULT 0, nb_facturables INTEGER NOT NULL DEFAULT 0, " +
+      "PRIMARY KEY (merchant_key, mois, categorie)" +
+    ")"
+  );
+  consoTableVerifiee = true;
+}
+
+function lireConsoLocale() {
+  if (consoLocale) return consoLocale;
+  let v = null;
+  try { if (fs.existsSync(CONSO_META_FILE)) v = JSON.parse(fs.readFileSync(CONSO_META_FILE, "utf8")); } catch (erreur) { console.error("Erreur de lecture de conso-meta.json, on repart de zero :", erreur); }
+  consoLocale = (v && typeof v === "object") ? v : {};
+  if (!consoLocale.compteurs || typeof consoLocale.compteurs !== "object") consoLocale.compteurs = {};
+  if (!("bareme" in consoLocale)) consoLocale.bareme = null;
+  return consoLocale;
+}
+
+function ecrireConsoLocaleMaintenant() {
+  if (consoTimer) { clearTimeout(consoTimer); consoTimer = null; }
+  if (!consoLocale) return;
+  try { fs.writeFileSync(CONSO_META_FILE, JSON.stringify(consoLocale)); } catch (erreur) { console.error("Erreur d'ecriture de conso-meta.json :", erreur); }
+}
+
+function planifierEcritureConso() {
+  if (consoTimer) return;
+  consoTimer = setTimeout(ecrireConsoLocaleMaintenant, 1500);
+  if (consoTimer.unref) consoTimer.unref();
+}
+
+// Ne leve jamais d'exception vers l'appelant : le comptage ne doit jamais gener le traitement du webhook.
+async function consoMetaCompter(merchantKey, mois, categorie, facturable) {
+  try {
+    const cat = String(categorie || "inconnu").slice(0, 40);
+    if (pool) {
+      await ensureConsoMetaTable();
+      await pool.query(
+        "INSERT INTO conso_meta (merchant_key, mois, categorie, nb, nb_facturables) VALUES ($1,$2,$3,1,$4) " +
+          "ON CONFLICT (merchant_key, mois, categorie) DO UPDATE SET nb = conso_meta.nb + 1, nb_facturables = conso_meta.nb_facturables + $4",
+        [merchantKey, mois, cat, facturable ? 1 : 0]
+      );
+      return;
+    }
+    const c = lireConsoLocale().compteurs;
+    const k = merchantKey + "|" + mois + "|" + cat;
+    if (!c[k]) c[k] = { nb: 0, nbFacturables: 0 };
+    c[k].nb += 1;
+    if (facturable) c[k].nbFacturables += 1;
+    planifierEcritureConso();
+  } catch (erreur) {
+    console.error("Erreur de comptage de la consommation Meta :", erreur);
+  }
+}
+
+// [{ merchantKey, categorie, nb, nbFacturables }] pour un mois « AAAA-MM ».
+async function consoMetaLire(mois) {
+  if (pool) {
+    await ensureConsoMetaTable();
+    const res = await pool.query("SELECT merchant_key, categorie, nb, nb_facturables FROM conso_meta WHERE mois = $1", [mois]);
+    return res.rows.map((r) => ({ merchantKey: r.merchant_key, categorie: r.categorie, nb: r.nb, nbFacturables: r.nb_facturables }));
+  }
+  const out = [];
+  const c = lireConsoLocale().compteurs;
+  Object.keys(c).forEach((k) => { const p = k.split("|"); if (p[1] === mois) out.push({ merchantKey: p[0], categorie: p[2], nb: c[k].nb, nbFacturables: c[k].nbFacturables }); });
+  return out;
+}
+
+async function consoMetaMoisDisponibles() {
+  if (pool) {
+    await ensureConsoMetaTable();
+    const res = await pool.query("SELECT DISTINCT mois FROM conso_meta ORDER BY mois DESC LIMIT 24");
+    return res.rows.map((r) => r.mois);
+  }
+  const set = {};
+  Object.keys(lireConsoLocale().compteurs).forEach((k) => { set[k.split("|")[1]] = true; });
+  return Object.keys(set).sort().reverse().slice(0, 24);
+}
+
+async function consoMetaBaremeLire() {
+  try {
+    if (pool) {
+      await ensureAppStateTable();
+      const res = await pool.query("SELECT data FROM app_state WHERE merchant_key = $1", [CLE_BAREME_META]);
+      return res.rows.length ? res.rows[0].data : null;
+    }
+    return lireConsoLocale().bareme || null;
+  } catch (erreur) {
+    console.error("Erreur de lecture du bareme Meta :", erreur);
+    return null;
+  }
+}
+
+async function consoMetaBaremeEcrire(bareme) {
+  if (pool) {
+    await ensureAppStateTable();
+    await pool.query(
+      "INSERT INTO app_state (merchant_key, data) VALUES ($1, $2) ON CONFLICT (merchant_key) DO UPDATE SET data = $2, updated_at = now()",
+      [CLE_BAREME_META, bareme]
+    );
+    return;
+  }
+  lireConsoLocale().bareme = bareme;
+  ecrireConsoLocaleMaintenant();
+}
+
+// A appeler a l'arret du serveur : vide l'ecriture differee du mode local.
+function consoMetaVider() { if (!pool) ecrireConsoLocaleMaintenant(); }
+
 module.exports = {
+  consoMetaCompter,
+  consoMetaLire,
+  consoMetaMoisDisponibles,
+  consoMetaBaremeLire,
+  consoMetaBaremeEcrire,
+  consoMetaVider,
   normaliserModulesSecondaires,
   initRegistry,
   addMerchant,

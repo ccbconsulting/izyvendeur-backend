@@ -166,6 +166,8 @@ function createServiceEngine(merchantKey, options) {
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
   // Etape 77 : photos des services (3 max), envoyees au client quand il choisit le service. Voir photosElements.js.
   const envoyerImage = (options && options.envoyerImage) || (async () => {});
+  // Etape 80 : nombre de photos de service envoyees automatiquement (1 ou 3 ; reglage du super-administrateur, fourni par server.js). Absent = 3.
+  const nbPhotosAuto = (options && typeof options.nbPhotosAuto === "function") ? options.nbPhotosAuto : () => 3;
   const memoirePhotos = {}; // telephone -> { idService: horodatage du dernier envoi }
   // Etape 60 : nom commercial du marchand, lu a chaque usage (il peut etre renomme dans /admin) pour
   // personnaliser l'accueil ("Bienvenue chez <nom>"). Sans l'option (tests, ancien appelant) : accueil inchange.
@@ -1408,7 +1410,7 @@ function createServiceEngine(merchantKey, options) {
     if (!memoirePhotos[fromPhone]) memoirePhotos[fromPhone] = {};
     const aEnvoyerListe = photosEl.aEnvoyer(memoirePhotos[fromPhone], idsAvant, idsServicesDe(session),
       (id) => state.services.filter((x) => x.id === id)[0] || null,
-      (sv) => sv.nom + " - " + sv.dureeMinutes + " min - " + formatFcfa(sv.prix), Date.now());
+      (sv) => sv.nom + " - " + sv.dureeMinutes + " min - " + formatFcfa(sv.prix), Date.now(), nbPhotosAuto());
     aEnvoyerListe.forEach((p) => {
       Promise.resolve().then(() => envoyerImage(fromPhone, p.url, p.legende)).catch((erreur) =>
         console.error("[" + merchantKey + "] Echec de l'envoi d'une photo de service :", erreur));

@@ -157,6 +157,9 @@ function createCatalogEngine(merchantKey, options) {
   // storage.js pour l'hebergement, server.js pour l'appel a l'API Graph). No-op si non fourni (compatible
   // avec d'anciens appels/tests qui ne passent pas cette option).
   const envoyerImage = (options && options.envoyerImage) || (async () => {});
+  // Etape 80 : si true (fourni par server.js), la photo de l'article n'est PAS envoyee seule : elle est mise en attente sur la session et
+  // server.js l'integre en en-tete du message a boutons de quantite (1 message au lieu de 2). Sans cette option : envoi separe, comme avant.
+  const photoEnEnteteActive = (options && typeof options.photoEnEntete === "function") ? options.photoEnEntete : () => false;
   // `options.journaliser(telephone, de, texte)` enregistre durablement un message dans le journal complet
   // des conversations (voir db.js) - pour l'onglet "Historique" de /admin. Toujours appele en
   // fire-and-forget (jamais attendu, jamais laisse faire planter la conversation en cas d'echec).
@@ -1835,10 +1838,23 @@ function createCatalogEngine(merchantKey, options) {
       // dans la bulle de conversation, sans appel reseau vers l'API Graph.
       return url;
     }
+    if (photoEnEnteteActive() && sessions[fromPhone]) {
+      sessions[fromPhone].photoEnAttente = { url, legende: product.nom, a: Date.now() };
+      return url;
+    }
     envoyerImage(fromPhone, url, product.nom).catch((erreur) =>
       console.error("[" + merchantKey + "] Echec de l'envoi de la photo de l'article \"" + product.nom + "\" :", erreur)
     );
     return url;
+  }
+
+  // Etape 80 : recupere (et efface) la photo mise en attente par envoyerPhotoProduit ; null si absente ou perimee (> 60 s).
+  function prendrePhotoEnAttente(fromPhone) {
+    const s = sessions[fromPhone];
+    if (!s || !s.photoEnAttente) return null;
+    const p = s.photoEnAttente;
+    delete s.photoEnAttente;
+    return Date.now() - p.a < 60000 ? { url: p.url, legende: p.legende } : null;
   }
 
   // Enregistre la trace ET la garde sur la session (utilise par le Simulateur de /admin pour afficher le
@@ -2813,6 +2829,7 @@ function createCatalogEngine(merchantKey, options) {
     getConversationsEnAttente,
     repondreConversationHumain,
     getEtatSession,
+    prendrePhotoEnAttente,
     commandesEnCoursDuClient,
     nbCommandesEnCours,
     aRelancer,

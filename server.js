@@ -24,6 +24,7 @@ const createHebergementEngine = require("./conversationHebergement");
 const createTransportEngine = require("./conversationTransport");
 const importTransport = require("./importTransport");
 const photosElements = require("./photosElements"); // Etape 77 : photos des services et des chambres (3 max)
+const consoMeta = require("./consoMeta"); // Etape 80 : estimation de la consommation de messagerie Meta (super-administrateur seul)
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
 const remisesLib = require("./remises");
@@ -376,6 +377,11 @@ function creerOptionsEngine(merchantKey) {
   return {
     // Etape 78 : option payante « Vente en gros » (debloquee par le seul super-administrateur) lue en direct par le moteur catalogue.
     venteGrosActive: () => { const e = engines[merchantKey]; return !!(e && e.merchant && e.merchant.optionVenteGros === true); },
+    // Etape 80 : nombre de photos de chambre / de service envoyees automatiquement (1 = photo de couverture, 3 = toutes) -
+    // reglage du SEUL super-administrateur (chaque photo est un message WhatsApp facture). Defaut 1.
+    nbPhotosAuto: () => { const e = engines[merchantKey]; return e && e.merchant && e.merchant.nbPhotosAuto === 3 ? 3 : 1; },
+    // Etape 80 : la photo d'un article est integree en en-tete du message a boutons de quantite (un message au lieu de deux).
+    photoEnEntete: () => true,
     // Etape 60 : nom commercial du marchand pour l'accueil du moteur rendez-vous ("Bienvenue chez <nom>").
     nomMarchand: () => { const e = engines[merchantKey]; return (e && e.merchant && e.merchant.nom) || ""; },
     envoyer: async (destinataire, texte) => {
@@ -817,7 +823,7 @@ app.get("/admin", (req, res) => {
 const ACTIONS_SUPERADMIN_SEULEMENT = new Set([
   "marchand_cree", "marchand_supprime", "marchand_actif_modifie", "options_payantes_modifiees", "module_secondaire_modifie",
   "facturation_source_modifiee", "facturation_bascule", "cle_comptable_generee", "cle_comptable_revoquee",
-  "gros_whatsapp_modifie", "gros_caisse_modifie" // Etape 78b/78c : interrupteurs de caisse de la vente en gros = super-administrateur seul (invisibles du marchand)
+  "bareme_meta_modifie", "gros_whatsapp_modifie", "gros_caisse_modifie" // Etape 78b/78c : interrupteurs de caisse de la vente en gros = super-administrateur seul (invisibles du marchand)
 ]);
 
 const LIBELLES_ACTIONS_AUDIT = {
@@ -828,6 +834,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "DELETE /api/:id/employes/:employeId": "employe_supprime",
   "PUT /api/:id/actif": "marchand_actif_modifie",
   "PUT /api/marchands/:id/options-payantes": "options_payantes_modifiees",
+  "PUT /api/conso-meta/bareme": "bareme_meta_modifie",
   "PUT /api/marchands/:id/module-secondaire": "module_secondaire_modifie",
   "PUT /api/:id/facturation/source": "facturation_source_modifiee",
   "POST /api/:id/facturation/bascule": "facturation_bascule",
@@ -1263,6 +1270,8 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     nbNumerosNotificationSupp: quotaNumerosSupp(e.merchant),
     numerosNotificationSupp: quotaNumerosSupp(e.merchant) > 0 || req.auth.role === "superadmin" ? (Array.isArray(e.merchant.numerosNotificationSupp) ? e.merchant.numerosNotificationSupp : []) : [],
     plafondNumerosNotificationSupp: PLAFOND_NUMEROS_NOTIFICATION_SUPP,
+    // Etape 80 : reglage reserve au super-administrateur - jamais envoye a un marchand ni a un employe.
+    nbPhotosAuto: req.auth.role === "superadmin" ? (e.merchant.nbPhotosAuto === 3 ? 3 : 1) : undefined,
     logoUrl: e.merchant.logoUrl || null, imageAccueilWhatsappUrl: e.merchant.imageAccueilWhatsappUrl || null,
     numeroWhatsappPublic: e.merchant.numeroWhatsappPublic || null,
     optionStockIllimite: e.merchant.optionStockIllimite === true, optionLienCommande: e.merchant.optionLienCommande === true,
@@ -1582,8 +1591,14 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, nbNumerosNotification } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, nbNumerosNotification, nbPhotosAuto } = req.body || {};
   const patch = {};
+  // Etape 80 : photos envoyees automatiquement (1 ou 3). Reserve au super-administrateur (toute la route l'est).
+  if (nbPhotosAuto !== undefined) {
+    const n = Number(nbPhotosAuto);
+    if (n !== 1 && n !== 3) return res.status(400).json({ erreur: "nbPhotosAuto doit valoir 1 ou 3." });
+    patch.nbPhotosAuto = n;
+  }
   // Etape 76 : nombre de numeros d'alerte supplementaires accordes a ce marchand (0 = option fermee). Reserve au super-administrateur
   // (toute la route l'est) ; le marchand remplit ensuite la liste dans cette limite (PUT /api/:id/numeros-notification).
   if (nbNumerosNotification !== undefined) {
@@ -1616,8 +1631,9 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionCaissePos = maj.optionCaissePos;
   entry.merchant.optionVenteGros = maj.optionVenteGros === true;
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
+  entry.merchant.nbPhotosAuto = maj.nbPhotosAuto === 3 ? 3 : 1;
   console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true });
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1 });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -4007,7 +4023,9 @@ app.post("/webhook", async (req, res) => {
       const merchantIdStatut = phoneNumberId && phoneNumberIndex[phoneNumberId];
       const marchandStatut = merchantIdStatut && engines[merchantIdStatut];
       for (const s of statuses) {
-        if (s.status !== "failed") continue; // "sent"/"delivered"/"read" : rien a signaler, seul l'echec importe ici
+        // Etape 80 : compteur de consommation de messagerie (super-administrateur seul) - un evenement « sent » par message envoye.
+        if (s.status === "sent" && merchantIdStatut) compterStatutEnvoye(merchantIdStatut, s);
+        if (s.status !== "failed") continue; // "delivered"/"read" : rien a signaler, seul l'echec importe ici
         const erreur = (s.errors && s.errors[0]) || {};
         const detail = {
           horodatage: new Date().toISOString(),
@@ -4277,14 +4295,26 @@ app.post("/webhook", async (req, res) => {
           console.error(`[${merchantId}] Echec de l'envoi de l'image d'accueil au premier contact (ignore) :`, erreur);
         }
       }
+      // Etape 80 : photo d'article mise en attente par le moteur catalogue. Si la reponse est la question de quantite (boutons), elle
+      // devient l'en-tete de ce message (1 message au lieu de 2) ; sinon elle part seule AVANT la reponse, comme auparavant.
+      let photoEntete = null;
+      if (typeof marchand.engine.prendrePhotoEnAttente === "function") {
+        const photoAttente = marchand.engine.prendrePhotoEnAttente(from);
+        if (photoAttente) {
+          const etatPhoto = typeof marchand.engine.getEtatSession === "function" ? marchand.engine.getEtatSession(from) : null;
+          if (etatPhoto && etatPhoto.stage === "awaiting_quantity" && !sh.estMessageMiseEnRelation(reponse)) photoEntete = { url: photoAttente.url, legende: photoAttente.legende, traitee: false };
+          else { try { await envoyerImageWhatsApp(from, photoAttente.url, photoAttente.legende, phoneNumberId); } catch (e) { console.error(`[${merchantId}] Echec de l'envoi de la photo de l'article (ignore) :`, e); } }
+        }
+      }
       let envoiInteractifReussi = false;
       try {
-        envoiInteractifReussi = await essayerEnvoyerMenuInteractif(marchand, from, phoneNumberId, reponse);
+        envoiInteractifReussi = await essayerEnvoyerMenuInteractif(marchand, from, phoneNumberId, reponse, photoEntete);
       } catch (erreur) {
         // Ne doit JAMAIS empecher le client de recevoir une reponse : en cas de pepin ici, on se rabat
         // simplement sur le texte simple juste en dessous.
         console.error(`[${merchantId}] Erreur lors de la construction du menu interactif (repli en texte) :`, erreur);
       }
+      if (photoEntete && !photoEntete.traitee) { try { await envoyerImageWhatsApp(from, photoEntete.url, photoEntete.legende, phoneNumberId); } catch (e) { /* best-effort */ } photoEntete.traitee = true; }
       if (!envoiInteractifReussi) await envoyerMessageWhatsApp(from, reponse, phoneNumberId);
     } else {
       console.log(`[${merchantId}] Conversation en pause pour un humain — aucune reponse automatique envoyee a ${from}.`);
@@ -4896,7 +4926,7 @@ async function envoyerMenuTransport(marchand, destinataire, phoneNumberId, texte
 // de la conversation. Renvoie true si un message interactif a bien ete envoye (rien d'autre a faire),
 // false s'il n'y a pas de menu pertinent ICI ou si l'envoi a echoue (l'appelant se rabat alors sur
 // envoyerMessageWhatsApp comme avant).
-async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberId, texte) {
+async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberId, texte, photoEntete) {
   if (sh.estMessageMiseEnRelation(texte)) return false; // jamais de menu juste apres une mise en relation (FR ou EN)
 
   // Porte bilingue (tout premier message, voir sh.messageChoixLangue) : menu deroulant Français/English
@@ -5037,11 +5067,18 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   // Choix rapide de quantité (moteur catalogue) : 1, 2, ou retour au catalogue - le client garde aussi la
   // possibilité de taper n'importe quel autre nombre en texte libre comme avant (voir parseQuantity).
   if (etat.stage === "awaiting_quantity") {
-    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+    const boutonsQuantite = [
       { id: "1", title: "1" },
       { id: "2", title: "2" },
       { id: ID_AUTRE_ARTICLE, title: tW(etat, "◀ Autres articles", "◀ Other items") }
-    ]);
+    ];
+    // Etape 80 : photo de l'article en en-tete (un seul message). Si Meta refuse l'image, repli : photo seule puis boutons, comme avant.
+    if (photoEntete && !photoEntete.traitee) {
+      if (await envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, boutonsQuantite, photoEntete.url)) { photoEntete.traitee = true; return true; }
+      try { await envoyerImageWhatsApp(destinataire, photoEntete.url, photoEntete.legende, phoneNumberId); } catch (e) { /* best-effort */ }
+      photoEntete.traitee = true;
+    }
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, boutonsQuantite);
   }
 
   // Rupture sur tous les modeles : "Souhaitez-vous que notre equipe vous previenne des le reassort ?" (voir
@@ -5172,7 +5209,8 @@ async function envoyerListeWhatsApp(destinataire, phoneNumberId, texteCorps, bou
 }
 
 // --- Fonction utilitaire : envoyer des boutons de reponse rapide WhatsApp (max 3) ---
-async function envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texteCorps, boutons) {
+// Etape 80 : `urlEntete` (facultatif) = image placee en en-tete du message a boutons (une photo d'article + la question de quantite en UN seul message).
+async function envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texteCorps, boutons, urlEntete) {
   if (!WHATSAPP_TOKEN || !phoneNumberId) {
     console.error("WHATSAPP_TOKEN ou phone_number_id manquant — impossible d'envoyer les boutons.");
     return false;
@@ -5189,6 +5227,7 @@ async function envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texteCorps, b
         type: "interactive",
         interactive: {
           type: "button",
+          ...(urlEntete ? { header: { type: "image", image: { link: urlEntete } } } : {}),
           body: { text: String(texteCorps).slice(0, 1020) },
           action: { buttons: boutons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: tronquerTexte(b.title, 20) } })) },
         },
@@ -5739,6 +5778,63 @@ async function demarrer() {
   }, INTERVALLE_REESSAIS_IZYFACTURE_MS);
 }
 
+// ---- Etape 80 : consommation de messagerie Meta (super-administrateur seul) ----
+// Un evenement « sent » par message envoye ; dedoublonne sur l'identifiant du message (Meta peut renvoyer un meme evenement).
+const statutsDejaComptes = new Set();
+function compterStatutEnvoye(merchantId, s) {
+  const id = s && s.id;
+  if (id) {
+    if (statutsDejaComptes.has(id)) return;
+    statutsDejaComptes.add(id);
+    if (statutsDejaComptes.size > 20000) { const premier = statutsDejaComptes.values().next().value; statutsDejaComptes.delete(premier); }
+  }
+  db.consoMetaCompter(merchantId, consoMeta.moisDouala(s.timestamp), consoMeta.categorieDe(s), consoMeta.estFacturable(s)).catch(() => {});
+}
+
+function exigerSuperAdmin(req, res) {
+  if (!req.auth || req.auth.role !== "superadmin") { res.status(403).json({ erreur: "Réservé au super-administrateur." }); return false; }
+  return true;
+}
+async function construireConsoMeta(mois) {
+  const bareme = consoMeta.normaliserBareme(await db.consoMetaBaremeLire());
+  const lignes = await db.consoMetaLire(mois);
+  const marchands = Object.values(engines).map((e) => {
+    const siennes = lignes.filter((l) => l.merchantKey === e.merchant.id);
+    const est = consoMeta.estimer(siennes, bareme);
+    return { id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, actif: e.merchant.actif !== false, nbPhotosAuto: e.merchant.nbPhotosAuto === 3 ? 3 : 1, nbNumeros: numerosAlerteDe(e.merchant).length, ...est };
+  }).sort((a, b) => b.coutFcfa - a.coutFcfa || b.total - a.total || String(a.nom).localeCompare(String(b.nom)));
+  const totaux = marchands.reduce((t, m) => ({ total: t.total + m.total, coutUsd: Math.round((t.coutUsd + m.coutUsd) * 1000) / 1000, coutFcfa: t.coutFcfa + m.coutFcfa }), { total: 0, coutUsd: 0, coutFcfa: 0 });
+  return { mois, bareme, marchands, totaux, moisDisponibles: await db.consoMetaMoisDisponibles() };
+}
+function moisValide(m) { return typeof m === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(m) ? m : consoMeta.moisDouala(); }
+app.get("/api/conso-meta", protegerAcces, async (req, res) => {
+  if (!exigerSuperAdmin(req, res)) return;
+  try { res.json(await construireConsoMeta(moisValide(req.query.mois))); }
+  catch (erreur) { console.error("Erreur de lecture de la consommation Meta :", erreur); res.status(500).json({ erreur: "Lecture impossible." }); }
+});
+app.put("/api/conso-meta/bareme", protegerAcces, async (req, res) => {
+  if (!exigerSuperAdmin(req, res)) return;
+  const v = consoMeta.validerBareme(req.body);
+  if (!v.ok) return res.status(400).json({ erreur: v.erreur });
+  try { await db.consoMetaBaremeEcrire(v.bareme); res.json({ bareme: v.bareme }); }
+  catch (erreur) { console.error("Erreur d'ecriture du bareme Meta :", erreur); res.status(500).json({ erreur: "Enregistrement impossible." }); }
+});
+app.get("/api/conso-meta/export.csv", protegerAcces, async (req, res) => {
+  if (!exigerSuperAdmin(req, res)) return;
+  try {
+    const d = await construireConsoMeta(moisValide(req.query.mois));
+    const cell = (v) => { const t = String(v == null ? "" : v); return /[;"\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+    const lignes = [["Mois", "Marchand", "Type", "Messages service", "Messages utilitaires", "Messages marketing", "Messages authentification", "Total messages", "Gratuits restants", "Services factures", "Cout estime (USD)", "Cout estime (FCFA)", "Etat"].join(";")];
+    d.marchands.forEach((m) => {
+      const c = (k) => (m.parCategorie[k] ? m.parCategorie[k].nb : 0);
+      lignes.push([d.mois, m.nom, m.type, c("service") + c("inconnu"), c("utility"), c("marketing") + c("referral_conversion"), c("authentication") + c("authentication_international"), m.total, m.serviceGratuitsRestants, m.serviceFactures, m.coutUsd, m.coutFcfa, m.alerte].map(cell).join(";"));
+    });
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="consommation-meta-' + d.mois + '.csv"');
+    res.send("\uFEFF" + lignes.join("\n"));
+  } catch (erreur) { console.error("Erreur d'export de la consommation Meta :", erreur); res.status(500).json({ erreur: "Export impossible." }); }
+});
+
 // Etape 72 : a l'arret demande par Render (deploiement) ou par un Ctrl+C, on laisse finir les sauvegardes de sessions deja
 // lancees (quelques millisecondes) avant de quitter, pour ne pas perdre le dernier message d'un client.
 let arretEnCours = false;
@@ -5749,6 +5845,7 @@ async function arretPropre(signal) {
   try {
     await Promise.race([require("./sessionsPersistantes").attendreEcritures(), new Promise((r) => setTimeout(r, 4000))]);
     db.viderSessionsFichier();
+    db.consoMetaVider();
   } catch (e) { /* on quitte quand meme */ }
   process.exit(0);
 }
