@@ -891,6 +891,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/notification": "notification_modifiee",
   "PUT /api/:id/numeros-notification": "numeros_notification_modifies",
   "PUT /api/:id/gros/regles": "gros_tarifs_modifies",
+  "POST /api/:id/gros/regles/importer": "gros_tarifs_importes",
   "PUT /api/:id/gros/config": "gros_config_modifiee",
   "PUT /api/:id/gros/caisse": "gros_caisse_modifie",
   "PUT /api/:id/gros/options-whatsapp": "gros_whatsapp_modifie",
@@ -957,6 +958,7 @@ function detailAuditRequete(code, req) {
     case "services_importes": return { fichier: req.file ? req.file.originalname : null };
     case "facture_creee": case "paiement_facture_enregistre":
       return p.apptId ? { rendezvous: p.apptId } : (p.orderId ? { commande: p.orderId } : {});
+    case "gros_tarifs_importes": return { fichier: req.file ? req.file.originalname : null };
     case "gros_tarifs_modifies": return { tarifs: Array.isArray(b.regles) ? b.regles.length : null };
     case "gros_config_modifiee": return { criteres: Array.isArray(b.criteresCaisse) ? b.criteresCaisse : null };
     case "gros_whatsapp_modifie": {
@@ -3402,6 +3404,28 @@ app.put("/api/:id/gros/regles", protegerAcces, (req, res) => {
   const r = entry.engine.definirReglesGros((req.body || {}).regles);
   if (r.erreur) return res.status(400).json({ erreur: r.erreur });
   res.json({ regles: r.regles });
+});
+app.post("/api/:id/gros/regles/importer", protegerAcces, uploadFichierCatalogue.single("fichier"), (req, res) => {
+  const entry = entreeGros(req, res, "parametres", true); if (!entry) return;
+  if (!req.file) return res.status(400).json({ erreur: "Aucun fichier reçu (champ \"fichier\" attendu)." });
+  const texte = req.file.buffer.toString("utf8").replace(/^\ufeff/, "");
+  const lignes = texte.split(/\r\n|\n|\r/).filter((l) => l.trim() !== "");
+  if (!lignes.length) return res.status(400).json({ erreur: "Fichier vide." });
+  if (lignes.length > 201) return res.status(400).json({ erreur: "Fichier trop long (200 tarifs maximum)." });
+  const separateur = lignes[0].indexOf(";") !== -1 ? ";" : (lignes[0].indexOf("\t") !== -1 ? "\t" : ",");
+  const entetes = parserLigneCsv(lignes[0], separateur).map((h) => sansAccents(h).toLowerCase());
+  const idx = (...m) => entetes.findIndex((h) => m.some((x) => h.indexOf(x) !== -1));
+  let iArt = idx("article", "produit", "nom"), iTaille = idx("taille", "contenance"), iSeuil = idx("partir", "minimum", "seuil", "pieces"), iPrix = idx("prix");
+  let debut = 1;
+  if (iSeuil === -1 || iPrix === -1) { iArt = 0; iTaille = 1; iSeuil = 2; iPrix = 3; debut = 0; } // sans en-tete : Article ; Taille ; A partir de ; Prix de gros
+  const brutes = [];
+  for (let i = debut; i < lignes.length; i++) {
+    const c = parserLigneCsv(lignes[i], separateur);
+    brutes.push({ article: iArt >= 0 ? c[iArt] : "", taille: iTaille >= 0 ? c[iTaille] : "", seuil: c[iSeuil], prix: c[iPrix] });
+  }
+  const r = entry.engine.importerReglesGros(brutes);
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json({ ajoutes: r.ajoutes, misAJour: r.misAJour, ignores: r.ignores.slice(0, 50), nbIgnores: r.ignores.length, avertissements: r.avertissements, regles: r.regles });
 });
 app.put("/api/:id/gros/config", protegerAcces, (req, res) => {
   const entry = entreeGros(req, res, "parametres", true); if (!entry) return;

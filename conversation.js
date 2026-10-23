@@ -2758,6 +2758,16 @@ function createCatalogEngine(merchantKey, options) {
     saveState();
     return { regles: v.regles };
   }
+  // Etape 82 : import CSV des tarifs de gros (fusion, rien n'est supprime).
+  function importerReglesGros(lignes) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const g = venteGros.assurer(state.gros);
+    const r = venteGros.importerRegles(g, lignes, state.catalog);
+    if (r.erreur) return r;
+    g.regles = r.regles;
+    saveState();
+    return r;
+  }
   function definirConfigGros(cfg) {
     if (!state) return { erreur: "Marchand introuvable." };
     const g = venteGros.assurer(state.gros);
@@ -2812,7 +2822,7 @@ function createCatalogEngine(merchantKey, options) {
   return {
     type: "catalogue",
     init,
-    getGros, enregistrerGros, definirReglesGros, definirConfigGros, definirCaisseGros, ajouterGrossiste, modifierGrossiste, retirerGrossiste, regenererCodeGrossiste,
+    getGros, enregistrerGros, definirReglesGros, importerReglesGros, definirConfigGros, definirCaisseGros, ajouterGrossiste, modifierGrossiste, retirerGrossiste, regenererCodeGrossiste,
     importerGrossistes, rechercherGrossisteCaisse, grossistePourVente, apercuPrixGros,
     balayerSessions: () => persistance.balayer(),
     handleMessage,

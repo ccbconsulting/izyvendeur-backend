@@ -2558,3 +2558,18 @@ Quand un client veut changer une information, le robot ne repart plus de zéro :
 **Limites connues.** Les rendez-vous déjà confirmés se changent par « Reporter » (jour/heure) ; la correction du nom ou de la prestation après confirmation n'existe que pour l'hébergement (nom, personnes). Les alertes envoyées au personnel et les modèles de rappel restent les principaux postes de coût Meta.
 
 Aucun changement de base de données ni de schéma. Fichiers modifiés : `server.js`, `conversation.js`, `conversationService.js`, `conversationHebergement.js`, `public/admin.html`.
+
+## Étape 82 — Import CSV des tarifs de gros (Vente en gros)
+
+L'onglet **Vente en gros** (propriétaire et super-administrateur, option déjà accordée par le super-administrateur) permettait seulement d'ajouter les tarifs un par un. Un bloc **« Importer les tarifs (CSV) »** est ajouté sous le tableau des tarifs.
+
+- **Colonnes :** `Article ; Taille ; À partir de ; Prix de gros` (séparateur `;`, `,` ou tabulation ; l'en-tête est facultatif). **Article vide ou « tous » = tous les articles ; taille vide ou « toutes » = toutes les tailles.** Un nom d'article doit être celui du catalogue.
+- **Fusion, jamais de suppression :** un tarif du même article, de la même taille et du même minimum est **mis à jour** (prix) ; les autres sont **ajoutés**. Les tarifs déjà saisis restent.
+- **Tailles :** la taille est alignée sur l'écriture du catalogue (« 10ml » ou « 10 ML » deviennent « 10 ml »). Une taille qui n'existe dans aucun article donne un **avertissement** (le tarif ne s'appliquera à rien).
+- **Erreurs ligne par ligne :** article inconnu, minimum ou prix invalide : la ligne est ignorée avec son motif, le reste est importé. 200 tarifs maximum par fichier.
+- **Droits :** propriétaire ou super-administrateur seulement (403 pour un employé, même avec le rôle « paramètres ») ; 403 si l'option Vente en gros n'est pas accordée. L'action est inscrite au journal (« Tarifs de gros importés »).
+- **Route :** `POST /api/:id/gros/regles/importer` (champ `fichier`).
+
+**Fichier CHOLY House** (`choly_house_tarifs_gros.csv`) : 10 ml à 2 000 F, 30 ml à 6 000 F, 50 ml à 10 000 F à partir de 10 pièces ; 60 ml à 12 000 F, 100 ml à 20 000 F à partir de 5 pièces. Rappel : un grossiste enregistré obtient ces prix sans minimum ; le minimum ne joue que si le super-administrateur ouvre l'option « paliers automatiques » (WhatsApp) ou l'interrupteur de la caisse.
+
+Aucun changement de base de données. Fichiers modifiés : `venteGros.js`, `conversation.js`, `server.js`, `public/admin.html`.

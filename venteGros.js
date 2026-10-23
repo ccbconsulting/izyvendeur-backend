@@ -164,6 +164,48 @@ function lignesTarifs(gros, catalogue, fr, formatFcfa, sansSeuil) {
   });
 }
 
+// Etape 82 : import CSV des tarifs de gros. lignes : [{ article, taille, seuil, prix }] ; catalogue : [{ id, nom, variantes:[{taille}] }].
+// Fusion : un tarif de meme article + meme taille + meme minimum est MIS A JOUR (prix), les autres sont AJOUTES, rien n'est supprime.
+// Article vide / « tous » / « all » = tous les articles. La taille est alignee sur l'ecriture du catalogue (« 10ml » -> « 10 ml »).
+function importerRegles(gros, lignes, catalogue) {
+  const g = assurer(gros);
+  const cat = Array.isArray(catalogue) ? catalogue : [];
+  const sansEsp = (s) => sansAccents(s).replace(/\s+/g, "");
+  const tailles = [];
+  cat.forEach((p) => (p.variantes || []).forEach((v) => { if (v.taille && v.taille !== "-" && tailles.indexOf(v.taille) === -1) tailles.push(v.taille); }));
+  const ignores = [], avertissements = [];
+  const regles = g.regles.map((r) => ({ produitId: r.produitId || null, taille: r.taille || "", seuil: r.seuil, prix: r.prix }));
+  let ajoutes = 0, misAJour = 0;
+  (lignes || []).slice(0, MAX_REGLES).forEach((l, i) => {
+    const ref = "Ligne " + (i + 1);
+    const art = nettoyerTexte(l && l.article, 120);
+    const seuil = entierPositif(String(l && l.seuil).replace(/\s/g, "")), prix = entierPositif(String(l && l.prix).replace(/\s/g, ""));
+    if (!Number.isFinite(seuil)) return ignores.push({ ligne: i + 1, motif: ref + " : « à partir de » invalide." });
+    if (!Number.isFinite(prix)) return ignores.push({ ligne: i + 1, motif: ref + " : prix de gros invalide." });
+    let produitId = null;
+    if (art && !/^(tous|toutes|all|\*)( les articles| items)?$/i.test(art)) {
+      const p = cat.filter((x) => sansAccents(x.nom) === sansAccents(art))[0];
+      if (!p) return ignores.push({ ligne: i + 1, motif: ref + " : article « " + art + " » introuvable dans le catalogue." });
+      produitId = p.id;
+    }
+    let taille = nettoyerTexte(l && l.taille, 40);
+    if (/^(toutes|tous|all|\*)( les tailles| sizes)?$/i.test(taille)) taille = "";
+    if (taille) {
+      const connue = tailles.filter((t) => sansEsp(t) === sansEsp(taille))[0];
+      if (connue) taille = connue;
+      else avertissements.push(ref + " : la taille « " + taille + " » n'existe dans aucun article du catalogue (ce tarif ne s'appliquera à rien tant qu'elle n'existe pas).");
+    }
+    const cle = (r) => (r.produitId || "") + "|" + sansAccents(r.taille) + "|" + r.seuil;
+    const nouv = { produitId, taille, seuil, prix };
+    const ex = regles.filter((r) => cle(r) === cle(nouv))[0];
+    if (ex) { ex.prix = prix; misAJour++; } else { regles.push(nouv); ajoutes++; }
+  });
+  const v = validerRegles(regles, cat.map((p) => p.id));
+  if (v.erreur) return { erreur: v.erreur };
+  // Avertissement : un prix de gros superieur ou egal au prix de detail n'est jamais applique.
+  return { regles: v.regles, ajoutes, misAJour, ignores, avertissements: avertissements.slice(0, 20) };
+}
+
 // ---------------- Liste des grossistes ----------------
 
 function nettoyerTexte(v, max) { return String(v == null ? "" : v).replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max); }
@@ -271,6 +313,6 @@ function rechercher(gros, saisie, criteres) {
 
 module.exports = {
   CRITERES_VALIDES, CRITERES_PAR_DEFAUT, donneesParDefaut, assurer, normaliserCriteres, sansAccents, cleTelephone, memeTelephone, cleCode,
-  genererCode, validerRegles, tarifer, lignesTarifs, ajouterGrossiste, modifierGrossiste, retirerGrossiste, regenererCode, importerGrossistes,
+  genererCode, validerRegles, importerRegles, tarifer, lignesTarifs, ajouterGrossiste, modifierGrossiste, retirerGrossiste, regenererCode, importerGrossistes,
   trouverParTelephone, trouverParCode, rechercher
 };

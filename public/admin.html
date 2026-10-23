@@ -900,6 +900,8 @@ const I18N = {
     grosColSeuil: "À partir de (pièces)", grosColPrix: "Prix de gros (FCFA / pièce)",
     grosAjouterTarif: "Ajouter un tarif", grosAucunTarif: "Aucun tarif de gros pour l'instant : tant qu'il n'y en a pas, la vente en gros reste sans effet.",
     grosEnregistrerTarifs: "Enregistrer les tarifs", grosTarifsEnregistres: "Tarifs de gros enregistrés.",
+    grosImporterTarifs: "Importer les tarifs (CSV)", grosImportTarifsAide: "Colonnes : Article ; Taille ; À partir de ; Prix de gros (article vide = tous les articles ; taille vide = toutes les tailles). Un tarif déjà présent est mis à jour, rien n'est supprimé.",
+    grosImportTarifsResultat: "{a} tarif(s) ajouté(s), {m} mis à jour.", grosImportTarifsIgnores: " {n} ligne(s) ignorée(s) : {details}", grosImportTarifsAvert: " Attention : {details}",
     grosH3Recherche: "Recherche d'un grossiste à la caisse",
     grosNoteRecherche: "Vous choisissez ce que le caissier peut saisir pour retrouver un grossiste. Avec plusieurs critères cochés, l'un OU l'autre suffit. Le code et le téléphone doivent être saisis en entier ; le nom peut être partiel. Le caissier ne voit jamais la liste des grossistes ni leurs codes. Sur WhatsApp, le client donne son code ou son numéro (jamais son nom).",
     grosCritere_code: "Code", grosCritere_nom: "Nom", grosCritere_telephone: "Téléphone",
@@ -932,7 +934,7 @@ const I18N = {
     caisseGrosRetirer: "Retirer", caisseGrosManque: "Ajoutez {n} pièce(s) pour obtenir le prix de gros.", caisseGrosPrixLabel: "prix de gros", caisseGrosChoisir: "Plusieurs résultats : choisissez.",
     grosPh_code: "code", grosPh_nom: "nom", grosPh_telephone: "téléphone", caisseGrosPlaceholder: "Grossiste : {criteres}", caisseRecuGrossiste: "Grossiste",
     badgeGros: "Gros",
-    act_gros_tarifs_modifies: "Tarifs de gros modifiés", act_gros_config_modifiee: "Réglages de la vente en gros modifiés", act_grossiste_ajoute: "Grossiste ajouté",
+    act_gros_tarifs_importes: "Tarifs de gros importés", act_gros_tarifs_modifies: "Tarifs de gros modifiés", act_gros_config_modifiee: "Réglages de la vente en gros modifiés", act_grossiste_ajoute: "Grossiste ajouté",
     act_grossiste_modifie: "Grossiste modifié", act_grossiste_retire: "Grossiste retiré", act_grossiste_code_regenere: "Code grossiste régénéré", act_grossistes_importes: "Grossistes importés",
     act_grossiste_identifie_caisse: "Grossiste recherché à la caisse", act_vente_caisse_gros: "Vente en caisse au prix de gros",
     jdGrossiste: "Grossiste : {g}", jdGrosTarifs: "{n} tarif(s) enregistré(s)", jdGrosCriteres: "Critères : {c}", jdGrosEconomie: "Remise de gros : {m} FCFA", jdVenteRef: "Vente : {v}", jdAucunTrouve: "Aucun résultat",
@@ -2175,6 +2177,8 @@ const I18N = {
     grosColSeuil: "From (pieces)", grosColPrix: "Wholesale price (FCFA / piece)",
     grosAjouterTarif: "Add a price", grosAucunTarif: "No wholesale price yet: until there is one, wholesale selling has no effect.",
     grosEnregistrerTarifs: "Save prices", grosTarifsEnregistres: "Wholesale prices saved.",
+    grosImporterTarifs: "Import prices (CSV)", grosImportTarifsAide: "Columns: Item ; Size ; From ; Wholesale price (empty item = all items; empty size = all sizes). An existing price is updated, nothing is deleted.",
+    grosImportTarifsResultat: "{a} price(s) added, {m} updated.", grosImportTarifsIgnores: " {n} line(s) skipped: {details}", grosImportTarifsAvert: " Warning: {details}",
     grosH3Recherche: "Finding a wholesaler at the register",
     grosNoteRecherche: "You choose what the cashier can type to find a wholesaler. With several criteria ticked, either one is enough. Code and phone must be typed in full; the name can be partial. The cashier never sees the wholesaler list or their codes. On WhatsApp, the customer gives their code or number (never their name).",
     grosCritere_code: "Code", grosCritere_nom: "Name", grosCritere_telephone: "Phone",
@@ -2207,7 +2211,7 @@ const I18N = {
     caisseGrosRetirer: "Remove", caisseGrosManque: "Add {n} more piece(s) to get the wholesale price.", caisseGrosPrixLabel: "wholesale price", caisseGrosChoisir: "Several results: choose one.",
     grosPh_code: "code", grosPh_nom: "name", grosPh_telephone: "phone", caisseGrosPlaceholder: "Wholesaler: {criteres}", caisseRecuGrossiste: "Wholesaler",
     badgeGros: "Wholesale",
-    act_gros_tarifs_modifies: "Wholesale prices changed", act_gros_config_modifiee: "Wholesale settings changed", act_grossiste_ajoute: "Wholesaler added",
+    act_gros_tarifs_importes: "Wholesale prices imported", act_gros_tarifs_modifies: "Wholesale prices changed", act_gros_config_modifiee: "Wholesale settings changed", act_grossiste_ajoute: "Wholesaler added",
     act_grossiste_modifie: "Wholesaler edited", act_grossiste_retire: "Wholesaler removed", act_grossiste_code_regenere: "Wholesaler code regenerated", act_grossistes_importes: "Wholesalers imported",
     act_grossiste_identifie_caisse: "Wholesaler looked up at the register", act_vente_caisse_gros: "Register sale at wholesale price",
     jdGrossiste: "Wholesaler: {g}", jdGrosTarifs: "{n} price(s) saved", jdGrosCriteres: "Criteria: {c}", jdGrosEconomie: "Wholesale saving: {m} FCFA", jdVenteRef: "Sale: {v}", jdAucunTrouve: "No result",
@@ -4324,13 +4328,31 @@ async function renderVenteGros() {
             "<td><button class='danger' data-gr-suppr='" + i + "'>×</button></td></tr>").join("") + "</table>"
         : "<p class='raison'>" + t("grosAucunTarif") + "</p>") +
       (regles.length ? "<p class='raison'>" + t("grosNoteSeuil") + "</p>" : "") +
-      "<p><button id='btnGrosAjouterTarif'>" + t("grosAjouterTarif") + "</button> <button id='btnGrosSauverTarifs' class='principal'>" + t("grosEnregistrerTarifs") + "</button></p>";
+      "<p><button id='btnGrosAjouterTarif'>" + t("grosAjouterTarif") + "</button> <button id='btnGrosSauverTarifs' class='principal'>" + t("grosEnregistrerTarifs") + "</button></p>" +
+      "<div style='margin:10px 0;padding:10px;border:1px dashed #bbb;border-radius:8px;'><strong>" + t("grosImporterTarifs") + "</strong><p class='raison' style='margin:4px 0;'>" + t("grosImportTarifsAide") + "</p>" +
+      "<input type='file' id='champGrosFichierTarifs' accept='.csv,.txt' /> <button id='btnGrosImporterTarifs'>" + t("grosImportBtn") + "</button></div>";
     Array.prototype.forEach.call(z.querySelectorAll("[data-gr-art]"), (el) => { el.onchange = () => { regles[Number(el.dataset.grArt)].produitId = el.value; }; });
     Array.prototype.forEach.call(z.querySelectorAll("[data-gr-taille]"), (el) => { el.addEventListener("input", () => { regles[Number(el.dataset.grTaille)].taille = el.value; }); });
     Array.prototype.forEach.call(z.querySelectorAll("[data-gr-seuil]"), (el) => { el.addEventListener("input", () => { regles[Number(el.dataset.grSeuil)].seuil = el.value; }); });
     Array.prototype.forEach.call(z.querySelectorAll("[data-gr-prix]"), (el) => { el.addEventListener("input", () => { regles[Number(el.dataset.grPrix)].prix = el.value; }); });
     Array.prototype.forEach.call(z.querySelectorAll("[data-gr-suppr]"), (el) => { el.onclick = () => { regles.splice(Number(el.dataset.grSuppr), 1); dessinerTarifs(); }; });
     document.getElementById("btnGrosAjouterTarif").onclick = () => { regles.push({ produitId: "", taille: "", seuil: 10, prix: "" }); dessinerTarifs(); };
+    document.getElementById("btnGrosImporterTarifs").onclick = async () => {
+      const f = document.getElementById("champGrosFichierTarifs").files[0];
+      if (!f) { alert(t("alertChoisirFichierImport")); return; }
+      const donnees = new FormData(); donnees.append("fichier", f);
+      try {
+        const rep = await fetch("/api/" + idm + "/gros/regles/importer", { method: "POST", body: donnees });
+        const j = await rep.json();
+        if (!rep.ok) throw new Error(j.erreur || rep.statusText);
+        let message = t("grosImportTarifsResultat", { a: j.ajoutes, m: j.misAJour });
+        if (j.nbIgnores) message += t("grosImportTarifsIgnores", { n: j.nbIgnores, details: (j.ignores || []).slice(0, 5).map((x) => x.motif).join(" / ") });
+        if ((j.avertissements || []).length) message += t("grosImportTarifsAvert", { details: j.avertissements.slice(0, 3).join(" / ") });
+        regles = j.regles.map((x) => ({ produitId: x.produitId || "", taille: x.taille || "", seuil: x.seuil, prix: x.prix }));
+        alert(message);
+        dessinerTarifs();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
     document.getElementById("btnGrosSauverTarifs").onclick = async () => {
       try {
         const r = await api("/api/" + idm + "/gros/regles", { method: "PUT", body: JSON.stringify({ regles: regles.map((x) => ({ produitId: x.produitId || null, taille: x.taille, seuil: x.seuil, prix: x.prix })) }) });
