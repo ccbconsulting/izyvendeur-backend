@@ -1097,8 +1097,8 @@ function createCatalogEngine(merchantKey, options) {
   function questionCorrectionCommande(session, order) {
     const retrait = session.modeLivraison === "retrait";
     return sh.t(session,
-      "Pas de souci, corrigeons cela. Envoyez-moi directement votre bon numéro de téléphone" + (retrait ? "" : " et/ou votre bonne adresse de livraison") + " (exemple : 6xxxxxxxx" + (retrait ? "" : ", puis votre adresse") + "). Si vous préférez ne pas confirmer maintenant, répondez « annuler » : la commande " + orderRef(order) + " restera enregistrée et notre équipe reviendra vers vous.",
-      "No problem, let's fix that. Just send me your correct phone number" + (retrait ? "" : " and/or your correct delivery address") + " (e.g. 6xxxxxxxx" + (retrait ? "" : ", then your address") + "). If you'd rather not confirm now, reply \"cancel\": order " + orderRef(order) + " will stay on file and our team will get back to you."
+      "Pas de souci, corrigeons cela. Envoyez-moi directement votre bon numéro de téléphone" + (retrait ? "" : " et/ou votre bonne adresse de livraison") + " (exemple : 6xxxxxxxx" + (retrait ? "" : ", puis votre adresse") + "). Si vous préférez ne pas confirmer maintenant, répondez « annuler » : la commande " + orderRef(order) + " restera enregistrée et notre équipe reviendra vers vous. Pour changer vos articles ou leurs quantités, écrivez « articles ».",
+      "No problem, let's fix that. Just send me your correct phone number" + (retrait ? "" : " and/or your correct delivery address") + " (e.g. 6xxxxxxxx" + (retrait ? "" : ", then your address") + "). If you'd rather not confirm now, reply \"cancel\": order " + orderRef(order) + " will stay on file and our team will get back to you. To change your items or quantities, write \"items\"."
     );
   }
 
@@ -1558,6 +1558,13 @@ function createCatalogEngine(merchantKey, options) {
         return replyCancel;
       }
       const coord = extraireCoordonnees(text, pendingOrder.modeLivraison === "retrait");
+      // Etape 81 : depuis « Modifier » au recapitulatif, le client peut aussi changer ses articles / quantites (meme parcours que « Ma commande »).
+      if (!coord.telephone && !coord.adresse && /\b(articles?|produits?|quantit[ée]s?|ajout\w*|retir\w*|supprim\w*|items?|products?|quantit(?:y|ies)|add|remove)\b/i.test(text) && pendingOrder.statut === "Nouvelle") {
+        const repArticles = demarrerModificationArticles(session, pendingOrder);
+        trace.action = session.editOrderId ? "Client modifie les articles de " + orderRef(pendingOrder) + " depuis le récapitulatif" : "Modification des articles refusée (panier en cours)";
+        logTrace(session, trace);
+        return repArticles;
+      }
       if (!coord.telephone && !coord.adresse) {
         trace.action = "Correction non comprise — nouvelle demande de saisie";
         logTrace(session, trace);

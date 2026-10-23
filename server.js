@@ -4203,6 +4203,7 @@ app.post("/webhook", async (req, res) => {
       const lignesEspace = [
         { id: ID_RDV_ANNULER, title: tW(etatPourLangue, "Annuler", "Cancel"), description: heb ? tW(etatPourLangue, "Annuler ma réservation", "Cancel my booking") : tW(etatPourLangue, "Annuler mon rendez-vous", "Cancel my appointment") },
         { id: ID_RDV_REPORTER, title: tW(etatPourLangue, "Reporter", "Reschedule"), description: heb ? tW(etatPourLangue, "Changer les dates", "Change the dates") : tW(etatPourLangue, "Changer la date ou l'heure", "Change the date or time") },
+        ...(heb ? [{ id: ID_RDV_MODIFIER, title: tW(etatPourLangue, "Modifier", "Edit"), description: tW(etatPourLangue, "Nom ou nombre de personnes", "Name or number of people") }] : []),
         { id: ID_HUMAIN, title: tW(etatPourLangue, "Contacter un conseiller", "Contact an advisor"), description: tW(etatPourLangue, "Être mis en relation avec l'équipe", "Get connected with our team") }
       ].concat(ligneMenuPrincipal(marchand, etatPourLangue));
       const envoye = await envoyerListeWhatsApp(from, phoneNumberId, texteCorps, tW(etatPourLangue, "Mes options", "My options"), [{ title: tW(etatPourLangue, "Mon espace", "My space"), rows: lignesEspace }]).catch(() => false);
@@ -4332,6 +4333,8 @@ const ID_HUMAIN = "IZY_HUMAIN";
 const ID_OUI = "IZY_OUI";
 const ID_NON = "IZY_NON";
 const ID_MODIFIER = "IZY_MODIFIER"; // Etape 49 : bouton "Modifier" de la confirmation de commande
+const PREFIXE_MOD = "IZY_MOD_"; // Etape 81 : ligne de la liste « Que modifier ? » (chambre, dates, personnes, nom, retour)
+const ID_RDV_MODIFIER = "IZY_RDV_MODIFIER"; // Etape 81 : « Ma reservation » > Modifier (nom, nombre de personnes)
 const PREFIXE_CRENEAU = "IZY_SLOT_";
 // Etape 63 : menu « Mon rendez-vous » (volet service) - ligne de la liste des services, boutons Annuler/Reporter,
 // et liste cliquable pour choisir parmi plusieurs rendez-vous (le clic = le numero, comme les creneaux).
@@ -4806,6 +4809,8 @@ function resoudreTexteInteractif(marchand, interactive, idForce) {
   if (id === ID_OUI) return "oui";
   if (id === ID_NON) return "non";
   if (id === ID_MODIFIER) return "modifier";
+  if (id.indexOf(PREFIXE_MOD) === 0) return "__modifier:" + id.slice(PREFIXE_MOD.length) + "__"; // Etape 81
+  if (id === ID_RDV_MODIFIER) return "__modifier_reservation__";
   if (id === ID_RDV_ANNULER) return "annuler mon rendez-vous"; // Etape 63
   if (id === ID_RDV_REPORTER) return "reporter mon rendez-vous";
   if (id.indexOf(PREFIXE_RDV_CHOIX) === 0) return String(Number(id.slice(PREFIXE_RDV_CHOIX.length)) + 1); // position 1-based dans la liste
@@ -5118,6 +5123,28 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
       { id: ID_MODIFIER, title: tW(etat, "Modifier", "Edit") }
     ]);
   }
+  // Etape 81 : recapitulatif d'une reservation de chambre ou d'un rendez-vous -> Confirmer / Modifier / Annuler (3 boutons, aucun message en plus).
+  if (etat.stage === "awaiting_confirmation" && (marchand.engine.type === "hebergement" || marchand.engine.type === "service")) {
+    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
+      { id: ID_OUI, title: tW(etat, "Confirmer", "Confirm") },
+      { id: ID_MODIFIER, title: tW(etat, "Modifier", "Edit") },
+      { id: ID_NON, title: tW(etat, "Annuler", "Cancel") }
+    ]);
+  }
+  // Etape 81 : « Que modifier ? » -> liste des parties du recapitulatif (le moteur ne redemande que celle choisie).
+  if ((etat.stage === "awaiting_modifier" || etat.stage === "awaiting_modifier_apres") && Array.isArray(etat.modifierChoix) && etat.modifierChoix.length) {
+    const LIB = {
+      chambre: [tW(etat, "La chambre", "The room"), tW(etat, "Choisir un autre type de chambre", "Pick another room type")],
+      dates: [tW(etat, "Les dates", "The dates"), tW(etat, "Arrivée, départ ou nombre de nuits", "Arrival, departure or number of nights")],
+      personnes: [tW(etat, "Le nombre de personnes", "Number of people"), tW(etat, "Combien de personnes", "How many people")],
+      nom: [tW(etat, "Le nom", "The name"), tW(etat, "Le nom de la réservation", "The name on the booking")],
+      jourheure: [tW(etat, "Le jour et l'heure", "Day and time"), tW(etat, "Choisir un autre créneau", "Pick another slot")],
+      service: [tW(etat, "La prestation", "The service"), tW(etat, "Choisir une autre prestation", "Pick another service")]
+    };
+    const rows = etat.modifierChoix.filter((k) => LIB[k]).map((k) => ({ id: PREFIXE_MOD + k, title: tronquerTexte(LIB[k][0], 24), description: tronquerTexte(LIB[k][1], 72) }));
+    rows.push({ id: PREFIXE_MOD + "retour", title: tW(etat, "Garder tel quel", "Keep as is"), description: tW(etat, "Revenir au récapitulatif", "Back to the summary") });
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Que modifier ?", "What to change?"), [{ title: tW(etat, "Modifier", "Edit"), rows }]);
+  }
   if (etat.stage === "awaiting_confirmation" || etat.stage === "awaiting_reassort") {
     return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
       { id: ID_OUI, title: tW(etat, "Oui", "Yes") },
@@ -5141,12 +5168,18 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   }
 
   // Etape 65 : nombre de personnes (hebergement) -> 3 boutons rapides ; le client peut taper un autre nombre.
-  if (marchand.engine.type === "hebergement" && etat.stage === "awaiting_personnes") {
-    return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, [
-      { id: "1", title: tW(etat, "1 personne", "1 person") },
-      { id: "2", title: tW(etat, "2 personnes", "2 people") },
-      { id: "3", title: tW(etat, "3 personnes", "3 people") }
-    ]);
+  // Etape 81 : jamais plus de boutons que la capacite du type de chambre (jusqu'a 3 : boutons ; au-dela : liste deroulante).
+  if (marchand.engine.type === "hebergement" && (etat.stage === "awaiting_personnes" || etat.stage === "awaiting_personnes_apres")) {
+    const cap = Math.max(1, Math.min(10, parseInt(etat.personnesMax, 10) || 3));
+    const lib = (n) => tW(etat, n + (n > 1 ? " personnes" : " personne"), n + (n > 1 ? " people" : " person"));
+    if (cap <= 3) {
+      const boutons = [];
+      for (let n = 1; n <= cap; n++) boutons.push({ id: String(n), title: lib(n) });
+      return envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, boutons);
+    }
+    const rows = [];
+    for (let n = 1; n <= cap; n++) rows.push({ id: String(n), title: lib(n) });
+    return envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tW(etat, "Nombre de personnes", "Number of people"), [{ title: tW(etat, "Personnes", "People"), rows }]);
   }
 
   // Etape 68 : le client doit donner un jour/une heure (rendez-vous) ou ses dates (chambres) -> liste deroulante, sauf si le

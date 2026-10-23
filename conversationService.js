@@ -292,6 +292,7 @@ function createServiceEngine(merchantKey, options) {
       proposedSlots: null,
       clientNom: null,
       pendingAppointmentId: null,
+      modifEnCours: false, modifSlotISO: null, modifApptId: null, // Etape 81
       // Etape 61 : rendez-vous en cours de deplacement, et choix entre plusieurs rendez-vous.
       reportApptId: null,
       intentionRdv: null,
@@ -884,6 +885,7 @@ function createServiceEngine(merchantKey, options) {
   function bookSlot(session, slotStart, service, praticienId) {
     session.pendingSlotISO = slotStart.toISOString();
     session.pendingPraticienId = praticienId || null;
+    if (session.modifEnCours && session.clientNom) { session.modifEnCours = false; session.modifSlotISO = null; return finaliserReservation(session, !!session.reportApptId); }
     const ancienRdv = session.reportApptId ? rdvParId(session.reportApptId) : null;
     if (ancienRdv && ancienRdv.clientNom) {
       // Report (Etape 61) : le nom est celui du rendez-vous d'origine, inutile de le redemander.
@@ -922,7 +924,7 @@ function createServiceEngine(merchantKey, options) {
   // confirmer. `report` (Etape 61) = le client DEPLACE un rendez-vous existant : pas d'anti-inondation (le
   // nombre de rendez-vous ne change pas) et le recapitulatif precise que l'ancien sera annule a la confirmation.
   function finaliserReservation(session, report) {
-    if (!report) {
+    if (!report && !session.modifApptId) {
       // Anti-inondation : base sur la date de CREATION du rendez-vous (createdAtISO), pas sur la date
       // du creneau reserve (dateISO, toujours dans le futur) — sinon la fenetre glissante ne se
       // declencherait jamais.
@@ -951,7 +953,21 @@ function createServiceEngine(merchantKey, options) {
         "That slot has just been taken by someone else, which other day/time would suit you?"
       );
     }
-    const appt = createAppointment(session, slotStart, service);
+    let appt = null;
+    if (session.modifApptId) {
+      // Etape 81 : correction d'un recapitulatif -> on met a jour le rendez-vous provisoire existant au lieu d'en creer un autre.
+      appt = rdvParId(session.modifApptId);
+      session.modifApptId = null;
+      if (appt && appt.statut === "Nouvelle") {
+        const pid = session.pendingPraticienId || null;
+        Object.assign(appt, {
+          dateISO: slotStart.toISOString(), serviceId: service.id, service: service.nom, dureeMinutes: service.dureeMinutes, prix: service.prix,
+          praticienId: pid && pid !== "_unique" ? pid : null, praticienNom: praticienNomParId(pid), clientNom: session.clientNom
+        });
+        saveState();
+      } else appt = null;
+    }
+    if (!appt) appt = createAppointment(session, slotStart, service);
     session.pendingAppointmentId = appt.id;
     session.stage = "awaiting_confirmation";
     const ancien = appt.remplaceId ? rdvParId(appt.remplaceId) : null;
@@ -960,14 +976,100 @@ function createServiceEngine(merchantKey, options) {
           "\nIl remplace votre rendez-vous " + orderRef(ancien) + " (" + formatSlot(new Date(ancien.dateISO), session) + "), qui ne sera annulé qu'une fois ce nouveau rendez-vous confirmé.",
           "\nIt replaces your appointment " + orderRef(ancien) + " (" + formatSlot(new Date(ancien.dateISO), session) + "), which will only be cancelled once this new appointment is confirmed.")
       : "";
-    return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + sh.t(session,
+    return ouverture(session, OUVERTURES_RECAP, OUVERTURES_RECAP_EN) + texteRecapService(session, appt, service, slotStart, noteRemplace, ancien);
+  }
+
+  // Etape 81 : corps du recapitulatif (sans la phrase d'ouverture), reutilise quand le client corrige une partie.
+  function texteRecapService(session, appt, service, slotStart, noteRemplace, ancien) {
+    return sh.t(session,
       " Voici le récapitulatif de votre " + (ancien ? "nouveau " : "") + "rendez-vous (" + orderRef(appt) + ") :\n" +
         "• " + service.nom + " — " + formatSlot(slotStart, session) + " — " + formatFcfa(service.prix) + (appt.praticienNom ? " — avec " + appt.praticienNom : "") + "\n" +
-        "Au nom de : " + session.clientNom + noteRemplace + "\n\nConfirmez-vous ce rendez-vous ? (oui / non)",
+        "Au nom de : " + (appt.clientNom || session.clientNom) + (noteRemplace || "") + "\n\nConfirmez-vous ce rendez-vous ? (oui / modifier / annuler)",
       " Here is the summary of your " + (ancien ? "new " : "") + "appointment (" + orderRef(appt) + "):\n" +
         "• " + service.nom + " — " + formatSlot(slotStart, session) + " — " + formatFcfa(service.prix) + (appt.praticienNom ? " — with " + appt.praticienNom : "") + "\n" +
-        "Under the name: " + session.clientNom + noteRemplace + "\n\nDo you confirm this appointment? (yes / no)"
+        "Under the name: " + (appt.clientNom || session.clientNom) + (noteRemplace || "") + "\n\nDo you confirm this appointment? (yes / edit / cancel)"
     );
+  }
+
+  // ---------------- Etape 81 : corriger UNE partie du recapitulatif sans tout recommencer ----------------
+  function norm81(t) { return String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+  const RE_MODIFIER = /\b(modifi|corrig|chang|rectifi|edit|fix|amend|update|wrong|mistake|erreur|tromp)/;
+  function veutModifier(text) { return RE_MODIFIER.test(norm81(text)) && !sh.parseWantsSomethingElse(text) && !sh.parseAffirmative(text); }
+  function optionsModifier(session) {
+    const opts = [];
+    if (!session.reportApptId && state.services.length > 1) opts.push("service");
+    opts.push("jourheure", "nom");
+    return opts;
+  }
+  function rdvEnAttente(session) { return session.pendingAppointmentId ? state.appointments.filter((a) => a.id === session.pendingAppointmentId)[0] || null : null; }
+  function ouvrirModifier(session) {
+    session.stage = "awaiting_modifier";
+    const opts = optionsModifier(session);
+    const fr = { service: "la prestation", jourheure: "le jour et l'heure", nom: "le nom" };
+    const en = { service: "the service", jourheure: "the day and time", nom: "the name" };
+    return sh.t(session,
+      "Que souhaitez-vous modifier ? Choisissez dans la liste (" + opts.map((o) => fr[o]).join(", ") + "), ou écrivez directement le changement (ex : « jeudi 15h »).",
+      "What would you like to change? Pick from the list (" + opts.map((o) => en[o]).join(", ") + "), or just write the change (e.g. \"Thursday 3pm\").");
+  }
+  function reafficherRecap(session, appt) {
+    session.stage = "awaiting_confirmation";
+    const service = serviceActuel(session);
+    const ancien = appt.remplaceId ? rdvParId(appt.remplaceId) : null;
+    const noteRemplace = ancien
+      ? sh.t(session,
+          "\nIl remplace votre rendez-vous " + orderRef(ancien) + " (" + formatSlot(new Date(ancien.dateISO), session) + "), qui ne sera annulé qu'une fois ce nouveau rendez-vous confirmé.",
+          "\nIt replaces your appointment " + orderRef(ancien) + " (" + formatSlot(new Date(ancien.dateISO), session) + "), which will only be cancelled once this new appointment is confirmed.")
+      : "";
+    return sh.t(session, "C'est noté !", "Noted!") + texteRecapService(session, appt, service, new Date(appt.dateISO), noteRemplace, ancien);
+  }
+  // Annule le rendez-vous provisoire (pas encore confirme) pour en proposer un nouveau : la cliente n'a rien perdu, le nom est garde.
+  function abandonnerProvisoirePourModification(session, appt) {
+    // Le rendez-vous provisoire (« Nouvelle ») n'est pas annule : il est mis a jour sur place par finaliserReservation, pour ne pas
+    // laisser d'entrees « Annulé » dans la liste de la gerante a chaque correction.
+    session.modifSlotISO = appt.dateISO;
+    session.modifApptId = appt.id;
+    session.pendingAppointmentId = null;
+    session.pendingSlotISO = null;
+    session.modifEnCours = true;
+  }
+  function appliquerChoixModifier(session, cle, texteLibre) {
+    const appt = rdvEnAttente(session);
+    if (!appt) { resetSession(session); return sh.t(session, "Très bien, rien n'est enregistré.", "Alright, nothing is recorded."); }
+    if (cle === "retour") return reafficherRecap(session, appt);
+    if (cle === "nom") {
+      session.stage = "awaiting_modif_nom";
+      return sh.t(session, "À quel nom dois-je noter ce rendez-vous ?", "What name should I put this appointment under?");
+    }
+    if (cle === "jourheure") {
+      const service = serviceActuel(session);
+      abandonnerProvisoirePourModification(session, appt);
+      return handleDateTimeAttempt(session, texteLibre || "", service);
+    }
+    if (cle === "service") {
+      abandonnerProvisoirePourModification(session, appt);
+      session.serviceId = null; session.serviceIds = null; session.stage = "idle";
+      return messageChoixService(session, "Quelle prestation souhaitez-vous à la place ?", "Which service would you like instead?");
+    }
+    return null;
+  }
+  // Correction ecrite librement au recapitulatif : « au nom de Awa », « plutot jeudi 15h », ou un autre service.
+  function corrigerDepuisTexte(session, text) {
+    const appt = rdvEnAttente(session);
+    if (!appt) return null;
+    const nomM = text.match(/(?:\bau\s+nom\s+(?:de|d['’])\s*|\bmon\s+nom\s+(?:est|c['’]est)\s+|\bje\s+m['’]appelle\s+|\bnom\s*:\s*|\bunder\s+(?:the\s+)?name\s+|\bmy\s+name\s+is\s+|\bname\s*:\s*)([^\n,.;!?]{2,60})/i);
+    if (nomM) {
+      appt.clientNom = nomM[1].trim().slice(0, 80); session.clientNom = appt.clientNom; saveState();
+      return reafficherRecap(session, appt);
+    }
+    const idsDemandes = matchServicesMultiple(text);
+    const actuels = (session.serviceIds && session.serviceIds.length ? session.serviceIds : (session.serviceId ? [session.serviceId] : [])).join("+");
+    if (idsDemandes.length && idsDemandes.join("+") !== actuels && !session.reportApptId) {
+      abandonnerProvisoirePourModification(session, appt);
+      session.serviceIds = idsDemandes; session.serviceId = idsDemandes.join("+"); session.stage = "idle";
+      return handleDateTimeAttempt(session, text, combinerServices(idsDemandes));
+    }
+    if (parseRequestedDate(text, new Date()) || parseRequestedTime(text)) return appliquerChoixModifier(session, "jourheure", text);
+    return null;
   }
 
   // Etape 62 : au "oui" du client, le creneau doit etre toujours libre (aucun AUTRE rendez-vous confirme dessus,
@@ -1167,6 +1269,33 @@ function createServiceEngine(merchantKey, options) {
       return finaliserReservation(session, false);
     }
 
+    if (session.stage === "awaiting_modifier") {
+      const appt = rdvEnAttente(session);
+      if (!appt) { resetSession(session); return sh.t(session, "Très bien, rien n'est enregistré.", "Alright, nothing is recorded."); }
+      const norm = norm81(text);
+      const jeton = String(text).trim().match(/^__modifier:(\w+)__$/);
+      let cle = jeton ? jeton[1] : null;
+      if (!cle) {
+        if (sh.parseNegative(text)) { if (appt.remplaceId) return messageReportAbandonne(session); resetSession(session); return sh.t(session, "Très bien, ce créneau n'est pas réservé. Vous pouvez reprendre rendez-vous quand vous voulez ; notre équipe pourra aussi vous recontacter.", "Alright, that slot is not booked. You can book again whenever you like; our team may also get back to you."); }
+        if (/\b(garder|tel quel|retour|back|keep|no change|ne rien changer)\b/.test(norm)) cle = "retour";
+        else if (/^(le\s+|the\s+)?nom$|^(the\s+)?name$/.test(norm.trim())) cle = "nom";
+        else if (/^(le\s+|la\s+|the\s+)?(jour|heure|jour et heure|jour et l'heure|date|day|time|day and time)$/.test(norm.trim())) cle = "jourheure";
+        else if (/^(la\s+|une\s+autre\s+|the\s+|another\s+)?(prestation|service)$/.test(norm.trim())) cle = "service";
+      }
+      if (cle && optionsModifier(session).concat(["retour"]).indexOf(cle) !== -1) { const r = appliquerChoixModifier(session, cle); if (r) return r; }
+      const corr = corrigerDepuisTexte(session, text);
+      if (corr) return corr;
+      return sh.t(session, "Je n'ai pas compris. Choisissez dans la liste ce que vous voulez modifier, ou écrivez directement le changement (ex : « jeudi 15h », « au nom de Awa »).", "I didn't understand. Pick what you want to change from the list, or write the change directly (e.g. \"Thursday 3pm\", \"under the name Awa\").");
+    }
+    if (session.stage === "awaiting_modif_nom") {
+      const appt = rdvEnAttente(session);
+      if (!appt) { resetSession(session); return sh.t(session, "Très bien, rien n'est enregistré.", "Alright, nothing is recorded."); }
+      const nom = String(text).trim().slice(0, 80);
+      if (!nom) return sh.t(session, "Merci d'indiquer le nom à noter pour ce rendez-vous.", "Please tell me the name to put this appointment under.");
+      appt.clientNom = nom; session.clientNom = nom; saveState();
+      return reafficherRecap(session, appt);
+    }
+
     if (session.stage === "awaiting_confirmation") {
       const appt = state.appointments.filter((a) => a.id === session.pendingAppointmentId)[0];
       if (appt && parseAffirmative(text)) {
@@ -1205,6 +1334,11 @@ function createServiceEngine(merchantKey, options) {
         resetSession(session);
         return reply;
       }
+      if (appt && veutModifier(text)) {
+        const corrDirecte = corrigerDepuisTexte(session, text); // « changer pour jeudi 15h » : le changement est deja dans la phrase
+        return corrDirecte || ouvrirModifier(session);
+      }
+      if (appt && /^\s*(annuler|cancel)\s*$/i.test(text)) text = "non";
       if (appt && appt.remplaceId && parseNegative(text)) {
         // Report refuse au dernier moment : le nouveau creneau provisoire est annule, l'ancien rendez-vous reste.
         return messageReportAbandonne(session);
@@ -1218,9 +1352,12 @@ function createServiceEngine(merchantKey, options) {
         return reply;
       }
       if (appt) {
+        // Etape 81 : correction ecrite librement (nom, jour/heure, autre service)
+        const corr = corrigerDepuisTexte(session, text);
+        if (corr) return corr;
         return sh.t(session,
-          "Je n'ai pas bien compris. Confirmez-vous votre rendez-vous " + orderRef(appt) + " ? Répondez simplement par oui ou non — notre équipe reviendra vers vous pour toute autre question.",
-          "I didn't quite get that. Do you confirm your appointment " + orderRef(appt) + "? Simply reply yes or no — our team will get back to you for anything else."
+          "Je n'ai pas bien compris. Confirmez-vous votre rendez-vous " + orderRef(appt) + " ? Répondez par oui, « modifier » pour corriger un élément, ou « annuler » — ou écrivez directement le changement (ex : « jeudi 15h »).",
+          "I didn't quite get that. Do you confirm your appointment " + orderRef(appt) + "? Reply yes, \"edit\" to change something, or \"cancel\" — or write the change directly (e.g. \"Thursday 3pm\")."
         );
       }
       const reply = sh.t(session, "Très bien, votre rendez-vous reste enregistré.", "Alright, your appointment stays on record.");
@@ -1251,6 +1388,13 @@ function createServiceEngine(merchantKey, options) {
     const praticienDemande = matchPraticien(text);
     if (praticienDemande) session.praticienId = praticienDemande;
     const service = combinerServices(serviceIds);
+    if (session.modifEnCours && session.modifSlotISO) {
+      const prevDebut = new Date(session.modifSlotISO);
+      if (prevDebut.getTime() > Date.now() && isSlotFreePour(prevDebut, service.dureeMinutes, session.praticienId || null)) {
+        const r = bookSlot(session, prevDebut, service, session.praticienId || choisirPraticienLibre(prevDebut, service.dureeMinutes));
+        return r;
+      }
+    }
     // Le petit mot gentil sort a chaque fois que le service vient d'etre reconnu dans CE message (ici
     // toujours vrai, puisqu'on entre dans ce bloc seulement depuis l'etat "idle"), pas a chaque relance
     // ensuite - meme regle que dans le moteur catalogue.
@@ -1604,6 +1748,7 @@ function createServiceEngine(merchantKey, options) {
         : null,
       // Etape 68 : le client doit donner un jour et une heure -> server.js peut proposer la liste des jours.
       choixDate: s.stage === "awaiting_datetime" && !!contexteListes(fromPhone),
+      modifierChoix: s.stage === "awaiting_modifier" ? optionsModifier(s) : null, // Etape 81 : liste « Que modifier ? »
       accueilPerso: !!s.pretPourChoix && !!s.accueilPersoAffiche, // Etape 70 : le texte contient l'accueil personnalise du marchand
       langue: sh.langueSession(s)
     } : null;

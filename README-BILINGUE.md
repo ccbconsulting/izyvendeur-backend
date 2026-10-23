@@ -2538,3 +2538,23 @@ Depuis le 1er octobre 2026, Meta facture aussi les réponses libres au-delà de 
 - **Stockage** : table `conso_meta` (PostgreSQL, créée automatiquement, une ligne par marchand, mois et catégorie) ; barème dans `app_state` (clé `__bareme_meta__`). Mode local : fichier `conso-meta.json`, écrit à l'arrêt propre du serveur et 1,5 s après chaque changement. Les mois écoulés avant cette étape ne sont pas reconstitués.
 
 Fichiers modifiés : `server.js`, `db.js`, `conversation.js`, `conversationService.js`, `conversationHebergement.js`, `photosElements.js`, `public/admin.html`. **Nouveau fichier : `consoMeta.js`** (à placer à côté de `server.js`).
+
+## Étape 81 — Corriger une partie de la réservation sans tout recommencer
+
+Quand un client veut changer une information, le robot ne repart plus de zéro : il ne redemande que la partie concernée. Moins de messages, donc moins de consommation Meta (voir Étape 80).
+
+**1. Récapitulatif à trois boutons (hébergement et rendez-vous).** Le récapitulatif de réservation propose **Confirmer / Modifier / Annuler** (ids `IZY_OUI`, `IZY_MODIFIER`, `IZY_NON`), sans message supplémentaire. Le catalogue garde ses boutons Oui / Non / Modifier.
+
+**2. Correction écrite directe (1 message).** Un client peut écrire « plutôt 3 nuits », « on sera 2 », « au nom de Samuel », une autre chambre ou d'autres dates : seule cette information est mise à jour et le récapitulatif est réaffiché. Un chiffre seul (« 2 ») déclenche une question de précision (nuits ou personnes ?). Pour un rendez-vous : autre prestation, autre jour ou heure, autre nom ; le même créneau est réutilisé si la nouvelle prestation le permet.
+
+**3. Liste « Que modifier ? ».** « Modifier » (bouton ou texte) ouvre une liste : chambre, dates, personnes, nom (hébergement) ; prestation, jour et heure, nom (rendez-vous) ; plus « Garder tel quel ». Le robot ne redemande que l'élément choisi.
+
+**4. Après confirmation (hébergement).** « Ma réservation » propose une ligne **Modifier** pour le nom et le nombre de personnes. Les dates passent toujours par « Reporter » (l'ancienne réservation est conservée tant que la nouvelle n'est pas confirmée). Le personnel de l'hôtel n'est **pas** alerté pour un simple changement de nom ou de personnes (aucun message Meta de plus) ; une note est ajoutée à l'historique de la réservation. Les réservations provisoires sont mises à jour sur place : pas de doublon ni de réservation « Annulée » parasite.
+
+**5. Étape « nombre de personnes » compressée (hébergement).** Ignorée si la chambre est pour 1 personne ; boutons limités à la capacité du type de chambre (jusqu'à 3 : boutons, au-delà : liste). Nouveau réglage par type de chambre, dans **Chambres > Demander le nombre de personnes** (coché par défaut) : décoché, le robot ne pose pas la question et retient la capacité de la chambre. Colonne désactivée si la capacité est de 1.
+
+**6. Catalogue.** À l'étape de correction de commande, le client peut écrire « articles » (« items ») pour changer ses articles ou leurs quantités.
+
+**Limites connues.** Les rendez-vous déjà confirmés se changent par « Reporter » (jour/heure) ; la correction du nom ou de la prestation après confirmation n'existe que pour l'hébergement (nom, personnes). Les alertes envoyées au personnel et les modèles de rappel restent les principaux postes de coût Meta.
+
+Aucun changement de base de données ni de schéma. Fichiers modifiés : `server.js`, `conversation.js`, `conversationService.js`, `conversationHebergement.js`, `public/admin.html`.

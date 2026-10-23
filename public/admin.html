@@ -498,6 +498,8 @@ const I18N = {
     theadNombreChambres: "Nombre de chambres",
     theadPrixNuit: "Prix / nuit (FCFA)",
     theadCapacite: "Capacité (pers.)",
+    theadDemanderPersonnes: "Demander le nombre de personnes",
+    noteDemanderPersonnes: "Case cochée : le bot demande le nombre de personnes au client (en boutons limités à la capacité). Case décochée : il n'en demande pas et note la capacité du type de chambre. Une chambre pour 1 personne ne pose jamais la question.",
     theadDescriptionCourte: "Description (facultatif)",
     aucuneChambre: "Aucun type de chambre pour l'instant.",
     btnAjouterChambre: "Ajouter un type de chambre",
@@ -1771,6 +1773,8 @@ const I18N = {
     theadNombreChambres: "Number of rooms",
     theadPrixNuit: "Price / night (FCFA)",
     theadCapacite: "Capacity (people)",
+    theadDemanderPersonnes: "Ask for the number of people",
+    noteDemanderPersonnes: "Ticked: the bot asks the guest how many people (buttons limited to the capacity). Unticked: it does not ask and records the room type's capacity. A room for 1 person never asks the question.",
     theadDescriptionCourte: "Description (optional)",
     aucuneChambre: "No room type yet.",
     btnAjouterChambre: "Add a room type",
@@ -5745,18 +5749,20 @@ async function renderChambres() {
       "<h2>" + t("chambresTitre", { n: total }) + "</h2>" +
       "<p class='raison'>" + t("noteChambres") + "</p>" +
       "<p class='raison'>" + t("noteChambresPhotos") + "</p>" +
-      "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadNombreChambres") + "</th><th>" + t("theadPrixNuit") + "</th><th>" + t("theadCapacite") + "</th><th>" + t("theadDescriptionCourte") + "</th><th></th></tr>" +
+      "<p class='raison'>" + t("noteDemanderPersonnes") + "</p>" +
+      "<table class='table-donnees'><tr><th>" + t("theadNom") + "</th><th>" + t("theadNombreChambres") + "</th><th>" + t("theadPrixNuit") + "</th><th>" + t("theadCapacite") + "</th><th>" + t("theadDemanderPersonnes") + "</th><th>" + t("theadDescriptionCourte") + "</th><th></th></tr>" +
       (local.length ? local.map((c, i) =>
         "<tr>" +
           "<td><input data-i='" + i + "' data-champ='nom' value=\"" + esc(c.nom) + "\" /></td>" +
           "<td><input type='number' min='0' data-i='" + i + "' data-champ='nombre' value='" + (Number(c.nombre) || 0) + "' /></td>" +
           "<td><input type='number' min='0' data-i='" + i + "' data-champ='prix' value='" + (Number(c.prix) || 0) + "' /></td>" +
           "<td><input type='number' min='1' data-i='" + i + "' data-champ='capacite' value='" + (Number(c.capacite) || 2) + "' /></td>" +
+          "<td><input type='checkbox' data-i='" + i + "' data-champ='demanderPersonnes'" + (c.demanderPersonnes === false ? "" : " checked") + (Number(c.capacite) <= 1 ? " disabled" : "") + " /></td>" +
           "<td><input data-i='" + i + "' data-champ='description' value=\"" + esc(c.description || "") + "\" /></td>" +
           "<td><button data-suppr='" + i + "' class='danger'>×</button></td>" +
         "</tr>" +
-        "<tr class='ligne-photos'><td colspan='6'>" + blocPhotosElementHtml("chambre", c, i, idsServeur.has(c.id)) + "</td></tr>"
-      ).join("") : "<tr><td colspan='6'>" + t("aucuneChambre") + "</td></tr>") +
+        "<tr class='ligne-photos'><td colspan='7'>" + blocPhotosElementHtml("chambre", c, i, idsServeur.has(c.id)) + "</td></tr>"
+      ).join("") : "<tr><td colspan='7'>" + t("aucuneChambre") + "</td></tr>") +
       "</table>" +
       "<button id='btnAjouterChambre'>" + t("btnAjouterChambre") + "</button> " +
       "<button id='btnSauverChambres' class='principal'>" + t("enregistrer") + "</button>" +
@@ -5777,8 +5783,10 @@ async function renderChambres() {
     Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
       inp.addEventListener("input", () => {
         const i = Number(inp.dataset.i), champ = inp.dataset.champ;
+        if (champ === "demanderPersonnes") { local[i][champ] = !!inp.checked; return; }
         local[i][champ] = (champ === "nom" || champ === "description") ? inp.value : Number(inp.value);
       });
+      if (inp.type === "checkbox") inp.addEventListener("change", () => { local[Number(inp.dataset.i)][inp.dataset.champ] = !!inp.checked; });
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr]"), (btn) => {
       btn.onclick = () => { local.splice(Number(btn.dataset.suppr), 1); redraw(); };

@@ -213,7 +213,7 @@ function createHebergementEngine(merchantKey, options) {
       langue: precedente ? precedente.langue : null,
       stage: "idle",
       chambreId: null, arrivee: null, depart: null, nuits: null, personnes: null, clientNom: null,
-      pendingSejourId: null, proposals: null,
+      pendingSejourId: null, proposals: null, modifSejourId: null,
       reportSejourId: null, intentionSejour: null, choixIds: null,
       confirmerAnnulation: false, annulationSejourId: null,
       pretPourChoix: false
@@ -314,8 +314,15 @@ function createHebergementEngine(merchantKey, options) {
     const probleme = problemeDates(session);
     if (probleme) { session.arrivee = null; session.depart = null; session.nuits = null; session.stage = "awaiting_dates"; return probleme; }
     if (!session.personnes) {
-      session.stage = "awaiting_personnes";
-      return sh.t(session, "Combien de personnes séjourneront ?", "How many people will be staying?");
+      // Etape 81 : la capacite du type de chambre fait foi. Une chambre pour 1 personne n'a rien a demander ; si l'hotel a decoche
+      // « demander le nombre de personnes » pour ce type, on enregistre sa capacite (l'hotel facture la chambre, pas les occupants).
+      const capMax = capaciteChambre(chambre);
+      if (capMax <= 1 || chambre.demanderPersonnes === false) {
+        session.personnes = capMax <= 1 ? 1 : capMax;
+      } else {
+        session.stage = "awaiting_personnes";
+        return sh.t(session, "Combien de personnes séjourneront ?", "How many people will be staying?");
+      }
     }
     if (session.personnes > capaciteChambre(chambre)) {
       return proposerAlternatives(session, sh.t(session,
@@ -444,7 +451,7 @@ function createHebergementEngine(merchantKey, options) {
         "• Total: " + formatFcfa(s.total) + (note ? " (" + note + ")" : ""),
         "• Name: " + s.clientNom,
         "",
-        s.remplaceId ? "This replaces your current booking only once you confirm. Do you confirm? (yes / no)" : "Do you confirm this booking? (yes / no)"]
+        s.remplaceId ? "This replaces your current booking only once you confirm. Do you confirm? (yes / edit / cancel)" : "Do you confirm this booking? (yes / edit / cancel)"]
       : ["Récapitulatif de votre réservation :",
         "• Chambre : " + s.chambre,
         "• Arrivée : " + formatJour(s.arrivee, session) + " (à partir de " + heureArrivee() + ")",
@@ -453,7 +460,7 @@ function createHebergementEngine(merchantKey, options) {
         "• Total : " + formatFcfa(s.total) + (note ? " (" + note + ")" : ""),
         "• Au nom de : " + s.clientNom,
         "",
-        s.remplaceId ? "Elle ne remplacera votre réservation actuelle qu'une fois confirmée. Confirmez-vous ? (oui / non)" : "Confirmez-vous cette réservation ? (oui / non)"];
+        s.remplaceId ? "Elle ne remplacera votre réservation actuelle qu'une fois confirmée. Confirmez-vous ? (oui / modifier / annuler)" : "Confirmez-vous cette réservation ? (oui / modifier / annuler)"];
     return lignes.join("\n");
   }
 
@@ -569,6 +576,75 @@ function createHebergementEngine(merchantKey, options) {
     return refSejour(s) + " (" + s.chambre + ", " + formatCourt(s.arrivee, session) + " → " + formatCourt(s.depart, session) + ")";
   }
 
+  // ---------------- Etape 81 : corriger UNE partie du recapitulatif sans tout recommencer ----------------
+  // Le moteur sait deja ne demander que ce qui manque (avancer) : corriger une partie = effacer cette partie puis laisser avancer()
+  // reposer cette seule question, avant de reafficher le recapitulatif (le sejour provisoire est mis a jour, pas recree).
+  const RE_MODIFIER = /\b(modifi|corrig|chang|rectifi|edit|fix|amend|update|wrong|mistake|erreur|tromp)/;
+  function veutModifier(brut) { return RE_MODIFIER.test(normaliser(brut)) && !sh.parseWantsSomethingElse(brut) && !sh.parseAffirmative(brut); }
+  function optionsModifier(session) {
+    const ch = session.chambreId ? chambreParId(session.chambreId) : null;
+    const opts = ["chambre", "dates"];
+    if (ch && capaciteChambre(ch) > 1 && ch.demanderPersonnes !== false) opts.push("personnes");
+    opts.push("nom");
+    return opts;
+  }
+  function ouvrirModifier(session) {
+    session.stage = "awaiting_modifier";
+    const opts = optionsModifier(session);
+    const fr = { chambre: "la chambre", dates: "les dates", personnes: "le nombre de personnes", nom: "le nom" };
+    const en = { chambre: "the room", dates: "the dates", personnes: "the number of people", nom: "the name" };
+    return sh.t(session,
+      "Que souhaitez-vous modifier ? Choisissez dans la liste (" + opts.map((o) => fr[o]).join(", ") + "), ou écrivez directement le changement (ex : « 3 nuits »).",
+      "What would you like to change? Pick from the list (" + opts.map((o) => en[o]).join(", ") + "), or just write the change (e.g. \"3 nights\").");
+  }
+  // Correction ecrite librement (« plutot 3 nuits », « on sera 2 », « au nom de Awa », une autre chambre ou d'autres dates).
+  // Retourne le message a envoyer, ou null si rien n'est reconnu dans le texte.
+  function corrigerDepuisTexte(session, brut) {
+    const photo = () => JSON.stringify([session.chambreId, session.arrivee, session.depart, session.personnes, session.clientNom]);
+    if (/^\s*\d{1,2}\s*$/.test(brut)) {
+      const n = brut.trim();
+      return sh.t(session, "Voulez-vous " + n + " nuit(s) ou " + n + " personne(s) ? Répondez par exemple « " + n + " nuits » ou « " + n + " personnes ».",
+        "Do you mean " + n + " night(s) or " + n + " people? Reply for example \"" + n + " nights\" or \"" + n + " people\".");
+    }
+    const avant = photo();
+    const nomM = brut.match(/(?:\bau\s+nom\s+(?:de|d['’])\s*|\bmon\s+nom\s+(?:est|c['’]est)\s+|\bje\s+m['’]appelle\s+|\bnom\s*:\s*|\bunder\s+(?:the\s+)?name\s+|\bmy\s+name\s+is\s+|\bname\s*:\s*)([^\n,.;!?]{2,60})/i);
+    // Le nom est retire du texte avant de chercher dates / nuits / personnes : « Sam », « Mer »… ressemblent a des jours de la semaine.
+    let reste = brut;
+    if (nomM) { session.clientNom = nomM[1].trim().slice(0, 80); reste = brut.replace(nomM[0], " "); }
+    const on = normaliser(reste).match(/\b(?:on\s+sera|nous\s+serons|nous\s+sommes|ce\s+sera\s+pour|we\s+will\s+be|we\s+are|we'll\s+be)\s+(\d{1,2})\b(?!\s*(?:nuit|night|jour|day))/);
+    if (on && +on[1] >= 1 && +on[1] <= 20) session.personnes = +on[1];
+    if (reste.trim()) absorber(session, reste);
+    if (photo() === avant) return null;
+    return avancer(session);
+  }
+  function appliquerChoixModifier(session, cle) {
+    if (cle === "retour") return finaliserRecap(session);
+    if (cle === "chambre") {
+      session.chambreId = null; session.stage = "idle";
+      return messageChoixChambre(session, "Quelle chambre souhaitez-vous à la place ?", "Which room would you like instead?");
+    }
+    if (cle === "dates") { session.arrivee = null; session.depart = null; session.nuits = null; return avancer(session); }
+    if (cle === "personnes") { session.personnes = null; return avancer(session); }
+    if (cle === "nom") {
+      session.clientNom = null; session.stage = "awaiting_client_name";
+      return sh.t(session, "À quel nom dois-je noter la réservation ?", "What name should I put the booking under?");
+    }
+    return null;
+  }
+
+  // Etape 81 : « Ma reservation » > Modifier (reservation DEJA confirmee) : nom ou nombre de personnes, sans repasser par les dates.
+  // Les dates et la chambre passent par le report existant (ancienne reservation gardee jusqu'a la confirmation de la nouvelle).
+  function messageModifierApres(session, s) {
+    return sh.t(session,
+      "Votre réservation " + resumeSejour(s, session) + ". Que souhaitez-vous modifier ? Choisissez dans la liste (dates, nombre de personnes, nom).",
+      "Your booking " + resumeSejour(s, session) + ". What would you like to change? Pick from the list (dates, number of people, name).");
+  }
+  function ajouterNoteHistorique(s, raison) {
+    if (!s.historique) s.historique = [];
+    s.historique.push({ statut: s.statut, atISO: new Date().toISOString(), raison });
+  }
+
+
   function gererAnnulationOuReport(session, intention, confirmer) {
     const liste = sejoursAVenirDuClient(session.fromPhone === PHONE_SIMULATEUR ? "SIMULATEUR" : session.fromPhone);
     if (!liste.length) {
@@ -582,8 +658,8 @@ function createHebergementEngine(merchantKey, options) {
       session.confirmerAnnulation = !!confirmer;
       const lignes = liste.map((s, i) => (i + 1) + ". " + resumeSejour(s, session)).join("\n");
       return sh.t(session,
-        "Vous avez plusieurs réservations à venir :\n" + lignes + "\n\nLaquelle souhaitez-vous " + (intention === "annuler" ? "annuler" : "déplacer") + " ? (répondez par son numéro)",
-        "You have several upcoming bookings:\n" + lignes + "\n\nWhich one would you like to " + (intention === "annuler" ? "cancel" : "move") + "? (reply with its number)");
+        "Vous avez plusieurs réservations à venir :\n" + lignes + "\n\nLaquelle souhaitez-vous " + (intention === "annuler" ? "annuler" : intention === "modifier" ? "modifier" : "déplacer") + " ? (répondez par son numéro)",
+        "You have several upcoming bookings:\n" + lignes + "\n\nWhich one would you like to " + (intention === "annuler" ? "cancel" : intention === "modifier" ? "change" : "move") + "? (reply with its number)");
     }
     if (intention === "annuler" && confirmer) return demanderConfirmationAnnulation(session, liste[0]);
     return appliquerIntention(session, intention, liste[0]);
@@ -606,6 +682,12 @@ function createHebergementEngine(merchantKey, options) {
       alerterSejourModifie("annule", s, null);
       resetSession(session);
       return sh.t(session, "Votre réservation " + resumeSejour(s, session) + " est annulée. Vous pouvez réserver de nouveau quand vous le souhaitez.", "Your booking " + resumeSejour(s, session) + " is cancelled. You can book again whenever you like.");
+    }
+    if (intention === "modifier") {
+      resetSession(session);
+      session.modifSejourId = s.id;
+      session.stage = "awaiting_modifier_apres";
+      return messageModifierApres(session, s);
     }
     // report : on garde l'ancien sejour tant que le nouveau n'est pas confirme
     resetSession(session);
@@ -661,19 +743,101 @@ function createHebergementEngine(merchantKey, options) {
       return sh.t(session, "Je n'ai pas compris. Souhaitez-vous annuler votre réservation " + refSejour(s) + " ? Répondez par oui ou non.", "I didn't understand. Do you want to cancel your booking " + refSejour(s) + "? Please reply yes or no.");
     }
 
+
+    // ---- Etape 81 : choix de la partie a corriger dans le recapitulatif ----
+    if (session.stage === "awaiting_modifier") {
+      const s = session.pendingSejourId ? sejourParId(session.pendingSejourId) : null;
+      if (!s) { resetSession(session); return sh.t(session, "Très bien, rien n'est enregistré.", "Alright, nothing is recorded."); }
+      const norm = normaliser(brut);
+      const jeton = brut.trim().match(/^__modifier:(\w+)__$/);
+      let cle = jeton ? jeton[1] : null;
+      if (!cle) {
+        if (sh.parseNegative(brut) && !/\b(non|no)\s+(?:je|i|pas)/.test(norm)) { if (s.remplaceId) return abandonnerReport(session); resetSession(session); return sh.t(session, "Très bien, cette réservation n'est pas confirmée. Vous pouvez réserver quand vous voulez ; notre équipe pourra aussi vous recontacter.", "Alright, that booking is not confirmed. You can book whenever you like; our team may also get back to you."); }
+        if (/\b(garder|tel quel|retour|back|keep|no change|ne rien changer)\b/.test(norm)) cle = "retour";
+        else if (/\b(nom|name)\b/.test(norm) && !/\b(dates?|nuits?|nights?)\b/.test(norm)) cle = "nom";
+        else if (/\b(personnes?|people|guests?|persons?|adultes?)\b/.test(norm) && !/\b(dates?|nuits?|nights?)\b/.test(norm)) cle = "personnes";
+        else if (/^(la\s+|une\s+autre\s+|the\s+|another\s+)?(chambre|room)$/.test(norm.trim()) || /\bautre\s+chambre\b/.test(norm)) cle = "chambre";
+        else if (/^(les\s+|the\s+)?(dates?|nuits?|nights?|sejour|stay)$/.test(norm.trim())) cle = "dates";
+      }
+      if (cle && optionsModifier(session).concat(["retour"]).indexOf(cle) !== -1) {
+        const r = appliquerChoixModifier(session, cle);
+        if (r) return r;
+      }
+      const corr = corrigerDepuisTexte(session, brut);
+      if (corr) return corr;
+      return sh.t(session, "Je n'ai pas compris. Choisissez dans la liste ce que vous voulez modifier, ou écrivez directement le changement (ex : « 3 nuits », « au nom de Awa »).", "I didn't understand. Pick what you want to change from the list, or write the change directly (e.g. \"3 nights\", \"under the name Awa\").");
+    }
+
+    // ---- Etape 81 : modifier une reservation DEJA confirmee (nom, nombre de personnes) ----
+    if (session.stage === "awaiting_modifier_apres") {
+      const s = session.modifSejourId ? sejourParId(session.modifSejourId) : null;
+      if (!s || STATUTS_ACTIFS.indexOf(s.statut) === -1) { resetSession(session); return sh.t(session, "Cette réservation n'est plus à venir : rien à modifier.", "That booking is no longer upcoming: nothing to change."); }
+      const norm = normaliser(brut);
+      const jeton = brut.trim().match(/^__modifier:(\w+)__$/);
+      let cle = jeton ? jeton[1] : null;
+      if (!cle) {
+        if (sh.parseNegative(brut) || sh.parseWantsSomethingElse(brut)) { resetSession(session); return sh.t(session, "Très bien, votre réservation " + resumeSejour(s, session) + " reste inchangée.", "Alright, your booking " + resumeSejour(s, session) + " stays unchanged."); }
+        if (/\b(date|dates|nuit|nuits|night|nights|report|reporter|chambre|room)\b/.test(norm)) cle = "dates";
+        else if (/\b(personne|personnes|people|guests?|persons?)\b/.test(norm)) cle = "personnes";
+        else if (/\b(nom|name)\b/.test(norm)) cle = "nom";
+      }
+      if (cle === "retour") { resetSession(session); return sh.t(session, "Très bien, votre réservation " + resumeSejour(s, session) + " reste inchangée.", "Alright, your booking " + resumeSejour(s, session) + " stays unchanged."); }
+      if (cle === "dates") return appliquerIntention(session, "reporter", s);
+      if (cle === "personnes") {
+        if (capaciteChambre(chambreParId(s.chambreId)) <= 1) return sh.t(session, "Cette chambre accueille 1 personne : rien à modifier de ce côté. Que souhaitez-vous modifier ? (dates ou nom)", "This room sleeps 1 person: nothing to change there. What would you like to change? (dates or name)");
+        session.stage = "awaiting_personnes_apres";
+        return sh.t(session, "Combien de personnes séjourneront ?", "How many people will be staying?");
+      }
+      if (cle === "nom") {
+        session.stage = "awaiting_nom_apres";
+        return sh.t(session, "À quel nom dois-je noter la réservation ?", "What name should I put the booking under?");
+      }
+      return sh.t(session, "Je n'ai pas compris. Choisissez dans la liste : dates, nombre de personnes ou nom.", "I didn't understand. Pick from the list: dates, number of people or name.");
+    }
+    if (session.stage === "awaiting_personnes_apres") {
+      const s = session.modifSejourId ? sejourParId(session.modifSejourId) : null;
+      if (!s || STATUTS_ACTIFS.indexOf(s.statut) === -1) { resetSession(session); return sh.t(session, "Cette réservation n'est plus à venir : rien à modifier.", "That booking is no longer upcoming: nothing to change."); }
+      const n = dt.lirePersonnes(brut);
+      const cap = capaciteChambre(chambreParId(s.chambreId));
+      if (!n || n < 1) return sh.t(session, "Je n'ai pas compris. Indiquez simplement le nombre de personnes (ex : 2).", "I didn't understand. Just tell me the number of people (e.g. 2).");
+      if (n > cap) return sh.t(session, s.chambre + " accueille " + libellePersonnes(cap, session) + " au maximum. Quel nombre de personnes ?", s.chambre + " sleeps " + libellePersonnes(cap, session) + " at most. How many people?");
+      const ancien = s.personnes;
+      s.personnes = n;
+      ajouterNoteHistorique(s, "Nombre de personnes modifié par le client via WhatsApp (" + ancien + " → " + n + ")");
+      saveState();
+      resetSession(session);
+      return sh.t(session, "C'est modifié : " + resumeSejour(s, session) + ", " + libellePersonnes(n, session) + ".", "Done: " + resumeSejour(s, session) + ", " + libellePersonnes(n, session) + ".");
+    }
+    if (session.stage === "awaiting_nom_apres") {
+      const s = session.modifSejourId ? sejourParId(session.modifSejourId) : null;
+      if (!s || STATUTS_ACTIFS.indexOf(s.statut) === -1) { resetSession(session); return sh.t(session, "Cette réservation n'est plus à venir : rien à modifier.", "That booking is no longer upcoming: nothing to change."); }
+      const nom = brut.trim().slice(0, 80);
+      if (!nom) return sh.t(session, "Merci d'indiquer le nom à noter pour cette réservation.", "Please tell me the name to put this booking under.");
+      const ancien = s.clientNom;
+      s.clientNom = nom;
+      ajouterNoteHistorique(s, "Nom modifié par le client via WhatsApp (" + (ancien || "—") + " → " + nom + ")");
+      saveState();
+      resetSession(session);
+      return sh.t(session, "C'est modifié : " + resumeSejour(s, session) + " est au nom de " + nom + ".", "Done: " + resumeSejour(s, session) + " is now under the name " + nom + ".");
+    }
+
     if (session.stage === "awaiting_confirmation") {
       const s = session.pendingSejourId ? sejourParId(session.pendingSejourId) : null;
       if (s && parseAffirmative(brut)) return confirmerSejour(session, s);
-      if (s && (parseNegative(brut) || parseWantsSomethingElse(brut))) {
+      if (s && veutModifier(brut)) {
+        const corrDirecte = corrigerDepuisTexte(session, brut); // « changer pour 3 nuits » : la correction est deja dans la phrase
+        return corrDirecte || ouvrirModifier(session);
+      }
+      if (s && (parseNegative(brut) || parseWantsSomethingElse(brut) || /^\s*(annuler|cancel)\s*$/i.test(brut))) {
         if (s.remplaceId) return abandonnerReport(session);
         resetSession(session);
         return sh.t(session, "Très bien, cette réservation n'est pas confirmée. Vous pouvez réserver quand vous voulez ; notre équipe pourra aussi vous recontacter.", "Alright, that booking is not confirmed. You can book whenever you like; our team may also get back to you.");
       }
       if (s) {
-        // peut-etre de nouvelles dates ou une autre chambre
-        const avant = JSON.stringify([session.chambreId, session.arrivee, session.depart]);
-        if (absorber(session, brut) && JSON.stringify([session.chambreId, session.arrivee, session.depart]) !== avant) return avancer(session);
-        return sh.t(session, "Je n'ai pas bien compris. Confirmez-vous la réservation " + refSejour(s) + " ? Répondez simplement par oui ou non — ou donnez-moi d'autres dates.", "I didn't quite get that. Do you confirm booking " + refSejour(s) + "? Simply reply yes or no — or give me other dates.");
+        // Etape 81 : correction ecrite librement (nuits, personnes, nom, chambre, dates)
+        const corr = corrigerDepuisTexte(session, brut);
+        if (corr) return corr;
+        return sh.t(session, "Je n'ai pas bien compris. Confirmez-vous la réservation " + refSejour(s) + " ? Répondez par oui, « modifier » pour corriger un élément, ou « annuler » — ou écrivez directement le changement (ex : « 3 nuits »).", "I didn't quite get that. Do you confirm booking " + refSejour(s) + "? Reply yes, \"edit\" to change something, or \"cancel\" — or write the change directly (e.g. \"3 nights\").");
       }
       resetSession(session);
       return sh.t(session, "Très bien, rien n'est enregistré.", "Alright, nothing is recorded.");
@@ -865,7 +1029,7 @@ function createHebergementEngine(merchantKey, options) {
       return msgChoix;
     }
 
-    const intention = intentionSejour(text);
+    const intention = String(text || "").trim() === "__modifier_reservation__" ? "modifier" : intentionSejour(text);
     let reponse;
     ignorerSejourId = session.reportSejourId || null;
     try {
@@ -919,6 +1083,10 @@ function createHebergementEngine(merchantKey, options) {
       libelleChoix: { fr: "Vos réservations", en: "Your bookings" },
       accueilPerso: !!s.pretPourChoix && !!s.accueilPersoAffiche, // Etape 70
       choixDate: choixDateDe(fromPhone), // Etape 68 : "arrivee" | "nuits" | null
+      // Etape 81 : listes « que modifier ? » et nombre de personnes plafonne a la capacite du type de chambre.
+      modifierChoix: s.stage === "awaiting_modifier" ? optionsModifier(s) : (s.stage === "awaiting_modifier_apres" ? ["dates", "personnes", "nom"] : null),
+      personnesMax: (s.stage === "awaiting_personnes" || s.stage === "awaiting_personnes_apres")
+        ? capaciteChambre(chambreParId(s.stage === "awaiting_personnes_apres" ? (sejourParId(s.modifSejourId) || {}).chambreId : s.chambreId)) : null,
       langue: sh.langueSession(s)
     };
   }
@@ -1027,6 +1195,8 @@ function createHebergementEngine(merchantKey, options) {
         capacite: Number.isFinite(capacite) && capacite >= 1 ? Math.min(capacite, 50) : 2,
         description: String(c.description == null ? "" : c.description).trim().slice(0, 200)
       });
+      // Etape 81 : « demander le nombre de personnes » (vrai par defaut) - n'est memorise que lorsque l'hotel l'a decoche.
+      if (c.demanderPersonnes === false || c.demanderPersonnes === "false") propres[propres.length - 1].demanderPersonnes = false;
     }
     // Etape 77 : les photos ne se modifient que par leurs routes dediees (jamais par le corps de cette liste).
     photosEl.conserverPhotos(state.chambres, propres);
