@@ -2279,7 +2279,7 @@ function createCatalogEngine(merchantKey, options) {
     const lignes = [];
     state.catalog.forEach((p) => {
       p.variantes.forEach((v) => {
-        lignes.push({ produit: p.nom, couleur: v.couleur, taille: v.taille, stockReel: v.stockReel, prix: v.prix });
+        lignes.push({ produit: p.nom, categorie: p.cat || "", couleur: v.couleur, taille: v.taille, stockReel: v.stockReel, prix: v.prix });
       });
     });
     return lignes;

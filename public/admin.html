@@ -1067,6 +1067,17 @@ const I18N = {
     labelSupprimeLePar: "Supprimé le {date} par {qui}",
     btnTelechargerPdf: "Télécharger en PDF",
     btnTelechargerStockActuelPdf: "Télécharger le stock actuel en PDF",
+    btnTelechargerExcel: "Télécharger en Excel",
+    btnTelechargerStockActuelExcel: "Télécharger le stock actuel en Excel",
+    xlsxFeuilleInventaire: "Inventaire",
+    xlsxFeuilleDetail: "Détail",
+    xlsxEnteteCategorie: "Catégorie",
+    xlsxEnteteProduit: "Produit",
+    xlsxEnteteCouleur: "Couleur",
+    xlsxEnteteTaille: "Taille",
+    xlsxEnteteStock: "Stock réel",
+    xlsxEntetePrix: "Prix (FCFA)",
+    xlsxEnteteValeur: "Valeur du stock (FCFA)",
     msgPdfIndisponible: "Le téléchargement PDF n'a pas pu démarrer (connexion internet nécessaire pour charger l'outil de génération). Vérifiez votre connexion et réessayez.",
     pdfRapportTitre: "Rapport de commandes — {nom}",
     pdfRapportSousTitrePeriode: "Période : {periode} — Date de référence : {date}",
@@ -2344,6 +2355,17 @@ const I18N = {
     labelSupprimeLePar: "Deleted on {date} by {qui}",
     btnTelechargerPdf: "Download as PDF",
     btnTelechargerStockActuelPdf: "Download current stock as PDF",
+    btnTelechargerExcel: "Download as Excel",
+    btnTelechargerStockActuelExcel: "Download current stock as Excel",
+    xlsxFeuilleInventaire: "Inventory",
+    xlsxFeuilleDetail: "Details",
+    xlsxEnteteCategorie: "Category",
+    xlsxEnteteProduit: "Item",
+    xlsxEnteteCouleur: "Color",
+    xlsxEnteteTaille: "Size",
+    xlsxEnteteStock: "Actual stock",
+    xlsxEntetePrix: "Price (FCFA)",
+    xlsxEnteteValeur: "Stock value (FCFA)",
     msgPdfIndisponible: "The PDF download couldn't start (an internet connection is needed to load the PDF generator). Check your connection and try again.",
     pdfRapportTitre: "Order report — {nom}",
     pdfRapportSousTitrePeriode: "Period: {periode} — Reference date: {date}",
@@ -7420,6 +7442,204 @@ function tableVentesParArticleHtml(liste, premiereColonne) {
 // polices standard de jsPDF : on les remplace par une espace normale dans les PDF.
 function nombrePdf(n) { return Number(n).toLocaleString(localeCourante()).replace(/[\u202f\u00a0]/g, " "); }
 
+// ---------------- Export Excel (.xlsx) de l'inventaire, 29 octobre 2026 ----------------
+// Fichier Excel classique genere cote NAVIGATEUR, sans bibliotheque ni requete externe (contrairement a jsPDF) :
+// un .xlsx est une archive ZIP de petits fichiers XML, que les deux fonctions ci-dessous fabriquent
+// directement (ZIP "stocke", sans compression). Aucun changement cote serveur n'est necessaire pour l'export
+// lui-meme. Les textes sont ecrits en "inlineStr" : une valeur commencant par = + - @ n'est donc JAMAIS
+// interpretee comme une formule a l'ouverture dans Excel.
+function crc32Octets(octets) {
+  if (!crc32Octets.table) {
+    const tab = [];
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); tab[n] = c >>> 0; }
+    crc32Octets.table = tab;
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < octets.length; i++) crc = crc32Octets.table[(crc ^ octets[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// `fichiers` : [{ nom: "xl/workbook.xml", octets: Uint8Array }] -> Uint8Array de l'archive ZIP.
+function zipSansCompression(fichiers) {
+  const enc = new TextEncoder();
+  const parties = [], central = [];
+  let decalage = 0;
+  const d = new Date();
+  const heure = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  fichiers.forEach((f) => {
+    const nom = enc.encode(f.nom), crc = crc32Octets(f.octets), taille = f.octets.length;
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, heure, true); h.setUint16(12, date, true); h.setUint32(14, crc, true);
+    h.setUint32(18, taille, true); h.setUint32(22, taille, true); h.setUint16(26, nom.length, true); h.setUint16(28, 0, true);
+    parties.push(new Uint8Array(h.buffer), nom, f.octets);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true);
+    c.setUint16(12, heure, true); c.setUint16(14, date, true); c.setUint32(16, crc, true);
+    c.setUint32(20, taille, true); c.setUint32(24, taille, true); c.setUint16(28, nom.length, true);
+    c.setUint32(42, decalage, true);
+    central.push(new Uint8Array(c.buffer), nom);
+    decalage += 30 + nom.length + taille;
+  });
+  let tailleCentral = 0;
+  central.forEach((p) => { tailleCentral += p.length; });
+  const fin = new DataView(new ArrayBuffer(22));
+  fin.setUint32(0, 0x06054b50, true); fin.setUint16(8, fichiers.length, true); fin.setUint16(10, fichiers.length, true);
+  fin.setUint32(12, tailleCentral, true); fin.setUint32(16, decalage, true);
+  const toutes = parties.concat(central, [new Uint8Array(fin.buffer)]);
+  let total = 0;
+  toutes.forEach((p) => { total += p.length; });
+  const sortie = new Uint8Array(total);
+  let pos = 0;
+  toutes.forEach((p) => { sortie.set(p, pos); pos += p.length; });
+  return sortie;
+}
+
+function xmlEchappe(s) {
+  return String(s == null ? "" : s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function lettreColonneXlsx(i) { let s = ""; let n = i + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+
+// `feuilles` : [{ nom, colonnes: [{ titre, largeur, type: "texte"|"entier"|"montant"|"date" }],
+//   lignes: [{ cellules: [valeur | { formule, valeur }], rupture: bool }] }]. Une ligne `rupture` est surlignee.
+// Style : 0 defaut, 1 entete, puis texte/entier/montant/date = 2/3/4/5 (6/7/8/9 pour une ligne en rupture).
+const XLSX_STYLE_PAR_TYPE = { texte: 2, entier: 3, montant: 4, date: 5 };
+function construireXlsx(feuilles) {
+  const enc = new TextEncoder();
+  const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+  const NSR = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const ENTETE = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n";
+  const decalageFuseau = new Date().getTimezoneOffset() * 60000;
+  const fichiers = [];
+  const noms = feuilles.map((f, i) => (String(f.nom || "Feuille" + (i + 1)).replace(/[\[\]:*?\/\\]/g, " ").trim().slice(0, 31) || "Feuille" + (i + 1)));
+
+  feuilles.forEach((f, idx) => {
+    const nbCol = f.colonnes.length;
+    let xml = ENTETE + "<worksheet xmlns=\"" + NS + "\" xmlns:r=\"" + NSR + "\">" +
+      "<sheetViews><sheetView workbookViewId=\"0\"" + (idx === 0 ? " tabSelected=\"1\"" : "") + "><pane ySplit=\"1\" topLeftCell=\"A2\" activePane=\"bottomLeft\" state=\"frozen\"/><selection pane=\"bottomLeft\"/></sheetView></sheetViews>" +
+      "<sheetFormatPr defaultRowHeight=\"15\"/><cols>" +
+      f.colonnes.map((c, i) => "<col min=\"" + (i + 1) + "\" max=\"" + (i + 1) + "\" width=\"" + (c.largeur || 14) + "\" customWidth=\"1\"/>").join("") +
+      "</cols><sheetData>";
+    xml += "<row r=\"1\" ht=\"32\" customHeight=\"1\">" + f.colonnes.map((c, i) => "<c r=\"" + lettreColonneXlsx(i) + "1\" s=\"1\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" + xmlEchappe(c.titre) + "</t></is></c>").join("") + "</row>";
+    f.lignes.forEach((ligne, r) => {
+      const numero = r + 2;
+      xml += "<row r=\"" + numero + "\">";
+      f.colonnes.forEach((c, i) => {
+        const ref = lettreColonneXlsx(i) + numero;
+        const s = XLSX_STYLE_PAR_TYPE[c.type || "texte"] + (ligne.rupture ? 4 : 0);
+        let v = ligne.cellules[i];
+        let formule = null;
+        if (v && typeof v === "object" && !(v instanceof Date)) { formule = v.formule; v = v.valeur; }
+        if (v instanceof Date) v = (v.getTime() - decalageFuseau) / 86400000 + 25569;
+        if (formule) xml += "<c r=\"" + ref + "\" s=\"" + s + "\"><f>" + xmlEchappe(formule) + "</f><v>" + Number(v || 0) + "</v></c>";
+        else if (typeof v === "number" && isFinite(v)) xml += "<c r=\"" + ref + "\" s=\"" + s + "\"><v>" + v + "</v></c>";
+        else if (v === null || v === undefined || v === "") xml += "<c r=\"" + ref + "\" s=\"" + s + "\"/>";
+        else xml += "<c r=\"" + ref + "\" s=\"" + s + "\" t=\"inlineStr\"><is><t xml:space=\"preserve\">" + xmlEchappe(v) + "</t></is></c>";
+      });
+      xml += "</row>";
+    });
+    xml += "</sheetData><autoFilter ref=\"A1:" + lettreColonneXlsx(nbCol - 1) + (f.lignes.length + 1) + "\"/></worksheet>";
+    fichiers.push({ nom: "xl/worksheets/sheet" + (idx + 1) + ".xml", octets: enc.encode(xml) });
+  });
+
+  const bord = "<border><left style=\"thin\"><color rgb=\"FFC9D2DE\"/></left><right style=\"thin\"><color rgb=\"FFC9D2DE\"/></right><top style=\"thin\"><color rgb=\"FFC9D2DE\"/></top><bottom style=\"thin\"><color rgb=\"FFC9D2DE\"/></bottom><diagonal/></border>";
+  function xf(numFmt, fill, centre) {
+    return "<xf numFmtId=\"" + numFmt + "\" fontId=\"0\" fillId=\"" + fill + "\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFill=\"1\" applyBorder=\"1\"" + (centre ? " applyAlignment=\"1\"><alignment horizontal=\"center\"/></xf>" : "/>");
+  }
+  const styles = ENTETE + "<styleSheet xmlns=\"" + NS + "\">" +
+    "<numFmts count=\"1\"><numFmt numFmtId=\"164\" formatCode=\"dd/mm/yyyy\\ hh:mm:ss\"/></numFmts>" +
+    "<fonts count=\"2\"><font><sz val=\"10\"/><name val=\"Arial\"/></font><font><b/><sz val=\"10\"/><color rgb=\"FFFFFFFF\"/><name val=\"Arial\"/></font></fonts>" +
+    "<fills count=\"4\"><fill><patternFill patternType=\"none\"/></fill><fill><patternFill patternType=\"gray125\"/></fill>" +
+    "<fill><patternFill patternType=\"solid\"><fgColor rgb=\"FF1F3552\"/><bgColor indexed=\"64\"/></patternFill></fill>" +
+    "<fill><patternFill patternType=\"solid\"><fgColor rgb=\"FFFCE8E1\"/><bgColor indexed=\"64\"/></patternFill></fill></fills>" +
+    "<borders count=\"2\"><border><left/><right/><top/><bottom/><diagonal/></border>" + bord + "</borders>" +
+    "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>" +
+    "<cellXfs count=\"10\">" +
+    "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>" +
+    "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"2\" borderId=\"1\" xfId=\"0\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment horizontal=\"center\" vertical=\"center\" wrapText=\"1\"/></xf>" +
+    xf(0, 0, false) + xf(1, 0, true) + xf(3, 0, false) + xf(164, 0, false) +
+    xf(0, 3, false) + xf(1, 3, true) + xf(3, 3, false) + xf(164, 3, false) +
+    "</cellXfs><cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>";
+  fichiers.push({ nom: "xl/styles.xml", octets: enc.encode(styles) });
+
+  const n = feuilles.length;
+  fichiers.push({ nom: "xl/workbook.xml", octets: enc.encode(ENTETE + "<workbook xmlns=\"" + NS + "\" xmlns:r=\"" + NSR + "\"><sheets>" +
+    noms.map((nom, i) => "<sheet name=\"" + xmlEchappe(nom) + "\" sheetId=\"" + (i + 1) + "\" r:id=\"rId" + (i + 1) + "\"/>").join("") + "</sheets></workbook>") });
+  fichiers.push({ nom: "xl/_rels/workbook.xml.rels", octets: enc.encode(ENTETE + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
+    noms.map((nom, i) => "<Relationship Id=\"rId" + (i + 1) + "\" Type=\"" + NSR + "/worksheet\" Target=\"worksheets/sheet" + (i + 1) + ".xml\"/>").join("") +
+    "<Relationship Id=\"rId" + (n + 1) + "\" Type=\"" + NSR + "/styles\" Target=\"styles.xml\"/></Relationships>") });
+  fichiers.push({ nom: "_rels/.rels", octets: enc.encode(ENTETE + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"" + NSR + "/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>") });
+  fichiers.push({ nom: "[Content_Types].xml", octets: enc.encode(ENTETE + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/>" +
+    "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>" +
+    noms.map((nom, i) => "<Override PartName=\"/xl/worksheets/sheet" + (i + 1) + ".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>").join("") +
+    "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/></Types>") });
+  // [Content_Types].xml en premier : certains lecteurs l'exigent.
+  fichiers.unshift(fichiers.pop());
+  return zipSansCompression(fichiers);
+}
+
+// Une variante "vide" (ni couleur ni taille, prix 0, stock 0) n'apporte rien : elle apparait dans le stock
+// d'un article dont une ligne de variante a ete creee sans valeur. Ecartee des exports (PDF et Excel).
+function lignesInventaireExportables(lignes) {
+  const vide = (x) => String(x == null ? "" : x).trim() === "";
+  return (lignes || []).filter((l) => !(vide(l.couleur) && vide(l.taille) && !l.prix && !l.stockReel));
+}
+function etiquetteVarianteExcel(l) {
+  const parts = [];
+  [l.couleur, l.taille].forEach((x) => {
+    const c = String(x == null ? "" : x).trim();
+    if (c && c !== "-" && c.toLowerCase() !== "unique" && parts.indexOf(c) === -1) parts.push(c);
+  });
+  return parts.join(", ");
+}
+
+// Feuille 1 "Inventaire" : colonnes EXACTES et dans l'ordre du modele d'import Odoo (entetes toujours en
+// francais, quelle que soit la langue de l'interface - Odoo les reconnait par leur nom). Une ligne par
+// variante ; le nom precise la variante quand l'article en a plusieurs. Feuille 2 "Détail" : couleur et
+// taille dans des colonnes a part, avec la valeur du stock calculee par formule.
+function feuillesInventaire(lignes, dateRef) {
+  const util = lignesInventaireExportables(lignes);
+  const compte = {};
+  util.forEach((l) => { compte[l.produit] = (compte[l.produit] || 0) + 1; });
+  const odoo = {
+    nom: t("xlsxFeuilleInventaire"),
+    colonnes: [
+      { titre: "Devise", largeur: 9 }, { titre: "Statut de l'activité", largeur: 18 }, { titre: "Catégorie de produits", largeur: 24 },
+      { titre: "Suivre l'inventaire", largeur: 16 }, { titre: "Favori", largeur: 9 }, { titre: "Nom", largeur: 54 },
+      { titre: "Référence interne", largeur: 16 }, { titre: "# Variantes d'article", largeur: 14, type: "entier" },
+      { titre: "Prix de vente", largeur: 14, type: "montant" }, { titre: "Quantité disponible", largeur: 14, type: "entier" },
+      { titre: "Image 128", largeur: 12 }, { titre: "Mis à jour le", largeur: 20, type: "date" }
+    ],
+    lignes: util.map((l) => {
+      const etiquette = compte[l.produit] > 1 ? etiquetteVarianteExcel(l) : "";
+      return {
+        rupture: !(l.stockReel > 0),
+        cellules: ["XAF", "", l.categorie || "", "Oui", "Non", etiquette ? l.produit + " (" + etiquette + ")" : l.produit, "", compte[l.produit], l.prix || 0, l.stockReel || 0, "", dateRef]
+      };
+    })
+  };
+  const detail = {
+    nom: t("xlsxFeuilleDetail"),
+    colonnes: [
+      { titre: t("xlsxEnteteCategorie"), largeur: 22 }, { titre: t("xlsxEnteteProduit"), largeur: 50 }, { titre: t("xlsxEnteteCouleur"), largeur: 14 },
+      { titre: t("xlsxEnteteTaille"), largeur: 12 }, { titre: t("xlsxEnteteStock"), largeur: 12, type: "entier" },
+      { titre: t("xlsxEntetePrix"), largeur: 14, type: "montant" }, { titre: t("xlsxEnteteValeur"), largeur: 20, type: "montant" }
+    ],
+    lignes: util.map((l, i) => ({
+      rupture: !(l.stockReel > 0),
+      cellules: [l.categorie || "", l.produit, l.couleur || "", l.taille || "", l.stockReel || 0, l.prix || 0, { formule: "E" + (i + 2) + "*F" + (i + 2), valeur: (l.stockReel || 0) * (l.prix || 0) }]
+    }))
+  };
+  return [odoo, detail];
+}
+
+function telechargerXlsx(feuilles, nomFichier) {
+  const blob = new Blob([construireXlsx(feuilles)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  qrTelecharger(blob, nomFichier);
+}
+
 function brancherDeplierVentes(zone) {
   Array.prototype.forEach.call(zone.querySelectorAll("[data-deplier-ventes]"), (btn) => {
     const i = btn.dataset.deplierVentes;
@@ -7654,7 +7874,8 @@ async function renderInventaire() {
     "<h2>" + t("h3InstantanesInventaire") + "</h2>" +
     "<p class='raison'>" + t("noteInstantanes") + "</p>" +
     "<button id='btnNouvelInstantane'>" + t("btnNouvelInstantane") + "</button> " +
-    "<button id='btnStockActuelPdf'>" + t("btnTelechargerStockActuelPdf") + "</button>" +
+    "<button id='btnStockActuelPdf'>" + t("btnTelechargerStockActuelPdf") + "</button> " +
+    "<button id='btnStockActuelExcel'>" + t("btnTelechargerStockActuelExcel") + "</button>" +
     "<div id='listeInstantanes' style='margin-top:14px;'>" + rendreListeInstantanes(instantanes) + "</div>";
 
   document.getElementById("btnStockActuelPdf").onclick = async () => {
@@ -7665,10 +7886,17 @@ async function renderInventaire() {
         sousTitres: [t("pdfRapportSousTitreGenere", { date: new Date().toLocaleString(localeCourante()) })],
         sections: [{
           titre: t("pdfSectionArticles"),
-          lignes: lignes.map((l) => t("pdfLigneArticle", { produit: l.produit, couleur: l.couleur, taille: l.taille, stock: l.stockReel, prix: (l.prix || 0).toLocaleString(localeCourante()) })),
+          lignes: lignesInventaireExportables(lignes).map((l) => t("pdfLigneArticle", { produit: l.produit, couleur: l.couleur, taille: l.taille, stock: l.stockReel, prix: nombrePdf(l.prix || 0) })),
           texteVide: t("pdfTexteAucunArticle")
         }]
       }), "stock-actuel-" + marchandActif.id + ".pdf");
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+
+  document.getElementById("btnStockActuelExcel").onclick = async () => {
+    try {
+      const lignes = await api("/api/" + marchandActif.id + "/inventaire/actuel");
+      telechargerXlsx(feuillesInventaire(lignes, new Date()), "stock-actuel-" + marchandActif.id + ".xlsx");
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
 
@@ -7678,7 +7906,8 @@ async function renderInventaire() {
       liste.slice().reverse().map((s) => {
         const supprime = !!s.supprimeLe;
         let colonneAction = "<button data-voir-instantane='" + esc(s.id) + "'>" + t("voir") + "</button> " +
-          "<button data-pdf-instantane='" + esc(s.id) + "'>" + t("btnTelechargerPdf") + "</button>";
+          "<button data-pdf-instantane='" + esc(s.id) + "'>" + t("btnTelechargerPdf") + "</button> " +
+          "<button data-xlsx-instantane='" + esc(s.id) + "'>" + t("btnTelechargerExcel") + "</button>";
         if (supprime) {
           colonneAction += " <span class='raison'>" + esc(t("labelSupprimeLePar", { date: new Date(s.supprimeLe).toLocaleString(localeCourante()), qui: s.supprimePar || "?" })) + "</span>";
         } else if (estGestionnaire) {
@@ -7712,10 +7941,18 @@ async function renderInventaire() {
           sousTitres: sousTitres,
           sections: [{
             titre: t("pdfSectionArticles"),
-            lignes: s.lignes.map((l) => t("pdfLigneArticle", { produit: l.produit, couleur: l.couleur, taille: l.taille, stock: l.stockReel, prix: (l.prix || 0).toLocaleString(localeCourante()) })),
+            lignes: lignesInventaireExportables(s.lignes).map((l) => t("pdfLigneArticle", { produit: l.produit, couleur: l.couleur, taille: l.taille, stock: l.stockReel, prix: nombrePdf(l.prix || 0) })),
             texteVide: t("pdfTexteAucunArticle")
           }]
         }), "instantane-" + s.id + ".pdf");
+      };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-xlsx-instantane]"), (btn) => {
+      btn.onclick = () => {
+        const s = liste.filter((x) => x.id === btn.dataset.xlsxInstantane)[0];
+        if (!s) return;
+        try { telechargerXlsx(feuillesInventaire(s.lignes, new Date(s.dateISO)), "instantane-" + s.id + ".xlsx"); }
+        catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-suppr-instantane]"), (btn) => {
