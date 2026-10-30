@@ -1228,6 +1228,8 @@ const I18N = {
     pdfSectionArticles: "Articles en stock",
     pdfLigneArticle: "{produit} ({couleur}, {taille}) — Stock réel : {stock} — Prix : {prix} FCFA",
     pdfTexteAucunArticle: "Aucun article dans le catalogue.",
+    pdfPageSur: "Page {p} / {n}",
+    pdfTotalLignes: "Total ({n} lignes)",
     h3Izyfacture: "Facturation IzyFacture",
     descIzyfacture: "Connectez IzyVendeur à votre compte IzyFacture pour créer automatiquement une facture officielle dès qu'une commande passe au statut « Confirmée ». La clé est chiffrée avant d'être enregistrée et n'est jamais réaffichée en clair.",
     izyfactureCleActuelle: "Clé enregistrée (se terminant par {indice}).",
@@ -2648,6 +2650,8 @@ const I18N = {
     pdfSectionArticles: "Items in stock",
     pdfLigneArticle: "{produit} ({couleur}, {taille}) — Actual stock: {stock} — Price: {prix} FCFA",
     pdfTexteAucunArticle: "No items in the catalog.",
+    pdfPageSur: "Page {p} of {n}",
+    pdfTotalLignes: "Total ({n} rows)",
     h3Izyfacture: "IzyFacture invoicing",
     descIzyfacture: "Connect IzyVendeur to your IzyFacture account to automatically create an official invoice as soon as an order reaches the \"Confirmée\" status. The key is encrypted before being stored and is never shown again in full.",
     izyfactureCleActuelle: "Key on file (ending in {indice}).",
@@ -7650,6 +7654,42 @@ function ecrirePdfStructure(doc, options) {
     if (y + hauteurNecessaire > margeBas) { doc.addPage(); y = 18; }
   }
 
+  // Tableau a colonnes (Etape 84, 30 octobre 2026) : en-tete repete a chaque page, texte des cellules renvoye a la ligne,
+  // chiffres alignes a droite, ligne de total. tableau = { colonnes:[{titre, largeur, droite}], lignes:[{cellules:[...], alerte}], pied:[...] }.
+  function dessinerTableau(tb) {
+    const pad = 1.6, interligne = 4.1;
+    const hauteurCellules = (cellules, largeurs) => Math.max.apply(null, cellules.map((c, i) => doc.splitTextToSize(String(c == null ? "" : c), largeurs[i] - 2 * pad).length)) * interligne + 2 * pad - 0.6;
+    const largeurs = tb.colonnes.map((c) => c.largeur);
+    function ligne(cellules, opts) {
+      const h = hauteurCellules(cellules, largeurs);
+      // opts.reserve : hauteur a garder libre sous la ligne (la derniere ligne n'est jamais separee de la ligne de total).
+      if (!opts.entete && y + h + (opts.reserve || 0) > margeBas) { doc.addPage(); y = 18; enTete(); }
+      let x = margeG;
+      doc.setFont("helvetica", opts.gras ? "bold" : "normal"); doc.setFontSize(9);
+      cellules.forEach((c, i) => {
+        if (opts.fond) { doc.setFillColor(opts.fond[0], opts.fond[1], opts.fond[2]); doc.rect(x, y, largeurs[i], h, "F"); }
+        doc.setDrawColor(200); doc.setLineWidth(0.2); doc.rect(x, y, largeurs[i], h, "S");
+        if (opts.alerte && tb.colonnes[i].alerte) doc.setTextColor(180, 40, 30); else doc.setTextColor(0);
+        const lignes = doc.splitTextToSize(String(c == null ? "" : c), largeurs[i] - 2 * pad);
+        lignes.forEach((l, k) => {
+          const ty = y + pad + 2.9 + k * interligne;
+          if (tb.colonnes[i].droite) doc.text(l, x + largeurs[i] - pad, ty, { align: "right" }); else doc.text(l, x + pad, ty);
+        });
+        x += largeurs[i];
+      });
+      doc.setTextColor(0);
+      y += h;
+    }
+    function enTete() { ligne(tb.colonnes.map((c) => c.titre), { entete: true, gras: true, fond: [226, 230, 236] }); }
+    // L'en-tete ne reste jamais seul en bas de page : on exige la place de l'en-tete + une premiere ligne.
+    sautDePageSiBesoin(24);
+    enTete();
+    const hPied = tb.pied ? hauteurCellules(tb.pied, largeurs) : 0;
+    tb.lignes.forEach((l, i) => ligne(l.cellules, { alerte: l.alerte, fond: i % 2 ? [246, 247, 249] : null, reserve: i === tb.lignes.length - 1 ? hPied : 0 }));
+    if (tb.pied) ligne(tb.pied, { gras: true, fond: [226, 230, 236] });
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+  }
+
   doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(0);
   doc.text(titre, margeG, y); y += 8;
 
@@ -7665,7 +7705,10 @@ function ecrirePdfStructure(doc, options) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(12);
     doc.text(section.titre, margeG, y); y += 7;
     doc.setFont("helvetica", "normal"); doc.setFontSize(10);
-    if (!section.lignes || !section.lignes.length) {
+    if (section.tableau) {
+      if (!section.tableau.lignes.length) { doc.setTextColor(120); doc.text(section.texteVide || "-", margeG, y); y += 6; doc.setTextColor(0); }
+      else dessinerTableau(section.tableau);
+    } else if (!section.lignes || !section.lignes.length) {
       sautDePageSiBesoin(6);
       doc.setTextColor(120);
       doc.text(section.texteVide || "-", margeG, y); y += 6;
@@ -7677,6 +7720,34 @@ function ecrirePdfStructure(doc, options) {
     }
     y += 4;
   });
+
+  // Numerotation « Page x / n » en bas de chaque page.
+  const nbPages = doc.getNumberOfPages();
+  for (let i = 1; i <= nbPages; i++) {
+    doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(120);
+    doc.text(t("pdfPageSur", { p: i, n: nbPages }), 210 - margeG, 290, { align: "right" });
+  }
+  doc.setTextColor(0);
+}
+
+// Tableau d'inventaire a colonnes : Article, (Categorie), Couleur, Taille, Stock reel, Prix, Valeur du stock, avec totaux.
+// Meme filtre que l'export Excel (lignesInventaireExportables) ; les variantes en rupture ont leur stock en rouge.
+function sectionTableauInventairePdf(lignes) {
+  const util = lignesInventaireExportables(lignes);
+  const avecCat = util.some((l) => String(l.categorie || "").trim() !== "");
+  const colonnes = [{ titre: t("theadArticleCourt"), largeur: avecCat ? 60 : 76 }]
+    .concat(avecCat ? [{ titre: t("xlsxEnteteCategorie"), largeur: 28 }] : [])
+    .concat([{ titre: t("xlsxEnteteCouleur"), largeur: 20 }, { titre: t("xlsxEnteteTaille"), largeur: 14 },
+      { titre: t("xlsxEnteteStock"), largeur: 14, droite: true, alerte: true }, { titre: t("xlsxEntetePrix"), largeur: avecCat ? 22 : 24, droite: true }, { titre: t("xlsxEnteteValeur"), largeur: avecCat ? 24 : 34, droite: true }]);
+  let stockTotal = 0, valeurTotale = 0;
+  const rows = util.map((l) => {
+    const stock = Number(l.stockReel) || 0, prix = Number(l.prix) || 0;
+    stockTotal += stock; valeurTotale += stock * prix;
+    const clair = (x) => { const c = String(x == null ? "" : x).trim(); return c === "-" ? "" : c; };
+    return { alerte: stock <= 0, cellules: [l.produit].concat(avecCat ? [l.categorie || ""] : []).concat([clair(l.couleur), clair(l.taille), nombrePdf(stock), nombrePdf(prix), nombrePdf(stock * prix)]) };
+  });
+  const pied = [t("pdfTotalLignes", { n: util.length })].concat(avecCat ? [""] : []).concat(["", "", nombrePdf(stockTotal), "", nombrePdf(valeurTotale)]);
+  return { titre: t("pdfSectionArticles"), tableau: { colonnes: colonnes, lignes: rows, pied: pied }, texteVide: t("pdfTexteAucunArticle") };
 }
 
 // `nomFichier` : depose directement le PDF dans les telechargements du navigateur (doc.save). Renvoie
@@ -8159,11 +8230,7 @@ async function renderInventaire() {
       genererEtTelechargerPdf(() => ({
         titre: t("pdfStockActuelTitre", { marchand: marchandActif.nom }),
         sousTitres: [t("pdfRapportSousTitreGenere", { date: new Date().toLocaleString(localeCourante()) })],
-        sections: [{
-          titre: t("pdfSectionArticles"),
-          lignes: lignesInventaireExportables(lignes).map((l) => t("pdfLigneArticle", { produit: l.produit, couleur: l.couleur, taille: l.taille, stock: l.stockReel, prix: nombrePdf(l.prix || 0) })),
-          texteVide: t("pdfTexteAucunArticle")
-        }]
+        sections: [sectionTableauInventairePdf(lignes)]
       }), "stock-actuel-" + marchandActif.id + ".pdf");
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
@@ -8214,11 +8281,7 @@ async function renderInventaire() {
         genererEtTelechargerPdf(() => ({
           titre: t("pdfInventaireTitre", { nom: s.nom }),
           sousTitres: sousTitres,
-          sections: [{
-            titre: t("pdfSectionArticles"),
-            lignes: lignesInventaireExportables(s.lignes).map((l) => t("pdfLigneArticle", { produit: l.produit, couleur: l.couleur, taille: l.taille, stock: l.stockReel, prix: nombrePdf(l.prix || 0) })),
-            texteVide: t("pdfTexteAucunArticle")
-          }]
+          sections: [sectionTableauInventairePdf(s.lignes)]
         }), "instantane-" + s.id + ".pdf");
       };
     });

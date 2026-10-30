@@ -2593,3 +2593,7 @@ Pour une enseigne de supermarchés (offre DÔVV) : **un seul numéro WhatsApp**,
 **À savoir.** Le stock reste commun à toute l'enseigne (seules les disponibilités sont par magasin) ; les messages « Votre commande est prête » et de points ne partent que dans la fenêtre WhatsApp de 24 h ; les achats faits en magasin sans passer par WhatsApp ne sont pas encore rattachés à la fidélité ; l'alerte magasin réutilise le modèle de message d'alerte de commande existant.
 
 Fichiers : `enseigne.js` (nouveau), `conversation.js`, `server.js`, `db.js`, `public/admin.html`, `tests_ens/test_enseigne.js`.
+
+## Étape 84b — PDF d'inventaire en tableau à colonnes
+
+Les PDF d'inventaire (instantanés et stock actuel) sont maintenant un **tableau** : Article, Catégorie (si renseignée), Couleur, Taille, Stock réel, Prix, Valeur du stock, avec une ligne de **total** (lignes, stock, valeur). En-tête répété à chaque page, noms longs renvoyés à la ligne, stock à 0 en rouge, numéro de page « Page x / n » sur tous les PDF. Mêmes lignes que l'export Excel (variantes vides écartées). Les boutons Excel sont inchangés. Fichier modifié : `public/admin.html` (aucun changement serveur ni base).
