@@ -12,6 +12,7 @@
 const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, DEFAULT_AUTO_CONFIRM_MESSAGE_EN, SEED_CATALOG } = require("./catalog");
 const remisesLib = require("./remises");
 const venteGros = require("./venteGros");
+const enseigne = require("./enseigne");
 const db = require("./db");
 const sessionsPersistantes = require("./sessionsPersistantes");
 const sh = require("./shared");
@@ -153,6 +154,8 @@ function createCatalogEngine(merchantKey, options) {
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
   // Etape 78 : true si le super-administrateur a debloque l'option payante « Vente en gros » pour ce marchand (fournie par server.js).
   const grosActif = (options && typeof options.venteGrosActive === "function") ? options.venteGrosActive : () => false;
+  // Etape 84 : true si le super-administrateur a debloque le volet « Enseigne » (reseau de magasins) pour ce marchand (fournie par server.js).
+  const enseigneActive = (options && typeof options.enseigneActive === "function") ? options.enseigneActive : () => false;
   // `options.envoyerImage(destinataire, url, legende)` envoie une photo d'article via WhatsApp (voir
   // storage.js pour l'hebergement, server.js pour l'appel a l'API Graph). No-op si non fourni (compatible
   // avec d'anciens appels/tests qui ne passent pas cette option).
@@ -209,6 +212,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.inventorySnapshots) state.inventorySnapshots = [];
     if (!state.listeAttenteReassort) state.listeAttenteReassort = [];
     state.gros = venteGros.assurer(state.gros); // Etape 78
+    state.enseigne = enseigne.assurer(state.enseigne); // Etape 84
     // Retro-compatibilite (29 sept 2026) pour un marchand deja existant avant l'ajout des sessions de
     // caisse : jamais de migration forcee de son etat, juste des valeurs de depart s'il ne les a pas encore.
     if (!state.settings.caisse) state.settings.caisse = Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
@@ -252,6 +256,9 @@ function createCatalogEngine(merchantKey, options) {
       // question « etes-vous grossiste ? » deja posee dans ce parcours.
       gros: precedente ? (precedente.gros || null) : null,
       grosDemande: false,
+      // Etape 84 (volet enseigne) : magasin choisi (conserve), creneau de retrait, menus en cours.
+      magasinId: precedente ? (precedente.magasinId || null) : null,
+      creneau: null, ensOptions: null, menuEns: null, ensQuartier: null, ensOffset: 0, ensJour: null, ensApresMagasin: null, ensTexteApres: null,
       // true UNIQUEMENT quand la reponse de CE tour est un "quel article vous interesse ?" (les autres
       // moments ou stage vaut aussi "idle" - ex: en plein choix de couleur/taille, ou juste apres un
       // "merci pour votre commande" - ne doivent PAS re-proposer la liste des articles). Voir
@@ -604,6 +611,7 @@ function createCatalogEngine(merchantKey, options) {
     const porte = porteGrossiste(session);
     if (porte) return porte;
     retarifer(session);
+    if (ensOperationnel()) return ensDemarrerRetrait(session); // Etape 84 : un client d'enseigne retire toujours en magasin, sur creneau
     if (retraitConfigure()) {
       session.stage = "awaiting_mode_livraison";
       session.pendingChoice = { type: "mode_livraison", options: ["Livraison", "Retrait en boutique"] };
@@ -807,6 +815,7 @@ function createCatalogEngine(merchantKey, options) {
       order.venteGros = true;
       order.economieGros = items.reduce((sm, x) => sm + (x.prixDetail !== undefined ? (x.prixDetail - x.prixUnitaire) * x.quantite : 0), 0);
     }
+    ensMarquerCommande(order, sess); // Etape 84 : magasin, creneau, espace de preparation
     state.orders.push(order);
     saveState();
     return order;
@@ -842,6 +851,596 @@ function createCatalogEngine(merchantKey, options) {
     if (newStatus === "Annulée") order.raisonAnnulation = raisonAnnulation || order.raisonAnnulation || null;
     else order.raisonAnnulation = null;
     saveState();
+  }
+
+  // ---------------- Etape 84 : volet ENSEIGNE (reseau de magasins derriere UN SEUL numero WhatsApp) ----------------
+  // Option payante debloquee par le SEUL super-administrateur (merchant.optionEnseigne, lue en direct via options.enseigneActive).
+  // Le catalogue, les prix, le numero et le programme de fidelite sont COMMUNS a l'enseigne ; chaque magasin a ses ruptures, ses
+  // creneaux de retrait, ses numeros d'alerte et son espace de preparation. Le client choisit son magasin, compose son panier (ou
+  // reprend ses favoris / sa derniere commande), choisit un creneau de retrait et regle a la caisse du magasin lors du retrait.
+  // Les points de fidelite sont credites quand la commande est RETIREE (voir ensChangerPrepa).
+  const ENS = "IZY_ENS_";
+  const RE_ENS_FAV_AJOUT = /(ajout|enregistr|sauvegard|mettre|garder|add|save|keep).{0,40}(favori|favou?rite)/i;
+  const RE_ENS_FAV = /favori|favou?rite/i;
+  const RE_ENS_REFAIRE = /refaire|renouvel|r[ée]p[ée]ter|m[êe]me\s+commande|derni[èe]re\s+commande|re-?order|repeat|same\s+order|last\s+order/i;
+  const RE_ENS_POINTS = /\bmes\s+points\b|\bmy\s+points\b|fid[ée]lit[ée]|loyalty|\bpoints?\b|bons?\s+d['’]achat|voucher/i;
+  const RE_ENS_MAGASIN = /(chang|autre|nouveau|modifi)\w*\s+(de\s+|le\s+|mon\s+|my\s+|the\s+)?(magasin|boutique|store|shop)|change\s+(my\s+|the\s+)?(store|shop)|other\s+store|mon\s+magasin|my\s+store/i;
+  const ENS_PAR_PAGE = 6;
+
+  const maintenant = (options && typeof options.maintenant === "function") ? options.maintenant : () => new Date();
+  function ensNorm(s) { return String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim(); }
+  function ens() { if (!state.enseigne) state.enseigne = enseigne.assurer(null); return state.enseigne; }
+  function ensOperationnel() { return enseigneActive() && !!state && enseigne.magasinsActifs(ens()).length > 0; }
+  function ensCommandesReelles() { return state.orders.filter((o) => o.source !== "simulateur"); }
+  function ensMagasinDeSession(session) {
+    if (!session.magasinId) return null;
+    const m = enseigne.trouverMagasin(ens(), session.magasinId);
+    return m && m.actif !== false ? m : null;
+  }
+  function ensNomMarchand() { return (options && typeof options.nomMarchand === "function" && options.nomMarchand()) || ""; }
+  function ensCleClient(session) { return session.fromPhone; }
+  function ensPlusieursMagasins() { return enseigne.magasinsActifs(ens()).length > 1; }
+
+  // Presente un menu : le texte (corps) + la liste/boutons que server.js affichera (voir getEtatSession().menuEnseigne). `lignes` :
+  // [{ id, title, description }] ; les identifiants commencent par ENS. Le client peut aussi repondre par le numero ou le libelle.
+  function ensPresenter(session, corps, lignes, bouton, section) {
+    session.ensOptions = lignes.map((l) => ({ id: l.id, title: l.title }));
+    session.menuEns = { type: "liste", bouton: bouton || sh.t(session, "Choisir", "Choose"), section: section || bouton || "", lignes };
+    return corps;
+  }
+  function ensPresenterBoutons(session, corps, boutons) {
+    session.ensOptions = boutons.map((b) => ({ id: b.id, title: b.title }));
+    session.menuEns = { type: "boutons", boutons };
+    return corps;
+  }
+  function ensLireChoix(session, brut) {
+    const opts = session.ensOptions || [];
+    if (brut.indexOf(ENS) === 0) return brut;
+    const n = brut.match(/^\s*(\d{1,2})\s*[.)]?\s*$/);
+    if (n) { const o = opts[parseInt(n[1], 10) - 1]; return o ? o.id : null; }
+    const t = ensNorm(brut);
+    if (!t) return null;
+    const exact = opts.filter((o) => ensNorm(o.title) === t);
+    if (exact.length === 1) return exact[0].id;
+    if (t.length >= 3) { const part = opts.filter((o) => ensNorm(o.title).indexOf(t) !== -1); if (part.length === 1) return part[0].id; }
+    return null;
+  }
+  function ensLignePlus(session, offset) { return { id: ENS + "PLUS_" + offset, title: sh.t(session, "Voir plus ▸", "See more ▸"), description: "" }; }
+  function ensLigneRetour(session, fr, en) { return { id: ENS + "BACK", title: "◀ " + sh.t(session, fr || "Retour", en || "Back"), description: "" }; }
+  function ensLigneCatalogue(session) { return { id: ENS + "CAT", title: sh.t(session, "🛍️ Voir le catalogue", "🛍️ Browse catalog"), description: "" }; }
+  function ensListeArticles() { return state.catalog.map((p) => p.nom).join(", "); }
+
+  function ensRetourCatalogue(session, debutFr, debutEn) {
+    session.stage = "idle"; session.pretPourChoix = true; session.menuEns = null; session.ensOptions = null;
+    const liste = ensListeArticles();
+    return sh.t(session, (debutFr ? debutFr + " " : "") + "Quel article vous intéresse ? Nous avons : " + liste + ".", (debutEn ? debutEn + " " : "") + "Which item are you interested in? We have: " + liste + ".");
+  }
+
+  // ---- Choix du magasin ----
+  function ensDemanderMagasin(session, texteOrigine, changement) {
+    const actifs = enseigne.magasinsActifs(ens());
+    if (texteOrigine && matchProduct(texteOrigine)) session.ensTexteApres = texteOrigine; // lien de commande : on le rejoue une fois le magasin choisi
+    session.ensQuartier = null; session.ensOffset = 0;
+    const quartiers = ensQuartiers();
+    session.stage = actifs.length > 7 && quartiers.length >= 2 ? "ens_quartier" : "ens_magasin";
+    return session.stage === "ens_quartier" ? ensMenuQuartiers(session, changement) : ensMenuMagasins(session, changement);
+  }
+  function ensQuartiers() {
+    const vus = {}; const out = [];
+    enseigne.magasinsActifs(ens()).forEach((m) => { const q = m.quartier || ""; if (q && !vus[q]) { vus[q] = 1; out.push(q); } });
+    return out.sort((a, b) => a.localeCompare(b, "fr"));
+  }
+  function ensEntete(session, changement) {
+    const nom = ensNomMarchand();
+    return changement || !nom
+      ? sh.t(session, "Choisissez le magasin où vous souhaitez retirer vos courses.", "Choose the store where you want to pick up your groceries.")
+      : sh.t(session, "Bienvenue chez " + nom + " ! Dans quel magasin souhaitez-vous retirer vos courses ?", "Welcome to " + nom + "! Which store would you like to pick up your groceries from?");
+  }
+  function ensMenuQuartiers(session, changement) {
+    const qs = ensQuartiers(); const off = session.ensOffset || 0;
+    const par = ENS_PAR_PAGE; const restant = qs.length - off;
+    const page = qs.slice(off, off + (restant > par ? par - 1 : par));
+    const lignes = page.map((q, i) => {
+      const n = enseigne.magasinsActifs(ens()).filter((m) => m.quartier === q).length;
+      return { id: ENS + "Q_" + (off + i), title: q, description: n + sh.t(session, n > 1 ? " magasins" : " magasin", n > 1 ? " stores" : " store") };
+    });
+    if (restant > par) lignes.push(ensLignePlus(session, off + page.length));
+    return ensPresenter(session, ensEntete(session, changement) + sh.t(session, "\nD'abord, votre quartier :", "\nFirst, your neighbourhood:"), lignes, sh.t(session, "Voir les quartiers", "See neighbourhoods"), sh.t(session, "Quartiers", "Neighbourhoods"));
+  }
+  function ensMagasinsListe(session) {
+    const e = ens(); const compte = enseigne.compteClient(e, ensCleClient(session), false);
+    let liste = enseigne.magasinsActifs(e);
+    if (session.ensQuartier) liste = liste.filter((m) => m.quartier === session.ensQuartier);
+    liste = liste.slice().sort((a, b) => ((compte && compte.magasinPrefere === b.id) ? 1 : 0) - ((compte && compte.magasinPrefere === a.id) ? 1 : 0) || a.nom.localeCompare(b.nom, "fr"));
+    return { liste, compte };
+  }
+  function ensMenuMagasins(session, changement) {
+    const { liste, compte } = ensMagasinsListe(session);
+    const off = session.ensOffset || 0; const par = ENS_PAR_PAGE;
+    const retour = session.ensQuartier ? 1 : 0;
+    const dispo = par - retour; const restant = liste.length - off;
+    const page = liste.slice(off, off + (restant > dispo ? dispo - 1 : dispo));
+    const lignes = page.map((m) => ({
+      id: ENS + "M_" + m.id, title: m.nom,
+      description: ((compte && compte.magasinPrefere === m.id) ? sh.t(session, "⭐ Votre magasin habituel · ", "⭐ Your usual store · ") : "") + [m.quartier, m.adresse].filter(Boolean).join(" · ")
+    }));
+    if (restant > dispo) lignes.push(ensLignePlus(session, off + page.length));
+    if (retour) lignes.push(ensLigneRetour(session, "Autre quartier", "Other neighbourhood"));
+    const corps = session.ensQuartier ? sh.t(session, "Quartier " + session.ensQuartier + " : quel magasin ?", session.ensQuartier + ": which store?") : ensEntete(session, changement);
+    return ensPresenter(session, corps, lignes, sh.t(session, "Voir les magasins", "See stores"), sh.t(session, "Nos magasins", "Our stores"));
+  }
+
+  function ensChoisirMagasin(session, magasin) {
+    session.magasinId = magasin.id;
+    session.stage = "idle"; session.menuEns = null; session.ensOptions = null; session.ensQuartier = null; session.ensOffset = 0;
+    const compte = enseigne.compteClient(ens(), ensCleClient(session), true);
+    if (compte) compte.magasinPrefere = magasin.id;
+    saveState();
+    // Les articles du panier indisponibles dans CE magasin sont retires, avec un message clair.
+    const retires = []; session.cart = (session.cart || []).filter((it) => { if (enseigne.enRupture(magasin, it.productId)) { retires.push(it.produit); return false; } return true; });
+    const note = retires.length ? sh.t(session, "\n⚠️ Indisponible dans ce magasin, retiré de votre panier : " + retires.join(", ") + ".", "\n⚠️ Not available in this store, removed from your cart: " + retires.join(", ") + ".") : "";
+    const horaires = magasin.creneaux ? magasin.creneaux.ouverture + "–" + magasin.creneaux.fermeture : "";
+    const intro = sh.t(session,
+      "🏬 Parfait, vous retirerez vos courses au magasin " + magasin.nom + (magasin.adresse ? " (" + magasin.adresse + ")" : "") + (horaires ? ", ouvert de " + horaires : "") + "." + note,
+      "🏬 Great, you will pick up your groceries at " + magasin.nom + (magasin.adresse ? " (" + magasin.adresse + ")" : "") + (horaires ? ", open " + horaires : "") + "." + note);
+    const apres = session.ensTexteApres; session.ensTexteApres = null;
+    if (apres) { const r = processMessage(session, apres); return intro + "\n\n" + r; }
+    return ensRetourCatalogue(session, intro, intro);
+  }
+
+  // ---- Retrait : jour puis creneau ----
+  function ensMenuJours(session, note) {
+    const mg = ensMagasinDeSession(session);
+    const jours = enseigne.creneauxDisponibles(mg, ensCommandesReelles(), maintenant());
+    if (!jours.length) {
+      session.stage = "idle"; session.menuEns = null;
+      return (note || "") + sh.t(session,
+        "Désolé, aucun créneau de retrait n'est disponible pour le moment au magasin " + mg.nom + (mg.telephone ? " (tél. " + mg.telephone + ")" : "") + ". Votre panier est conservé : réessayez plus tard ou changez de magasin (écrivez « changer de magasin »).",
+        "Sorry, no pickup slot is available right now at " + mg.nom + (mg.telephone ? " (tel. " + mg.telephone + ")" : "") + ". Your cart is kept: try again later or change store (write \"change store\").");
+    }
+    const recap = describeItems(session.cart) + "\nTotal : " + formatFcfa(itemsTotal(session.cart)) + noteGrosPanier(session);
+    const tete = (note || "") + sh.t(session, "Voici votre panier :\n" + recap, "Here's your cart:\n" + recap.replace("Total :", "Total:"));
+    if (jours.length === 1) { session.ensJour = jours[0].jour; return ensMenuHeures(session, tete); }
+    session.stage = "ens_creneau_jour";
+    const lignes = jours.map((j) => ({ id: ENS + "J_" + j.jour, title: enseigne.libelleJour(j.jour, maintenant(), session.langue), description: j.creneaux.length + sh.t(session, " créneaux", " slots") }));
+    return ensPresenter(session, tete + sh.t(session, "\n\n🏬 Retrait au magasin " + mg.nom + ". Quel jour ?", "\n\n🏬 Pickup at " + mg.nom + ". Which day?"), lignes, sh.t(session, "Choisir le jour", "Choose a day"), sh.t(session, "Jours de retrait", "Pickup days"));
+  }
+  function ensMenuHeures(session, tete) {
+    const mg = ensMagasinDeSession(session);
+    const jours = enseigne.creneauxDisponibles(mg, ensCommandesReelles(), maintenant());
+    const j = jours.filter((x) => x.jour === session.ensJour)[0];
+    if (!j) return ensMenuJours(session, sh.t(session, "Ce jour n'est plus disponible.\n\n", "That day is no longer available.\n\n"));
+    session.stage = "ens_creneau_heure";
+    const off = session.ensOffset || 0; const autreJour = jours.length > 1 ? 1 : 0;
+    const dispo = ENS_PAR_PAGE - autreJour; const restant = j.creneaux.length - off;
+    const page = j.creneaux.slice(off, off + (restant > dispo ? dispo - 1 : dispo));
+    const lignes = page.map((c) => ({ id: ENS + "H_" + c.id, title: c.heure + "–" + c.fin, description: "" }));
+    if (restant > dispo) lignes.push(ensLignePlus(session, off + page.length));
+    if (autreJour) lignes.push(ensLigneRetour(session, "Autre jour", "Other day"));
+    const corps = (tete ? tete + "\n\n" : "") + sh.t(session, "🕐 " + enseigne.libelleJour(j.jour, maintenant(), session.langue) + " : à quelle heure souhaitez-vous retirer ?", "🕐 " + enseigne.libelleJour(j.jour, maintenant(), session.langue) + ": what time would you like to pick up?");
+    return ensPresenter(session, corps, lignes, sh.t(session, "Choisir l'heure", "Choose a time"), sh.t(session, "Heures de retrait", "Pickup times"));
+  }
+
+  // Appele par finaliserPanier() : un client d'enseigne ne choisit pas livraison/retrait, il retire toujours en magasin.
+  function ensDemarrerRetrait(session) {
+    const mg = ensMagasinDeSession(session);
+    if (!mg) { session.ensApresMagasin = "finaliser"; return ensDemanderMagasin(session, null, false); }
+    const retires = []; session.cart = session.cart.filter((it) => { if (enseigne.enRupture(mg, it.productId)) { retires.push(it.produit); return false; } return true; });
+    let note = "";
+    if (retires.length) note = sh.t(session, "⚠️ Plus disponible au magasin " + mg.nom + ", retiré de votre panier : " + retires.join(", ") + ".\n\n", "⚠️ No longer available at " + mg.nom + ", removed from your cart: " + retires.join(", ") + ".\n\n");
+    if (!session.cart.length) return ensRetourCatalogue(session, note + sh.t(session, "Votre panier est vide.", "Your cart is empty."), note + "Your cart is empty.");
+    session.modeLivraison = "retrait"; session.ensOffset = 0; session.ensJour = null;
+    return ensMenuJours(session, note);
+  }
+
+  // Dernier controle juste avant de creer la commande : le creneau est-il toujours libre ?
+  function ensVerifierAvantCommande(session) {
+    if (!ensOperationnel() || !session.magasinId || session.modeLivraison !== "retrait" || !session.creneau) return null;
+    const mg = ensMagasinDeSession(session);
+    if (!mg) return ensDemanderMagasin(session, null, true);
+    const r = enseigne.resoudreCreneau(mg, session.creneau.id, ensCommandesReelles(), maintenant(), session.langue);
+    if (r.erreur) { session.creneau = null; session.ensOffset = 0; return ensMenuJours(session, sh.t(session, "Ce créneau vient d'être pris. ", "That slot has just been taken. ")); }
+    return null;
+  }
+
+  function ensTelephoneSession(session) {
+    const brut = String(session.fromPhone || "").replace(/\D/g, "");
+    return brut && REGEX_TELEPHONE.test(brut) ? brut : null;
+  }
+
+  // ---- Fidelite ----
+  function ensTexteRegles(session) {
+    const f = ens().fidelite;
+    return sh.t(session,
+      "1 point par tranche de " + formatFcfa(f.montantParPoint) + " d'achat retiré ; à " + f.seuilBon + " points, un bon d'achat de " + formatFcfa(f.valeurBon) + " (valable " + f.validiteBonJours + " jours).",
+      "1 point per " + formatFcfa(f.montantParPoint) + " of collected purchases; at " + f.seuilBon + " points, a " + formatFcfa(f.valeurBon) + " voucher (valid " + f.validiteBonJours + " days).");
+  }
+  function ensProposerFidelite(session, prefixe) {
+    session.stage = "ens_fidelite";
+    const corps = (prefixe ? prefixe + "\n\n" : "") + sh.t(session,
+      "🎁 Programme de fidélité : votre numéro WhatsApp devient votre carte, sans rien à présenter. " + ensTexteRegles(session) + "\nSouhaitez-vous y participer ? (oui / non)",
+      "🎁 Loyalty programme: your WhatsApp number becomes your card, nothing to show. " + ensTexteRegles(session) + "\nWould you like to join? (yes / no)");
+    return ensPresenterBoutons(session, corps, [{ id: ENS + "OUI", title: sh.t(session, "Oui, participer", "Yes, join") }, { id: ENS + "NON", title: sh.t(session, "Non merci", "No thanks") }]);
+  }
+  function ensMessagePoints(session) {
+    const e = ens();
+    if (!e.fidelite.actif) return sh.t(session, "Le programme de fidélité n'est pas encore ouvert dans cette enseigne.", "The loyalty programme is not open yet.");
+    const solde = enseigne.soldeClient(e, ensCleClient(session), maintenant());
+    if (!solde) return ensProposerFidelite(session, "");
+    const bons = solde.bons.map((b) => "• " + b.code + " — " + formatFcfa(b.valeur) + sh.t(session, " (jusqu'au ", " (until ") + new Date(b.expireLe).toLocaleDateString(session.langue === "en" ? "en-GB" : "fr-FR") + ")").join("\n");
+    return sh.t(session,
+      "🎁 Vos points : " + solde.points + ". Il vous en manque " + solde.manque + " pour un bon d'achat de " + formatFcfa(solde.valeurBon) + "." + (bons ? "\n\nVos bons à présenter au retrait :\n" + bons : "") + "\n\nLes points sont crédités quand vous retirez votre commande.",
+      "🎁 Your points: " + solde.points + ". You need " + solde.manque + " more for a " + formatFcfa(solde.valeurBon) + " voucher." + (bons ? "\n\nYour vouchers to show at pickup:\n" + bons : "") + "\n\nPoints are credited when you collect your order.");
+  }
+
+  // ---- Favoris ----
+  function ensDetailFavori(f) {
+    const p = state.catalog.filter((x) => x.id === f.productId)[0];
+    if (!p) return null;
+    let v = p.variantes.filter((x) => x.couleur === f.couleur && x.taille === f.taille)[0];
+    if (!v && p.variantes.length === 1) v = p.variantes[0];
+    return v ? { p, v } : null;
+  }
+  function ensLibelleFavori(f) {
+    const d = ensDetailFavori(f);
+    if (!d) return f.productId;
+    return joindreVariante(" ", d.p.nom, d.v.couleur, d.v.taille);
+  }
+  // Ajoute des lignes {productId,couleur,taille,quantite} au panier en respectant le stock et les ruptures du magasin.
+  function ensAjouterAuPanier(session, lignes) {
+    const mg = ensMagasinDeSession(session); const ajoutes = []; const ignores = [];
+    lignes.forEach((l) => {
+      const d = ensDetailFavori(l);
+      if (!d) { ignores.push((l.produit || l.productId) + sh.t(session, " (n'existe plus)", " (no longer sold)")); return; }
+      const nom = joindreVariante(" ", d.p.nom, d.v.couleur, d.v.taille);
+      if (mg && enseigne.enRupture(mg, d.p.id)) { ignores.push(nom + sh.t(session, " (indisponible dans ce magasin)", " (not available in this store)")); return; }
+      const virt = virtualStock(d.p.id, d.v);
+      const existant = session.cart.filter((it) => it.productId === d.p.id && it.couleur === d.v.couleur && it.taille === d.v.taille)[0];
+      const deja = existant ? existant.quantite : 0;
+      const voulue = Math.max(1, Number(l.quantite) || 1);
+      const possible = Math.min(voulue, virt - deja);
+      if (possible <= 0) { ignores.push(nom + sh.t(session, " (en rupture)", " (out of stock)")); return; }
+      if (existant) existant.quantite += possible;
+      else session.cart.push({ productId: d.p.id, produit: d.p.nom, couleur: d.v.couleur, taille: d.v.taille, quantite: possible, prixUnitaire: d.v.prix });
+      ajoutes.push(possible + " × " + nom + (possible < voulue ? sh.t(session, " (stock limité)", " (limited stock)") : ""));
+    });
+    reconnaitreGrossiste(session); retarifer(session);
+    return { ajoutes, ignores };
+  }
+  function ensResumeAjout(session, r) {
+    let t = "";
+    if (r.ajoutes.length) t += sh.t(session, "Ajouté au panier ✅\n", "Added to cart ✅\n") + r.ajoutes.map((x) => "• " + x).join("\n");
+    if (r.ignores.length) t += (t ? "\n" : "") + sh.t(session, "⚠️ Non ajouté :\n", "⚠️ Not added:\n") + r.ignores.map((x) => "• " + x).join("\n");
+    return t;
+  }
+  function ensMenuFavoris(session, note) {
+    const c = enseigne.compteClient(ens(), ensCleClient(session), false);
+    const favs = c ? c.favoris : [];
+    if (!favs.length) {
+      return ensRetourCatalogue(session,
+        (note ? note + "\n\n" : "") + "⭐ Vous n'avez pas encore de favoris. Ajoutez votre panier en favoris (« mettre en favoris » depuis le panier) pour recommander en deux touches.",
+        (note ? note + "\n\n" : "") + "⭐ You have no favourites yet. Save your cart as favourites (\"save to favourites\" from the cart) to reorder in two taps.");
+    }
+    session.stage = "ens_favoris";
+    const off = session.ensOffset || 0; const restant = favs.length - off;
+    const reserve = 3 + (session.cart.length ? 1 : 0); // tout ajouter, gerer, catalogue, (panier)
+    const dispo = Math.max(2, 7 - reserve);
+    const page = favs.slice(off, off + (restant > dispo ? dispo - 1 : dispo));
+    const lignes = page.map((f, i) => ({ id: ENS + "FAV_" + (off + i), title: tronquer24(ensLibelleFavori(f)), description: sh.t(session, "Ajouter × " + f.quantite, "Add × " + f.quantite) }));
+    if (restant > dispo) lignes.push(ensLignePlus(session, off + page.length));
+    lignes.push({ id: ENS + "FAVTOUT", title: sh.t(session, "➕ Tout ajouter (" + favs.length + ")", "➕ Add all (" + favs.length + ")"), description: sh.t(session, "Tous vos favoris au panier", "All favourites to cart") });
+    if (session.cart.length) lignes.push({ id: ENS + "PANIER", title: sh.t(session, "🛒 Mon panier (" + session.cart.length + ")", "🛒 My cart (" + session.cart.length + ")"), description: sh.t(session, "Voir ou terminer", "View or complete") });
+    lignes.push({ id: ENS + "FAVGERER", title: sh.t(session, "✏️ Gérer mes favoris", "✏️ Manage favourites"), description: "" });
+    lignes.push(ensLigneCatalogue(session));
+    const detail = favs.map((f, i) => (i + 1) + ". " + ensLibelleFavori(f) + " × " + f.quantite).join("\n");
+    const corps = (note ? note + "\n\n" : "") + sh.t(session, "⭐ Vos favoris :\n" + detail + "\n\nTouchez un favori pour l'ajouter au panier.", "⭐ Your favourites:\n" + detail + "\n\nTap a favourite to add it to your cart.");
+    return ensPresenter(session, corps, lignes, sh.t(session, "Mes favoris", "My favourites"), sh.t(session, "Favoris", "Favourites"));
+  }
+  function tronquer24(s) { s = String(s); return s.length > 24 ? s.slice(0, 23) + "…" : s; }
+  function ensMenuFavorisGerer(session, note) {
+    const c = enseigne.compteClient(ens(), ensCleClient(session), false);
+    const favs = c ? c.favoris : [];
+    if (!favs.length) return ensMenuFavoris(session, note);
+    session.stage = "ens_favoris_gerer";
+    const off = session.ensOffset || 0; const restant = favs.length - off; const dispo = ENS_PAR_PAGE - 1;
+    const page = favs.slice(off, off + (restant > dispo ? dispo - 1 : dispo));
+    const lignes = page.map((f, i) => ({ id: ENS + "FAVDEL_" + (off + i), title: tronquer24(ensLibelleFavori(f)), description: sh.t(session, "🗑️ Retirer des favoris", "🗑️ Remove from favourites") }));
+    if (restant > dispo) lignes.push(ensLignePlus(session, off + page.length));
+    lignes.push(ensLigneRetour(session, "Mes favoris", "My favourites"));
+    return ensPresenter(session, (note ? note + "\n\n" : "") + sh.t(session, "Quel favori souhaitez-vous retirer ?", "Which favourite do you want to remove?"), lignes, sh.t(session, "Choisir", "Choose"), sh.t(session, "Gérer mes favoris", "Manage favourites"));
+  }
+  function ensCommandeAFaire(session) { // derniere commande non annulee de ce client
+    const tel = ensCleClient(session);
+    const liste = state.orders.filter((o) => o.fromWhatsapp === tel && o.statut !== "Annulée" && (o.items || []).length)
+      .sort((a, b) => new Date(b.dateISO) - new Date(a.dateISO));
+    return liste[0] || null;
+  }
+  function ensRefaire(session) {
+    const o = ensCommandeAFaire(session);
+    if (!o) return ensRetourCatalogue(session, "Vous n'avez pas encore de commande à refaire.", "You have no previous order to repeat yet.");
+    const r = ensAjouterAuPanier(session, o.items.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite, produit: it.produit })));
+    if (!session.cart.length) return ensRetourCatalogue(session, ensResumeAjout(session, r) + "\n\n" + sh.t(session, "Rien n'a pu être ajouté.", "Nothing could be added."), ensResumeAjout(session, r) + "\n\nNothing could be added.");
+    const tete = sh.t(session, "🔁 Votre dernière commande (" + orderRef(o) + ") :\n", "🔁 Your last order (" + orderRef(o) + "):\n") + ensResumeAjout(session, r) + "\n\n";
+    session.menuEns = null; session.ensOptions = null;
+    return tete + afficherPanier(session);
+  }
+  function ensOuvrirEspace(session) {
+    const e = ens(); session.stage = "ens_espace";
+    const lignes = [{ id: ENS + "FAVORIS", title: sh.t(session, "⭐ Mes favoris", "⭐ My favourites"), description: sh.t(session, "Commander en deux touches", "Order in two taps") }];
+    if (ensCommandeAFaire(session)) lignes.push({ id: ENS + "REFAIRE", title: sh.t(session, "🔁 Refaire ma dernière commande", "🔁 Repeat my last order").slice(0, 24), description: sh.t(session, "Retrouver mon dernier panier", "Get my last cart back") });
+    if (e.fidelite.actif) lignes.push({ id: ENS + "POINTS", title: sh.t(session, "🎁 Mes points", "🎁 My points"), description: sh.t(session, "Solde et bons d'achat", "Balance and vouchers") });
+    if (ensPlusieursMagasins()) lignes.push({ id: ENS + "MAGASIN", title: sh.t(session, "🏬 Changer de magasin", "🏬 Change store"), description: ensMagasinDeSession(session) ? ensMagasinDeSession(session).nom : "" });
+    lignes.push(ensLigneCatalogue(session));
+    return ensPresenter(session, sh.t(session, "Que souhaitez-vous faire ?", "What would you like to do?"), lignes, sh.t(session, "Mon espace", "My space"), sh.t(session, "Mon espace", "My space"));
+  }
+
+  // ---- Machine a etats des etapes ens_* ----
+  function ensEtape(session, brut, trace) {
+    const st = session.stage;
+    trace.entites = { "Réponse client": brut };
+    const choix = ensLireChoix(session, brut);
+
+    // Echappatoires valables a toute etape
+    if (choix === ENS + "CAT" || (!choix && /^(catalogue|menu|continuer|continue)\b/i.test(ensNorm(brut)))) { trace.action = "Client revient au catalogue"; return ensRetourCatalogue(session, "", ""); }
+    if (choix === ENS + "PANIER" || sh.demandeVoirPanier(brut)) { session.menuEns = null; trace.action = "Client consulte son panier"; return afficherPanier(session); }
+    if (choix === ENS + "ESPACE") return ensOuvrirEspace(session);
+    if (choix === ENS + "FAVORIS") { session.ensOffset = 0; return ensMenuFavoris(session); }
+    if (choix === ENS + "REFAIRE") return ensRefaire(session);
+    if (choix === ENS + "POINTS") { session.stage = "idle"; session.pretPourChoix = false; return ensMessagePoints(session); }
+    if (choix === ENS + "MAGASIN") return ensDemanderMagasin(session, null, true);
+
+    if (choix && choix.indexOf(ENS + "PLUS_") === 0) {
+      session.ensOffset = parseInt(choix.slice((ENS + "PLUS_").length), 10) || 0;
+      if (st === "ens_quartier") return ensMenuQuartiers(session);
+      if (st === "ens_magasin") return ensMenuMagasins(session);
+      if (st === "ens_creneau_heure") return ensMenuHeures(session);
+      if (st === "ens_favoris") return ensMenuFavoris(session);
+      if (st === "ens_favoris_gerer") return ensMenuFavorisGerer(session);
+    }
+
+    if (st === "ens_quartier") {
+      if (choix && choix.indexOf(ENS + "Q_") === 0) {
+        const q = ensQuartiers()[parseInt(choix.slice((ENS + "Q_").length), 10)];
+        if (q) { session.ensQuartier = q; session.ensOffset = 0; session.stage = "ens_magasin"; trace.action = "Client choisit le quartier " + q; return ensMenuMagasins(session); }
+      }
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't understand. ") + ensMenuQuartiers(session);
+    }
+    if (st === "ens_magasin") {
+      if (choix === ENS + "BACK") { session.ensQuartier = null; session.ensOffset = 0; session.stage = "ens_quartier"; return ensMenuQuartiers(session); }
+      if (choix && choix.indexOf(ENS + "M_") === 0) {
+        const m = enseigne.trouverMagasin(ens(), choix.slice((ENS + "M_").length));
+        if (m && m.actif !== false) {
+          trace.action = "Client choisit le magasin " + m.nom;
+          const finaliser = session.ensApresMagasin === "finaliser"; session.ensApresMagasin = null;
+          const r = ensChoisirMagasin(session, m);
+          if (finaliser && session.cart.length && session.stage === "idle") { session.pretPourChoix = false; return ensDemarrerRetrait(session); }
+          return r;
+        }
+      }
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't understand. ") + ensMenuMagasins(session);
+    }
+    if (st === "ens_creneau_jour") {
+      if (choix && choix.indexOf(ENS + "J_") === 0) { session.ensJour = choix.slice((ENS + "J_").length); session.ensOffset = 0; trace.action = "Client choisit le jour de retrait " + session.ensJour; return ensMenuHeures(session); }
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't understand. ") + ensMenuJours(session);
+    }
+    if (st === "ens_creneau_heure") {
+      if (choix === ENS + "BACK") { session.ensOffset = 0; session.ensJour = null; return ensMenuJours(session); }
+      if (choix && choix.indexOf(ENS + "H_") === 0) {
+        const mg = ensMagasinDeSession(session);
+        if (!mg) return ensDemanderMagasin(session, null, true);
+        const r = enseigne.resoudreCreneau(mg, choix.slice((ENS + "H_").length), ensCommandesReelles(), maintenant(), session.langue);
+        if (r.erreur) { session.ensOffset = 0; return sh.t(session, "Ce créneau vient d'être pris. ", "That slot has just been taken. ") + ensMenuHeures(session); }
+        session.creneau = r.creneau; session.menuEns = null; session.ensOptions = null;
+        session.modeLivraison = "retrait";
+        session.adresse = "Retrait — " + mg.nom + (mg.adresse ? ", " + mg.adresse : "") + " — " + r.creneau.libelle;
+        trace.action = "Créneau de retrait choisi : " + r.creneau.libelle + " (" + mg.nom + ")";
+        session.stage = "awaiting_delivery";
+        const tel = ensTelephoneSession(session);
+        if (tel) return processMessage(session, tel); // le numero WhatsApp du client sert de telephone ; il peut le corriger au recapitulatif
+        return sh.t(session, "✅ Créneau retenu : " + r.creneau.libelle + " au magasin " + mg.nom + ". Merci de m'indiquer votre numéro de téléphone pour vous joindre (exemple : 6xxxxxxxx).", "✅ Slot booked: " + r.creneau.libelle + " at " + mg.nom + ". Please share your phone number so we can reach you (e.g. 6xxxxxxxx).");
+      }
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't understand. ") + ensMenuHeures(session);
+    }
+    if (st === "ens_fidelite") {
+      const oui = choix === ENS + "OUI" || parseAffirmative(brut); const non = choix === ENS + "NON" || parseNegative(brut);
+      if (oui || non) {
+        enseigne.enregistrerConsentement(ens(), ensCleClient(session), oui && !non, maintenant()); saveState();
+        trace.action = oui ? "Client rejoint le programme de fidélité" : "Client refuse le programme de fidélité";
+        session.stage = "idle"; session.menuEns = null; session.ensOptions = null; session.pretPourChoix = false;
+        return oui
+          ? sh.t(session, "🎉 Bienvenue dans le programme ! Vos points seront crédités quand vous retirerez votre commande. Écrivez « mes points » à tout moment pour voir votre solde.", "🎉 Welcome to the programme! Your points will be credited when you collect your order. Write \"my points\" any time to see your balance.")
+          : sh.t(session, "Pas de souci, aucune donnée de fidélité ne sera conservée. Vous pourrez rejoindre plus tard en écrivant « fidélité ».", "No problem, no loyalty data will be kept. You can join later by writing \"loyalty\".");
+      }
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't understand. ") + ensProposerFidelite(session, "");
+    }
+    if (st === "ens_espace") {
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't understand. ") + ensOuvrirEspace(session);
+    }
+    if (st === "ens_favoris") {
+      if (choix === ENS + "FAVGERER") { session.ensOffset = 0; return ensMenuFavorisGerer(session); }
+      const c = enseigne.compteClient(ens(), ensCleClient(session), false); const favs = c ? c.favoris : [];
+      if (choix === ENS + "FAVTOUT") { const r = ensAjouterAuPanier(session, favs); trace.action = "Client ajoute tous ses favoris au panier"; return ensMenuFavoris(session, ensResumeAjout(session, r)); }
+      if (choix && choix.indexOf(ENS + "FAV_") === 0) {
+        const f = favs[parseInt(choix.slice((ENS + "FAV_").length), 10)];
+        if (f) { const r = ensAjouterAuPanier(session, [f]); trace.action = "Client ajoute un favori au panier"; return ensMenuFavoris(session, ensResumeAjout(session, r)); }
+      }
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't understand. ") + ensMenuFavoris(session);
+    }
+    if (st === "ens_favoris_gerer") {
+      if (choix === ENS + "BACK") { session.ensOffset = 0; return ensMenuFavoris(session); }
+      if (choix && choix.indexOf(ENS + "FAVDEL_") === 0) {
+        const idx = parseInt(choix.slice((ENS + "FAVDEL_").length), 10);
+        const c = enseigne.compteClient(ens(), ensCleClient(session), false);
+        const f = c && c.favoris[idx];
+        const nom = f ? ensLibelleFavori(f) : "";
+        const r = enseigne.retirerFavori(ens(), ensCleClient(session), idx);
+        if (!r.erreur) { saveState(); trace.action = "Client retire un favori"; return ensMenuFavorisGerer(session, sh.t(session, "Retiré des favoris : " + nom, "Removed from favourites: " + nom)); }
+      }
+      return sh.t(session, "Je n'ai pas compris. ", "I didn't understand. ") + ensMenuFavorisGerer(session);
+    }
+    session.stage = "idle";
+    return null;
+  }
+
+  // Appele depuis processMessage() quand le volet enseigne est actif. Renvoie une reponse, ou null pour laisser le moteur catalogue continuer.
+  function traiterEnseigne(session, text, trace) {
+    const brut = String(text || "").trim();
+    if (String(session.stage).indexOf("ens_") === 0) {
+      const r = ensEtape(session, brut, trace);
+      logTrace(session, trace);
+      return r;
+    }
+    if (["idle", "awaiting_quantity", "awaiting_more_items", "viewing_cart"].indexOf(session.stage) === -1) return null;
+    if (!ensMagasinDeSession(session)) {
+      session.magasinId = null;
+      const actifs = enseigne.magasinsActifs(ens());
+      if (actifs.length === 1) { session.magasinId = actifs[0].id; }
+      else {
+        if (session.stage === "awaiting_quantity") { session.productId = null; session.couleur = null; session.taille = null; session.quantite = null; }
+        session.stage = "idle";
+        trace.action = "Choix du magasin demandé (enseigne)"; trace.entites = { "Réponse client": brut };
+        const r = ensDemanderMagasin(session, brut, false);
+        logTrace(session, trace);
+        return r;
+      }
+    }
+    const court = brut.length <= 80;
+    const estId = brut.indexOf(ENS) === 0;
+    const quitterSelection = () => { if (session.stage === "awaiting_quantity") { session.productId = null; session.couleur = null; session.taille = null; session.quantite = null; } };
+    let r = null;
+    if (brut === ENS + "ESPACE") { quitterSelection(); r = ensOuvrirEspace(session); }
+    else if (brut === ENS + "FAVAJOUT" || (court && !estId && RE_ENS_FAV_AJOUT.test(brut))) {
+      if (!session.cart.length) r = sh.t(session, "Votre panier est vide : ajoutez d'abord des articles, puis enregistrez-les en favoris.", "Your cart is empty: add items first, then save them as favourites.");
+      else {
+        const res = enseigne.ajouterFavoris(ens(), ensCleClient(session), session.cart.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite }))); saveState();
+        trace.action = "Panier enregistré en favoris";
+        r = sh.t(session, "⭐ Enregistré en favoris (" + res.total + " au total" + (res.pleins ? ", limite atteinte" : "") + "). Écrivez « mes favoris » pour les retrouver.\n\n", "⭐ Saved to favourites (" + res.total + " in total" + (res.pleins ? ", limit reached" : "") + "). Write \"my favourites\" to find them.\n\n") + afficherPanierTexte(session, session.cart);
+      }
+    }
+    else if (brut === ENS + "FAVORIS" || (court && !estId && RE_ENS_FAV.test(brut))) { quitterSelection(); session.ensOffset = 0; r = ensMenuFavoris(session); }
+    else if (brut === ENS + "REFAIRE" || (court && !estId && RE_ENS_REFAIRE.test(brut))) { quitterSelection(); r = ensRefaire(session); }
+    else if (brut === ENS + "POINTS" || (court && !estId && RE_ENS_POINTS.test(brut) && !matchProduct(brut))) { quitterSelection(); r = ensMessagePoints(session); }
+    else if (brut === ENS + "MAGASIN" || (court && !estId && RE_ENS_MAGASIN.test(brut))) { quitterSelection(); session.stage = "idle"; r = ensDemanderMagasin(session, null, true); }
+    else if (brut === ENS + "PANIER") { quitterSelection(); r = afficherPanier(session); }
+    else if (brut === ENS + "CAT") { quitterSelection(); r = ensRetourCatalogue(session, "", ""); }
+    if (r !== null) { trace.entites = { "Réponse client": brut }; if (!trace.action) trace.action = "Volet enseigne"; logTrace(session, trace); }
+    return r;
+  }
+
+  // A la creation d'une commande : rattache la commande au magasin, au creneau et a l'espace de preparation.
+  function ensMarquerCommande(order, session) {
+    if (!ensOperationnel() || !session.magasinId) return;
+    const mg = ensMagasinDeSession(session); if (!mg) return;
+    order.magasinId = mg.id; order.magasinNom = mg.nom; order.creneau = session.creneau || null;
+    order.prepa = "nouvelle"; order.prepaHistorique = [{ etat: "nouvelle", dateISO: order.dateISO }];
+  }
+  // A la confirmation par le client : alerte du magasin (en plus des numeros du marchand) + suite du parcours.
+  function ensApresConfirmation(order, session, reply) {
+    const mg = order.magasinId ? enseigne.trouverMagasin(ens(), order.magasinId) : null;
+    if (!mg) return reply;
+    const compte = enseigne.compteClient(ens(), ensCleClient(session), true);
+    if (compte) { compte.magasinPrefere = mg.id; }
+    saveState();
+    const libC = order.creneau ? order.creneau.libelle : "";
+    let suite = sh.t(session,
+      "\n\n🏬 Retrait : magasin " + mg.nom + (mg.adresse ? " (" + mg.adresse + ")" : "") + (libC ? ", " + libC : "") + ". Référence " + orderRef(order) + ". Vous recevrez « Votre commande est prête » ici. Le paiement se fait à la caisse lors du retrait.",
+      "\n\n🏬 Pickup: " + mg.nom + (mg.adresse ? " (" + mg.adresse + ")" : "") + (libC ? ", " + libC : "") + ". Reference " + orderRef(order) + ". You'll get \"Your order is ready\" here. Payment at the till when you collect.");
+    const f = ens().fidelite;
+    if (f.actif && (!compte || compte.fidelite.consentement === null)) return ensProposerFidelite(session, reply + suite);
+    return reply + suite;
+  }
+  function ensNumerosAlerteMagasin(order) {
+    const mg = order && order.magasinId ? enseigne.trouverMagasin(ens(), order.magasinId) : null;
+    return mg ? mg.numerosAlerte.slice() : [];
+  }
+  // Une commande en attente de confirmation contient-elle un article que le magasin vient de declarer indisponible ?
+  function ensArticlesIndisponibles(order) {
+    const mg = order && order.magasinId ? enseigne.trouverMagasin(ens(), order.magasinId) : null;
+    if (!mg) return [];
+    return (order.items || []).filter((it) => enseigne.enRupture(mg, it.productId)).map((it) => it.produit);
+  }
+
+  // ---- API pour server.js ----
+  function getEnseigne() {
+    if (!state) return null;
+    const e = ens();
+    return { magasins: JSON.parse(JSON.stringify(e.magasins)), fidelite: Object.assign({}, e.fidelite) };
+  }
+  function ensAjouterMagasin(entree) { if (!state) return { erreur: "Marchand introuvable." }; const r = enseigne.ajouterMagasin(ens(), entree); if (!r.erreur) saveState(); return r; }
+  function ensModifierMagasin(id, patch) { if (!state) return { erreur: "Marchand introuvable." }; const r = enseigne.modifierMagasin(ens(), id, patch); if (!r.erreur) saveState(); return r; }
+  function ensRetirerMagasin(id) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    if (state.orders.some((o) => o.magasinId === id)) return { erreur: "Ce magasin a déjà des commandes : désactivez-le plutôt que de le supprimer." };
+    const r = enseigne.retirerMagasin(ens(), id); if (!r.erreur) saveState(); return r;
+  }
+  function ensDefinirRuptures(id, ids) { if (!state) return { erreur: "Marchand introuvable." }; const r = enseigne.definirRuptures(ens(), id, ids); if (!r.erreur) saveState(); return r; }
+  function ensDefinirFidelite(patch) { if (!state) return { erreur: "Marchand introuvable." }; const e = ens(); e.fidelite = enseigne.normaliserFidelite(Object.assign({}, e.fidelite, patch || {})); saveState(); return { fidelite: Object.assign({}, e.fidelite) }; }
+  function ensStatistiques(periode, ref) {
+    if (!state) return null;
+    const e = ens(); const p = periode || "mois"; const r = ref || maintenant();
+    const cur = enseigne.debutFinPeriode(p, r);
+    const prev = enseigne.periodePrecedente(p, cur.debut);
+    const actuel = enseigne.statistiquesPeriode(e, state.orders, cur.debut, cur.fin);
+    const precedent = enseigne.statistiquesPeriode(e, state.orders, prev.debut, prev.fin);
+    return { periode: p, debut: cur.debut.toISOString(), fin: cur.fin.toISOString(), actuel, precedent: { total: precedent.total, magasins: precedent.magasins.map((m) => ({ id: m.id, ca: m.ca, commandes: m.commandes })) }, fidelite: enseigne.statistiquesFidelite(e, cur.debut, cur.fin) };
+  }
+  function ensCommandesPreparation(magasinId, filtre) {
+    if (!state) return [];
+    const f = filtre || "actives"; const now = maintenant().getTime();
+    return state.orders.filter((o) => o.magasinId && o.source !== "simulateur" && (!magasinId || o.magasinId === magasinId))
+      .filter((o) => {
+        if (f === "toutes") return true;
+        if (o.statut === "Annulée") return f === "annulees";
+        if (f === "retirees") return o.prepa === "retiree";
+        if (f === "annulees") return false;
+        if (o.prepa === "retiree") return now - new Date((o.prepaHistorique || []).slice(-1)[0].dateISO || o.dateISO).getTime() < 24 * 3600 * 1000; // retirees des dernieres 24 h
+        return true;
+      })
+      .sort((a, b) => (a.creneau && b.creneau ? new Date(a.creneau.debutISO) - new Date(b.creneau.debutISO) : new Date(b.dateISO) - new Date(a.dateISO)))
+      .map((o) => ({ id: o.id, ref: orderRef(o), dateISO: o.dateISO, magasinId: o.magasinId, magasinNom: o.magasinNom, creneau: o.creneau || null, telephone: o.telephone, items: o.items, prix: o.prix, statut: o.statut, prepa: o.prepa || "nouvelle", raisonAnnulation: o.raisonAnnulation || null, pointsCredites: o.pointsCredites == null ? null : o.pointsCredites, historique: o.prepaHistorique || [] }));
+  }
+  function ensEnvoyerClient(order, fr, en) {
+    if (order.source === "simulateur" || !order.fromWhatsapp) return;
+    envoyer(order.fromWhatsapp, order.langue === "en" ? en : fr).catch((erreur) => console.error("[" + merchantKey + "] Echec de l'envoi au client (" + orderRef(order) + ") :", erreur));
+  }
+  // Etat de preparation d'une commande de retrait. « prete » previent le client ; « retiree » passe la commande en « Livrée »
+  // (le stock est decremente comme pour toute livraison) et credite les points de fidelite (une seule fois).
+  function ensChangerPrepa(orderId, vers, par) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const order = state.orders.filter((o) => o.id === Number(orderId))[0];
+    if (!order || !order.magasinId || order.source === "simulateur") return { erreur: "Commande introuvable." };
+    if (order.statut === "Annulée") return { erreur: "Cette commande est annulée." };
+    if (order.statut === "Nouvelle" && vers !== "nouvelle") return { erreur: "Le client n'a pas encore confirmé cette commande." };
+    const r = enseigne.changerPrepa(order, vers, par, maintenant());
+    if (r.erreur) return r;
+    const mg = enseigne.trouverMagasin(ens(), order.magasinId);
+    const nomMg = order.magasinNom || (mg && mg.nom) || "";
+    let credit = null;
+    if (vers === "prete") {
+      const lib = order.creneau ? order.creneau.libelle : "";
+      ensEnvoyerClient(order,
+        "✅ Votre commande " + orderRef(order) + " est prête ! Retrait au magasin " + nomMg + (mg && mg.adresse ? " (" + mg.adresse + ")" : "") + (lib ? ", créneau " + lib : "") + ". Présentez-vous avec cette référence et réglez à la caisse. Merci !",
+        "✅ Your order " + orderRef(order) + " is ready! Pickup at " + nomMg + (mg && mg.adresse ? " (" + mg.adresse + ")" : "") + (lib ? ", slot " + lib : "") + ". Show this reference and pay at the till. Thank you!");
+    }
+    if (vers === "retiree") {
+      applyStatusChange(order, "Livrée");
+      credit = enseigne.crediterCommande(ens(), order, maintenant());
+      if (credit && (credit.credit > 0 || credit.bons.length)) {
+        const fr = ["Merci de votre visite ! 🎁 +" + credit.credit + " point(s) · solde : " + credit.solde + " point(s)."]; const en = ["Thank you for your visit! 🎁 +" + credit.credit + " point(s) · balance: " + credit.solde + " point(s)."];
+        credit.bons.forEach((b) => { const d = new Date(b.expireLe).toLocaleDateString("fr-FR"); const d2 = new Date(b.expireLe).toLocaleDateString("en-GB"); fr.push("🎟️ Bon d'achat de " + formatFcfa(b.valeur) + " : " + b.code + " (valable jusqu'au " + d + "), à présenter au prochain retrait."); en.push("🎟️ " + formatFcfa(b.valeur) + " voucher: " + b.code + " (valid until " + d2 + "), to show at your next pickup."); });
+        ensEnvoyerClient(order, fr.join("\n"), en.join("\n"));
+      }
+    }
+    saveState();
+    return { order, de: r.de, vers: r.vers, credit };
+  }
+  function ensVerifierBon(code) { if (!state) return { erreur: "Marchand introuvable." }; return enseigne.verifierBon(ens(), code, maintenant()); }
+  function ensUtiliserBon(code, ctx) { if (!state) return { erreur: "Marchand introuvable." }; const r = enseigne.utiliserBon(ens(), code, ctx, maintenant()); if (!r.erreur) saveState(); return r; }
+  function ensListeBons(limite) {
+    if (!state) return [];
+    return ens().bons.slice().sort((a, b) => new Date(b.creeLe) - new Date(a.creeLe)).slice(0, limite || 100)
+      .filter((b) => b.tel !== "SIMULATEUR")
+      .map((b) => ({ code: b.code, telephone: b.tel, valeur: b.valeur, creeLe: b.creeLe, expireLe: b.expireLe, utilise: b.utilise, utiliseLe: b.utiliseLe, utilisePar: b.utilisePar, magasinId: b.magasinId || null }));
   }
 
   // ---------------- Etape 49 : recapitulatif avec telephone + correction a la confirmation ----------------
@@ -1107,6 +1706,7 @@ function createCatalogEngine(merchantKey, options) {
     // Reinitialise a chaque tour - seuls les 4 points de retour "quel article vous interesse ?" plus bas
     // le repassent a true juste avant de renvoyer leur texte (voir freshSession() ci-dessus).
     session.pretPourChoix = false;
+    session.menuEns = null; // Etape 84 : menu du volet enseigne, reconstruit a chaque tour
     // Idem pour pendingChoice - reinitialise a chaque tour, repositionne uniquement aux 3 points de retour
     // "quelle couleur / quelle taille / rupture, laquelle de ces variantes" plus bas.
     session.pendingChoice = null;
@@ -1151,6 +1751,12 @@ function createCatalogEngine(merchantKey, options) {
       reconnaitreGrossiste(session);
       const reponseGros = traiterVenteGros(session, text, trace);
       if (reponseGros !== null) return reponseGros;
+    }
+
+    // Etape 84 : volet enseigne (choix du magasin, creneaux de retrait, favoris, derniere commande, points).
+    if (ensOperationnel()) {
+      const reponseEns = traiterEnseigne(session, text, trace);
+      if (reponseEns !== null) return reponseEns;
     }
 
     // Etape 73 : « Ma commande » (tape librement, ou ligne « Ma commande » des menus WhatsApp), reconnu a tout moment du parcours d'achat
@@ -1520,6 +2126,8 @@ function createCatalogEngine(merchantKey, options) {
             "You already have " + pendingCount + " order(s) awaiting confirmation. Please confirm or cancel one of them before placing a new one — our team remains available if needed."
           );
         }
+        const verifEns = ensVerifierAvantCommande(session); // Etape 84 : le creneau choisi est-il toujours libre ?
+        if (verifEns) { logTrace(session, trace); return verifEns; }
         const order = createOrderFromCart(session);
         session.pendingOrderId = order.id;
         session.stage = "awaiting_order_confirmation";
@@ -1616,6 +2224,19 @@ function createCatalogEngine(merchantKey, options) {
         }
       }
 
+      if (pendingOrder && parseAffirmative(text) && ensOperationnel() && pendingOrder.magasinId) {
+        // Etape 84 : le magasin a pu declarer un article indisponible entre-temps : le client en est informe AVANT de confirmer.
+        const indispo = ensArticlesIndisponibles(pendingOrder);
+        if (indispo.length) {
+          session.stage = "awaiting_order_correction";
+          trace.action = "Confirmation suspendue : article(s) devenu(s) indisponible(s) au magasin — " + indispo.join(", ");
+          logTrace(session, trace);
+          return sh.t(session,
+            "⚠️ Avant de confirmer : " + indispo.join(", ") + " n'est plus disponible au magasin " + pendingOrder.magasinNom + ". Écrivez « articles » pour modifier votre commande " + orderRef(pendingOrder) + ", ou « annuler » pour la laisser en attente.",
+            "⚠️ Before confirming: " + indispo.join(", ") + " is no longer available at " + pendingOrder.magasinNom + ". Write \"items\" to edit your order " + orderRef(pendingOrder) + ", or \"cancel\" to leave it pending.");
+        }
+      }
+
       if (pendingOrder && parseAffirmative(text)) {
         applyStatusChange(pendingOrder, "Confirmée");
         trace.action = "Client confirme — commande " + orderRef(pendingOrder) + " passée automatiquement en Confirmée";
@@ -1625,7 +2246,7 @@ function createCatalogEngine(merchantKey, options) {
           formatFcfa(pendingOrder.prix),
           pendingOrder.telephone || session.fromPhone || "—",
           pendingOrder.adresse || "—"
-        ]).catch((erreur) =>
+        ], pendingOrder.magasinId ? { numeros: ensNumerosAlerteMagasin(pendingOrder) } : undefined).catch((erreur) =>
           console.error("[" + merchantKey + "] Echec de la notification marchand (commande confirmée) :", erreur)
         );
         // Message de confirmation : celui redige par le marchand dans Parametres (dans la langue de la
@@ -1635,8 +2256,9 @@ function createCatalogEngine(merchantKey, options) {
           ? (state.settings && state.settings.autoConfirmMessageEn) || DEFAULT_AUTO_CONFIRM_MESSAGE_EN
           : (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
         Object.assign(session, freshSession(session));
+        const replyEns = pendingOrder.magasinId ? ensApresConfirmation(pendingOrder, session, reply) : reply; // Etape 84
         logTrace(session, trace);
-        return reply;
+        return replyEns;
       }
 
       if (pendingOrder && parseNegative(text)) {
@@ -1818,6 +2440,16 @@ function createCatalogEngine(merchantKey, options) {
       );
     }
 
+    if (ensOperationnel() && ensMagasinDeSession(session) && enseigne.enRupture(ensMagasinDeSession(session), product.id)) {
+      session.productId = null; session.couleur = null; session.taille = null; session.quantite = null;
+      trace.action = "Article indisponible dans ce magasin (enseigne)";
+      logTrace(session, trace);
+      session.pretPourChoix = true;
+      const mgR = ensMagasinDeSession(session);
+      return sh.t(session,
+        "Désolé, " + product.nom + " n'est pas disponible pour le moment au magasin " + mgR.nom + ". Choisissez un autre article" + (ensPlusieursMagasins() ? " ou écrivez « changer de magasin »" : "") + ". Nous avons : " + ensListeArticles() + ".",
+        "Sorry, " + product.nom + " is not available right now at " + mgR.nom + ". Please choose another item" + (ensPlusieursMagasins() ? " or write \"change store\"" : "") + ". We have: " + ensListeArticles() + ".");
+    }
     trace.action = "Article disponible — quantité demandée";
     session.stage = "awaiting_quantity";
     logTrace(session, trace);
@@ -1914,6 +2546,7 @@ function createCatalogEngine(merchantKey, options) {
     // demarre des la demande initiale (meme mecanisme unique pour les 2 cas, voir shared.js) - sans cette
     // priorite, ce message serait avale par la pause et le client n'aurait jamais de reponse.
     const sessionExistante = sessions[fromPhone];
+    if (sessionExistante) sessionExistante.menuEns = null; // Etape 84 : jamais de menu perime sur une reponse qui n'en construit pas
     if (sessionExistante && sessionExistante.attenteChoixContactHumain) {
       sessionExistante.attenteChoixContactHumain = false;
       const veutAppel = sh.detecteChoixAppel(text);
@@ -2010,6 +2643,9 @@ function createCatalogEngine(merchantKey, options) {
     // y glisse la mention du conseiller humain disponible, une seule fois (voir sh.mentionHumainDisponible).
     const estPremiereReponseReelle = !humanHintDonne[fromPhone];
     let reponse = processMessage(session, text);
+    if (reponse && session.pretPourChoix && session.magasinId && ensOperationnel() && ensPlusieursMagasins() && ensMagasinDeSession(session) && session.stage === "idle") {
+      reponse = "🏬 " + ensMagasinDeSession(session).nom + "\n" + reponse; // Etape 84 : rappel du magasin choisi
+    }
     if (estPremiereReponseReelle && reponse) {
       humanHintDonne[fromPhone] = true;
       reponse += sh.mentionHumainDisponible(session);
@@ -2072,6 +2708,9 @@ function createCatalogEngine(merchantKey, options) {
     // cliquables (titres de boutons/listes, "Parler a un conseiller"...) - voir essayerEnvoyerMenuInteractif.
     if (!s) return null;
     const etat = { stage: s.stage, pretPourChoix: !!s.pretPourChoix, pendingChoice: s.pendingChoice || null, cart: s.cart || [], langue: sh.langueSession(s) };
+    try { // Etape 84 : volet enseigne (menu du moteur, ligne « Favoris, points… » de la liste d'accueil)
+      if (ensOperationnel()) { etat.ensDispo = true; etat.menuEnseigne = String(s.stage).indexOf("ens_") === 0 ? (s.menuEns || null) : (s.menuEns || null); }
+    } catch (e) { /* jamais bloquant */ }
     try { etat.grosDispo = grosOperationnel() && venteGros.assurer(state.gros).tarifsVisibles; } catch (e) { etat.grosDispo = false; } // Etape 78 : ligne « Tarifs de gros » des menus
     // Etape 73 : « Ma commande » (lignes de menu et listes d'actions construites par server.js).
     try {
@@ -2109,6 +2748,7 @@ function createCatalogEngine(merchantKey, options) {
     delete sessions[PHONE_SIMULATEUR];
     delete conversationsHumain[PHONE_SIMULATEUR];
     delete humanHintDonne[PHONE_SIMULATEUR];
+    if (state && state.enseigne) { delete state.enseigne.clients.SIMULATEUR; state.enseigne.bons = state.enseigne.bons.filter((b) => b.tel !== "SIMULATEUR"); }
     if (state) {
       const avant = state.orders.length;
       state.orders = state.orders.filter((o) => o.fromWhatsapp !== PHONE_SIMULATEUR);
@@ -2865,7 +3505,10 @@ function createCatalogEngine(merchantKey, options) {
     supprimerInstantaneInventaire,
     listerAttenteReassort,
     marquerAttenteReassortContactee,
-    getInventaireActuel
+    getInventaireActuel,
+    // Etape 84 : volet enseigne
+    getEnseigne, ensAjouterMagasin, ensModifierMagasin, ensRetirerMagasin, ensDefinirRuptures, ensDefinirFidelite,
+    ensStatistiques, ensCommandesPreparation, ensChangerPrepa, ensVerifierBon, ensUtiliserBon, ensListeBons
   };
 }
 

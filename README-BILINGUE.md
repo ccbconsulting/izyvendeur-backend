@@ -2573,3 +2573,23 @@ L'onglet **Vente en gros** (propriétaire et super-administrateur, option déjà
 **Fichier CHOLY House** (`choly_house_tarifs_gros.csv`) : 10 ml à 2 000 F, 30 ml à 6 000 F, 50 ml à 10 000 F à partir de 10 pièces ; 60 ml à 12 000 F, 100 ml à 20 000 F à partir de 5 pièces. Rappel : un grossiste enregistré obtient ces prix sans minimum ; le minimum ne joue que si le super-administrateur ouvre l'option « paliers automatiques » (WhatsApp) ou l'interrupteur de la caisse.
 
 Aucun changement de base de données. Fichiers modifiés : `venteGros.js`, `conversation.js`, `server.js`, `public/admin.html`.
+
+## Étape 84 — Volet « Enseigne » (réseau de magasins derrière un seul numéro WhatsApp) — option payante, accordée par le super-administrateur seul
+
+Pour une enseigne de supermarchés (offre DÔVV) : **un seul numéro WhatsApp**, plusieurs magasins. Le client choisit son magasin, compose son panier, choisit un **créneau de retrait** et paie à la caisse au moment du retrait. Aucune livraison à domicile dans ce volet.
+
+**Activation.** Option `optionEnseigne` d'un marchand de type catalogue, cochée **uniquement par le super-administrateur** (Mon compte > Options payantes, case « Enseigne »). Tant qu'elle est fermée : les onglets n'existent pas, le rôle « Préparation » n'est pas proposé, toutes les routes `/api/:id/enseigne*` répondent 403, le bot fonctionne comme avant. Un marchand ne peut pas se l'accorder (403) ; l'activation figure au journal du super-administrateur seul (`options_payantes_modifiees`). Tant qu'aucun magasin n'est actif, le bot ignore aussi le volet.
+
+**Côté client (WhatsApp).** Choix du magasin (liste, par quartier si plus de 10 magasins), puis catalogue commun ; les **ruptures sont propres à chaque magasin** (le client est prévenu avant de confirmer, et l'article est retiré du panier si le magasin change). Récapitulatif avec créneau (jour puis heure, selon les horaires, délai minimum, jours d'avance, jours fermés et **capacité par créneau** du magasin ; un créneau complet n'est plus proposé et un dernier créneau pris entre-temps est refusé). Menu « Mon espace » : **Mes favoris** (ajouter un article, tout ajouter au panier, gérer), **Refaire ma dernière commande**, **Mes points**, **Changer de magasin**. « Mettre en favoris » est proposé depuis le panier.
+
+**Préparation (onglet Préparation).** Propriétaire, ou employé au rôle **« Préparation »**, éventuellement **rattaché à UN magasin** (il ne voit alors que ce magasin, côté interface comme côté serveur). États : Nouvelle, En préparation, Prête (le client reçoit un message), Retirée (la commande passe en « Livrée », le stock est décrémenté, les points sont crédités une seule fois). Alerte WhatsApp à la confirmation vers les numéros du marchand **et** ceux du magasin. Liste rafraîchie toutes les 30 secondes. Sous-vues **Ruptures** (par magasin) et **Bons d'achat** (vérifier un code, le marquer utilisé : usage unique).
+
+**Fidélité (onglet Fidélité, propriétaire).** Règles **définies par le marchand** : montant d'achat par point, points nécessaires, valeur du bon, validité du bon, programme actif ou non. Le client s'inscrit **avec son accord explicite** (proposé après sa première commande confirmée) ; points crédités au retrait, cumulés sur tous les magasins, sans expiration ; bon à usage unique (code `BON-XXXXXX`) émis au seuil, avec date limite.
+
+**Direction (onglet Direction, propriétaire et rôle « Rapports », lecture seule).** Jour / semaine / mois / année / depuis le début, avec comparaison à la période précédente : commandes, CA WhatsApp (commandes retirées), panier moyen, taux d'annulation, comparaison entre magasins, délai de préparation, produits les plus vendus, inscrits / points / bons. Export CSV. Les commandes du Simulateur sont exclues.
+
+**Journal.** Magasin ajouté / modifié / supprimé, ruptures, règles de fidélité, état de préparation d'une commande, bon utilisé. **Base de données :** nouvelle colonne `option_enseigne` (migration automatique) ; les magasins, clients, favoris, points et bons sont dans l'état du marchand.
+
+**À savoir.** Le stock reste commun à toute l'enseigne (seules les disponibilités sont par magasin) ; les messages « Votre commande est prête » et de points ne partent que dans la fenêtre WhatsApp de 24 h ; les achats faits en magasin sans passer par WhatsApp ne sont pas encore rattachés à la fidélité ; l'alerte magasin réutilise le modèle de message d'alerte de commande existant.
+
+Fichiers : `enseigne.js` (nouveau), `conversation.js`, `server.js`, `db.js`, `public/admin.html`, `tests_ens/test_enseigne.js`.

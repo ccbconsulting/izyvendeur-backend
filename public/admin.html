@@ -854,6 +854,138 @@ const I18N = {
     // Etape 78 : vente en gros
     labelOptionVenteGros: "Vente en gros (grille de prix par palier, liste de grossistes reconnus sur WhatsApp et à la caisse, onglet Vente en gros)",
     ongletVenteGros: "Vente en gros",
+    jdMagasin: "Magasin : {m}", jdNbRuptures: "{n} article(s) en rupture", jdBon: "Bon : {b}", jdFidActive: "Fidélité activée", jdFidInactive: "Fidélité désactivée",
+    // Etape 84 : volet enseigne
+    "ongletMagasins": "Magasins",
+    "ongletPreparation": "Préparation",
+    "ongletFidelite": "Fidélité",
+    "ongletDirection": "Direction",
+    "rolePreparation": "Préparation des commandes d'un magasin (enseigne)",
+    "labelOptionEnseigne": "Enseigne (réseau de magasins derrière un seul numéro WhatsApp : choix du magasin, retrait sur créneau, préparation, fidélité, vue Direction)",
+    "ensTousMagasins": "Tous les magasins",
+    "ensEmpMagasin": "Magasin de rattachement (rôle Préparation)",
+    "ensEmpMagasinNote": "Un employé rattaché à un magasin ne voit et ne traite que les commandes, ruptures et bons de ce magasin. Laisser « Tous les magasins » pour un accès à l'ensemble.",
+    "ensLabelNomMagasin": "Nom du magasin",
+    "ensLabelQuartier": "Quartier / ville",
+    "ensLabelAdresse": "Adresse",
+    "ensLabelTelMagasin": "Téléphone du magasin",
+    "ensMagasinActif": "Magasin ouvert aux commandes WhatsApp",
+    "ensLabelNumerosAlerte": "Numéros WhatsApp qui reçoivent les alertes de ce magasin (un par ligne)",
+    "ensNoteNumerosAlerte": "Chaque nouvelle commande de retrait dans ce magasin est signalée à ces numéros, en plus du numéro d'alerte du marchand. Format international, ex. 237670000000.",
+    "ensLabelCreneaux": "Créneaux de retrait",
+    "ensOuverture": "Ouverture",
+    "ensFermeture": "Fermeture",
+    "ensPas": "Durée d'un créneau",
+    "ensDelaiMin": "Délai minimum avant retrait (minutes)",
+    "ensJoursAvance": "Commande possible jusqu'à (jours à l'avance)",
+    "ensCapacite": "Commandes max. par créneau",
+    "ensJoursFermes": "Jours fermés :",
+    "ensNbRuptures": "{n} article(s) actuellement en rupture dans ce magasin (à gérer depuis l'onglet Préparation).",
+    "ensNoteMagasins": "Chaque magasin a ses horaires de retrait, ses numéros d'alerte et ses ruptures. Le catalogue, les prix et les quantités en stock restent communs à toute l'enseigne.",
+    "ensAucunMagasin": "Aucun magasin pour l'instant. Ajoutez le premier ci-dessous : tant qu'aucun magasin n'est actif, le bot fonctionne comme avant.",
+    "ensAjouterMagasin": "Ajouter un magasin",
+    "ensBtnAjouterMagasin": "Ajouter ce magasin",
+    "ensAlertNomRequis": "Le nom du magasin est obligatoire.",
+    "ensMagasinEnregistre": "Magasin enregistré.",
+    "ensConfirmSupprimerMagasin": "Supprimer ce magasin ? Les commandes déjà passées dans ce magasin sont conservées.",
+    "ensAucunMagasinPrepa": "Aucun magasin à afficher. Le propriétaire doit d'abord créer un magasin (onglet Magasins) ou vous rattacher à l'un d'eux.",
+    "ensVueCommandes": "Commandes",
+    "ensVueRuptures": "Ruptures",
+    "ensVueBons": "Bons d'achat",
+    "ensFiltre_actives": "À traiter",
+    "ensFiltre_retirees": "Retirées (24 h)",
+    "ensFiltre_annulees": "Annulées",
+    "ensFiltre_toutes": "Toutes",
+    "ensActualiser": "Actualiser",
+    "ensNbCommandes": "{n} commande(s) — actualisation automatique toutes les 30 secondes",
+    "ensColRef": "Commande",
+    "ensColMagasin": "Magasin",
+    "ensColCreneau": "Retrait",
+    "ensColClient": "Client",
+    "ensColArticles": "Articles",
+    "ensColTotal": "Total",
+    "ensColEtat": "État",
+    "ensAucuneCommande": "Aucune commande dans cette liste.",
+    "ensPrepaNouvelle": "Nouvelle",
+    "ensPrepaEnCours": "En préparation",
+    "ensPrepaPrete": "Prête",
+    "ensPrepaRetiree": "Retirée",
+    "ensAnnulee": "Annulée",
+    "ensAttenteClient": "En attente de la confirmation du client",
+    "ensBtnDemarrer": "Démarrer la préparation",
+    "ensBtnPrete": "Prête",
+    "ensBtnRetiree": "Retirée et payée",
+    "ensBtnReprendre": "Reprendre la préparation",
+    "ensPointsCredites": "{n} point(s) crédité(s)",
+    "ensConfirmRetiree": "Confirmer que le client a retiré et payé cette commande à la caisse ? Le stock sera décrémenté et les points de fidélité crédités.",
+    "ensRetireeOk": "Commande retirée. Points crédités : {points}. Bons émis : {bons}.",
+    "ensNoteRuptures": "Cochez les articles qui ne sont plus disponibles dans CE magasin : le client est prévenu avant de confirmer et ne peut pas les commander ici. Le catalogue des autres magasins n'est pas modifié.",
+    "ensRechercherArticle": "Rechercher un article ou une catégorie",
+    "ensRupturesCompte": "{n} article(s) en rupture dans ce magasin.",
+    "ensColArticle": "Article",
+    "ensColCategorie": "Catégorie",
+    "ensColEnRupture": "En rupture",
+    "ensAffinerRecherche": "{n} articles correspondent : seuls les 300 premiers sont affichés, affinez la recherche.",
+    "ensRupturesEnregistrees": "Ruptures enregistrées.",
+    "ensNoteBons": "Saisissez le code présenté par le client pour vérifier qu'il est valable, puis marquez-le comme utilisé au moment de l'encaissement. Un bon ne peut servir qu'une seule fois.",
+    "ensBtnVerifierBon": "Vérifier le bon",
+    "ensBonValide": "Bon {code} valable : {valeur}, jusqu'au {date}.",
+    "ensBonCommande": "N° de commande (facultatif)",
+    "ensBtnUtiliserBon": "Marquer comme utilisé",
+    "ensConfirmUtiliserBon": "Appliquer ce bon de {valeur} et le marquer comme utilisé ? Cette action est définitive.",
+    "ensBonUtilise": "Bon marqué comme utilisé.",
+    "ensNoteFidelite": "Les règles sont définies par vous. Le client doit accepter explicitement l'inscription (proposée après sa première commande confirmée) ; les points sont crédités au retrait, sont cumulés sur tous les magasins de l'enseigne et n'expirent pas. Seuls les bons ont une date limite.",
+    "ensFidActif": "Programme de fidélité actif",
+    "ensFidMontant": "Montant d'achat qui rapporte 1 point (FCFA)",
+    "ensFidSeuil": "Points nécessaires pour obtenir un bon",
+    "ensFidValeur": "Valeur du bon (FCFA)",
+    "ensFidValidite": "Validité du bon (jours)",
+    "ensFidExemple": "Avec ces règles : le client dépense {depense} pour obtenir {seuil} points, soit un bon de {valeur} (environ {pct} % de remise).",
+    "ensFidEnregistree": "Règles de fidélité enregistrées.",
+    "ensH3Bons": "Bons d'achat émis",
+    "ensColCode": "Code",
+    "ensColValeur": "Valeur",
+    "ensColCree": "Émis le",
+    "ensColExpire": "Valable jusqu'au",
+    "ensBonStatutUtilise": "Utilisé",
+    "ensBonStatutExpire": "Expiré",
+    "ensBonStatutValide": "Valable",
+    "ensAucunBon": "Aucun bon émis pour l'instant.",
+    "ensPeriode_jour": "Aujourd'hui",
+    "ensPeriode_semaine": "Cette semaine",
+    "ensPeriode_mois": "Ce mois",
+    "ensPeriode_annee": "Cette année",
+    "ensPeriode_tout": "Depuis le début",
+    "ensExportCsv": "Exporter en CSV",
+    "ensNoteDirection": "Le chiffre d'affaires ne compte que les commandes effectivement retirées. Les commandes du Simulateur sont exclues.",
+    "ensVsPrecedent": "vs période précédente",
+    "ensKpiCommandes": "Commandes",
+    "ensKpiCa": "CA WhatsApp (retiré)",
+    "ensKpiPanier": "Panier moyen",
+    "ensKpiRetirees": "Retirées",
+    "ensKpiAnnulation": "Taux d'annulation",
+    "ensH3Magasins": "Comparaison des magasins",
+    "ensColEnCours": "En cours",
+    "ensColAnnulees": "Annulées",
+    "ensColDelai": "Délai de préparation",
+    "ensH3TopProduits": "Produits les plus vendus",
+    "ensColQuantite": "Quantité",
+    "ensAucuneVente": "Aucune vente retirée sur cette période.",
+    "ensFidInactive": "Le programme de fidélité est désactivé (onglet Fidélité).",
+    "ensKpiInscrits": "Clients inscrits",
+    "ensNouveauxPeriode": "{n} nouveau(x) sur la période",
+    "ensKpiPointsCirc": "Points en circulation",
+    "ensPointsDistribues": "{n} distribués au total",
+    "ensKpiBonsEmis": "Bons émis",
+    "ensKpiBonsUtilises": "Bons utilisés",
+    "ensKpiBonsAttente": "Bons en attente",
+    "act_magasin_ajoute": "Magasin ajouté",
+    "act_magasin_modifie": "Magasin modifié",
+    "act_magasin_retire": "Magasin supprimé",
+    "act_magasin_ruptures_modifiees": "Ruptures d'un magasin modifiées",
+    "act_fidelite_modifiee": "Règles de fidélité modifiées",
+    "act_commande_preparation_modifiee": "État de préparation d'une commande modifié",
+    "act_bon_utilise": "Bon d'achat utilisé",
     ongletConsoMeta: "Consommation Meta",
     act_bareme_meta_modifie: "Barème Meta modifié",
     h3PhotosAuto: "Photos envoyées automatiquement",
@@ -2142,6 +2274,138 @@ const I18N = {
     // Step 78: wholesale
     labelOptionVenteGros: "Wholesale selling (tiered price grid, wholesaler list recognised on WhatsApp and at the register, Wholesale tab)",
     ongletVenteGros: "Wholesale",
+    jdMagasin: "Store: {m}", jdNbRuptures: "{n} item(s) out of stock", jdBon: "Voucher: {b}", jdFidActive: "Loyalty on", jdFidInactive: "Loyalty off",
+    // Step 84: retail chain
+    "ongletMagasins": "Stores",
+    "ongletPreparation": "Preparation",
+    "ongletFidelite": "Loyalty",
+    "ongletDirection": "Management",
+    "rolePreparation": "Order preparation for a store (retail chain)",
+    "labelOptionEnseigne": "Retail chain (store network behind a single WhatsApp number: store choice, pickup slots, preparation, loyalty, Management view)",
+    "ensTousMagasins": "All stores",
+    "ensEmpMagasin": "Assigned store (Preparation role)",
+    "ensEmpMagasinNote": "An employee assigned to a store only sees and handles that store's orders, stock-outs and vouchers. Leave \"All stores\" for access to the whole chain.",
+    "ensLabelNomMagasin": "Store name",
+    "ensLabelQuartier": "District / city",
+    "ensLabelAdresse": "Address",
+    "ensLabelTelMagasin": "Store phone",
+    "ensMagasinActif": "Store open to WhatsApp orders",
+    "ensLabelNumerosAlerte": "WhatsApp numbers that receive this store's alerts (one per line)",
+    "ensNoteNumerosAlerte": "Every new pickup order in this store is reported to these numbers, in addition to the merchant's alert number. International format, e.g. 237670000000.",
+    "ensLabelCreneaux": "Pickup slots",
+    "ensOuverture": "Opening",
+    "ensFermeture": "Closing",
+    "ensPas": "Slot length",
+    "ensDelaiMin": "Minimum lead time before pickup (minutes)",
+    "ensJoursAvance": "Orders allowed up to (days ahead)",
+    "ensCapacite": "Max orders per slot",
+    "ensJoursFermes": "Closed days:",
+    "ensNbRuptures": "{n} item(s) currently out of stock in this store (manage them from the Preparation tab).",
+    "ensNoteMagasins": "Each store has its own pickup hours, alert numbers and stock-outs. The catalogue, prices and stock quantities remain common to the whole chain.",
+    "ensAucunMagasin": "No store yet. Add the first one below: until a store is active, the bot works as before.",
+    "ensAjouterMagasin": "Add a store",
+    "ensBtnAjouterMagasin": "Add this store",
+    "ensAlertNomRequis": "The store name is required.",
+    "ensMagasinEnregistre": "Store saved.",
+    "ensConfirmSupprimerMagasin": "Delete this store? Orders already placed in this store are kept.",
+    "ensAucunMagasinPrepa": "No store to display. The owner must first create a store (Stores tab) or assign you to one.",
+    "ensVueCommandes": "Orders",
+    "ensVueRuptures": "Stock-outs",
+    "ensVueBons": "Vouchers",
+    "ensFiltre_actives": "To handle",
+    "ensFiltre_retirees": "Picked up (24 h)",
+    "ensFiltre_annulees": "Cancelled",
+    "ensFiltre_toutes": "All",
+    "ensActualiser": "Refresh",
+    "ensNbCommandes": "{n} order(s) — refreshes automatically every 30 seconds",
+    "ensColRef": "Order",
+    "ensColMagasin": "Store",
+    "ensColCreneau": "Pickup",
+    "ensColClient": "Customer",
+    "ensColArticles": "Items",
+    "ensColTotal": "Total",
+    "ensColEtat": "Status",
+    "ensAucuneCommande": "No order in this list.",
+    "ensPrepaNouvelle": "New",
+    "ensPrepaEnCours": "Being prepared",
+    "ensPrepaPrete": "Ready",
+    "ensPrepaRetiree": "Picked up",
+    "ensAnnulee": "Cancelled",
+    "ensAttenteClient": "Waiting for the customer's confirmation",
+    "ensBtnDemarrer": "Start preparing",
+    "ensBtnPrete": "Ready",
+    "ensBtnRetiree": "Picked up and paid",
+    "ensBtnReprendre": "Resume preparation",
+    "ensPointsCredites": "{n} point(s) credited",
+    "ensConfirmRetiree": "Confirm the customer picked up and paid for this order at the till? Stock will be decremented and loyalty points credited.",
+    "ensRetireeOk": "Order picked up. Points credited: {points}. Vouchers issued: {bons}.",
+    "ensNoteRuptures": "Tick the items no longer available in THIS store: the customer is warned before confirming and cannot order them here. Other stores' availability is not changed.",
+    "ensRechercherArticle": "Search an item or a category",
+    "ensRupturesCompte": "{n} item(s) out of stock in this store.",
+    "ensColArticle": "Item",
+    "ensColCategorie": "Category",
+    "ensColEnRupture": "Out of stock",
+    "ensAffinerRecherche": "{n} items match: only the first 300 are shown, refine your search.",
+    "ensRupturesEnregistrees": "Stock-outs saved.",
+    "ensNoteBons": "Enter the code shown by the customer to check it is valid, then mark it as used when you take payment. A voucher can only be used once.",
+    "ensBtnVerifierBon": "Check voucher",
+    "ensBonValide": "Voucher {code} is valid: {valeur}, until {date}.",
+    "ensBonCommande": "Order no. (optional)",
+    "ensBtnUtiliserBon": "Mark as used",
+    "ensConfirmUtiliserBon": "Apply this {valeur} voucher and mark it as used? This cannot be undone.",
+    "ensBonUtilise": "Voucher marked as used.",
+    "ensNoteFidelite": "The rules are set by you. The customer must explicitly accept enrolment (offered after their first confirmed order); points are credited at pickup, add up across all the chain's stores and do not expire. Only vouchers have an expiry date.",
+    "ensFidActif": "Loyalty programme active",
+    "ensFidMontant": "Purchase amount that earns 1 point (FCFA)",
+    "ensFidSeuil": "Points needed to get a voucher",
+    "ensFidValeur": "Voucher value (FCFA)",
+    "ensFidValidite": "Voucher validity (days)",
+    "ensFidExemple": "With these rules: the customer spends {depense} to earn {seuil} points, i.e. a {valeur} voucher (about {pct}% back).",
+    "ensFidEnregistree": "Loyalty rules saved.",
+    "ensH3Bons": "Vouchers issued",
+    "ensColCode": "Code",
+    "ensColValeur": "Value",
+    "ensColCree": "Issued on",
+    "ensColExpire": "Valid until",
+    "ensBonStatutUtilise": "Used",
+    "ensBonStatutExpire": "Expired",
+    "ensBonStatutValide": "Valid",
+    "ensAucunBon": "No voucher issued yet.",
+    "ensPeriode_jour": "Today",
+    "ensPeriode_semaine": "This week",
+    "ensPeriode_mois": "This month",
+    "ensPeriode_annee": "This year",
+    "ensPeriode_tout": "Since the beginning",
+    "ensExportCsv": "Export as CSV",
+    "ensNoteDirection": "Revenue only counts orders actually picked up. Simulator orders are excluded.",
+    "ensVsPrecedent": "vs previous period",
+    "ensKpiCommandes": "Orders",
+    "ensKpiCa": "WhatsApp revenue (picked up)",
+    "ensKpiPanier": "Average basket",
+    "ensKpiRetirees": "Picked up",
+    "ensKpiAnnulation": "Cancellation rate",
+    "ensH3Magasins": "Store comparison",
+    "ensColEnCours": "In progress",
+    "ensColAnnulees": "Cancelled",
+    "ensColDelai": "Preparation time",
+    "ensH3TopProduits": "Best-selling products",
+    "ensColQuantite": "Quantity",
+    "ensAucuneVente": "No picked-up sale in this period.",
+    "ensFidInactive": "The loyalty programme is switched off (Loyalty tab).",
+    "ensKpiInscrits": "Enrolled customers",
+    "ensNouveauxPeriode": "{n} new in the period",
+    "ensKpiPointsCirc": "Points in circulation",
+    "ensPointsDistribues": "{n} issued in total",
+    "ensKpiBonsEmis": "Vouchers issued",
+    "ensKpiBonsUtilises": "Vouchers used",
+    "ensKpiBonsAttente": "Vouchers pending",
+    "act_magasin_ajoute": "Store added",
+    "act_magasin_modifie": "Store edited",
+    "act_magasin_retire": "Store deleted",
+    "act_magasin_ruptures_modifiees": "Store stock-outs changed",
+    "act_fidelite_modifiee": "Loyalty rules changed",
+    "act_commande_preparation_modifiee": "Order preparation status changed",
+    "act_bon_utilise": "Voucher used",
     ongletConsoMeta: "Meta usage",
     act_bareme_meta_modifie: "Meta rate card changed",
     h3PhotosAuto: "Photos sent automatically",
@@ -3150,7 +3414,8 @@ function rolesDisponiblesBase() {
       [["conversations", t("roleConversationsService")], ["tableaudebord", t("roleTableauDeBord")]],
       aCat ? [["rapports", t("roleRapports")], ["inventaire", t("roleInventaire")]] : [],
       [["parametres", t("roleParametres")]],
-      aCat && marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : []
+      aCat && marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : [],
+      aCat && marchandActif.optionEnseigne ? [["preparation", t("rolePreparation")]] : []
     );
   }
   if (marchandActif.type === "transport") {
@@ -3193,7 +3458,7 @@ function rolesDisponiblesBase() {
     ["rapports", t("roleRapports")],
     ["inventaire", t("roleInventaire")],
     ["parametres", t("roleParametres")]
-  ].concat(marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : []);
+  ].concat(marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : [], marchandActif.optionEnseigne ? [["preparation", t("rolePreparation")]] : []);
 }
 
 function construireOnglets() {
@@ -3213,6 +3478,11 @@ function construireOnglets() {
     marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse", "catalogue"] : null,
     marchandActif.optionCaissePos ? ["rapportcaisse", t("ongletRapportCaisse"), renderRapportCaisse, ["caisse", "rapports"], "catalogue"] : null,
     marchandActif.optionVenteGros ? ["gros", t("ongletVenteGros"), renderVenteGros, "gestion", "catalogue"] : null,
+    // Etape 84 : volet enseigne (option payante superadmin) - onglets absents tant que l'option est fermee.
+    marchandActif.optionEnseigne ? ["magasins", t("ongletMagasins"), renderEnsMagasins, "gestion", "catalogue"] : null,
+    marchandActif.optionEnseigne ? ["preparation", t("ongletPreparation"), renderEnsPreparation, "preparation", "catalogue"] : null,
+    marchandActif.optionEnseigne ? ["fidelite", t("ongletFidelite"), renderEnsFidelite, "gestion", "catalogue"] : null,
+    marchandActif.optionEnseigne ? ["direction", t("ongletDirection"), renderEnsDirection, "rapports", "catalogue"] : null,
     ["rapports", t("ongletRapports"), renderRapports, "rapports", "catalogue"],
     ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire", "catalogue"],
     ["parametres", t("ongletParametresCatalogueHyb"), renderParametresCatalogue, "parametres", "catalogue"]
@@ -3307,6 +3577,11 @@ function construireOnglets() {
         marchandActif.optionCaissePos ? ["rapportcaisse", t("ongletRapportCaisse"), renderRapportCaisse, ["caisse", "rapports"]] : null,
         // Etape 78 : « Vente en gros » (option payante superadmin) - onglet reserve au proprietaire / super-administrateur ("gestion").
         marchandActif.optionVenteGros ? ["gros", t("ongletVenteGros"), renderVenteGros, "gestion"] : null,
+        // Etape 84 : volet enseigne (option payante superadmin) - onglets absents tant que l'option est fermee.
+        marchandActif.optionEnseigne ? ["magasins", t("ongletMagasins"), renderEnsMagasins, "gestion"] : null,
+        marchandActif.optionEnseigne ? ["preparation", t("ongletPreparation"), renderEnsPreparation, "preparation"] : null,
+        marchandActif.optionEnseigne ? ["fidelite", t("ongletFidelite"), renderEnsFidelite, "gestion"] : null,
+        marchandActif.optionEnseigne ? ["direction", t("ongletDirection"), renderEnsDirection, "rapports"] : null,
         ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", t("ongletRapports"), renderRapports, "rapports"],
         ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire"],
@@ -3337,7 +3612,7 @@ function construireOnglets() {
   // Etape 64 : marchand HYBRIDE = onglets regroupes (Tableau de bord, Produits, Rendez-vous, Echanges, Administration).
   // Les boutons d'onglet restent TOUS dans le DOM (allerVersOnglet() et les tuiles du Tableau de bord continuent de
   // fonctionner) ; seuls ceux du groupe actif sont affiches. Marchand a un seul volet : rien n'est regroupe.
-  const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", gros: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
+  const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", gros: "produits", magasins: "produits", preparation: "produits", fidelite: "produits", direction: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
     services: "rdv", rendezvous: "rdv", parametresService: "rdv", chambres: "hebergement", sejours: "hebergement", calendrier: "hebergement", parametresHeb: "hebergement", lignes: "transport", departs: "transport", billets: "transport", manifeste: "transport", parametresTrp: "transport", simulateur: "echanges", conversations: "echanges", facturation: "admin", employes: "admin", journal: "admin", compte: "admin" };
   const LIBELLE_GROUPE = { dashboard: t("ongletTableauDeBord"), produits: t("groupeProduits"), rdv: t("groupeRdv"), hebergement: t("groupeHebergement"), transport: t("groupeTransport"), echanges: t("groupeEchanges"), admin: t("groupeAdmin") };
   const barreGroupes = document.getElementById("barreGroupes");
@@ -8376,6 +8651,7 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionNotifStatut'" + (marchandActif.optionNotificationsStatut ? " checked" : "") + " /> " + t("labelOptionNotifStatut") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaissePos'" + (marchandActif.optionCaissePos ? " checked" : "") + " /> " + t("labelOptionCaissePos") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionVenteGros'" + (marchandActif.optionVenteGros ? " checked" : "") + " /> " + t("labelOptionVenteGros") + "</label>" +
+    "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionEnseigne'" + (marchandActif.optionEnseigne ? " checked" : "") + " /> " + t("labelOptionEnseigne") + "</label>" +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
     (principalHeb ? "" : blocSourceFacturationHtml() + blocCleComptableHtml()) +
     blocModuleSecondaireHtml() + blocPhotosAutoHtml();
@@ -8538,7 +8814,8 @@ function brancherBlocOptionsPayantes() {
           optionLienCommande: document.getElementById("champOptionLienCommande").checked,
           optionNotificationsStatut: document.getElementById("champOptionNotifStatut").checked,
           optionCaissePos: document.getElementById("champOptionCaissePos").checked,
-          optionVenteGros: document.getElementById("champOptionVenteGros").checked
+          optionVenteGros: document.getElementById("champOptionVenteGros").checked,
+          optionEnseigne: document.getElementById("champOptionEnseigne").checked
         })
       });
       alert(t("alertOptionsEnregistrees"));
@@ -8894,6 +9171,19 @@ function detailJournalHtml(ligne) {
   if (Array.isArray(d.criteres) && d.criteres.length) out.push(t("jdGrosCriteres", { c: esc(d.criteres.map((c) => t("grosCritere_" + c)).join(", ")) }));
   if (d.economie) out.push(t("jdGrosEconomie", { m: Number(d.economie).toLocaleString(localeCourante()) }));
   if (d.vente) out.push(t("jdVenteRef", { v: esc(d.vente) }));
+  // Etape 84 : volet enseigne
+  if (typeof d.magasin === "string" && d.magasin) out.push(t("jdMagasin", { m: esc(d.magasin) }));
+  if (d.nbRuptures != null) out.push(t("jdNbRuptures", { n: d.nbRuptures }));
+  if (d.bon) out.push(t("jdBon", { b: esc(d.bon) }));
+  if (ligne.action === "fidelite_modifiee") {
+    const bits = [];
+    if (d.actif != null) bits.push(t(d.actif ? "jdFidActive" : "jdFidInactive"));
+    if (d.montantParPoint != null) bits.push(d.montantParPoint + " FCFA/pt");
+    if (d.seuilBon != null) bits.push(d.seuilBon + " pts");
+    if (d.valeurBon != null) bits.push(d.valeurBon + " FCFA");
+    if (d.validiteBonJours != null) bits.push(d.validiteBonJours + " j");
+    out.push(esc(bits.join(" · ")));
+  }
   return out.map((x) => "<div>" + x + "</div>").join("");
 }
 
@@ -9011,6 +9301,19 @@ async function renderEmployes() {
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   const employes = await api("/api/" + marchandActif.id + "/employes");
   const roles = rolesDisponibles();
+  // Etape 84 : volet enseigne - magasin de rattachement d'un employe (role « preparation »). Rien n'est affiche si l'option est fermee.
+  let magasinsEns = [];
+  if (marchandActif.optionEnseigne) { try { magasinsEns = (await ensCharger()).magasins || []; } catch (e) { magasinsEns = []; } }
+  function selecteurMagasinEmploye(prefixe, courant) {
+    if (!magasinsEns.length) return "";
+    return "<div><label>" + t("ensEmpMagasin") + "</label><select data-mg-prefixe='" + esc(prefixe) + "'><option value=''>" + t("ensTousMagasins") + "</option>" +
+      magasinsEns.map((m) => "<option value=\"" + esc(m.id) + "\"" + (m.id === courant ? " selected" : "") + ">" + esc(m.nom + (m.quartier ? " — " + m.quartier : "")) + "</option>").join("") + "</select>" +
+      "<p class='raison'>" + t("ensEmpMagasinNote") + "</p></div>";
+  }
+  function magasinChoisi(prefixe) {
+    const el = zone.querySelector("[data-mg-prefixe='" + prefixe + "']");
+    return el ? { magasinId: el.value } : {};
+  }
 
   function casesRoles(prefixe, rolesActuels, plafond) {
     return roles.map(([cle, libelle]) =>
@@ -9053,6 +9356,7 @@ async function renderEmployes() {
             "<span class='raison' style='align-self:center;'>" + t("labelIdentifiantNonModifiable", { id: esc(e.identifiant) }) + "</span>" +
           "</div>" +
           "<div>" + casesRoles(e.id, e.roles, e.plafondRemise) + "</div>" +
+          selecteurMagasinEmploye(e.id, e.magasinId) +
           "<div style='margin-top:8px;'>" +
             "<button data-emp-sauver='" + e.id + "'>" + t("enregistrer") + "</button> " +
             "<button data-emp-mdp='" + e.id + "'>" + t("btnGenererNouveauMdp") + "</button> " +
@@ -9064,7 +9368,7 @@ async function renderEmployes() {
       "<label>" + t("labelNom") + "</label><input id='nouvEmpNom' placeholder=\"" + esc(t("placeholderNomEmploye")) + "\" />" +
       "<label>" + t("labelIdentifiantConnexion") + "</label><input id='nouvEmpIdentifiant' placeholder=\"" + esc(t("placeholderIdentifiantUnique")) + "\" />" +
       "<label>" + t("labelMdpInitial") + "</label><input id='nouvEmpMdp' type='text' placeholder=\"" + esc(t("placeholderMdp")) + "\" />" +
-      "<label>" + t("labelAcces") + "</label><div>" + casesRoles("nouv", []) + "</div>" +
+      "<label>" + t("labelAcces") + "</label><div>" + casesRoles("nouv", []) + "</div>" + selecteurMagasinEmploye("nouv", "") +
       "<div style='margin-top:10px;'><button id='btnAjouterEmploye' class='principal'>" + t("btnCreerCompteEmploye") + "</button></div>";
 
     Array.prototype.forEach.call(zone.querySelectorAll("[data-emp-sauver]"), (btn) => {
@@ -9077,7 +9381,7 @@ async function renderEmployes() {
         const pl = lirePlafond(empId, rolesChoisis);
         if (!pl.ok) { alert(t("alertPlafondInvalide")); return; }
         try {
-          await api("/api/" + marchandActif.id + "/employes/" + empId, { method: "PUT", body: JSON.stringify(Object.assign({ nom, roles: rolesChoisis }, pl.valeur !== undefined ? { plafondRemise: pl.valeur } : {})) });
+          await api("/api/" + marchandActif.id + "/employes/" + empId, { method: "PUT", body: JSON.stringify(Object.assign({ nom, roles: rolesChoisis }, magasinChoisi(empId), pl.valeur !== undefined ? { plafondRemise: pl.valeur } : {})) });
           renderEmployes();
         } catch (e) { alert(t("erreurPrefixe") + e.message); }
       };
@@ -9111,13 +9415,393 @@ async function renderEmployes() {
       const pl = lirePlafond("nouv", rolesChoisis);
       if (!pl.ok) { alert(t("alertPlafondInvalide")); return; }
       try {
-        await api("/api/" + marchandActif.id + "/employes", { method: "POST", body: JSON.stringify(Object.assign({ nom, identifiant, motDePasse, roles: rolesChoisis }, pl.valeur !== undefined ? { plafondRemise: pl.valeur } : {})) });
+        await api("/api/" + marchandActif.id + "/employes", { method: "POST", body: JSON.stringify(Object.assign({ nom, identifiant, motDePasse, roles: rolesChoisis }, magasinChoisi("nouv"), pl.valeur !== undefined ? { plafondRemise: pl.valeur } : {})) });
         alert(t("alertCompteEmployeCree", { id: identifiant, mdp: motDePasse }));
         renderEmployes();
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   }
   redraw();
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Etape 84 : VOLET ENSEIGNE (reseau de magasins derriere un seul numero WhatsApp) - onglets Magasins, Preparation, Fidelite, Direction.
+// N'existent pas tant que le SUPER-ADMINISTRATEUR n'a pas debloque l'option payante (marchandActif.optionEnseigne) : construireOnglets()
+// ne les ajoute pas, et chaque route /api/:id/enseigne* refuse (403) de toute facon. Acces :
+//   - Magasins, Fidelite : proprietaire / super-administrateur ("gestion") ;
+//   - Preparation : proprietaire + employes au role « preparation » (rattaches a UN magasin, ou a tous) ;
+//   - Direction : proprietaire + employes au role « rapports » (lecture seule).
+// ---------------------------------------------------------------------------------------------------------
+const ENS_JOURS = [[1, "jourLundi"], [2, "jourMardi"], [3, "jourMercredi"], [4, "jourJeudi"], [5, "jourVendredi"], [6, "jourSamedi"], [0, "jourDimanche"]];
+function ensMontant(n) { return Number(n || 0).toLocaleString(localeCourante()) + " FCFA"; }
+function ensCharger() { return api("/api/" + marchandActif.id + "/enseigne"); }
+function ensLibellePrepa(p) { return t({ nouvelle: "ensPrepaNouvelle", en_preparation: "ensPrepaEnCours", prete: "ensPrepaPrete", retiree: "ensPrepaRetiree" }[p] || "ensPrepaNouvelle"); }
+function ensNombre(v, defaut) { const n = Number(v); return Number.isFinite(n) ? n : defaut; }
+
+// ---------------- Magasins (gestion) ----------------
+async function renderEnsMagasins() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  let d;
+  try { d = await ensCharger(); } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(t("erreurPrefixe") + e.message) + "</p>"; return; }
+  const idm = marchandActif.id;
+
+  function carte(m) {
+    const c = m.creneaux || {};
+    const pas = [15, 20, 30, 45, 60, 90, 120];
+    return "<div class='carte-produit' data-mg='" + esc(m.id) + "'>" +
+      "<div class='ligne-produit'>" +
+        "<input data-f='nom' value=\"" + esc(m.nom) + "\" placeholder=\"" + esc(t("ensLabelNomMagasin")) + "\" />" +
+        "<input data-f='quartier' value=\"" + esc(m.quartier) + "\" placeholder=\"" + esc(t("ensLabelQuartier")) + "\" />" +
+      "</div>" +
+      "<div class='ligne-produit'>" +
+        "<input data-f='adresse' value=\"" + esc(m.adresse) + "\" placeholder=\"" + esc(t("ensLabelAdresse")) + "\" />" +
+        "<input data-f='telephone' value=\"" + esc(m.telephone) + "\" placeholder=\"" + esc(t("ensLabelTelMagasin")) + "\" />" +
+      "</div>" +
+      "<label style='font-weight:400;'><input type='checkbox' data-f='actif'" + (m.actif ? " checked" : "") + " /> " + t("ensMagasinActif") + "</label>" +
+      "<label>" + t("ensLabelNumerosAlerte") + "</label>" +
+      "<textarea data-f='numerosAlerte' rows='2' placeholder=\"237670000000\">" + esc((m.numerosAlerte || []).join("\n")) + "</textarea>" +
+      "<p class='raison'>" + t("ensNoteNumerosAlerte") + "</p>" +
+      "<label>" + t("ensLabelCreneaux") + "</label>" +
+      "<div class='ligne-produit' style='align-items:center;'>" +
+        "<span>" + t("ensOuverture") + " <input type='time' data-c='ouverture' value=\"" + esc(c.ouverture || "08:00") + "\" /></span>" +
+        "<span>" + t("ensFermeture") + " <input type='time' data-c='fermeture' value=\"" + esc(c.fermeture || "20:00") + "\" /></span>" +
+        "<span>" + t("ensPas") + " <select data-c='pasMinutes'>" + pas.map((p) => "<option value='" + p + "'" + (Number(c.pasMinutes) === p ? " selected" : "") + ">" + p + " min</option>").join("") + "</select></span>" +
+      "</div>" +
+      "<div class='ligne-produit' style='align-items:center;'>" +
+        "<span>" + t("ensDelaiMin") + " <input type='number' min='0' max='1440' data-c='delaiMinMinutes' value=\"" + esc(c.delaiMinMinutes) + "\" /></span>" +
+        "<span>" + t("ensJoursAvance") + " <input type='number' min='0' max='14' data-c='joursAvance' value=\"" + esc(c.joursAvance) + "\" /></span>" +
+        "<span>" + t("ensCapacite") + " <input type='number' min='1' max='500' data-c='capaciteParCreneau' value=\"" + esc(c.capaciteParCreneau) + "\" /></span>" +
+      "</div>" +
+      "<div>" + t("ensJoursFermes") + " " + ENS_JOURS.map(([j, cle]) =>
+        "<label style='display:inline-block;font-weight:400;margin:0 10px 0 0;'><input type='checkbox' data-jf='" + j + "'" + ((c.joursFermes || []).indexOf(j) !== -1 ? " checked" : "") + " /> " + t(cle) + "</label>").join("") + "</div>" +
+      "<p class='raison'>" + t("ensNbRuptures", { n: (m.ruptures || []).length }) + "</p>" +
+      "<div style='margin-top:8px;'><button data-mg-sauver='" + esc(m.id) + "' class='principal'>" + t("enregistrer") + "</button> " +
+      "<button data-mg-suppr='" + esc(m.id) + "' class='danger'>" + t("supprimer") + "</button></div>" +
+    "</div>";
+  }
+
+  function lire(carteEl) {
+    const val = (f) => carteEl.querySelector("[data-f='" + f + "']").value;
+    const cr = {};
+    Array.prototype.forEach.call(carteEl.querySelectorAll("[data-c]"), (el) => { cr[el.dataset.c] = el.type === "number" ? ensNombre(el.value, 0) : (el.dataset.c === "pasMinutes" ? Number(el.value) : el.value); });
+    cr.joursFermes = Array.prototype.filter.call(carteEl.querySelectorAll("[data-jf]"), (el) => el.checked).map((el) => Number(el.dataset.jf));
+    return {
+      nom: val("nom").trim(), quartier: val("quartier").trim(), adresse: val("adresse").trim(), telephone: val("telephone").trim(),
+      actif: carteEl.querySelector("[data-f='actif']").checked,
+      numerosAlerte: val("numerosAlerte").split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean),
+      creneaux: cr
+    };
+  }
+
+  function dessiner() {
+    zone.innerHTML =
+      "<h2>" + t("ongletMagasins") + " (" + d.magasins.length + ")</h2>" +
+      "<p class='raison'>" + t("ensNoteMagasins") + "</p>" +
+      (d.magasins.length ? d.magasins.map(carte).join("") : "<p>" + t("ensAucunMagasin") + "</p>") +
+      "<h3>" + t("ensAjouterMagasin") + "</h3>" +
+      "<div class='ligne-produit'><input id='ensNouvNom' placeholder=\"" + esc(t("ensLabelNomMagasin")) + "\" /><input id='ensNouvQuartier' placeholder=\"" + esc(t("ensLabelQuartier")) + "\" /></div>" +
+      "<div class='ligne-produit'><input id='ensNouvAdresse' placeholder=\"" + esc(t("ensLabelAdresse")) + "\" /><input id='ensNouvTel' placeholder=\"" + esc(t("ensLabelTelMagasin")) + "\" /></div>" +
+      "<button id='btnEnsAjouterMagasin' class='principal'>" + t("ensBtnAjouterMagasin") + "</button>";
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-mg-sauver]"), (btn) => {
+      btn.onclick = async () => {
+        const mid = btn.dataset.mgSauver;
+        const corps = lire(zone.querySelector("[data-mg='" + mid + "']"));
+        if (!corps.nom) { alert(t("ensAlertNomRequis")); return; }
+        try {
+          const m = await api("/api/" + idm + "/enseigne/magasins/" + encodeURIComponent(mid), { method: "PUT", body: JSON.stringify(corps) });
+          d.magasins = d.magasins.map((x) => (x.id === mid ? m : x));
+          alert(t("ensMagasinEnregistre"));
+          dessiner();
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
+      };
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-mg-suppr]"), (btn) => {
+      btn.onclick = async () => {
+        if (!confirm(t("ensConfirmSupprimerMagasin"))) return;
+        try {
+          await api("/api/" + idm + "/enseigne/magasins/" + encodeURIComponent(btn.dataset.mgSuppr), { method: "DELETE" });
+          d.magasins = d.magasins.filter((x) => x.id !== btn.dataset.mgSuppr);
+          dessiner();
+        } catch (e) { alert(t("erreurPrefixe") + e.message); }
+      };
+    });
+    document.getElementById("btnEnsAjouterMagasin").onclick = async () => {
+      const nom = document.getElementById("ensNouvNom").value.trim();
+      if (!nom) { alert(t("ensAlertNomRequis")); return; }
+      try {
+        const m = await api("/api/" + idm + "/enseigne/magasins", { method: "POST", body: JSON.stringify({
+          nom, quartier: document.getElementById("ensNouvQuartier").value.trim(), adresse: document.getElementById("ensNouvAdresse").value.trim(), telephone: document.getElementById("ensNouvTel").value.trim()
+        }) });
+        d.magasins.push(m);
+        dessiner();
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+  dessiner();
+}
+
+// ---------------- Preparation (gestion + role « preparation ») ----------------
+let ensPrepaMagasin = "";
+let ensPrepaFiltre = "actives";
+let ensPrepaVue = "commandes";
+async function renderEnsPreparation() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  let d;
+  try { d = await ensCharger(); } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(t("erreurPrefixe") + e.message) + "</p>"; return; }
+  const idm = marchandActif.id;
+  if (!d.magasins.length) { zone.innerHTML = "<h2>" + t("ongletPreparation") + "</h2><p>" + t("ensAucunMagasinPrepa") + "</p>"; return; }
+  if (ensPrepaMagasin && !d.magasins.some((m) => m.id === ensPrepaMagasin)) ensPrepaMagasin = "";
+  if (!ensPrepaMagasin && (d.magasins.length === 1 || ensPrepaVue !== "commandes")) ensPrepaMagasin = d.magasins[0].id;
+  const plusieurs = d.magasins.length > 1;
+
+  function entete() {
+    return "<h2>" + t("ongletPreparation") + "</h2>" +
+      "<div class='ligne-produit' style='align-items:center;'>" +
+        (plusieurs ? "<select id='ensSelMagasin'>" + (ensPrepaVue === "commandes" ? "<option value=''>" + t("ensTousMagasins") + "</option>" : "") +
+          d.magasins.map((m) => "<option value=\"" + esc(m.id) + "\"" + (m.id === ensPrepaMagasin ? " selected" : "") + ">" + esc(m.nom + (m.quartier ? " — " + m.quartier : "")) + "</option>").join("") + "</select>" : "<strong>" + esc(d.magasins[0].nom) + "</strong>") +
+        "<button data-vue='commandes'" + (ensPrepaVue === "commandes" ? " class='principal' style='margin-top:0;'" : " style='padding:7px 13px;border:1px solid #d6dbe3;border-radius:6px;background:#fff;'") + ">" + t("ensVueCommandes") + "</button>" +
+        "<button data-vue='ruptures'" + (ensPrepaVue === "ruptures" ? " class='principal' style='margin-top:0;'" : " style='padding:7px 13px;border:1px solid #d6dbe3;border-radius:6px;background:#fff;'") + ">" + t("ensVueRuptures") + "</button>" +
+        "<button data-vue='bons'" + (ensPrepaVue === "bons" ? " class='principal' style='margin-top:0;'" : " style='padding:7px 13px;border:1px solid #d6dbe3;border-radius:6px;background:#fff;'") + ">" + t("ensVueBons") + "</button>" +
+      "</div><div id='ensPrepaCorps'></div>";
+  }
+  zone.innerHTML = entete();
+  const corps = document.getElementById("ensPrepaCorps");
+  const sel = document.getElementById("ensSelMagasin");
+  if (sel) sel.onchange = () => { ensPrepaMagasin = sel.value; renderEnsPreparation(); };
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-vue]"), (b) => { b.onclick = () => { ensPrepaVue = b.dataset.vue; renderEnsPreparation(); }; });
+
+  if (ensPrepaVue === "ruptures") return dessinerRuptures();
+  if (ensPrepaVue === "bons") return dessinerBons();
+  return dessinerCommandes();
+
+  async function dessinerCommandes() {
+    corps.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+    async function charger() {
+      let r;
+      try { r = await api("/api/" + idm + "/enseigne/preparation?filtre=" + encodeURIComponent(ensPrepaFiltre) + (ensPrepaMagasin ? "&magasin=" + encodeURIComponent(ensPrepaMagasin) : "")); }
+      catch (e) { corps.innerHTML = "<p class='erreur'>" + esc(t("erreurPrefixe") + e.message) + "</p>"; return; }
+      dessiner(r.commandes);
+    }
+    function boutons(o) {
+      if (o.statut === "Annulée") return "<span class='raison'>" + t("ensAnnulee") + (o.raisonAnnulation ? " — " + esc(o.raisonAnnulation) : "") + "</span>";
+      if (o.statut === "Nouvelle") return "<span class='raison'>" + t("ensAttenteClient") + "</span>";
+      const b = (vers, cle, principal) => "<button data-prepa='" + o.id + "' data-vers='" + vers + "'" + (principal ? " class='principal' style='margin-top:0;'" : " style='padding:7px 13px;border:1px solid #d6dbe3;border-radius:6px;background:#fff;'") + ">" + t(cle) + "</button> ";
+      if (o.prepa === "nouvelle") return b("en_preparation", "ensBtnDemarrer", true) + b("prete", "ensBtnPrete");
+      if (o.prepa === "en_preparation") return b("prete", "ensBtnPrete", true);
+      if (o.prepa === "prete") return b("retiree", "ensBtnRetiree", true) + b("en_preparation", "ensBtnReprendre");
+      return "<span class='raison'>" + (o.pointsCredites != null ? t("ensPointsCredites", { n: o.pointsCredites }) : "") + "</span>";
+    }
+    function dessiner(liste) {
+      corps.innerHTML =
+        "<div class='ligne-produit' style='align-items:center;'>" +
+          "<select id='ensSelFiltre'>" + ["actives", "retirees", "annulees", "toutes"].map((f) => "<option value='" + f + "'" + (f === ensPrepaFiltre ? " selected" : "") + ">" + t("ensFiltre_" + f) + "</option>").join("") + "</select>" +
+          "<button id='btnEnsActualiser' style='padding:7px 13px;border:1px solid #d6dbe3;border-radius:6px;background:#fff;'>" + t("ensActualiser") + "</button>" +
+          "<span class='raison'>" + t("ensNbCommandes", { n: liste.length }) + "</span>" +
+        "</div>" +
+        (liste.length
+          ? "<table class='table-donnees' id='ensPrepaListe'><tr><th>" + t("ensColRef") + "</th>" + (plusieurs ? "<th>" + t("ensColMagasin") + "</th>" : "") + "<th>" + t("ensColCreneau") + "</th><th>" + t("ensColClient") + "</th><th>" + t("ensColArticles") + "</th><th>" + t("ensColTotal") + "</th><th>" + t("ensColEtat") + "</th><th></th></tr>" +
+            liste.map((o) =>
+              "<tr><td>" + esc(o.ref) + "</td>" +
+              (plusieurs ? "<td>" + esc(o.magasinNom || o.magasinId) + "</td>" : "") +
+              "<td>" + esc(o.creneau ? o.creneau.libelle : "—") + "</td>" +
+              "<td>" + esc(o.telephone || "") + "</td>" +
+              "<td>" + (o.items || []).map((it) => esc(it.quantite + " × " + it.produit + (it.taille && it.taille !== "-" ? " (" + it.taille + ")" : "") + (it.couleur && it.couleur !== "-" ? " " + it.couleur : ""))).join("<br>") + "</td>" +
+              "<td>" + ensMontant(o.prix) + "</td>" +
+              "<td><strong>" + (o.statut === "Annulée" ? t("ensAnnulee") : ensLibellePrepa(o.prepa)) + "</strong></td>" +
+              "<td>" + boutons(o) + "</td></tr>").join("") + "</table>"
+          : "<p>" + t("ensAucuneCommande") + "</p>");
+      document.getElementById("ensSelFiltre").onchange = (ev) => { ensPrepaFiltre = ev.target.value; charger(); };
+      document.getElementById("btnEnsActualiser").onclick = charger;
+      Array.prototype.forEach.call(corps.querySelectorAll("[data-prepa]"), (btn) => {
+        btn.onclick = async () => {
+          const vers = btn.dataset.vers;
+          if (vers === "retiree" && !confirm(t("ensConfirmRetiree"))) return;
+          btn.disabled = true;
+          try {
+            const r = await api("/api/" + idm + "/enseigne/commandes/" + encodeURIComponent(btn.dataset.prepa) + "/preparation", { method: "PUT", body: JSON.stringify({ etat: vers }) });
+            if (vers === "retiree" && (r.points || (r.bons || []).length)) alert(t("ensRetireeOk", { points: r.points || 0, bons: (r.bons || []).join(", ") || "—" }));
+            charger();
+          } catch (e) { btn.disabled = false; alert(t("erreurPrefixe") + e.message); charger(); }
+        };
+      });
+    }
+    await charger();
+    // Rafraichissement automatique toutes les 30 s tant que la liste est affichee (s'arrete des qu'on quitte l'onglet / la vue).
+    const minuteur = setInterval(() => {
+      if (!document.getElementById("ensPrepaListe") && !document.getElementById("btnEnsActualiser")) { clearInterval(minuteur); return; }
+      if (document.activeElement && document.activeElement.id === "ensSelFiltre") return;
+      charger();
+    }, 30000);
+  }
+
+  function dessinerRuptures() {
+    const mg = d.magasins.filter((m) => m.id === ensPrepaMagasin)[0] || d.magasins[0];
+    const coches = new Set((mg.ruptures || []).map(String));
+    let recherche = "";
+    corps.innerHTML =
+      "<p class='raison'>" + t("ensNoteRuptures") + "</p>" +
+      "<input id='ensRechRupture' placeholder=\"" + esc(t("ensRechercherArticle")) + "\" style='width:100%;max-width:420px;' />" +
+      "<div id='ensListeRuptures'></div>" +
+      "<button id='btnEnsSauverRuptures' class='principal'>" + t("enregistrer") + "</button>";
+    function liste() {
+      const q = recherche.trim().toLowerCase();
+      const trouves = d.produits.filter((p) => !q || (p.nom + " " + p.categorie).toLowerCase().indexOf(q) !== -1);
+      document.getElementById("ensListeRuptures").innerHTML =
+        "<p class='raison'>" + t("ensRupturesCompte", { n: coches.size }) + "</p>" +
+        "<table class='table-donnees'><tr><th>" + t("ensColArticle") + "</th><th>" + t("ensColCategorie") + "</th><th>" + t("ensColEnRupture") + "</th></tr>" +
+        trouves.slice(0, 300).map((p) => "<tr><td>" + esc(p.nom) + "</td><td>" + esc(p.categorie) + "</td><td><input type='checkbox' data-rp='" + esc(p.id) + "'" + (coches.has(String(p.id)) ? " checked" : "") + " /></td></tr>").join("") + "</table>" +
+        (trouves.length > 300 ? "<p class='raison'>" + t("ensAffinerRecherche", { n: trouves.length }) + "</p>" : "");
+      Array.prototype.forEach.call(document.querySelectorAll("[data-rp]"), (el) => { el.onchange = () => { if (el.checked) coches.add(el.dataset.rp); else coches.delete(el.dataset.rp); }; });
+    }
+    liste();
+    document.getElementById("ensRechRupture").oninput = (ev) => { recherche = ev.target.value; liste(); };
+    document.getElementById("btnEnsSauverRuptures").onclick = async () => {
+      try {
+        const r = await api("/api/" + idm + "/enseigne/magasins/" + encodeURIComponent(mg.id) + "/ruptures", { method: "PUT", body: JSON.stringify({ ids: Array.from(coches) }) });
+        mg.ruptures = r.ruptures;
+        alert(t("ensRupturesEnregistrees"));
+      } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  }
+
+  function dessinerBons() {
+    corps.innerHTML =
+      "<p class='raison'>" + t("ensNoteBons") + "</p>" +
+      "<div class='ligne-produit' style='align-items:center;'><input id='ensCodeBon' placeholder=\"BON-XXXXXX\" style='max-width:220px;text-transform:uppercase;' /> <button id='btnEnsVerifierBon' style='padding:7px 13px;border:1px solid #d6dbe3;border-radius:6px;background:#fff;'>" + t("ensBtnVerifierBon") + "</button></div>" +
+      "<div id='ensResultatBon'></div>";
+    let verifie = null;
+    function afficher(msg, ok) { document.getElementById("ensResultatBon").innerHTML = "<p class='" + (ok ? "rappel-ok" : "rappel-echec") + "'>" + msg + "</p>"; }
+    document.getElementById("btnEnsVerifierBon").onclick = async () => {
+      const code = document.getElementById("ensCodeBon").value.trim();
+      if (!code) return;
+      try {
+        const r = await api("/api/" + idm + "/enseigne/bons/verifier", { method: "POST", body: JSON.stringify({ code }) });
+        verifie = r.code;
+        document.getElementById("ensResultatBon").innerHTML =
+          "<p class='rappel-ok'>" + t("ensBonValide", { code: esc(r.code), valeur: ensMontant(r.valeur), date: new Date(r.expireLe).toLocaleDateString(localeCourante()) }) + "</p>" +
+          "<div class='ligne-produit' style='align-items:center;'><input id='ensBonCommande' placeholder=\"" + esc(t("ensBonCommande")) + "\" style='max-width:200px;' /> <button id='btnEnsUtiliserBon' class='principal' style='margin-top:0;'>" + t("ensBtnUtiliserBon") + "</button></div>";
+        document.getElementById("btnEnsUtiliserBon").onclick = async () => {
+          if (!confirm(t("ensConfirmUtiliserBon", { valeur: ensMontant(r.valeur) }))) return;
+          try {
+            const c = document.getElementById("ensBonCommande").value.replace(/\D/g, "");
+            await api("/api/" + idm + "/enseigne/bons/utiliser", { method: "POST", body: JSON.stringify({ code: verifie, commande: c || undefined, magasin: ensPrepaMagasin || undefined }) });
+            afficher(esc(t("ensBonUtilise")), true);
+            document.getElementById("ensCodeBon").value = "";
+          } catch (e) { afficher(esc(e.message), false); }
+        };
+      } catch (e) { verifie = null; afficher(esc(e.message), false); }
+    };
+  }
+}
+
+// ---------------- Fidelite (gestion) ----------------
+async function renderEnsFidelite() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  let d, b;
+  try { [d, b] = await Promise.all([ensCharger(), api("/api/" + marchandActif.id + "/enseigne/bons")]); } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(t("erreurPrefixe") + e.message) + "</p>"; return; }
+  const f = d.fidelite || {};
+  const idm = marchandActif.id;
+  function exemple() {
+    const mpp = ensNombre(document.getElementById("ensFidMontant").value, 0), seuil = ensNombre(document.getElementById("ensFidSeuil").value, 0), val = ensNombre(document.getElementById("ensFidValeur").value, 0);
+    const z = document.getElementById("ensFidExemple");
+    if (!mpp || !seuil || !val) { z.textContent = ""; return; }
+    const depense = mpp * seuil;
+    z.textContent = t("ensFidExemple", { depense: ensMontant(depense), seuil: seuil, valeur: ensMontant(val), pct: (Math.round(1000 * val / depense) / 10).toLocaleString(localeCourante()) });
+  }
+  const statutBon = (x) => x.utilise ? t("ensBonStatutUtilise") : (new Date(x.expireLe).getTime() < Date.now() ? t("ensBonStatutExpire") : t("ensBonStatutValide"));
+  zone.innerHTML =
+    "<h2>" + t("ongletFidelite") + "</h2>" +
+    "<p class='raison'>" + t("ensNoteFidelite") + "</p>" +
+    "<label style='font-weight:400;'><input type='checkbox' id='ensFidActif'" + (f.actif ? " checked" : "") + " /> " + t("ensFidActif") + "</label>" +
+    "<label>" + t("ensFidMontant") + "</label><input type='number' min='1' id='ensFidMontant' value=\"" + esc(f.montantParPoint) + "\" style='width:140px;' />" +
+    "<label>" + t("ensFidSeuil") + "</label><input type='number' min='1' id='ensFidSeuil' value=\"" + esc(f.seuilBon) + "\" style='width:140px;' />" +
+    "<label>" + t("ensFidValeur") + "</label><input type='number' min='1' id='ensFidValeur' value=\"" + esc(f.valeurBon) + "\" style='width:140px;' />" +
+    "<label>" + t("ensFidValidite") + "</label><input type='number' min='1' max='1095' id='ensFidValidite' value=\"" + esc(f.validiteBonJours) + "\" style='width:140px;' />" +
+    "<p class='raison' id='ensFidExemple'></p>" +
+    "<button id='btnEnsSauverFidelite' class='principal'>" + t("enregistrer") + "</button>" +
+    "<h3>" + t("ensH3Bons") + " (" + b.bons.length + ")</h3>" +
+    (b.bons.length
+      ? "<table class='table-donnees'><tr><th>" + t("ensColCode") + "</th><th>" + t("ensColClient") + "</th><th>" + t("ensColValeur") + "</th><th>" + t("ensColCree") + "</th><th>" + t("ensColExpire") + "</th><th>" + t("ensColEtat") + "</th></tr>" +
+        b.bons.map((x) => "<tr><td>" + esc(x.code) + "</td><td>" + esc(x.telephone) + "</td><td>" + ensMontant(x.valeur) + "</td><td>" + formaterDateHeure(x.creeLe) + "</td><td>" + new Date(x.expireLe).toLocaleDateString(localeCourante()) + "</td><td>" + esc(statutBon(x)) + (x.utilise && x.utiliseLe ? " <span class='raison'>" + formaterDateHeure(x.utiliseLe) + "</span>" : "") + "</td></tr>").join("") + "</table>"
+      : "<p>" + t("ensAucunBon") + "</p>");
+  ["ensFidMontant", "ensFidSeuil", "ensFidValeur"].forEach((id) => { document.getElementById(id).addEventListener("input", exemple); });
+  exemple();
+  document.getElementById("btnEnsSauverFidelite").onclick = async () => {
+    try {
+      await api("/api/" + idm + "/enseigne/fidelite", { method: "PUT", body: JSON.stringify({
+        actif: document.getElementById("ensFidActif").checked,
+        montantParPoint: ensNombre(document.getElementById("ensFidMontant").value, 0), seuilBon: ensNombre(document.getElementById("ensFidSeuil").value, 0),
+        valeurBon: ensNombre(document.getElementById("ensFidValeur").value, 0), validiteBonJours: ensNombre(document.getElementById("ensFidValidite").value, 0)
+      }) });
+      alert(t("ensFidEnregistree"));
+      renderEnsFidelite();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
+
+// ---------------- Direction (gestion + role « rapports », lecture seule) ----------------
+let ensDirectionPeriode = "mois";
+async function renderEnsDirection() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  let s;
+  try { s = await api("/api/" + marchandActif.id + "/enseigne/direction?periode=" + encodeURIComponent(ensDirectionPeriode)); } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(t("erreurPrefixe") + e.message) + "</p>"; return; }
+  const a = s.actuel.total, p = s.precedent.total, fid = s.fidelite || {};
+  const comparaison = ensDirectionPeriode !== "tout";
+  function delta(cur, prev, inverse) {
+    if (!comparaison) return "";
+    if (!prev) return "<div class='raison'>" + t("ensVsPrecedent") + " : —</div>";
+    const pct = Math.round(1000 * (cur - prev) / prev) / 10;
+    const bon = inverse ? pct <= 0 : pct >= 0;
+    return "<div class='raison " + (pct === 0 ? "" : (bon ? "rappel-ok" : "rappel-echec")) + "'>" + t("ensVsPrecedent") + " : " + (pct > 0 ? "+" : "") + pct.toLocaleString(localeCourante()) + " %</div>";
+  }
+  const tuile = (valeur, libelle, extra) => "<div class='tuile'><div class='valeur'>" + valeur + "</div><div class='libelle'>" + libelle + "</div>" + (extra || "") + "</div>";
+  const prevMag = {}; (s.precedent.magasins || []).forEach((m) => { prevMag[m.id] = m; });
+  const caMax = Math.max(1, ...s.actuel.magasins.map((m) => m.ca));
+  zone.innerHTML =
+    "<h2>" + t("ongletDirection") + "</h2>" +
+    "<div class='ligne-produit' style='align-items:center;'>" +
+      "<select id='ensSelPeriode'>" + ["jour", "semaine", "mois", "annee", "tout"].map((x) => "<option value='" + x + "'" + (x === ensDirectionPeriode ? " selected" : "") + ">" + t("ensPeriode_" + x) + "</option>").join("") + "</select>" +
+      "<a href='/api/" + encodeURIComponent(marchandActif.id) + "/enseigne/direction?periode=" + encodeURIComponent(ensDirectionPeriode) + "&format=csv'>" + t("ensExportCsv") + "</a>" +
+      "<span class='raison'>" + formaterDateHeure(s.debut) + " → " + formaterDateHeure(s.fin) + "</span>" +
+    "</div>" +
+    "<p class='raison'>" + t("ensNoteDirection") + "</p>" +
+    "<div class='tuiles'>" +
+      tuile(a.commandes, t("ensKpiCommandes"), delta(a.commandes, p.commandes)) +
+      tuile(ensMontant(a.ca), t("ensKpiCa"), delta(a.ca, p.ca)) +
+      tuile(ensMontant(a.panierMoyen), t("ensKpiPanier"), delta(a.panierMoyen, p.panierMoyen)) +
+      tuile(a.retirees, t("ensKpiRetirees"), delta(a.retirees, p.retirees)) +
+      tuile(a.tauxAnnulation.toLocaleString(localeCourante()) + " %", t("ensKpiAnnulation"), delta(a.tauxAnnulation, p.tauxAnnulation, true)) +
+    "</div>" +
+    "<h3>" + t("ensH3Magasins") + "</h3>" +
+    (s.actuel.magasins.length
+      ? "<table class='table-donnees'><tr><th>" + t("ensColMagasin") + "</th><th>" + t("ensKpiCommandes") + "</th><th>" + t("ensKpiRetirees") + "</th><th>" + t("ensColEnCours") + "</th><th>" + t("ensColAnnulees") + "</th><th>" + t("ensKpiCa") + "</th><th>" + t("ensKpiPanier") + "</th><th>" + t("ensColDelai") + "</th>" + (comparaison ? "<th>" + t("ensVsPrecedent") + "</th>" : "") + "</tr>" +
+        s.actuel.magasins.map((m) => {
+          const pm = prevMag[m.id];
+          let cmp = "—";
+          if (comparaison && pm && pm.ca) { const pct = Math.round(1000 * (m.ca - pm.ca) / pm.ca) / 10; cmp = "<span class='" + (pct >= 0 ? "rappel-ok" : "rappel-echec") + "'>" + (pct > 0 ? "+" : "") + pct.toLocaleString(localeCourante()) + " %</span>"; }
+          return "<tr><td><strong>" + esc(m.nom) + "</strong><div class='raison'>" + esc(m.quartier) + "</div>" +
+            "<div style='background:#e3e7ec;border-radius:3px;height:6px;margin-top:4px;'><div style='background:#14213d;border-radius:3px;height:6px;width:" + Math.round(100 * m.ca / caMax) + "%;'></div></div></td>" +
+            "<td>" + m.commandes + "</td><td>" + m.retirees + "</td><td>" + m.enCours + "</td><td>" + m.annulees + " (" + m.tauxAnnulation.toLocaleString(localeCourante()) + " %)</td><td>" + ensMontant(m.ca) + "</td><td>" + ensMontant(m.panierMoyen) + "</td><td>" + (m.delaiPreparationMin == null ? "—" : m.delaiPreparationMin + " min") + "</td>" + (comparaison ? "<td>" + cmp + "</td>" : "") + "</tr>";
+        }).join("") + "</table>"
+      : "<p>" + t("ensAucunMagasin") + "</p>") +
+    "<h3>" + t("ensH3TopProduits") + "</h3>" +
+    (a.topProduits.length
+      ? "<table class='table-donnees'><tr><th>" + t("ensColArticle") + "</th><th>" + t("ensColQuantite") + "</th><th>" + t("ensKpiCa") + "</th></tr>" + a.topProduits.map((x) => "<tr><td>" + esc(x.produit) + "</td><td>" + x.quantite + "</td><td>" + ensMontant(x.montant) + "</td></tr>").join("") + "</table>"
+      : "<p>" + t("ensAucuneVente") + "</p>") +
+    "<h3>" + t("ongletFidelite") + "</h3>" +
+    (fid.actif === false ? "<p class='raison'>" + t("ensFidInactive") + "</p>" : "") +
+    "<div class='tuiles'>" +
+      tuile(fid.clientsInscrits || 0, t("ensKpiInscrits"), "<div class='raison'>" + t("ensNouveauxPeriode", { n: fid.inscritsPeriode || 0 }) + "</div>") +
+      tuile((fid.pointsEnCirculation || 0).toLocaleString(localeCourante()), t("ensKpiPointsCirc"), "<div class='raison'>" + t("ensPointsDistribues", { n: (fid.pointsDistribues || 0).toLocaleString(localeCourante()) }) + "</div>") +
+      tuile(fid.bonsEmis || 0, t("ensKpiBonsEmis")) +
+      tuile(fid.bonsUtilises || 0, t("ensKpiBonsUtilises"), "<div class='raison'>" + ensMontant(fid.valeurBonsUtilises) + "</div>") +
+      tuile(fid.bonsEnAttente || 0, t("ensKpiBonsAttente")) +
+    "</div>";
+  document.getElementById("ensSelPeriode").onchange = (ev) => { ensDirectionPeriode = ev.target.value; renderEnsDirection(); };
 }
 
 demarrer();

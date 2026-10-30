@@ -340,7 +340,7 @@ function vueEntree(entry, type) {
 // Les permissions propres a un volet (catalogue, commandes, caisse, inventaire, rapports -> catalogue ;
 // rendezvous -> service) l'imposent ; les autres (parametres, tableau de bord, simulateur, conversations...)
 // s'appliquent aux deux volets et utilisent `?volet=` (principal par defaut).
-const VOLET_DE_PERMISSION = { catalogue: "catalogue", commandes: "catalogue", caisse: "catalogue", inventaire: "catalogue", rapports: "catalogue", rendezvous: "service" };
+const VOLET_DE_PERMISSION = { preparation: "catalogue", catalogue: "catalogue", commandes: "catalogue", caisse: "catalogue", inventaire: "catalogue", rapports: "catalogue", rendezvous: "service" };
 // Permission employe du role operationnel de chaque type de volet (l'hebergement partage « rendezvous » : reservations).
 // ---- Etape 76 : numeros d'alerte supplementaires (option payante, quota fixe par le SEUL super-administrateur) ----
 // Le numero historique (phoneNotification) reste a part ; les numeros supplementaires n'ont d'effet que dans la limite du quota :
@@ -377,6 +377,8 @@ function creerOptionsEngine(merchantKey) {
   return {
     // Etape 78 : option payante « Vente en gros » (debloquee par le seul super-administrateur) lue en direct par le moteur catalogue.
     venteGrosActive: () => { const e = engines[merchantKey]; return !!(e && e.merchant && e.merchant.optionVenteGros === true); },
+    // Etape 84 : volet « Enseigne » (reseau de magasins), debloque par le seul super-administrateur.
+    enseigneActive: () => { const e = engines[merchantKey]; return !!(e && e.merchant && e.merchant.optionEnseigne === true); },
     // Etape 80 : nombre de photos de chambre / de service envoyees automatiquement (1 = photo de couverture, 3 = toutes) -
     // reglage du SEUL super-administrateur (chaque photo est un message WhatsApp facture). Defaut 1.
     nbPhotosAuto: () => { const e = engines[merchantKey]; return e && e.merchant && e.merchant.nbPhotosAuto === 3 ? 3 : 1; },
@@ -420,12 +422,17 @@ function creerOptionsEngine(merchantKey) {
     // `typeAlerte` choisit le template (voir TEMPLATES_ALERTE_MARCHAND ci-dessus) ; `params` est la liste
     // de valeurs BRUTES (pas encore mises en forme) a inserer dans ses variables, dans l'ordre. C'est ici,
     // et seulement ici, qu'on sait s'il faut passer par un template ou par du texte libre de secours.
-    notifierMarchand: async (typeAlerte, params) => {
+    notifierMarchand: async (typeAlerte, params, extra) => {
       const entry = engines[merchantKey];
       if (!entry) return;
       // Etape 76 : l'alerte part vers le numero historique ET vers les numeros supplementaires autorises par le quota
       // (meme alerte pour tous). L'echec d'un numero n'empeche jamais l'envoi aux autres.
       const destinataires = numerosAlerteDe(entry.merchant);
+      // Etape 84 : numeros d'alerte du MAGASIN concerne (volet enseigne) en plus de ceux du marchand, sans doublon.
+      if (extra && Array.isArray(extra.numeros) && entry.merchant.optionEnseigne === true) {
+        const vus = new Set(destinataires.map(chiffresTel));
+        extra.numeros.forEach((n) => { const c = chiffresTel(n); if (c && !vus.has(c)) { vus.add(c); destinataires.push(String(n).trim()); } });
+      }
       if (!destinataires.length) return;
       const config = TEMPLATES_ALERTE_MARCHAND[typeAlerte];
       if (!config) {
@@ -541,7 +548,7 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 // /api/:id/pos/vente plus bas) - marchand catalogue uniquement, et l'onglet lui-meme reste invisible tant
 // que le super-administrateur n'a pas debloque l'option payante "optionCaissePos" pour ce marchand (voir
 // PUT /api/marchands/:id/options-payantes), meme si l'employe a deja ce role.
-const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable", "remises"];
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable", "remises", "preparation"]; // Etape 84 : « preparation » = espace de preparation d'un magasin (volet enseigne)
 
 // ---------------- Session de connexion /admin (29 septembre 2026) ----------------
 // Remplace l'authentification HTTP Basic (popup native du navigateur - aucune notion de "session" ni de
@@ -599,7 +606,7 @@ function identifierCompte(utilisateur, motDePasse) {
     }
     for (const emp of (m.employes || [])) {
       if (emp.identifiant && utilisateur === emp.identifiant && motDePasseCorrespond(motDePasse, emp.motDePasseHash)) {
-        return { role: "employe", merchantId: id, adminUser: utilisateur, employeId: emp.id, roles: emp.roles || [], plafondRemise: emp.plafondRemise };
+        return { role: "employe", merchantId: id, adminUser: utilisateur, employeId: emp.id, roles: emp.roles || [], plafondRemise: emp.plafondRemise, magasinId: emp.magasinId || null };
       }
     }
   }
@@ -639,7 +646,7 @@ function protegerAcces(req, res, next) {
     const entry = engines[payload.merchantId];
     const emp = entry && (entry.merchant.employes || []).find((e) => e.id === payload.employeId);
     if (emp && emp.identifiant === payload.adminUser) {
-      auth = { role: "employe", merchantId: payload.merchantId, adminUser: payload.adminUser, employeId: emp.id, roles: emp.roles || [], plafondRemise: emp.plafondRemise };
+      auth = { role: "employe", merchantId: payload.merchantId, adminUser: payload.adminUser, employeId: emp.id, roles: emp.roles || [], plafondRemise: emp.plafondRemise, magasinId: emp.magasinId || null };
     }
   }
 
@@ -725,6 +732,15 @@ function identifiantDejaUtilise(identifiant) {
     if ((m.employes || []).some((e) => e.identifiant === identifiant)) return true;
   }
   return false;
+}
+
+// Etape 84 : magasin de rattachement d'un employe (volet enseigne). "" / null = aucun (acces a tous les magasins).
+function lireMagasinEmploye(entry, valeur) {
+  if (valeur === undefined) return { valeur: undefined };
+  if (valeur === null || valeur === "") return { valeur: null };
+  if (!(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue)) return { erreur: "Cette option n'est pas activée pour ce marchand." };
+  const mg = entry.moteurs.catalogue.getEnseigne().magasins.filter((m) => m.id === String(valeur))[0];
+  return mg ? { valeur: mg.id } : { erreur: "Magasin introuvable." };
 }
 
 function genererMotDePasseAleatoire() {
@@ -901,6 +917,13 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/gros/grossistes/:gid/regenerer-code": "grossiste_code_regenere",
   "POST /api/:id/gros/importer": "grossistes_importes",
   "POST /api/:id/pos/gros/identifier": "grossiste_identifie_caisse",
+  "POST /api/:id/enseigne/magasins": "magasin_ajoute",
+  "PUT /api/:id/enseigne/magasins/:mid": "magasin_modifie",
+  "DELETE /api/:id/enseigne/magasins/:mid": "magasin_retire",
+  "PUT /api/:id/enseigne/magasins/:mid/ruptures": "magasin_ruptures_modifiees",
+  "PUT /api/:id/enseigne/fidelite": "fidelite_modifiee",
+  "PUT /api/:id/enseigne/commandes/:orderId/preparation": "commande_preparation_modifiee",
+  "POST /api/:id/enseigne/bons/utiliser": "bon_utilise",
   "PUT /api/:id/numero-whatsapp-public": "numero_public_modifie",
   "PUT /api/:id/filigrane-logo": "filigrane_modifie",
   "POST /api/marchands/:id/tester-alerte": "alerte_testee",
@@ -973,6 +996,19 @@ function detailAuditRequete(code, req) {
       return { grossiste: gr ? gr.nom : p.gid || null };
     }
     case "grossistes_importes": return { fichier: req.file ? req.file.originalname : null };
+    case "magasin_ajoute": return { magasin: b.nom || null };
+    case "magasin_modifie": case "magasin_retire": {
+      const mg = entry && entry.moteurs.catalogue && entry.moteurs.catalogue.getEnseigne().magasins.filter((x) => x.id === p.mid)[0];
+      return { magasin: mg ? mg.nom : p.mid || null, champs: code === "magasin_modifie" ? cleCorpsAudit(b) : undefined };
+    }
+    case "magasin_ruptures_modifiees": return { magasin: p.mid, nbRuptures: Array.isArray(b.ids) ? b.ids.length : null };
+    case "fidelite_modifiee": {
+      const d = {};
+      ["actif", "montantParPoint", "seuilBon", "valeurBon", "validiteBonJours"].forEach((k) => { if (b[k] !== undefined) d[k] = b[k]; });
+      return d;
+    }
+    case "commande_preparation_modifiee": return { commande: p.orderId, statut: b.etat || null };
+    case "bon_utilise": return { bon: b.code ? String(b.code).slice(0, 20) : null, commande: b.commande || null };
     case "vente_caisse_remise": return { tentative: "remise", motif: b.motifRemise || null };
     case "facture_caisse_creee": return { vente: p.orderId };
     case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null, plafondRemise: b.plafondRemise !== undefined ? b.plafondRemise : null };
@@ -1308,7 +1344,9 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     // admin.html) ET POST /api/:id/pos/vente refuse toute action (voir plus bas).
     optionCaissePos: e.merchant.optionCaissePos === true,
     // Etape 78 : « Vente en gros » (option payante, debloquee par le seul super-administrateur ; invisible cote marchand tant que fermee).
-    optionVenteGros: e.merchant.optionVenteGros === true
+    optionVenteGros: e.merchant.optionVenteGros === true,
+    // Etape 84 : volet « Enseigne » (reseau de magasins) - debloque par le seul super-administrateur ; invisible cote marchand tant que ferme.
+    optionEnseigne: e.merchant.optionEnseigne === true
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -1429,7 +1467,7 @@ app.get("/api/:id/employes", protegerAcces, (req, res) => {
   if (!verifierPortee(req, res, id)) return;
   if (!estGestionnaireDuMarchand(req, id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   const entry = getMarchandOu404(req, res); if (!entry) return;
-  res.json((entry.merchant.employes || []).map((e) => ({ id: e.id, nom: e.nom, identifiant: e.identifiant, roles: e.roles || [], plafondRemise: (e.roles || []).indexOf("remises") !== -1 ? remisesLib.plafondEmploye(e.plafondRemise) : null })));
+  res.json((entry.merchant.employes || []).map((e) => ({ id: e.id, nom: e.nom, identifiant: e.identifiant, roles: e.roles || [], magasinId: e.magasinId || null, plafondRemise: (e.roles || []).indexOf("remises") !== -1 ? remisesLib.plafondEmploye(e.plafondRemise) : null })));
 });
 
 app.post("/api/:id/employes", protegerAcces, async (req, res) => {
@@ -1438,9 +1476,11 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   if (!estGestionnaireDuMarchand(req, id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
   const entry = getMarchandOu404(req, res); if (!entry) return;
 
-  const { nom, identifiant, motDePasse, roles, plafondRemise } = req.body || {};
+  const { nom, identifiant, motDePasse, roles, plafondRemise, magasinId } = req.body || {};
   const plafondLu = lirePlafondRemise(plafondRemise);
   if (plafondLu.erreur) return res.status(400).json({ erreur: plafondLu.erreur });
+  const magasinLu = lireMagasinEmploye(entry, magasinId);
+  if (magasinLu.erreur) return res.status(400).json({ erreur: magasinLu.erreur });
   if (!nom || !String(nom).trim()) return res.status(400).json({ erreur: "nom requis." });
   if (!identifiant || !String(identifiant).trim()) return res.status(400).json({ erreur: "identifiant requis." });
   if (!motDePasse || String(motDePasse).length < 6) return res.status(400).json({ erreur: "motDePasse requis (6 caractères minimum)." });
@@ -1448,7 +1488,7 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
   if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
   const rolesIncompatibles = rolesDemandes.filter((r) =>
-    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport)
+    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue))
   );
   if (rolesIncompatibles.length) {
     return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -1472,13 +1512,14 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
     roles: rolesDemandes
   };
   if (rolesDemandes.indexOf("remises") !== -1) employe.plafondRemise = plafondLu.valeur;
+  if (magasinLu.valeur) employe.magasinId = magasinLu.valeur;
   const ajoute = await db.addEmploye(id, employe);
   if (!ajoute) return res.status(404).json({ erreur: "Marchand introuvable." });
   entry.merchant.employes = entry.merchant.employes || [];
   entry.merchant.employes.push(employe);
 
   console.log(`[${id}] Nouvel employé créé par ${req.auth.adminUser} : ${employe.identifiant} (${employe.roles.join(", ")}).`);
-  res.status(201).json({ id: employe.id, nom: employe.nom, identifiant: employe.identifiant, roles: employe.roles, plafondRemise: employe.plafondRemise !== undefined ? employe.plafondRemise : null });
+  res.status(201).json({ id: employe.id, nom: employe.nom, identifiant: employe.identifiant, roles: employe.roles, magasinId: employe.magasinId || null, plafondRemise: employe.plafondRemise !== undefined ? employe.plafondRemise : null });
 });
 
 // Modifie un employe existant :
@@ -1500,7 +1541,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
 
   if (req.auth.role === "employe") {
     if (req.auth.employeId !== employeId) return res.status(403).json({ erreur: "Vous ne pouvez modifier que votre propre compte." });
-    if (req.body && (req.body.nom !== undefined || req.body.roles !== undefined || req.body.plafondRemise !== undefined)) {
+    if (req.body && (req.body.nom !== undefined || req.body.roles !== undefined || req.body.plafondRemise !== undefined || req.body.magasinId !== undefined)) {
       return res.status(403).json({ erreur: "Seul le propriétaire du marchand peut changer le nom ou les rôles d'un compte employé." });
     }
     const { newPassword } = req.body || {};
@@ -1508,9 +1549,12 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
     motDePasseEnClair = String(newPassword);
     patch.motDePasseHash = bcrypt.hashSync(motDePasseEnClair, 10);
   } else if (estGestionnaireDuMarchand(req, id)) {
-    const { nom, roles, newPassword, genererMotDePasse, plafondRemise } = req.body || {};
+    const { nom, roles, newPassword, genererMotDePasse, plafondRemise, magasinId } = req.body || {};
     const plafondLu = lirePlafondRemise(plafondRemise);
     if (plafondLu.erreur) return res.status(400).json({ erreur: plafondLu.erreur });
+    const magasinLu = lireMagasinEmploye(entry, magasinId);
+    if (magasinLu.erreur) return res.status(400).json({ erreur: magasinLu.erreur });
+    if (magasinLu.valeur !== undefined) patch.magasinId = magasinLu.valeur;
     if (nom !== undefined) {
       if (!String(nom).trim()) return res.status(400).json({ erreur: "Le nom ne peut pas être vide." });
       patch.nom = String(nom).trim();
@@ -1519,7 +1563,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
       const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
       if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
       const rolesIncompatibles = rolesDemandes.filter((r) =>
-        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport)
+        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue))
       );
       if (rolesIncompatibles.length) {
         return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -1547,9 +1591,10 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
   const maj = await db.updateEmploye(id, employeId, patch);
   if (!maj) return res.status(404).json({ erreur: "Employé introuvable." });
   Object.assign(employeActuel, maj);
+  if (patch.magasinId === null) delete employeActuel.magasinId; // Etape 84
 
   console.log(`[${id}] Compte employé '${employeId}' mis à jour par ${req.auth.adminUser}.`);
-  res.json({ id: maj.id, nom: maj.nom, identifiant: maj.identifiant, roles: maj.roles, plafondRemise: maj.plafondRemise !== undefined ? maj.plafondRemise : null, nouveauMotDePasse: motDePasseEnClair || undefined });
+  res.json({ id: maj.id, nom: maj.nom, identifiant: maj.identifiant, roles: maj.roles, magasinId: maj.magasinId || null, plafondRemise: maj.plafondRemise !== undefined ? maj.plafondRemise : null, nouveauMotDePasse: motDePasseEnClair || undefined });
 });
 
 app.delete("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
@@ -1593,7 +1638,7 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, nbNumerosNotification, nbPhotosAuto } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, nbNumerosNotification, nbPhotosAuto } = req.body || {};
   const patch = {};
   // Etape 80 : photos envoyees automatiquement (1 ou 3). Reserve au super-administrateur (toute la route l'est).
   if (nbPhotosAuto !== undefined) {
@@ -1623,6 +1668,7 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   }
   if (optionCaissePos !== undefined) patch.optionCaissePos = !!optionCaissePos;
   if (optionVenteGros !== undefined) patch.optionVenteGros = !!optionVenteGros;
+  if (optionEnseigne !== undefined) patch.optionEnseigne = optionEnseigne === true; // Etape 84 (toute la route est reservee au super-administrateur)
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
   const maj = await db.updateMerchantFields(req.params.id, patch);
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
@@ -1632,10 +1678,11 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionFacturationIzyfacture = maj.optionFacturationIzyfacture;
   entry.merchant.optionCaissePos = maj.optionCaissePos;
   entry.merchant.optionVenteGros = maj.optionVenteGros === true;
+  entry.merchant.optionEnseigne = maj.optionEnseigne === true;
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
   entry.merchant.nbPhotosAuto = maj.nbPhotosAuto === 3 ? 3 : 1;
-  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1 });
+  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, enseigne=${maj.optionEnseigne === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1 });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -3362,6 +3409,141 @@ app.put("/api/:id/numeros-notification", protegerAcces, async (req, res) => {
   res.json({ id: req.params.id, numeros: maj.numerosNotificationSupp, quota });
 });
 
+// -- Etape 84 : VOLET ENSEIGNE (reseau de magasins derriere un seul numero WhatsApp) --
+// Option payante debloquee par le SEUL super-administrateur (options-payantes) : tant qu'elle est fermee, toutes ces routes refusent
+// (403) et l'interface /admin n'affiche rien. Trois niveaux d'acces :
+//   - « gestion »   : proprietaire du marchand (et super-administrateur) : magasins, regles de fidelite, bons, tout le reste ;
+//   - « direction » : proprietaire + employes au role « rapports » : vue Direction (lecture seule) ;
+//   - « magasin »   : proprietaire + employes au role « preparation » (rattaches a UN magasin, ou a tous s'ils n'en ont pas) :
+//                     espace de preparation, ruptures de leur magasin, validation des bons.
+function entreeEnseigne(req, res, mode) {
+  if (!verifierPortee(req, res, req.params.id)) return null;
+  let entry = getMarchandOu404(req, res); if (!entry) return null;
+  if (entry.moteurs && entry.moteurs.catalogue && entry.engine.type !== "catalogue") entry = vueEntree(entry, "catalogue");
+  if (entry.engine.type !== "catalogue") { res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." }); return null; }
+  if (!entry.merchant.optionEnseigne) { res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." }); return null; }
+  const gest = estGestionnaireDuMarchand(req, req.params.id);
+  const roles = req.auth.roles || [];
+  const ok = mode === "gestion" ? gest : mode === "direction" ? (gest || roles.indexOf("rapports") !== -1) : (gest || roles.indexOf("preparation") !== -1);
+  if (!ok) { res.status(403).json({ erreur: mode === "gestion" ? "Réservé au propriétaire." : "Vous n'avez pas accès à cette fonctionnalité." }); return null; }
+  return entry;
+}
+// Un employe rattache a un magasin ne voit et ne modifie que celui-ci.
+function magasinPermis(req, magasinId) {
+  if (req.auth.role !== "employe") return true;
+  const emp = (engines[req.params.id].merchant.employes || []).find((e) => e.id === req.auth.employeId);
+  return !emp || !emp.magasinId || emp.magasinId === magasinId;
+}
+function magasinImpose(req) {
+  if (req.auth.role !== "employe") return null;
+  const emp = (engines[req.params.id].merchant.employes || []).find((e) => e.id === req.auth.employeId);
+  return (emp && emp.magasinId) || null;
+}
+
+app.get("/api/:id/enseigne", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "magasin"); if (!entry) return;
+  const e = entry.engine.getEnseigne();
+  const gest = estGestionnaireDuMarchand(req, req.params.id);
+  const impose = magasinImpose(req);
+  const sortie = {
+    gestionnaire: gest,
+    magasins: e.magasins.filter((m) => !impose || m.id === impose).map((m) => gest ? m : { id: m.id, nom: m.nom, quartier: m.quartier, adresse: m.adresse, actif: m.actif, ruptures: m.ruptures }),
+    produits: entry.engine.getCatalog().map((p) => ({ id: p.id, nom: p.nom, categorie: p.categorie || "" }))
+  };
+  if (gest) sortie.fidelite = e.fidelite;
+  res.json(sortie);
+});
+app.post("/api/:id/enseigne/magasins", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "gestion"); if (!entry) return;
+  const r = entry.engine.ensAjouterMagasin(req.body || {});
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.status(201).json(r.magasin);
+});
+app.put("/api/:id/enseigne/magasins/:mid", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "gestion"); if (!entry) return;
+  const b = Object.assign({}, req.body || {}); delete b.ruptures; delete b.id; // les ruptures ont leur propre route
+  const r = entry.engine.ensModifierMagasin(req.params.mid, b);
+  if (r.erreur) return res.status(r.erreur === "Magasin introuvable." ? 404 : 400).json({ erreur: r.erreur });
+  res.json(r.magasin);
+});
+app.delete("/api/:id/enseigne/magasins/:mid", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "gestion"); if (!entry) return;
+  const r = entry.engine.ensRetirerMagasin(req.params.mid);
+  if (r.erreur) return res.status(r.erreur === "Magasin introuvable." ? 404 : 409).json({ erreur: r.erreur });
+  res.json({ id: req.params.mid, supprime: true });
+});
+app.put("/api/:id/enseigne/magasins/:mid/ruptures", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "magasin"); if (!entry) return;
+  if (!magasinPermis(req, req.params.mid)) return res.status(403).json({ erreur: "Ce magasin n'est pas le vôtre." });
+  const ids = (req.body || {}).ids;
+  if (!Array.isArray(ids)) return res.status(400).json({ erreur: "ids (liste d'identifiants d'articles) requis." });
+  const connus = new Set(entry.engine.getCatalog().map((p) => String(p.id)));
+  const r = entry.engine.ensDefinirRuptures(req.params.mid, ids.map(String).filter((x) => connus.has(x)));
+  if (r.erreur) return res.status(404).json({ erreur: r.erreur });
+  res.json({ id: req.params.mid, ruptures: r.magasin.ruptures });
+});
+app.put("/api/:id/enseigne/fidelite", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "gestion"); if (!entry) return;
+  const b = req.body || {}; const patch = {};
+  if (b.actif !== undefined) patch.actif = b.actif === true;
+  for (const [cle, min, max] of [["montantParPoint", 1, 1000000], ["seuilBon", 1, 1000000], ["valeurBon", 1, 100000000], ["validiteBonJours", 1, 1095]]) {
+    if (b[cle] === undefined) continue;
+    const n = Number(b[cle]);
+    if (!Number.isInteger(n) || n < min || n > max) return res.status(400).json({ erreur: cle + " doit être un entier entre " + min + " et " + max + "." });
+    patch[cle] = n;
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
+  res.json(entry.engine.ensDefinirFidelite(patch).fidelite);
+});
+app.get("/api/:id/enseigne/preparation", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "magasin"); if (!entry) return;
+  const impose = magasinImpose(req);
+  const mid = impose || (req.query.magasin ? String(req.query.magasin) : null);
+  const filtre = ["actives", "retirees", "annulees", "toutes"].indexOf(String(req.query.filtre)) !== -1 ? String(req.query.filtre) : "actives";
+  res.json({ commandes: entry.engine.ensCommandesPreparation(mid, filtre) });
+});
+app.put("/api/:id/enseigne/commandes/:orderId/preparation", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "magasin"); if (!entry) return;
+  const o = entry.engine.getOrderById(req.params.orderId);
+  if (!o || !o.magasinId || o.source === "simulateur") return res.status(404).json({ erreur: "Commande introuvable." });
+  if (!magasinPermis(req, o.magasinId)) return res.status(403).json({ erreur: "Cette commande n'appartient pas à votre magasin." });
+  const etat = String((req.body || {}).etat || "");
+  const r = entry.engine.ensChangerPrepa(req.params.orderId, etat, req.auth.adminUser);
+  if (r.erreur) return res.status(409).json({ erreur: r.erreur });
+  res.json({ id: r.order.id, prepa: r.order.prepa, statut: r.order.statut, points: r.credit ? r.credit.credit : null, bons: r.credit ? r.credit.bons.map((b) => b.code) : [] });
+});
+app.post("/api/:id/enseigne/bons/verifier", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "magasin"); if (!entry) return;
+  const r = entry.engine.ensVerifierBon((req.body || {}).code);
+  if (r.erreur) return res.status(404).json({ erreur: r.erreur });
+  res.json({ code: r.bon.code, valeur: r.bon.valeur, expireLe: r.bon.expireLe });
+});
+app.post("/api/:id/enseigne/bons/utiliser", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "magasin"); if (!entry) return;
+  const b = req.body || {};
+  const r = entry.engine.ensUtiliserBon(b.code, { par: req.auth.adminUser, commande: b.commande ? Number(b.commande) || null : null, magasinId: magasinImpose(req) || (b.magasin ? String(b.magasin) : null) });
+  if (r.erreur) return res.status(409).json({ erreur: r.erreur });
+  res.json({ code: r.bon.code, valeur: r.bon.valeur, utilise: true });
+});
+app.get("/api/:id/enseigne/bons", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "gestion"); if (!entry) return;
+  res.json({ bons: entry.engine.ensListeBons(200) });
+});
+app.get("/api/:id/enseigne/direction", protegerAcces, (req, res) => {
+  const entry = entreeEnseigne(req, res, "direction"); if (!entry) return;
+  const periode = ["jour", "semaine", "mois", "annee", "tout"].indexOf(String(req.query.periode)) !== -1 ? String(req.query.periode) : "mois";
+  const s = entry.engine.ensStatistiques(periode);
+  if (String(req.query.format || "").toLowerCase() === "csv") {
+    const lignes = [["Magasin", "Quartier", "Commandes", "Retirées", "En cours", "Annulées", "Taux d'annulation (%)", "CA retiré (FCFA)", "Panier moyen (FCFA)", "Délai de préparation (min)"]];
+    s.actuel.magasins.forEach((m) => lignes.push([m.nom, m.quartier, m.commandes, m.retirees, m.enCours, m.annulees, m.tauxAnnulation, m.ca, m.panierMoyen, m.delaiPreparationMin == null ? "" : m.delaiPreparationMin]));
+    const t = s.actuel.total; lignes.push(["TOTAL", "", t.commandes, t.retirees, t.enCours, t.annulees, t.tauxAnnulation, t.ca, t.panierMoyen, ""]);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", "attachment; filename=\"direction-" + periode + ".csv\"");
+    return res.send("﻿" + lignes.map((l) => l.map(csvCellule).join(";")).join("\n"));
+  }
+  res.json(s);
+});
+
 // -- Etape 78 : VENTE EN GROS (option payante, debloquee par le SEUL super-administrateur - voir options-payantes) --
 // Tout ce qui concerne la grille, la liste des grossistes et leurs codes est reserve au PROPRIETAIRE (et au super-administrateur) ;
 // un employe n'y a jamais acces. A la caisse, l'employe ne fait que chercher UN grossiste selon les criteres fixes par le
@@ -3863,6 +4045,10 @@ function compacterReponseSimulateur(moteur, resultat) {
     }
     if (!resultat || !resultat.reponse || !moteur || moteur.type !== "catalogue" || typeof moteur.getEtatSession !== "function") return resultat;
     const etat = moteur.getEtatSession("SIMULATEUR"); // numero reserve, voir PHONE_SIMULATEUR dans conversation.js
+    if (etat && etat.menuEnseigne) { // Etape 84 : le Simulateur ne montre pas les listes cliquables : options en texte numerote
+      const opts = texteOptionsEnseigne(etat);
+      return opts ? Object.assign({}, resultat, { reponse: resultat.reponse + "\n\n" + opts }) : resultat;
+    }
     if (!etat || etat.stage !== "idle" || !etat.pretPourChoix) return resultat;
     return Object.assign({}, resultat, { reponse: compacterTexteMenuCatalogue({ engine: moteur }, resultat.reponse, etat) });
   } catch (e) {
@@ -4506,6 +4692,8 @@ function lignesMonPanier(marchand, etat) {
     if (n > 0) out.push({ id: ID_PANIER, title: tW(etat, "Mon panier (" + n + ")", "My cart (" + n + ")"), description: tW(etat, "Voir, modifier ou valider", "View, edit or complete") });
     // Etape 73 : « Ma commande » (uniquement si le client a une commande en cours) juste apres « Mon panier ».
     if (etat && etat.nbCommandesEnCours > 0) out.push(ligneMaCommande(etat));
+    // Etape 84 : volet enseigne - un seul point d'entree vers favoris, derniere commande, points et changement de magasin.
+    if (etat && etat.ensDispo) out.push({ id: "IZY_ENS_ESPACE", title: tW(etat, "⭐ Mon espace", "⭐ My space"), description: tW(etat, "Favoris, points, magasin", "Favourites, points, store") });
     // Etape 78 : « Tarifs de gros » (option payante ouverte ET grille renseignee) - visible par tous les clients, pour les inciter a devenir grossistes.
     if (etat && etat.grosDispo) out.push({ id: ID_TARIFS_GROS, title: tW(etat, "Tarifs de gros", "Wholesale prices"), description: tW(etat, "Prix selon la quantité", "Prices by quantity") });
     return out;
@@ -4829,6 +5017,7 @@ function resoudreTexteInteractif(marchand, interactive, idForce) {
   if (id === ID_HUMAIN) return "un conseiller";
   if (id === ID_CONTACT_ECRIT) return "réponse écrite ici";
   if (id === ID_CONTACT_APPEL) return "être rappelé";
+  if (id.indexOf("IZY_ENS_") === 0) return id; // Etape 84 : le volet enseigne lit directement les identifiants de ses lignes et boutons
   if (id.indexOf(PREFIXE_TRANSPORT) === 0) return id; // Etape 74 : le moteur transport lit directement les identifiants de ses lignes et boutons
   if (id === ID_OUI) return "oui";
   if (id === ID_NON) return "non";
@@ -4951,6 +5140,30 @@ async function envoyerMenuTransport(marchand, destinataire, phoneNumberId, texte
   return true;
 }
 
+// Etape 84 : options du menu du volet enseigne en texte numerote (Simulateur de /admin, et repli si WhatsApp refuse la liste).
+function texteOptionsEnseigne(etat) {
+  const m = etat && etat.menuEnseigne;
+  if (!m) return "";
+  const lignes = m.type === "boutons" ? (m.boutons || []).map((b) => ({ title: b.title })) : (m.lignes || []);
+  return lignes.map((r, i) => (i + 1) + ". " + r.title + (r.description ? " — " + r.description : "")).join("\n");
+}
+async function envoyerMenuEnseigne(marchand, destinataire, phoneNumberId, texte, etat) {
+  const m = etat.menuEnseigne;
+  if (m.type === "boutons") {
+    const ok = await envoyerBoutonsWhatsApp(destinataire, phoneNumberId, texte, (m.boutons || []).slice(0, 3).map((b) => ({ id: b.id, title: tronquerTexte(b.title, 20) })));
+    if (ok) return true;
+  } else {
+    const rows = (m.lignes || []).map((r) => ({ id: r.id, title: tronquerTexte(r.title, 24), description: tronquerTexte(r.description || "", 72) }));
+    ligneMenuPrincipal(marchand, etat).forEach((r) => rows.push(r));
+    rows.push({ id: ID_HUMAIN, title: tW(etat, "Contacter un conseiller", "Contact an advisor"), description: tW(etat, "Être mis en relation avec l'équipe", "Get connected with our team") });
+    const ok = await envoyerListeWhatsApp(destinataire, phoneNumberId, texte, tronquerTexte(m.bouton || tW(etat, "Choisir", "Choose"), 20), [{ title: tronquerTexte(m.section || m.bouton || "Menu", 24), rows: rows.slice(0, 10) }]);
+    if (ok) return true;
+  }
+  // Repli : texte numerote (le moteur comprend le numero ou le libelle).
+  await envoyerMessageWhatsApp(destinataire, texte + "\n\n" + texteOptionsEnseigne(etat), phoneNumberId);
+  return true;
+}
+
 // Tente d'accompagner `texte` (la reponse deja calculee par le moteur) d'un menu cliquable adapte a l'etat
 // de la conversation. Renvoie true si un message interactif a bien ete envoye (rien d'autre a faire),
 // false s'il n'y a pas de menu pertinent ICI ou si l'envoi a echoue (l'appelant se rabat alors sur
@@ -4989,6 +5202,9 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
 
   // Etape 74 : le moteur transport fournit lui-meme la liste (ou les boutons) de l'etape en cours.
   if (marchand.engine.type === "transport") return envoyerMenuTransport(marchand, destinataire, phoneNumberId, texte, etat);
+
+  // Etape 84 : le volet enseigne fournit lui-meme sa liste (magasin, jour, heure, favoris...) ou ses boutons (fidelite).
+  if (etat.menuEnseigne && marchand.engine.type === "catalogue") return envoyerMenuEnseigne(marchand, destinataire, phoneNumberId, texte, etat);
 
   if (etat.stage === "idle" && etat.pretPourChoix) {
     const estCatalogue = marchand.engine.type === "catalogue";
@@ -5080,11 +5296,12 @@ async function essayerEnvoyerMenuInteractif(marchand, destinataire, phoneNumberI
   // Vue panier : une ligne "retirer" par article (voir etat.cart, fourni par conversation.js), plus la
   // reprise des achats ou la validation de la commande.
   if (etat.stage === "viewing_cart" && etat.cart && etat.cart.length) {
-    const rows = etat.cart.slice(0, etat.editOrderRef ? 5 : 6).map((it, i) => ({
+    const rows = etat.cart.slice(0, (etat.editOrderRef ? 5 : 6) - (etat.ensDispo ? 1 : 0)).map((it, i) => ({
       id: PREFIXE_RETIRER_PANIER + i,
       title: tronquerTexte(it.produit, 24),
       description: tronquerTexte(tW(etat, "🗑️ Retirer — ", "🗑️ Remove — ") + libelleVarianteClient(it.couleur, it.taille) + " × " + it.quantite + " — " + sh.formatFcfa(it.prixUnitaire * it.quantite), 72)
     }));
+    if (etat.ensDispo) rows.push({ id: "IZY_ENS_FAVAJOUT", title: tronquerTexte(tW(etat, "⭐ Mettre en favoris", "⭐ Save as favourites"), 24), description: tW(etat, "Recommander en deux touches", "Reorder in two taps") });
     rows.push({ id: ID_PANIER_CONTINUER, title: tronquerTexte(tW(etat, "🛍️ Continuer mes achats", "🛍️ Keep shopping"), 24) });
     rows.push({ id: ID_PANIER_TERMINER, title: tronquerTexte(etat.editOrderRef ? tW(etat, "✅ Valider les changements", "✅ Save changes") : tW(etat, "✅ Terminer ma commande", "✅ Complete my order"), 24) });
     if (etat.editOrderRef) rows.push({ id: ID_CMD_ANNULER_EDIT, title: tronquerTexte(tW(etat, "Annuler la modification", "Cancel the edit"), 24), description: tronquerTexte(tW(etat, "Garder " + etat.editOrderRef + " telle quelle", "Keep " + etat.editOrderRef + " unchanged"), 72) });
