@@ -1762,6 +1762,15 @@ function createServiceEngine(merchantKey, options) {
     // Copie avec `rappelStatut` calcule (voir statutRappel) pour que /admin affiche l'etat du rappel.
     return state.appointments.filter((a) => a.source !== "simulateur").map((a) => Object.assign({}, a, { rappelStatut: statutRappel(a, maintenant) }));
   }
+  // Etape 85 : « Tout marquer comme vu » - les elements Confirme restent comptes dans la pastille de l'onglet tant qu'ils n'ont pas
+  // change de statut ou ete marques vus. Renvoie le nombre d'elements marques.
+  function marquerVus() {
+    if (!state) return 0;
+    let n = 0; const iso = new Date().toISOString();
+    (state.appointments || []).forEach((x) => { if (x.source !== "simulateur" && x.statut === "Confirmé" && !x.vuLe) { x.vuLe = iso; n++; } });
+    if (n) saveState();
+    return n;
+  }
   function getServices() { return state ? state.services : []; }
   function getSettings() { return state ? state.settings : {}; }
 
@@ -1840,6 +1849,9 @@ function createServiceEngine(merchantKey, options) {
         } catch (erreur) {
           resultat = { ok: false, erreur: String((erreur && erreur.message) || erreur) };
         }
+        // Etape 85 : rappel REPORTE (option « rappels de RDV » fermee et fenetre de 24 h fermee) : aucun essai compte, aucune erreur ;
+        // si le client ecrit avant le rendez-vous, un prochain passage l'enverra gratuitement en texte libre.
+        if (resultat && resultat.reporte) continue;
         a.rappelTentatives = (a.rappelTentatives || 0) + 1;
         a.rappelDerniereTentativeISO = new Date().toISOString();
         if (resultat && resultat.ok !== false) {
@@ -2126,6 +2138,7 @@ function createServiceEngine(merchantKey, options) {
     enregistrerEtatIzyFacture,
     handleMessage,
     getAppointments,
+    marquerVus,
     getServices,
     getSettings,
     updateSettings,

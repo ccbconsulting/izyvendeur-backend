@@ -24,6 +24,7 @@ const createHebergementEngine = require("./conversationHebergement");
 const createTransportEngine = require("./conversationTransport");
 const importTransport = require("./importTransport");
 const photosElements = require("./photosElements"); // Etape 77 : photos des services et des chambres (3 max)
+const alertes = require("./alertes"); // Etape 85 : compteurs « a traiter » + regroupement des alertes
 const consoMeta = require("./consoMeta"); // Etape 80 : estimation de la consommation de messagerie Meta (super-administrateur seul)
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
@@ -189,6 +190,16 @@ const TEMPLATES_ALERTE_MARCHAND = {
       "\nPrix : " + params[3] + "\nClient : " + params[4] + "\nTéléphone : " + params[5] +
       "\n\nConsultez /admin, onglet Rendez-vous, pour le suivre."
   },
+  // Etape 85 : resume de plusieurs evenements regroupes (option « alertes WhatsApp », voir alertes.js). Modele Meta a creer :
+  // "izyvendeur_alerte_resume" (fr), 2 variables nommees {{nombre}} et {{detail}}. Texte suggere : "{{nombre}} éléments à traiter :
+  // {{detail}}. Consultez /admin pour les traiter." Categorie Utilitaire.
+  resume: {
+    nom: "izyvendeur_alerte_resume",
+    langue: "fr",
+    // params: [nombre, detail]
+    parametresNoms: ["nombre", "detail"],
+    texteLibreRepli: (params) => params[0] + " éléments à traiter : " + params[1] + ".\n\nConsultez /admin pour les traiter."
+  },
   // Etape 61 : alerte quand une CLIENTE annule ou deplace son rendez-vous (WhatsApp). Un seul modele Meta pour les
   // deux cas, nomme EXACTEMENT "izyvendeur_alerte_rdv_change" (langue fr), 7 variables dans cet ordre.
   rdv_modifie: {
@@ -227,6 +238,53 @@ const TEMPLATES_CLIENT = {
 // ---------------- Registre des marchands + moteurs de conversation ----------------
 // engines[merchantId] = { merchant, engine }  -- engine expose toujours handleMessage(fromPhone, texte),
 // quel que soit son type (catalogue ou service), ce qui garde le webhook simple.
+// ---------------- Etape 85 : reglages de notification, fenetre de 24 h, regroupement des alertes ----------------
+// Plafond du regroupement pour un marchand ENSEIGNE : la moitie du plus petit delai minimum de retrait de ses magasins (une alerte
+// ne doit pas attendre plus longtemps que la moitie du temps dont le magasin dispose pour preparer). null = pas de plafond.
+function plafondRegroupementMinutes(entry) {
+  try {
+    if (!entry || !entry.merchant || entry.merchant.optionEnseigne !== true || !entry.moteurs || !entry.moteurs.catalogue) return null;
+    const e = entry.moteurs.catalogue.getEnseigne();
+    const delais = ((e && e.magasins) || []).map((mg) => Number(mg && mg.creneaux && mg.creneaux.delaiMinMinutes)).filter((n) => Number.isFinite(n) && n >= 0);
+    return delais.length ? Math.floor(Math.min.apply(null, delais) / 2) : null;
+  } catch (e) { return null; }
+}
+function reglagesNotifEffectifs(entry) { return db.reglagesNotifDe(entry && entry.merchant, plafondRegroupementMinutes(entry)); }
+// Ce que voit /admin : le super-administrateur voit tout ; le marchand ne voit le bloc « regroupement » QUE si le super-administrateur
+// a ouvert l'option (sinon null : rien a afficher), et jamais les drapeaux des options eux-memes.
+function vueReglagesNotif(entry, role) {
+  const r = reglagesNotifEffectifs(entry);
+  const regroupement = {
+    minutes: r.regroupementMinutes, minimumMinutes: r.regroupementMinimumMinutes, plafondMinutes: r.plafondMinutes,
+    intervalleEffectifMinutes: r.intervalleEffectifMinutes, alertesMaxParJour: alertes.alertesMaxParJour(r.intervalleEffectifMinutes),
+    choix: db.CHOIX_REGROUPEMENT_MINUTES.filter((c) => c >= r.regroupementMinimumMinutes && (r.plafondMinutes === null || c <= r.plafondMinutes))
+  };
+  if (role === "superadmin") return { alertesWhatsapp: r.alertesWhatsapp, rappelsRdv: r.rappelsRdv, regroupement };
+  return r.alertesWhatsapp ? { regroupement } : null;
+}
+
+// Fenetre de service de 24 h : seule une reponse DU CLIENT l'ouvre. On retient l'heure de son dernier message (memoire, alimentee
+// par le webhook) et, apres un redemarrage, on la relit dans le journal des conversations. Inconnue => consideree fermee (le plus
+// sur : on n'envoie rien plutot que de payer un message).
+const FENETRE_SERVICE_MS = 24 * 3600 * 1000;
+const dernierMessageClient = {}; // `${marchand}|${telephone}` -> ms
+function noterMessageClient(merchantId, telephone) { if (merchantId && telephone) dernierMessageClient[merchantId + "|" + telephone] = Date.now(); }
+async function fenetreServiceOuverte(merchantId, telephone) {
+  if (!telephone) return false;
+  const cle = merchantId + "|" + telephone;
+  let ms = dernierMessageClient[cle];
+  if (!ms) {
+    try {
+      const iso = await db.dernierMessageClientISO(merchantId, telephone);
+      ms = iso ? new Date(iso).getTime() : 0;
+      if (ms) dernierMessageClient[cle] = ms;
+    } catch (e) { ms = 0; }
+  }
+  return !!ms && Date.now() - ms < FENETRE_SERVICE_MS;
+}
+
+const filesAlertes = {}; // marchand -> file de regroupement (alertes.creerFileAlertes)
+
 const engines = {};
 const phoneNumberIndex = {}; // phone_number_id WhatsApp -> merchantId
 
@@ -404,10 +462,19 @@ function creerOptionsEngine(merchantKey) {
       if (!entry) return { ok: false, erreur: "Marchand introuvable" };
       const phoneNumberId = entry.merchant.phoneNumberId;
       if (!phoneNumberId || !WHATSAPP_TOKEN) return { ok: false, erreur: "WhatsApp non configuré (token ou numéro manquant)" };
-      try {
-        if (await envoyerMessageWhatsApp(destinataire, texteLibre, phoneNumberId)) return { ok: true, canal: "texte" };
-      } catch (erreur) {
-        console.error(`[${merchantKey}] Erreur réseau lors du rappel en texte libre :`, erreur);
+      // Etape 85 : fenetre de 24 h ouverte -> texte libre gratuit. Fermee : le modele de rappel est un message FACTURE par Meta,
+      // il n'est envoye que si le super-administrateur a ouvert l'option « rappels de rendez-vous » (marchands historiques :
+      // ouverte). Sinon le rappel est REPORTE sans compter d'essai : si le client ecrit avant le rendez-vous, il partira gratuitement.
+      const fenetreOuverte = await fenetreServiceOuverte(merchantKey, destinataire);
+      const canaux = alertes.canauxRappel(fenetreOuverte, reglagesNotifEffectifs(entry).rappelsRdv);
+      if (!canaux.length) return { ok: false, reporte: true, erreur: "Rappels hors fenêtre de 24 h non activés pour ce marchand" };
+      if (canaux.indexOf("texte") !== -1) {
+        try {
+          if (await envoyerMessageWhatsApp(destinataire, texteLibre, phoneNumberId)) return { ok: true, canal: "texte" };
+        } catch (erreur) {
+          console.error(`[${merchantKey}] Erreur réseau lors du rappel en texte libre :`, erreur);
+        }
+        if (canaux.indexOf("modele") === -1) return { ok: false, erreur: "Texte libre refusé par WhatsApp (le modèle de rappel n'est pas activé pour ce marchand)" };
       }
       const config = TEMPLATES_CLIENT.rappel_rdv;
       const langue = info && info.langue === "en" ? config.langueEn : config.langueFr;
@@ -439,32 +506,30 @@ function creerOptionsEngine(merchantKey) {
         console.error(`[${merchantKey}] Type d'alerte marchand inconnu : "${typeAlerte}".`);
         return;
       }
-      const phoneNumberId = entry.merchant.phoneNumberId;
-      const parametresNettoyes = params.map(nettoyerPourTemplate);
-      await Promise.all(destinataires.map(async (destinataire) => {
-        try {
-          const envoiTemplateReussi = await envoyerTemplateWhatsApp(
-            destinataire,
-            phoneNumberId,
-            config.nom,
-            config.langue,
-            parametresNettoyes,
-            config.parametresNoms
-          );
-          if (!envoiTemplateReussi) {
-            // Repli : texte libre, qui ne passera que si ce numero a deja ecrit au bot dans les 24h
-            // (fenetre WhatsApp). Utile pendant que le template est en attente d'approbation par Meta, ou si
-            // son nom/sa langue ne correspond pas exactement a ce qui est configure ci-dessus.
-            console.warn(
-              `[${merchantKey}] Repli en texte libre pour la notification marchand ` +
-              `(le template "${config.nom}" a echoue ou n'est pas encore approuve).`
-            );
-            await envoyerMessageWhatsApp(destinataire, config.texteLibreRepli(params), phoneNumberId);
-          }
-        } catch (erreur) {
-          console.error(`[${merchantKey}] Echec de l'alerte vers un numero de notification :`, erreur);
+      // Etape 85 : « client veut un conseiller » part TOUJOURS, tout de suite (un client attend une personne). Les alertes de
+      // commande / rendez-vous / reservation sont une OPTION payante du super-administrateur (historiques : activee) ; sinon la
+      // pastille de l'onglet dans /admin suffit. Quand elle est activee, elles peuvent etre regroupees (voir alertes.js).
+      if (typeAlerte !== "humain") {
+        const r = reglagesNotifEffectifs(entry);
+        if (!r.alertesWhatsapp) return;
+        if (r.intervalleEffectifMinutes > 0) {
+          if (!filesAlertes[merchantKey]) filesAlertes[merchantKey] = creerFileAlertesMarchand(merchantKey);
+          const cle = String(params && params[0] || "");
+          await filesAlertes[merchantKey].soumettre({ type: typeAlerte, params, destinataires, cle });
+          return;
         }
-      }));
+      }
+      await envoyerAlerteAuxNumeros(merchantKey, config, params, destinataires);
+    },
+    // Etape 85 : envoi PROACTIF au client (hors reponse a son dernier message). Texte libre uniquement si la fenetre de service de
+    // 24 h est ouverte (gratuit) ; sinon rien n'est envoye (aucun modele facture sans option du super-administrateur).
+    // Renvoie { ok, canal } ou { ok:false, ignore:true } quand la fenetre est fermee.
+    envoyerProactif: async (destinataire, texte, info) => {
+      const entry = engines[merchantKey];
+      if (!entry) return { ok: false, erreur: "Marchand introuvable" };
+      if (!(await fenetreServiceOuverte(merchantKey, destinataire))) return { ok: false, ignore: true, canal: "aucun" };
+      await envoyerMessageWhatsApp(destinataire, texte, entry.merchant.phoneNumberId);
+      return { ok: true, canal: "texte" };
     },
     // Enregistre durablement un message dans le journal complet des conversations (voir db.js) - alimente
     // l'onglet "Historique" de /admin. Ne leve jamais : une erreur ici ne doit jamais interrompre l'envoi
@@ -487,6 +552,47 @@ function nettoyerPourTemplate(texte) {
     .replace(/ {2,}/g, " ")
     .trim()
     .slice(0, 300);
+}
+
+// Envoie UNE alerte (template Meta, repli texte libre) a chaque numero. L'echec d'un numero n'empeche jamais l'envoi aux autres.
+async function envoyerAlerteAuxNumeros(merchantKey, config, params, destinataires) {
+  const entry = engines[merchantKey];
+  if (!entry) return;
+  const phoneNumberId = entry.merchant.phoneNumberId;
+  const parametresNettoyes = params.map(nettoyerPourTemplate);
+  await Promise.all(destinataires.map(async (destinataire) => {
+    try {
+      const envoiTemplateReussi = await envoyerTemplateWhatsApp(destinataire, phoneNumberId, config.nom, config.langue, parametresNettoyes, config.parametresNoms);
+      if (!envoiTemplateReussi) {
+        // Repli : texte libre, qui ne passera que si ce numero a deja ecrit au bot dans les 24h (fenetre WhatsApp). Utile pendant
+        // que le template est en attente d'approbation par Meta, ou si son nom/sa langue ne correspond pas exactement.
+        console.warn(`[${merchantKey}] Repli en texte libre pour la notification marchand (le template "${config.nom}" a echoue ou n'est pas encore approuve).`);
+        await envoyerMessageWhatsApp(destinataire, config.texteLibreRepli(params), phoneNumberId);
+      }
+    } catch (erreur) {
+      console.error(`[${merchantKey}] Echec de l'alerte vers un numero de notification :`, erreur);
+    }
+  }));
+}
+
+// File de regroupement des alertes d'UN marchand (Etape 85). L'etat est en MEMOIRE : un redemarrage du serveur pendant une pause
+// perd le resume en attente (la pastille de /admin, elle, reste exacte). Limite assumee.
+function creerFileAlertesMarchand(merchantKey) {
+  return alertes.creerFileAlertes({
+    intervalleMs: () => { const e = engines[merchantKey]; return e ? reglagesNotifEffectifs(e).intervalleEffectifMinutes * 60000 : 0; },
+    estEncoreATraiter: (ev) => {
+      const e = engines[merchantKey];
+      if (!e) return false;
+      if (ev.type === "rdv_modifie") return true; // information (annulation / report) : toujours signalee
+      return alertes.refsATraiter(e).has(ev.cle);
+    },
+    envoyerEvenement: (ev) => envoyerAlerteAuxNumeros(merchantKey, TEMPLATES_ALERTE_MARCHAND[ev.type], ev.params, ev.destinataires),
+    envoyerResume: (evs) => {
+      const vus = new Set(); const dest = [];
+      evs.forEach((ev) => ev.destinataires.forEach((n) => { const c = chiffresTel(n); if (c && !vus.has(c)) { vus.add(c); dest.push(n); } }));
+      return envoyerAlerteAuxNumeros(merchantKey, TEMPLATES_ALERTE_MARCHAND.resume, [String(evs.length), alertes.libelleResume(evs)], dest);
+    }
+  });
 }
 
 async function chargerMarchands() {
@@ -906,6 +1012,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/parametres": "parametres_modifies",
   "PUT /api/:id/notification": "notification_modifiee",
   "PUT /api/:id/numeros-notification": "numeros_notification_modifies",
+  "PUT /api/:id/regroupement-alertes": "regroupement_alertes_modifie", // Etape 85
   "PUT /api/:id/gros/regles": "gros_tarifs_modifies",
   "POST /api/:id/gros/regles/importer": "gros_tarifs_importes",
   "PUT /api/:id/gros/config": "gros_config_modifiee",
@@ -1021,6 +1128,7 @@ function detailAuditRequete(code, req) {
     case "identifiants_modifies": return { motDePasse: !!(b.motDePasse || b.generer || b.genererMotDePasse), identifiant: !!b.adminUser };
     case "marchand_actif_modifie": return { actif: b.actif };
     case "numeros_notification_modifies": return { nombre: Array.isArray(b.numeros) ? b.numeros.length : null };
+    case "regroupement_alertes_modifie": return { minutes: Number.isFinite(Number(b.minutes)) ? Number(b.minutes) : null };
     case "options_payantes_modifiees": return { options: b };
     case "module_secondaire_modifie": return { moduleSecondaire: (Array.isArray(b.modulesSecondaires) ? b.modulesSecondaires.join(",") : (Array.isArray(b.moduleSecondaire) ? b.moduleSecondaire.join(",") : (b.modulesSecondaires || b.moduleSecondaire))) || null };
     case "facturation_source_modifiee": return { source: b.source || null };
@@ -1346,7 +1454,10 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     // Etape 78 : « Vente en gros » (option payante, debloquee par le seul super-administrateur ; invisible cote marchand tant que fermee).
     optionVenteGros: e.merchant.optionVenteGros === true,
     // Etape 84 : volet « Enseigne » (reseau de magasins) - debloque par le seul super-administrateur ; invisible cote marchand tant que ferme.
-    optionEnseigne: e.merchant.optionEnseigne === true
+    optionEnseigne: e.merchant.optionEnseigne === true,
+    // Etape 85 : reglages de notification. Super-administrateur : options + regroupement ; marchand : SEULEMENT le bloc de
+    // regroupement, et uniquement si le super-administrateur a ouvert l'option des alertes WhatsApp (sinon null).
+    notif: vueReglagesNotif(e, req.auth.role)
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
@@ -1380,7 +1491,10 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
     // conversations, tableaudebord/rapports dans parametres - voir migrerRolesEmployes dans db.js), donc
     // rien a migrer pour lui. Sans ce marquage explicite, un futur redemarrage du serveur risquerait de
     // "corriger" les roles d'un de ses employes vers un regroupement qui n'a jamais existe pour ce marchand.
-    rolesMigres: db.CLES_MIGRATIONS_ROLES_CONNUES
+    rolesMigres: db.CLES_MIGRATIONS_ROLES_CONNUES,
+    // Etape 85 : un marchand cree maintenant demarre avec les alertes WhatsApp commande/RDV et les rappels hors fenetre FERMES
+    // (options payantes du super-administrateur) ; les marchands historiques gardent leur comportement.
+    reglagesNotif: Object.assign({}, db.REGLAGES_NOTIF_NOUVEAU)
   };
   await db.addMerchant(merchant);
   engines[id] = await construireEntree(merchant);
@@ -1638,8 +1752,21 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, nbNumerosNotification, nbPhotosAuto } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
   const patch = {};
+  // Etape 85 : alertes WhatsApp commande/RDV (option payante), rappels de RDV hors fenetre de 24 h (option payante) et plancher du
+  // regroupement des alertes. Reserve au super-administrateur (toute la route l'est) ; le marchand ne peut ni les voir ni les changer.
+  if (optionAlertesWhatsapp !== undefined || optionRappelsRdv !== undefined || regroupementMinimumMinutes !== undefined) {
+    const base = db.normaliserReglagesNotif(db.reglagesNotifDe(entry.merchant, null));
+    if (optionAlertesWhatsapp !== undefined) base.alertesWhatsapp = optionAlertesWhatsapp === true;
+    if (optionRappelsRdv !== undefined) base.rappelsRdv = optionRappelsRdv === true;
+    if (regroupementMinimumMinutes !== undefined) {
+      const n = Number(regroupementMinimumMinutes);
+      if (db.CHOIX_REGROUPEMENT_MINUTES.indexOf(n) === -1) return res.status(400).json({ erreur: "regroupementMinimumMinutes doit valoir " + db.CHOIX_REGROUPEMENT_MINUTES.join(", ") + "." });
+      base.regroupementMinimumMinutes = n;
+    }
+    patch.reglagesNotif = base;
+  }
   // Etape 80 : photos envoyees automatiquement (1 ou 3). Reserve au super-administrateur (toute la route l'est).
   if (nbPhotosAuto !== undefined) {
     const n = Number(nbPhotosAuto);
@@ -1681,8 +1808,9 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionEnseigne = maj.optionEnseigne === true;
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
   entry.merchant.nbPhotosAuto = maj.nbPhotosAuto === 3 ? 3 : 1;
+  entry.merchant.reglagesNotif = maj.reglagesNotif || null;
   console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, enseigne=${maj.optionEnseigne === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1 });
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -3383,6 +3511,55 @@ app.put("/api/:id/notification", protegerAcces, async (req, res) => {
   res.json({ id: req.params.id, phoneNotification: maj.phoneNotification });
 });
 
+// Etape 85 : regroupement des alertes WhatsApp commande / rendez-vous. Le marchand choisit l'intervalle (0 / 5 / 10 / 15 / 30 min) mais
+// jamais en dessous du plancher fixe par le super-administrateur ; l'intervalle reellement applique est plafonne a la moitie du delai
+// minimum de retrait de ses magasins (enseigne). Refuse tant que le super-administrateur n'a pas ouvert l'option des alertes.
+app.put("/api/:id/regroupement-alertes", protegerAcces, async (req, res) => {
+  const entry = getMarchandAutorise(req, res, "parametres"); if (!entry) return;
+  const complet = engines[req.params.id];
+  const r = reglagesNotifEffectifs(complet);
+  if (!r.alertesWhatsapp) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const n = Number((req.body || {}).minutes);
+  if (db.CHOIX_REGROUPEMENT_MINUTES.indexOf(n) === -1) return res.status(400).json({ erreur: "minutes doit valoir " + db.CHOIX_REGROUPEMENT_MINUTES.join(", ") + "." });
+  if (n < r.regroupementMinimumMinutes) return res.status(400).json({ erreur: "Ce marchand ne peut pas descendre en dessous de " + r.regroupementMinimumMinutes + " minute(s)." });
+  const base = db.normaliserReglagesNotif(db.reglagesNotifDe(complet.merchant, null));
+  base.regroupementMinutes = n;
+  const maj = await db.updateMerchantFields(req.params.id, { reglagesNotif: base });
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  complet.merchant.reglagesNotif = maj.reglagesNotif;
+  res.json(vueReglagesNotif(complet, req.auth.role));
+});
+
+// Etape 85 : compteurs « a traiter » des onglets de /admin (pastilles). Leger (aucun acces disque ni reseau) : /admin l'interroge toutes
+// les 15-20 s tant que la page est visible. Chaque compteur n'est renvoye que si l'utilisateur a le droit de voir l'onglet.
+app.get("/api/:id/compteurs", protegerAcces, async (req, res) => {
+  if (!verifierPortee(req, res, req.params.id)) return;
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  try {
+    // Premiere lecture d'un marchand HISTORIQUE : les elements deja Confirme sont consideres comme vus (sinon la pastille afficherait
+    // d'un coup tout l'historique).
+    const reglages = entry.merchant.reglagesNotif ? db.normaliserReglagesNotif(entry.merchant.reglagesNotif) : null;
+    if (!reglages || !reglages.pastillesInitialisees) {
+      ["rendezvous", "reservations", "billets"].forEach((g) => alertes.marquerVus(entry, g));
+      const base = db.normaliserReglagesNotif(db.reglagesNotifDe(entry.merchant, null));
+      base.pastillesInitialisees = true;
+      const maj = await db.updateMerchantFields(req.params.id, { reglagesNotif: base });
+      if (maj) entry.merchant.reglagesNotif = maj.reglagesNotif;
+    }
+    res.json(alertes.calculerCompteurs(entry, { gestionnaire: estGestionnaireDuMarchand(req, req.params.id), roles: req.auth.roles || [], magasinImpose: magasinImpose(req) }));
+  } catch (erreur) {
+    console.error(`[${req.params.id}] Echec du calcul des compteurs :`, erreur);
+    res.status(500).json({ erreur: "Compteurs indisponibles." });
+  }
+});
+// « Tout marquer comme vu » (rendez-vous, reservations, billets) : retire ces elements de la pastille sans changer leur statut.
+app.post("/api/:id/compteurs/vu", protegerAcces, (req, res) => {
+  if (!getMarchandAutorise(req, res, "rendezvous")) return;
+  const genre = String((req.body || {}).genre || "");
+  if (["rendezvous", "reservations", "billets"].indexOf(genre) === -1) return res.status(400).json({ erreur: "genre doit valoir rendezvous, reservations ou billets." });
+  res.json({ marques: alertes.marquerVus(engines[req.params.id], genre) });
+});
+
 // Etape 76 : numeros d'alerte SUPPLEMENTAIRES (option payante). Le quota est fixe par le seul super-administrateur
 // (PUT /api/marchands/:id/options-payantes) ; ici, le marchand (ou le super-administrateur) remplit la liste dans cette limite.
 // Quota a 0 : refuse pour tout le monde (le super-administrateur doit d'abord ouvrir l'option). Tous ces numeros recoivent
@@ -4278,6 +4455,7 @@ app.post("/webhook", async (req, res) => {
 
     const message = messages[0];
     const from = message.from; // numero du client, format international sans "+"
+    noterMessageClient(merchantId, from); // Etape 85 : un message du client ouvre la fenetre de service de 24 h
 
     // Marchand suspendu (ex: facture impayee — voir /api/:id/actif) : on n'entre dans AUCUN traitement
     // normal (ni pagination, ni moteur de conversation), on repond une seule fois poliment et on

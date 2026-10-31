@@ -86,6 +86,8 @@ const PENDING_ORDERS_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 heures
 
 const OUVERTURES_PRODUIT = ["Excellent choix !", "Très bon choix !", "Superbe choix !", "Vous avez bon goût !", "Beau choix !"];
 const OUVERTURES_PRODUIT_EN = ["Excellent choice!", "Great choice!", "Superb choice!", "You have great taste!", "Nice pick!"];
+// Etape 86 : nombre maximum de variantes (couleur + taille) proposees dans UNE seule liste WhatsApp (10 lignes moins les 3 lignes fixes).
+const LIGNES_MAX_VARIANTE_UNIQUE = 7;
 const OUVERTURES_COULEUR = ["Jolie couleur !", "Bon choix de couleur !", "Ça va très bien !", "Très élégant !"];
 const OUVERTURES_COULEUR_EN = ["Lovely color!", "Great color choice!", "That looks great!", "Very elegant!"];
 const OUVERTURES_DISPO = ["Parfait,", "Très bien,", "Super,", "Excellente nouvelle,"];
@@ -151,6 +153,10 @@ function createCatalogEngine(merchantKey, options) {
   const sessions = {};
   const conversationsHumain = {}; // memoire seulement (comme `sessions`) - voir shared.js
   const envoyer = (options && options.envoyer) || (async () => {});
+  // Etape 85 : envoi PROACTIF au client (hors reponse a son dernier message) : le serveur ne l'envoie que si la fenetre de service de
+  // 24 h est ouverte (sinon WhatsApp refuserait le texte libre, ou facturerait un modele) - voir server.js. Sans cette option
+  // (tests, ancien appelant) : meme comportement qu'avant (envoyer).
+  const envoyerProactif = (options && options.envoyerProactif) || (async (destinataire, texte) => { await envoyer(destinataire, texte); return { ok: true, canal: "texte" }; });
   const notifierMarchand = (options && options.notifierMarchand) || (async () => {});
   // Etape 78 : true si le super-administrateur a debloque l'option payante « Vente en gros » pour ce marchand (fournie par server.js).
   const grosActif = (options && typeof options.venteGrosActive === "function") ? options.venteGrosActive : () => false;
@@ -720,7 +726,9 @@ function createCatalogEngine(merchantKey, options) {
 
   function matchCouleur(text) {
     const t = text.toLowerCase();
-    const colors = distinctValues((p, v) => v.couleur).sort((a, b) => b.length - a.length);
+    // Etape 86 : la valeur « - » (article sans couleur) n'est JAMAIS une couleur reconnaissable dans un message : sinon « T-shirt »
+    // ou n'importe quel texte contenant un tiret etait pris pour la couleur « - » et faussait toute la selection.
+    const colors = distinctValues((p, v) => v.couleur).filter((c) => joindreVariante(" ", c) !== "").sort((a, b) => b.length - a.length);
     for (let i = 0; i < colors.length; i++) {
       if (colors[i] && t.indexOf(colors[i].toLowerCase()) !== -1) return colors[i];
     }
@@ -741,7 +749,10 @@ function createCatalogEngine(merchantKey, options) {
     if (m) return m[1].toUpperCase();
     const mn = t.match(/\b(3[0-9]|4[0-9])\b/);
     if (mn) return mn[1];
-    if (t.indexOf("unique") !== -1) return "Unique";
+    // Etape 86 : « unique » ne designe une taille que si le catalogue a vraiment une taille de ce nom (« Unique », « Taille unique »...).
+    // Avant, le nom d'un article comme « Sac unique » (taille « - ») faisait chercher une taille « Unique » inexistante.
+    const tailleUnique = tailles.filter((x) => x && String(x).toLowerCase().indexOf("unique") !== -1)[0];
+    if (tailleUnique && t.indexOf("unique") !== -1) return tailleUnique;
     return null;
   }
 
@@ -1401,7 +1412,7 @@ function createCatalogEngine(merchantKey, options) {
   }
   function ensEnvoyerClient(order, fr, en) {
     if (order.source === "simulateur" || !order.fromWhatsapp) return;
-    envoyer(order.fromWhatsapp, order.langue === "en" ? en : fr).catch((erreur) => console.error("[" + merchantKey + "] Echec de l'envoi au client (" + orderRef(order) + ") :", erreur));
+    envoyerProactif(order.fromWhatsapp, order.langue === "en" ? en : fr, { type: "commande_prete" }).catch((erreur) => console.error("[" + merchantKey + "] Echec de l'envoi au client (" + orderRef(order) + ") :", erreur));
   }
   // Etat de preparation d'une commande de retrait. « prete » previent le client ; « retiree » passe la commande en « Livrée »
   // (le stock est decremente comme pour toute livraison) et credite les points de fidelite (une seule fois).
@@ -1509,9 +1520,20 @@ function createCatalogEngine(merchantKey, options) {
     return statut;
   }
 
+  // Etape 85 : pour une commande de RETRAIT en magasin (volet enseigne), l'etat de preparation est montre au client (confirmee,
+  // en preparation, prete au retrait) ; les autres commandes gardent leur statut d'origine.
+  function etatCommandeClair(session, o) {
+    if (o.magasinId && o.statut === "Confirmée") {
+      if (o.prepa === "en_preparation") return sh.t(session, "en préparation", "being prepared");
+      if (o.prepa === "prete") return sh.t(session, "prête, vous pouvez la retirer", "ready, you can collect it");
+      return sh.t(session, "confirmée, en attente de préparation", "confirmed, waiting to be prepared");
+    }
+    return statutClair(session, o.statut);
+  }
+
   function detailCommande(session, o) {
     const retrait = o.modeLivraison === "retrait";
-    return "• " + orderRef(o) + " — " + statutClair(session, o.statut) + "\n" + describeItems(o.items) + "\n" +
+    return "• " + orderRef(o) + " — " + etatCommandeClair(session, o) + "\n" + describeItems(o.items) + "\n" +
       sh.t(session, "Total : ", "Total: ") + formatFcfa(o.prix) + "\n" +
       sh.t(session, retrait ? "Retrait : " : "Livraison : ", retrait ? "Pickup: " : "Delivery: ") + (o.adresse || "—");
   }
@@ -2256,7 +2278,11 @@ function createCatalogEngine(merchantKey, options) {
           ? (state.settings && state.settings.autoConfirmMessageEn) || DEFAULT_AUTO_CONFIRM_MESSAGE_EN
           : (state.settings && state.settings.autoConfirmMessage) || DEFAULT_AUTO_CONFIRM_MESSAGE;
         Object.assign(session, freshSession(session));
-        const replyEns = pendingOrder.magasinId ? ensApresConfirmation(pendingOrder, session, reply) : reply; // Etape 84
+        // Etape 85 : rappel du suivi en libre-service (evite que le client ecrive « ou en est ma commande ? »).
+        const rappelSuivi = sh.t(session,
+          "\n\nSuivez votre commande à tout moment : écrivez « Ma commande ».",
+          "\n\nTrack your order anytime: write \"My order\".");
+        const replyEns = (pendingOrder.magasinId ? ensApresConfirmation(pendingOrder, session, reply) : reply) + rappelSuivi; // Etape 84 + 85
         logTrace(session, trace);
         return replyEns;
       }
@@ -2370,6 +2396,28 @@ function createCatalogEngine(merchantKey, options) {
       couleur = availableColors[0];
       session.couleur = couleur;
       trace.entites["Couleur"] = couleur + " (couleur unique disponible)";
+    }
+
+    // Etape 86 : couleur ET taille en UNE SEULE liste (un message du robot en moins par article). Seulement quand le client n'a
+    // encore precise ni l'une ni l'autre, que l'article varie sur les deux, et que les variantes DISPONIBLES tiennent dans la
+    // liste WhatsApp (10 lignes - « Contacter un conseiller » - « Autres articles » - « Menu principal » = 7). Sinon : les deux
+    // etapes habituelles, inchangees. Les variantes en rupture ne sont pas proposees ; s'il n'en reste qu'une ou aucune, on
+    // garde aussi le parcours habituel (qui gere deja la rupture, la liste d'attente et la selection automatique).
+    if (!couleur && !taille && availableColors.length > 1) {
+      // Deux etapes aujourd'hui seulement si au moins une couleur a plusieurs tailles (sinon la taille est retenue d'office).
+      const aDeuxDimensions = availableColors.some((c) => product.variantes.filter((v) => v.couleur === c && joindreVariante(" ", v.taille) !== "").length > 1);
+      const disponibles = product.variantes.filter((v) => virtualStock(product.id, v) > 0 && joindreVariante(" ", v.couleur, v.taille) !== "");
+      const libellesDistincts = disponibles.map((v) => joindreVariante(" ", v.couleur, v.taille)).filter((l, i, a) => a.indexOf(l) === i);
+      if (aDeuxDimensions && libellesDistincts.length >= 2 && libellesDistincts.length <= LIGNES_MAX_VARIANTE_UNIQUE && libellesDistincts.length === disponibles.length) {
+        trace.action = "Précision demandée : quelle option (couleur et taille en une seule liste) ?";
+        logTrace(session, trace);
+        session.pendingChoice = { type: "variante", options: disponibles.map((v) => ({ couleur: v.couleur, taille: v.taille })) };
+        const prefixeVariante = produitReconnu ? ouverture(session, OUVERTURES_PRODUIT, OUVERTURES_PRODUIT_EN) + " " : "";
+        return prefixeVariante + sh.t(session,
+          product.nom + " — quelle option souhaitez-vous ? Disponible : " + libellesDistincts.join(", ") + ".",
+          product.nom + " — which option would you like? Available: " + libellesDistincts.join(", ") + "."
+        );
+      }
     }
 
     if (!couleur) {
@@ -3095,7 +3143,8 @@ function createCatalogEngine(merchantKey, options) {
     if (newStatus === "Annulée" && order.raisonAnnulation) {
       texte += langue === "en" ? "\nReason: " + order.raisonAnnulation : "\nRaison : " + order.raisonAnnulation;
     }
-    await envoyer(order.fromWhatsapp, texte);
+    const envoi = await envoyerProactif(order.fromWhatsapp, texte, { type: "statut_commande" });
+    if (envoi && envoi.ok === false) return; // fenetre de 24 h fermee : rien n'est envoye (ni facture ni journalise)
     journaliser(order.fromWhatsapp, "bot", texte);
   }
 

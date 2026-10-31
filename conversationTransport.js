@@ -1220,7 +1220,7 @@ function createTransportEngine(merchantKey, options) {
   function vueReservation(r) {
     expirerReservations();
     return {
-      id: r.id, reference: ref(r), statut: r.statut, creeLe: r.creeLe, expireLe: r.expireLe, telephone: r.telephone, fromWhatsapp: r.fromWhatsapp || null,
+      id: r.id, reference: ref(r), statut: r.statut, vuLe: r.vuLe || null, creeLe: r.creeLe, expireLe: r.expireLe, telephone: r.telephone, fromWhatsapp: r.fromWhatsapp || null,
       ligneId: r.ligneId, ligneNom: r.ligneNom, formule: r.formule, nb: r.nb, total: r.total, prixUnitaire: r.prixUnitaire,
       voyageurs: r.voyageurs.map((v) => ({ nom: v.nom, cni: v.cniMasque })), aller: r.aller, retour: r.retour || null, historique: r.historique || []
     };
@@ -1235,6 +1235,15 @@ function createTransportEngine(merchantKey, options) {
       if (f.date && !f.departId && !jambes(r).some((l) => l.date === f.date)) return false;
       return true;
     }).sort((a, b) => b.id - a.id).map(vueReservation);
+  }
+  // Etape 85 : « Tout marquer comme vu » - les elements Confirme restent comptes dans la pastille de l'onglet tant qu'ils n'ont pas
+  // change de statut ou ete marques vus. Renvoie le nombre d'elements marques.
+  function marquerVus() {
+    if (!state) return 0;
+    let n = 0; const iso = new Date().toISOString();
+    (state.reservations || []).forEach((x) => { if (x.source !== "simulateur" && x.statut === "Confirmé" && !x.vuLe) { x.vuLe = iso; n++; } });
+    if (n) saveState();
+    return n;
   }
   function getReservationParId(id) { const r = reservationParId(id); return r ? vueReservation(r) : null; }
   function changerStatut(r, nouveau, par, raison) {
@@ -1417,6 +1426,7 @@ function createTransportEngine(merchantKey, options) {
     chargerExemple,
     getReservations,
     getReservationParId,
+    marquerVus,
     updateReservationStatut,
     texteBillet,
     envoyerBillet,

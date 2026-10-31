@@ -1244,6 +1244,15 @@ function createHebergementEngine(merchantKey, options) {
     if (!state) return [];
     return state.sejours.filter((s) => s.source !== "simulateur").map((s) => Object.assign({}, s, { reference: refSejour(s) }));
   }
+  // Etape 85 : « Tout marquer comme vu » - les elements Confirme restent comptes dans la pastille de l'onglet tant qu'ils n'ont pas
+  // change de statut ou ete marques vus. Renvoie le nombre d'elements marques.
+  function marquerVus() {
+    if (!state) return 0;
+    let n = 0; const iso = new Date().toISOString();
+    (state.sejours || []).forEach((x) => { if (x.source !== "simulateur" && x.statut === "Confirmé" && !x.vuLe) { x.vuLe = iso; n++; } });
+    if (n) saveState();
+    return n;
+  }
   function getSejourParId(id) { const s = sejourParId(id); return s ? Object.assign({}, s, { reference: refSejour(s) }) : null; }
 
   // Un sejour peut-il OCCUPER ce type de chambre sur ces dates (en ignorant `ignorerId`) ?
@@ -1454,6 +1463,7 @@ function createHebergementEngine(merchantKey, options) {
     getSettings,
     updateSettings,
     getSejours,
+    marquerVus,
     getSejourParId,
     creerSejourAdmin,
     deplacerSejour,

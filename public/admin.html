@@ -85,6 +85,11 @@
   .j-statut-ok { color:#1a7f37; }
   .bloc-liste-attente { margin: 0 0 18px; padding: 14px 16px; border: 2px solid #f0a020; border-left-width: 6px; border-radius: 8px; background: #fff8ea; }
   .bloc-liste-attente h3 { margin: 0 0 6px; font-size: 1.1em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  /* Etape 85 : pastilles « a traiter » sur les onglets */
+  .pastille { display: inline-block; min-width: 18px; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: #d92d20; color: #fff; font-size: .78em; font-weight: 700; line-height: 1.5; text-align: center; vertical-align: middle; }
+  #barreOnglets button.actif .pastille, #barreGroupes button.actif .pastille { background: #fff; color: #d92d20; }
+  #bandeauVu { display: none; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 12px; background: #fef3f2; border: 1px solid #fecdca; border-radius: 8px; font-size: .9em; }
+  #bandeauVu.visible { display: flex; }
   .badge-attente-compte { background: #d92d20; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: .8em; font-weight: 700; }
   .table-liste-attente { width: 100%; border-collapse: collapse; margin-top: 8px; }
   .table-liste-attente th, .table-liste-attente td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e3e7ec; vertical-align: middle; }
@@ -137,6 +142,7 @@
 <main>
   <div id="barreGroupes"></div>
   <div id="barreOnglets"></div>
+  <div id="bandeauVu"></div>
   <div id="contenuOnglet"><div class="chargement"></div></div>
 </main>
 
@@ -1609,7 +1615,26 @@ const I18N = {
     alertNumerosSuppEnregistres: "Numéros enregistrés.",
     noteNumerosEnTrop: "{n} numéro(s) dépassent le quota actuel et ne reçoivent plus d'alertes.",
     alertEnregistrerAvantTester: "Enregistrez d'abord la liste avant de tester ce numéro.",
-    act_numeros_notification_modifies: "Numéros d'alerte supplémentaires modifiés"
+    act_numeros_notification_modifies: "Numéros d'alerte supplémentaires modifiés",
+    act_regroupement_alertes_modifie: "Regroupement des alertes modifié",
+    // Etape 85 : pastilles, alertes WhatsApp, regroupement
+    infobullePastille: "Éléments à traiter : ils restent comptés tant que leur statut n'a pas changé.",
+    bandeauNonVus: "{n} nouvel(le)(s) élément(s) à traiter.",
+    btnToutMarquerVu: "Tout marquer comme vu",
+    h3AlertesWhatsapp: "Alertes WhatsApp de commandes et de rendez-vous",
+    noteAlertesSuperadmin: "Option payante, à vous seul : par défaut un nouveau marchand ne reçoit PAS d'alerte WhatsApp pour les commandes et les rendez-vous / réservations / billets (il voit les pastilles dans /admin). L'alerte « un client veut un conseiller » part toujours.",
+    labelOptionAlertesWhatsapp: "Alertes WhatsApp de commande et de rendez-vous / réservation (option payante)",
+    labelOptionRappelsRdv: "Rappels de rendez-vous hors fenêtre de 24 h (message modèle facturé par Meta, option payante)",
+    labelRegroupementMinimum: "Intervalle minimum imposé au marchand :",
+    regroupementAucun: "Aucun regroupement (chaque alerte part tout de suite)",
+    regroupementMinutes: "{m} minutes",
+    noteRegroupement: "La première alerte part tout de suite, puis une pause : les nouveaux événements sont regroupés dans UN seul message envoyé à la fin de la pause, seulement s'ils sont encore à traiter.",
+    labelRegroupement: "Pause entre deux alertes :",
+    noteRegroupementCap: "Au plus {n} alertes par jour et par numéro (une toutes les {m} minutes).",
+    noteRegroupementAucun: "Sans regroupement : une alerte par commande ou rendez-vous.",
+    noteRegroupementPlafond: "Plafond pour cette enseigne : {m} minutes (la moitié du délai minimum de retrait).",
+    alertAlertesEnregistrees: "Options enregistrées.",
+    alertRegroupementEnregistre: "Intervalle enregistré."
   },
   en: {
     admin: "Admin",
@@ -3031,7 +3056,25 @@ const I18N = {
     alertNumerosSuppEnregistres: "Numbers saved.",
     noteNumerosEnTrop: "{n} number(s) exceed the current limit and no longer receive alerts.",
     alertEnregistrerAvantTester: "Save the list first before testing this number.",
-    act_numeros_notification_modifies: "Additional alert numbers changed"
+    act_numeros_notification_modifies: "Additional alert numbers changed",
+    act_regroupement_alertes_modifie: "Alert grouping changed",
+    infobullePastille: "Items to handle: they stay counted until their status changes.",
+    bandeauNonVus: "{n} new item(s) to handle.",
+    btnToutMarquerVu: "Mark all as seen",
+    h3AlertesWhatsapp: "WhatsApp alerts for orders and appointments",
+    noteAlertesSuperadmin: "Paid option, yours alone: by default a new merchant does NOT receive WhatsApp alerts for orders and appointments / bookings / tickets (they see the badges in /admin). The \"a customer wants an advisor\" alert is always sent.",
+    labelOptionAlertesWhatsapp: "WhatsApp alerts for orders and appointments / bookings (paid option)",
+    labelOptionRappelsRdv: "Appointment reminders outside the 24 h window (template message billed by Meta, paid option)",
+    labelRegroupementMinimum: "Minimum interval imposed on the merchant:",
+    regroupementAucun: "No grouping (each alert is sent immediately)",
+    regroupementMinutes: "{m} minutes",
+    noteRegroupement: "The first alert is sent immediately, then a pause: new events are grouped into ONE message sent at the end of the pause, only if they still need handling.",
+    labelRegroupement: "Pause between two alerts:",
+    noteRegroupementCap: "At most {n} alerts per day and per number (one every {m} minutes).",
+    noteRegroupementAucun: "No grouping: one alert per order or appointment.",
+    noteRegroupementPlafond: "Cap for this retail chain: {m} minutes (half the minimum pickup lead time).",
+    alertAlertesEnregistrees: "Options saved.",
+    alertRegroupementEnregistre: "Interval saved."
   }
 };
 
@@ -3131,6 +3174,8 @@ function afficherEcranConnexion() {
   const ecran = document.getElementById("ecranConnexion");
   if (ecran.style.display === "flex") return;
   ecran.style.display = "flex";
+  if (typeof arreterCompteurs === "function") arreterCompteurs(); // Etape 85 : plus d'interrogation tant que personne n'est connecte
+  if (typeof arreterConversationsAuto === "function") arreterConversationsAuto();
   document.getElementById("connexionTitreTexte").textContent = t("connexionTitre");
   document.getElementById("connexionIdentifiantLabel").textContent = t("connexionIdentifiant");
   document.getElementById("connexionMotDePasseLabel").textContent = t("connexionMotDePasse");
@@ -3623,7 +3668,7 @@ function construireOnglets() {
   const ordreGroupes = [];
   if (hybride) onglets.forEach((o) => { const g = GROUPE_DE[o[0]] || "admin"; if (ordreGroupes.indexOf(g) === -1) ordreGroupes.push(g); });
   const groupeActuel = (idOnglet) => (hybride ? (GROUPE_DE[idOnglet] || "admin") : null);
-  barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "'" + (hybride ? " data-groupe='" + groupeActuel(o[0]) + "'" : "") + " class='" + (i === 0 ? "actif" : "") + "'>" + esc(o[1]) + "</button>").join("");
+  barre.innerHTML = onglets.map((o, i) => "<button data-onglet='" + o[0] + "'" + (hybride ? " data-groupe='" + groupeActuel(o[0]) + "'" : "") + " class='" + (i === 0 ? "actif" : "") + "'>" + esc(o[1]) + "<span class='pastille' data-pastille='" + o[0] + "' style='display:none'></span></button>").join("");
   const activerGroupe = (g) => {
     if (!hybride) return;
     Array.prototype.forEach.call(barreGroupes.querySelectorAll("button"), (b) => b.classList.toggle("actif", b.dataset.groupe === g));
@@ -3637,7 +3682,7 @@ function construireOnglets() {
   };
   if (hybride && ordreGroupes.length) {
     barreGroupes.classList.add("visible");
-    barreGroupes.innerHTML = ordreGroupes.map((g) => "<button data-groupe='" + g + "'>" + esc(LIBELLE_GROUPE[g] || g) + "</button>").join("");
+    barreGroupes.innerHTML = ordreGroupes.map((g) => "<button data-groupe='" + g + "'>" + esc(LIBELLE_GROUPE[g] || g) + "<span class='pastille' data-pastille-groupe='" + g + "' style='display:none'></span></button>").join("");
     Array.prototype.forEach.call(barreGroupes.querySelectorAll("button"), (gb) => {
       gb.onclick = () => {
         const premier = barre.querySelector("button[data-groupe='" + gb.dataset.groupe + "']");
@@ -3659,13 +3704,82 @@ function construireOnglets() {
       activerGroupe(btn.dataset.groupe);
       voletCourant = volets[btn.dataset.onglet];
       fonctions[btn.dataset.onglet]();
+      majBandeauVu();
     };
   });
   voletCourant = onglets.length && hybride ? (onglets[0][4] || null) : null;
   if (onglets.length) activerGroupe(groupeActuel(onglets[0][0]));
   if (onglets.length) onglets[0][2]();
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("accesNonConfigure") + "</div>";
+  demarrerCompteurs(); // Etape 85 : pastilles « a traiter »
 }
+
+// ---------------- Etape 85 : pastilles « a traiter » + rafraichissement automatique ----------------
+// Un seul appel leger (GET /api/:id/compteurs) toutes les 15 s tant que la page est visible ; en pause quand l'onglet du navigateur
+// est cache, et relance aussitot au retour. Une pastille reste affichee tant que l'element n'a pas change de statut (ou, pour les
+// rendez-vous / reservations / billets, n'a pas ete marque vu) : ouvrir l'onglet ne l'efface pas.
+const ONGLET_COMPTEUR = { commandes: "commandes", preparation: "preparation", rendezvous: "rendezvous", sejours: "reservations", billets: "billets", conversations: "conversations" };
+const GENRE_VU = { rendezvous: "rendezvous", sejours: "reservations", billets: "billets" };
+const TITRE_PAGE_BASE = document.title;
+let compteursCourants = {};
+let minuteurCompteurs = null;
+function majPastilles() {
+  const barre = document.getElementById("barreOnglets");
+  const tot = {};
+  Array.prototype.forEach.call(barre.querySelectorAll("button[data-onglet]"), (b) => {
+    const cle = ONGLET_COMPTEUR[b.dataset.onglet];
+    const n = cle ? Number(compteursCourants[cle]) || 0 : 0;
+    const sp = b.querySelector(".pastille");
+    if (sp) { sp.textContent = n > 99 ? "99+" : String(n); sp.style.display = n > 0 ? "" : "none"; sp.setAttribute("title", t("infobullePastille")); }
+    if (b.dataset.groupe) tot[b.dataset.groupe] = (tot[b.dataset.groupe] || 0) + n;
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("#barreGroupes .pastille"), (sp) => {
+    const n = tot[sp.dataset.pastilleGroupe] || 0;
+    sp.textContent = n > 99 ? "99+" : String(n); sp.style.display = n > 0 ? "" : "none";
+  });
+  const total = Number(compteursCourants.total) || 0;
+  document.title = (total > 0 ? "(" + total + ") " : "") + TITRE_PAGE_BASE;
+  majBandeauVu();
+}
+function ongletActifId() {
+  const b = document.querySelector("#barreOnglets button.actif");
+  return b ? b.dataset.onglet : null;
+}
+// Bandeau « N nouveau(x) — Tout marquer comme vu » au-dessus des onglets Rendez-vous / Reservations / Billets (hors zone re-rendue).
+function majBandeauVu() {
+  const zone = document.getElementById("bandeauVu");
+  if (!zone) return;
+  const id = ongletActifId();
+  const genre = id ? GENRE_VU[id] : null;
+  const n = genre ? Number(compteursCourants[ONGLET_COMPTEUR[id]]) || 0 : 0;
+  if (!genre || n < 1) { zone.className = ""; zone.innerHTML = ""; return; }
+  zone.className = "visible";
+  zone.innerHTML = "<span>" + esc(t("bandeauNonVus", { n: n })) + "</span><button id='btnToutVu'>" + esc(t("btnToutMarquerVu")) + "</button>";
+  document.getElementById("btnToutVu").onclick = async () => {
+    try {
+      await api("/api/" + marchandActif.id + "/compteurs/vu", { method: "POST", body: JSON.stringify({ genre }) });
+      await rafraichirCompteurs();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
+async function rafraichirCompteurs() {
+  if (!marchandActif) return;
+  const idMarchand = marchandActif.id;
+  try {
+    const c = await api("/api/" + idMarchand + "/compteurs");
+    if (!marchandActif || marchandActif.id !== idMarchand) return; // l'utilisateur a change de marchand entre-temps
+    compteursCourants = c || {};
+    majPastilles();
+  } catch (e) { /* silencieux : un echec ponctuel ne doit jamais gener l'utilisation */ }
+}
+function arreterCompteurs() { if (minuteurCompteurs) { clearInterval(minuteurCompteurs); minuteurCompteurs = null; } }
+function demarrerCompteurs() {
+  arreterCompteurs();
+  compteursCourants = {};
+  rafraichirCompteurs();
+  minuteurCompteurs = setInterval(() => { if (!document.hidden) rafraichirCompteurs(); }, 15000);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && minuteurCompteurs) { rafraichirCompteurs(); if (typeof rafraichirConversationsAuto === "function") rafraichirConversationsAuto(); } });
 
 // Bascule programmatique vers un onglet (ex: clic sur une tuile du Tableau de bord) - reutilise le
 // mecanisme de clic normal sur la barre d'onglets (construireOnglets ci-dessus) pour ne pas dupliquer la
@@ -7183,13 +7297,48 @@ async function renderFacturation() {
   });
 }
 
-async function renderConversations() {
-  const zone = document.getElementById("contenuOnglet");
-  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
-  const conversations = await api("/api/" + marchandActif.id + "/conversations");
+// Etape 85 : l'onglet se met a jour tout seul (conversation en attente ~5 s, historique ~10 s, en pause si la page est cachee ou si
+// l'on quitte l'onglet) SANS vider la zone de reponse en cours de saisie ni faire sauter le defilement.
+let minuteurConversations = null;
+let tickConversations = 0;
+let signatureAttente = "";
+let conversationsAttente = [];
+function arreterConversationsAuto() { if (minuteurConversations) { clearInterval(minuteurConversations); minuteurConversations = null; } }
+function signatureConversations(liste) { return JSON.stringify((liste || []).map((c) => [c.telephone, (c.historique || []).length, c.depuisISO])); }
+async function rafraichirConversationsAuto() {
+  if (document.hidden || ongletActifId() !== "conversations" || !document.getElementById("zoneAttente")) { if (ongletActifId() !== "conversations") arreterConversationsAuto(); return; }
+  tickConversations++;
+  try {
+    const liste = await api("/api/" + marchandActif.id + "/conversations");
+    if (!document.getElementById("zoneAttente")) return;
+    const sig = signatureConversations(liste);
+    if (sig !== signatureAttente) { signatureAttente = sig; monterAttente(liste); }
+  } catch (e) { return; }
+  if (tickConversations % 2 === 0) {
+    if (vueHistoriqueTelephone) renderHistoriqueDetail(vueHistoriqueTelephone, true);
+    else renderHistoriqueListe(true);
+  }
+}
+function demarrerConversationsAuto() {
+  arreterConversationsAuto();
+  tickConversations = 0;
+  minuteurConversations = setInterval(rafraichirConversationsAuto, 5000);
+}
 
-  let html = "<h2>" + t("conversationsTitre") + "</h2>";
-
+// Zone « en attente d'un humain » : redessinee seulement quand elle a change, en gardant le texte en cours de saisie, le focus et le defilement.
+function monterAttente(conversations) {
+  const cible = document.getElementById("zoneAttente");
+  if (!cible) return;
+  const brouillons = {}; let focus = null;
+  Array.prototype.forEach.call(cible.querySelectorAll("[data-reponse]"), (ta) => {
+    const tel = ta.dataset.tel;
+    if (ta.value) brouillons[tel] = ta.value;
+    if (document.activeElement === ta) focus = { tel, debut: ta.selectionStart, fin: ta.selectionEnd };
+  });
+  const defilements = {};
+  Array.prototype.forEach.call(cible.querySelectorAll("[data-histo]"), (d) => { defilements[d.dataset.histo] = { haut: d.scrollTop, bas: d.scrollTop + d.clientHeight >= d.scrollHeight - 4 }; });
+  conversationsAttente = conversations;
+  let html = "";
   if (!conversations.length) {
     html += "<p>" + t("msgAucunClientAttend") + "</p>";
   } else {
@@ -7203,28 +7352,32 @@ async function renderConversations() {
             (estHybrideAdmin() && c.volet ? "<span class='raison'>" + t("labelVoletConversation") + " : " + t(libelleVoletCle(c.volet)) + "</span>" : "") +
             "<span class='raison'>" + formaterDureeDepuis(c.depuisISO) + "</span>" +
           "</div>" +
-          "<div style='max-height:160px; overflow-y:auto; margin:10px 0; padding:8px; background:#f6f7f9; border-radius:6px; font-size:0.9em;'>" +
+          "<div data-histo='" + esc(c.telephone) + "' style='max-height:160px; overflow-y:auto; margin:10px 0; padding:8px; background:#f6f7f9; border-radius:6px; font-size:0.9em;'>" +
             (c.historique || []).map((m) =>
               "<div style='margin-bottom:6px;'><strong>" + (m.de === "marchand" ? t("labelVous") : t("labelClient")) + " :</strong> " + esc(m.texte) + "</div>"
             ).join("") +
           "</div>" +
-          "<textarea data-reponse='" + i + "' rows='2' placeholder=\"" + esc(t("placeholderReponseClient")) + "\"></textarea>" +
+          "<textarea data-reponse='" + i + "' data-tel='" + esc(c.telephone) + "' rows='2' placeholder=\"" + esc(t("placeholderReponseClient")) + "\"></textarea>" +
           "<div style='margin-top:8px;'><button data-envoyer='" + i + "' class='principal'>" + t("btnEnvoyer") + "</button></div>" +
         "</div>"
       ).join("");
   }
-
-  html += "<h3>" + t("h3HistoriqueComplet") + "</h3><div id='zoneHistorique'><div class='chargement'>" + t("chargement") + "</div></div>";
-
-  zone.innerHTML = html;
-
-  Array.prototype.forEach.call(zone.querySelectorAll("[data-envoyer]"), (btn) => {
+  cible.innerHTML = html;
+  Array.prototype.forEach.call(cible.querySelectorAll("[data-reponse]"), (ta) => {
+    if (brouillons[ta.dataset.tel] != null) ta.value = brouillons[ta.dataset.tel];
+    if (focus && focus.tel === ta.dataset.tel) { ta.focus(); try { ta.setSelectionRange(focus.debut, focus.fin); } catch (e) {} }
+  });
+  Array.prototype.forEach.call(cible.querySelectorAll("[data-histo]"), (d) => {
+    const mem = defilements[d.dataset.histo];
+    if (mem) d.scrollTop = mem.bas ? d.scrollHeight : mem.haut;
+  });
+  Array.prototype.forEach.call(cible.querySelectorAll("[data-envoyer]"), (btn) => {
     btn.onclick = async () => {
       const i = Number(btn.dataset.envoyer);
-      const texte = zone.querySelector("[data-reponse='" + i + "']").value.trim();
+      const texte = cible.querySelector("[data-reponse='" + i + "']").value.trim();
       if (!texte) { alert(t("alertEcrireMessage")); return; }
       try {
-        await api("/api/" + marchandActif.id + "/conversations/" + encodeURIComponent(conversations[i].telephone) + "/repondre", {
+        await api("/api/" + marchandActif.id + "/conversations/" + encodeURIComponent(conversationsAttente[i].telephone) + "/repondre", {
           method: "POST",
           body: JSON.stringify({ message: texte })
         });
@@ -7232,23 +7385,38 @@ async function renderConversations() {
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
   });
+}
+
+async function renderConversations() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const conversations = await api("/api/" + marchandActif.id + "/conversations");
+
+  zone.innerHTML =
+    "<h2>" + t("conversationsTitre") + "</h2>" +
+    "<div id='zoneAttente'></div>" +
+    "<h3>" + t("h3HistoriqueComplet") + "</h3><div id='zoneHistorique'><div class='chargement'>" + t("chargement") + "</div></div>";
+  signatureAttente = signatureConversations(conversations);
+  monterAttente(conversations);
 
   if (vueHistoriqueTelephone) renderHistoriqueDetail(vueHistoriqueTelephone);
   else renderHistoriqueListe();
+  demarrerConversationsAuto();
 }
 
 // Liste de TOUS les clients ayant deja ecrit au bot (pas seulement ceux en attente d'un humain), avec un
 // apercu du dernier message - clic sur une ligne pour ouvrir le detail complet de la conversation.
-async function renderHistoriqueListe() {
+async function renderHistoriqueListe(silencieux) {
   const conteneur = document.getElementById("zoneHistorique");
   if (!conteneur) return;
   let historique;
   try {
     historique = await api("/api/" + marchandActif.id + "/conversations/historique");
   } catch (e) {
-    conteneur.innerHTML = "<p class='erreur'>" + t("erreurChargerHistorique") + esc(e.message) + "</p>";
+    if (!silencieux) conteneur.innerHTML = "<p class='erreur'>" + t("erreurChargerHistorique") + esc(e.message) + "</p>";
     return;
   }
+  if (vueHistoriqueTelephone && silencieux) return; // l'utilisateur a ouvert un detail entre-temps
   if (!historique.length) {
     conteneur.innerHTML = "<p class='raison'>" + t("msgAucunEchange") + "</p>";
     return;
@@ -7272,17 +7440,21 @@ async function renderHistoriqueListe() {
 }
 
 // Transcript complet d'un client donne, dans l'ordre chronologique (memes bulles que le Simulateur).
-async function renderHistoriqueDetail(telephone) {
+async function renderHistoriqueDetail(telephone, silencieux) {
   const conteneur = document.getElementById("zoneHistorique");
   if (!conteneur) return;
-  conteneur.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  if (!silencieux) conteneur.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   let messages;
   try {
     messages = await api("/api/" + marchandActif.id + "/conversations/historique/" + encodeURIComponent(telephone));
   } catch (e) {
-    conteneur.innerHTML = "<p class='erreur'>" + t("erreurChargerConversation") + esc(e.message) + "</p>";
+    if (!silencieux) conteneur.innerHTML = "<p class='erreur'>" + t("erreurChargerConversation") + esc(e.message) + "</p>";
     return;
   }
+  if (silencieux && vueHistoriqueTelephone !== telephone) return;
+  const ancienne = conteneur.querySelector(".chat-fenetre");
+  const memoire = ancienne ? { haut: ancienne.scrollTop, bas: ancienne.scrollTop + ancienne.clientHeight >= ancienne.scrollHeight - 4, nb: ancienne.querySelectorAll(".bulle").length } : null;
+  if (silencieux && memoire && memoire.nb === messages.length) return; // rien de nouveau : on ne touche a rien
   conteneur.innerHTML =
     "<button id='btnRetourHistorique' style='background:transparent;border:none;color:#14213d;text-decoration:underline;padding:0;margin-bottom:10px;'>" + t("btnRetourHistorique") + "</button>" +
     "<h4 style='margin:0 0 8px;'>" + esc(telephone) + "</h4>" +
@@ -7296,6 +7468,8 @@ async function renderHistoriqueDetail(telephone) {
     "</div>" +
     "<div class='raison'>" + messages.length + t("messageCount") + esc(telephone) + "</div>";
   document.getElementById("btnRetourHistorique").onclick = () => { vueHistoriqueTelephone = null; renderHistoriqueListe(); };
+  const nouvelle = conteneur.querySelector(".chat-fenetre");
+  if (nouvelle && memoire) nouvelle.scrollTop = memoire.bas ? nouvelle.scrollHeight : memoire.haut;
 }
 
 // ---------------- Tableau de bord ----------------
@@ -8956,6 +9130,64 @@ function brancherBlocTesterAlerte() {
   };
 }
 
+// ---------------- Alertes WhatsApp commande / rendez-vous : option payante + regroupement (Etape 85) ----------------
+// SUPER-ADMINISTRATEUR : ouvre/ferme les alertes WhatsApp de commande et de rendez-vous, les rappels de rendez-vous hors fenetre de 24 h,
+// et fixe le plancher du regroupement. MARCHAND : ne voit ce bloc QUE si le super-administrateur a ouvert les alertes (le serveur
+// n'envoie alors le bloc `notif` qu'a ce moment-la) ; il choisit seulement l'intervalle de regroupement, jamais en dessous du plancher.
+function bornesRegroupementTexte(rg) {
+  const a = rg.alertesMaxParJour;
+  return (rg.intervalleEffectifMinutes > 0 ? t("noteRegroupementCap", { n: a, m: rg.intervalleEffectifMinutes }) : t("noteRegroupementAucun")) +
+    (rg.plafondMinutes !== null && rg.plafondMinutes !== undefined ? " " + t("noteRegroupementPlafond", { m: rg.plafondMinutes }) : "");
+}
+function blocAlertesHtml() {
+  const notif = marchandActif.notif;
+  if (!notif) return "";
+  const superadmin = moi && moi.role === "superadmin";
+  const rg = notif.regroupement;
+  let h = "<h3>" + t("h3AlertesWhatsapp") + "</h3>";
+  if (superadmin) {
+    h += "<p class='raison'>" + t("noteAlertesSuperadmin") + "</p>" +
+      "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='champOptionAlertesWhatsapp'" + (notif.alertesWhatsapp ? " checked" : "") + " /> " + t("labelOptionAlertesWhatsapp") + "</label>" +
+      "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionRappelsRdv'" + (notif.rappelsRdv ? " checked" : "") + " /> " + t("labelOptionRappelsRdv") + "</label>" +
+      "<label>" + t("labelRegroupementMinimum") + "</label> <select id='champRegroupementMinimum'>" +
+        [0, 5, 10, 15, 30].map((m) => "<option value='" + m + "'" + (m === rg.minimumMinutes ? " selected" : "") + ">" + esc(m === 0 ? t("regroupementAucun") : t("regroupementMinutes", { m: m })) + "</option>").join("") +
+      "</select> <button id='btnSauverAlertes' class='principal'>" + t("enregistrer") + "</button>";
+  }
+  if (superadmin || notif.regroupement) {
+    h += "<p class='raison'>" + t("noteRegroupement") + "</p>" +
+      "<label>" + t("labelRegroupement") + "</label> <select id='champRegroupement'>" +
+        rg.choix.concat(rg.choix.indexOf(rg.minutes) === -1 ? [rg.minutes] : []).sort((a, b) => a - b).map((m) => "<option value='" + m + "'" + (m === rg.minutes ? " selected" : "") + ">" + esc(m === 0 ? t("regroupementAucun") : t("regroupementMinutes", { m: m })) + "</option>").join("") +
+      "</select> <button id='btnSauverRegroupement' class='principal'>" + t("enregistrer") + "</button>" +
+      "<p class='raison' id='noteCapRegroupement'>" + esc(bornesRegroupementTexte(rg)) + "</p>";
+  }
+  return h;
+}
+function brancherBlocAlertes() {
+  const btnA = document.getElementById("btnSauverAlertes");
+  if (btnA) btnA.onclick = async () => {
+    try {
+      await api("/api/marchands/" + marchandActif.id + "/options-payantes", { method: "PUT", body: JSON.stringify({
+        optionAlertesWhatsapp: document.getElementById("champOptionAlertesWhatsapp").checked,
+        optionRappelsRdv: document.getElementById("champOptionRappelsRdv").checked,
+        regroupementMinimumMinutes: Number(document.getElementById("champRegroupementMinimum").value)
+      }) });
+      alert(t("alertAlertesEnregistrees"));
+      const idMarchand = marchandActif.id;
+      await demarrer();
+      if (marchands.some((m) => m.id === idMarchand)) choisirMarchand(idMarchand);
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  const btnR = document.getElementById("btnSauverRegroupement");
+  if (btnR) btnR.onclick = async () => {
+    try {
+      const rep = await api("/api/" + marchandActif.id + "/regroupement-alertes", { method: "PUT", body: JSON.stringify({ minutes: Number(document.getElementById("champRegroupement").value) }) });
+      marchandActif.notif = Object.assign({}, marchandActif.notif || {}, rep || {});
+      alert(t("alertRegroupementEnregistre"));
+      renderCompte();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+}
+
 // ---------------- Numeros d'alerte supplementaires (Etape 76) : option payante, quota fixe par le SEUL super-administrateur ----------------
 // Le super-administrateur choisit combien de numeros le marchand peut ajouter (0 = option fermee, invisible pour le marchand) ;
 // le marchand remplit la liste dans cette limite. Tous ces numeros recoivent les memes alertes que le numero principal.
@@ -9060,6 +9292,7 @@ async function renderCompte() {
       "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
       blocTesterAlerteHtml() +
       blocNumerosSuppHtml() +
+      blocAlertesHtml() +
       (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "") +
       blocLogoHtml() +
       blocImageAccueilWhatsappHtml() +
@@ -9067,6 +9300,7 @@ async function renderCompte() {
     brancherBlocOptionsPayantes();
     brancherBlocTesterAlerte();
     brancherBlocNumerosSupp();
+    brancherBlocAlertes();
     if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
     brancherBlocLogo();
     brancherBlocImageAccueilWhatsapp();
@@ -9152,12 +9386,14 @@ async function renderCompte() {
     "<div style='margin-top:10px;'><button id='btnSauverNotification' class='principal'>" + t("enregistrer") + "</button></div>" +
     blocTesterAlerteHtml() +
     blocNumerosSuppHtml() +
+    blocAlertesHtml() +
     (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "") +
     blocLogoHtml() +
     blocImageAccueilWhatsappHtml() +
     blocQrHtml();
   brancherBlocTesterAlerte();
   brancherBlocNumerosSupp();
+  brancherBlocAlertes();
   if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
   brancherBlocLogo();
   brancherBlocImageAccueilWhatsapp();

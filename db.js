@@ -161,6 +161,9 @@ async function ensureMerchantsTable() {
   // Etape 80 : nombre de photos envoyees AUTOMATIQUEMENT quand le client choisit une chambre ou un service (1 = photo de couverture, 3 = toutes).
   // Reglable par le SEUL super-administrateur (chaque photo est un message WhatsApp facture par Meta).
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS nb_photos_auto INTEGER NOT NULL DEFAULT 1");
+  // Etape 85 : reglages de notification et de reduction des couts Meta (alertes WhatsApp commande/RDV en option payante,
+  // regroupement, rappels, modeles hors fenetre). NULL = marchand HISTORIQUE : comportement inchange (voir reglagesNotifDe).
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS reglages_notif JSONB");
 }
 
 // Cles de migration connues pour les roles employe (voir migrerRolesEmployes ci-dessous). Un marchand cree
@@ -272,6 +275,37 @@ function normaliserModulesSecondaires(brut) {
   return vus.slice(0, 3).join(",") || null; // Etape 74 : jusqu'a trois volets secondaires (quatre volets au total)
 }
 
+// ---------------- Etape 85 : reglages de notification / reduction des couts Meta ----------------
+// Un marchand HISTORIQUE (colonne NULL) garde EXACTEMENT son comportement d'avant : alertes WhatsApp commande/RDV actives,
+// rappels et modeles hors fenetre actifs, aucun regroupement. Un marchand CREE APRES cette etape demarre avec les options
+// payantes FERMEES (alertes WhatsApp commande/RDV, rappels de RDV hors fenetre de 24 h) : seul le super-administrateur les ouvre.
+// `regroupementMinimumMinutes` (plancher) n'est reglable que par le super-administrateur ; `regroupementMinutes` par le marchand.
+const CHOIX_REGROUPEMENT_MINUTES = [0, 5, 10, 15, 30];
+const REGLAGES_NOTIF_HISTORIQUE = { alertesWhatsapp: true, rappelsRdv: true, regroupementMinutes: 0, regroupementMinimumMinutes: 0, pastillesInitialisees: false };
+const REGLAGES_NOTIF_NOUVEAU = { alertesWhatsapp: false, rappelsRdv: false, regroupementMinutes: 10, regroupementMinimumMinutes: 0, pastillesInitialisees: true };
+function entierChoisi(v, choix, defaut) { const n = Number(v); return choix.indexOf(n) !== -1 ? n : defaut; }
+function normaliserReglagesNotif(r) {
+  const b = r && typeof r === "object" ? r : {};
+  return {
+    alertesWhatsapp: b.alertesWhatsapp === true,
+    rappelsRdv: b.rappelsRdv === true,
+    regroupementMinutes: entierChoisi(b.regroupementMinutes, CHOIX_REGROUPEMENT_MINUTES, 10),
+    regroupementMinimumMinutes: entierChoisi(b.regroupementMinimumMinutes, CHOIX_REGROUPEMENT_MINUTES, 0),
+    // Pastilles : une fois initialisees (a la premiere lecture des compteurs), les elements deja Confirme sont consideres comme vus.
+    pastillesInitialisees: b.pastillesInitialisees === true
+  };
+}
+// Reglages EFFECTIFS d'un marchand (historique ou non), avec le plafond propre a l'enseigne : l'intervalle ne peut pas depasser
+// la moitie du delai minimum de retrait des magasins (`plafondMinutes`, fourni par l'appelant qui connait les magasins).
+function reglagesNotifDe(m, plafondMinutes) {
+  const r = m && m.reglagesNotif ? normaliserReglagesNotif(m.reglagesNotif) : Object.assign({}, REGLAGES_NOTIF_HISTORIQUE);
+  let intervalle = Math.max(r.regroupementMinutes, r.regroupementMinimumMinutes);
+  if (Number.isFinite(plafondMinutes) && plafondMinutes >= 0) intervalle = Math.min(intervalle, Math.floor(plafondMinutes));
+  r.intervalleEffectifMinutes = intervalle;
+  r.plafondMinutes = Number.isFinite(plafondMinutes) ? Math.floor(plafondMinutes) : null;
+  return r;
+}
+
 function defaultMerchantFromEnv() {
   // Migration automatique : recree le marchand historique "default" a partir des variables
   // d'environnement existantes, pour que les installations deja en production ne perdent rien.
@@ -313,7 +347,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, reglages_notif FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return migrerRolesEmployes(res.rows.map(rowToMerchant));
     }
@@ -367,7 +401,8 @@ function rowToMerchant(row) {
     // Etape 76 : quota (super-administrateur seul) et liste (marchand) des numeros supplementaires d'alerte.
     nbNumerosNotificationSupp: Number.isInteger(row.nb_numeros_notification_supp) && row.nb_numeros_notification_supp > 0 ? row.nb_numeros_notification_supp : 0,
     numerosNotificationSupp: Array.isArray(row.numeros_notification_supp) ? row.numeros_notification_supp.map(String) : [],
-    nbPhotosAuto: row.nb_photos_auto === 3 ? 3 : 1
+    nbPhotosAuto: row.nb_photos_auto === 3 ? 3 : 1,
+    reglagesNotif: row.reglages_notif && typeof row.reglages_notif === "object" ? normaliserReglagesNotif(row.reglages_notif) : null // Etape 85
   };
 }
 
@@ -375,12 +410,12 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20::jsonb,$21,$22,$23,$24,$25,$26::jsonb,$27,$28) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb, izyfacture_api_key=$17, izyfacture_auto_facturation=$18, option_facturation_izyfacture=$19, derniere_erreur_alerte=$20::jsonb, filigrane_logo_actif=$21, option_caisse_pos=$22, option_vente_gros=$23, module_secondaire=$24, nb_numeros_notification_supp=$25, numeros_notification_supp=$26::jsonb, nb_photos_auto=$27, option_enseigne=$28",
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, reglages_notif) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20::jsonb,$21,$22,$23,$24,$25,$26::jsonb,$27,$28,$29::jsonb) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb, izyfacture_api_key=$17, izyfacture_auto_facturation=$18, option_facturation_izyfacture=$19, derniere_erreur_alerte=$20::jsonb, filigrane_logo_actif=$21, option_caisse_pos=$22, option_vente_gros=$23, module_secondaire=$24, nb_numeros_notification_supp=$25, numeros_notification_supp=$26::jsonb, nb_photos_auto=$27, option_enseigne=$28, reglages_notif=$29::jsonb",
       // rolesMigres absent (nouveau marchand cree via l'API, voir server.js POST /api/marchands) -> on
       // suppose qu'il n'a jamais connu l'ancien regroupement de roles, donc toutes les cles de migration
       // connues sont deja "appliquees" par defaut (rien a migrer pour un marchand qui vient de naitre).
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null), m.filigraneLogoActif !== false, !!m.optionCaissePos, !!m.optionVenteGros, normaliserModulesSecondaires(m.moduleSecondaire), Number.isInteger(m.nbNumerosNotificationSupp) && m.nbNumerosNotificationSupp > 0 ? m.nbNumerosNotificationSupp : 0, JSON.stringify(Array.isArray(m.numerosNotificationSupp) ? m.numerosNotificationSupp : []), m.nbPhotosAuto === 3 ? 3 : 1, !!m.optionEnseigne]
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null), m.filigraneLogoActif !== false, !!m.optionCaissePos, !!m.optionVenteGros, normaliserModulesSecondaires(m.moduleSecondaire), Number.isInteger(m.nbNumerosNotificationSupp) && m.nbNumerosNotificationSupp > 0 ? m.nbNumerosNotificationSupp : 0, JSON.stringify(Array.isArray(m.numerosNotificationSupp) ? m.numerosNotificationSupp : []), m.nbPhotosAuto === 3 ? 3 : 1, !!m.optionEnseigne, m.reglagesNotif ? JSON.stringify(normaliserReglagesNotif(m.reglagesNotif)) : null]
     );
     return;
   }
@@ -398,7 +433,7 @@ async function getMerchantRecord(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, reglages_notif FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -430,7 +465,7 @@ async function updateMerchantFields(id, patch) {
     // cas pour "employes" avant ce correctif : changer par ex. le numero de notification d'un marchand
     // ayant des employes les supprimait tous sans le vouloir.
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, reglages_notif FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -459,6 +494,7 @@ async function updateMerchantFields(id, patch) {
     if (patch.nbNumerosNotificationSupp !== undefined) m.nbNumerosNotificationSupp = patch.nbNumerosNotificationSupp;
     if (patch.numerosNotificationSupp !== undefined) m.numerosNotificationSupp = patch.numerosNotificationSupp;
     if (patch.nbPhotosAuto !== undefined) m.nbPhotosAuto = patch.nbPhotosAuto === 3 ? 3 : 1;
+    if (patch.reglagesNotif !== undefined) m.reglagesNotif = patch.reglagesNotif ? normaliserReglagesNotif(patch.reglagesNotif) : null;
     // Dernier echec de livraison d'alerte signale par Meta (voir POST /webhook, Etape 25) - `null` explicite
     // accepte (efface volontairement l'ancien echec affiche), jamais reecrit avec une valeur "vide" par erreur.
     if (patch.derniereErreurAlerte !== undefined) m.derniereErreurAlerte = patch.derniereErreurAlerte || null;
@@ -501,6 +537,7 @@ async function updateMerchantFields(id, patch) {
   if (patch.nbNumerosNotificationSupp !== undefined) liste[idx].nbNumerosNotificationSupp = patch.nbNumerosNotificationSupp;
   if (patch.numerosNotificationSupp !== undefined) liste[idx].numerosNotificationSupp = patch.numerosNotificationSupp;
   if (patch.nbPhotosAuto !== undefined) liste[idx].nbPhotosAuto = patch.nbPhotosAuto === 3 ? 3 : 1;
+  if (patch.reglagesNotif !== undefined) liste[idx].reglagesNotif = patch.reglagesNotif ? normaliserReglagesNotif(patch.reglagesNotif) : null;
   if (patch.derniereErreurAlerte !== undefined) liste[idx].derniereErreurAlerte = patch.derniereErreurAlerte || null;
   fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
   return liste[idx];
@@ -857,6 +894,22 @@ async function getConversationSummaries(merchantKey) {
     .sort((a, b) => new Date(b.dernierHorodatageISO) - new Date(a.dernierHorodatageISO));
 }
 
+// Etape 85 : horodatage (ISO) du DERNIER message ENVOYE PAR LE CLIENT (de = 'client') - sert a savoir si la fenetre de service de
+// 24 h de WhatsApp est ouverte (seul un message du client l'ouvre). null si le client n'a jamais ecrit.
+async function dernierMessageClientISO(merchantKey, telephone) {
+  if (!telephone) return null;
+  if (pool) {
+    await ensureConversationLogTable();
+    const res = await pool.query(
+      "SELECT MAX(horodatage) AS dernier FROM conversation_log WHERE merchant_key = $1 AND telephone = $2 AND de = 'client'",
+      [merchantKey, telephone]
+    );
+    return res.rows[0] && res.rows[0].dernier ? new Date(res.rows[0].dernier).toISOString() : null;
+  }
+  const messages = ((lireJournalLocal()[merchantKey] || {})[telephone] || []).filter((x) => x.de === "client");
+  return messages.length ? messages[messages.length - 1].horodatageISO : null;
+}
+
 // Historique complet (borne a MAX_MESSAGES_PAR_CLIENT) d'UN client, du plus ancien au plus recent - pret a
 // afficher tel quel dans une fenetre de discussion.
 async function getConversationHistory(merchantKey, telephone) {
@@ -1134,6 +1187,11 @@ module.exports = {
   supprimerSessionClient,
   purgerSessionsClients,
   logConversationMessage,
+  dernierMessageClientISO,
+  reglagesNotifDe,
+  normaliserReglagesNotif,
+  REGLAGES_NOTIF_NOUVEAU,
+  CHOIX_REGROUPEMENT_MINUTES,
   getConversationSummaries,
   getConversationHistory,
   journalAjouter,
