@@ -154,6 +154,7 @@ async function ensureMerchantsTable() {
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_enseigne BOOLEAN NOT NULL DEFAULT false"); // Etape 84
   // Etape 87 : mode « Caisse seule » (point de vente sans WhatsApp). Debloque UNIQUEMENT par le super-administrateur (PUT /api/marchands/:id/options-payantes), faux par defaut.
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_caisse_seule BOOLEAN NOT NULL DEFAULT false");
+  await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS option_restauration BOOLEAN NOT NULL DEFAULT false"); // Etape 89
   // Etape 76 : numeros SUPPLEMENTAIRES recevant les alertes (commande, conseiller humain, rendez-vous...). Option payante : le
   // QUOTA (nb_numeros_notification_supp, 0 = option fermee) n'est reglable que par le super-administrateur ; la liste
   // elle-meme (numeros_notification_supp) est remplie par le marchand dans la limite de ce quota. Le numero historique
@@ -339,6 +340,7 @@ function defaultMerchantFromEnv() {
     optionVenteGros: false,
     optionEnseigne: false,
     optionCaisseSeule: false,
+    optionRestauration: false,
     nbNumerosNotificationSupp: 0,
     numerosNotificationSupp: [],
     nbPhotosAuto: 1
@@ -350,7 +352,7 @@ function defaultMerchantFromEnv() {
 async function initRegistry() {
   if (pool) {
     await ensureMerchantsTable();
-    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, reglages_notif FROM merchants ORDER BY created_at ASC");
+    const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, option_restauration, reglages_notif FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
       return migrerRolesEmployes(res.rows.map(rowToMerchant));
     }
@@ -400,6 +402,7 @@ function rowToMerchant(row) {
     optionVenteGros: row.option_vente_gros === true,
     optionEnseigne: row.option_enseigne === true, // Etape 84
     optionCaisseSeule: row.option_caisse_seule === true, // Etape 87
+    optionRestauration: row.option_restauration === true, // Etape 89
     // Etape 66 : liste (max 2) de volets secondaires separes par une virgule, ex. "service,hebergement".
     moduleSecondaire: normaliserModulesSecondaires(row.module_secondaire),
     // Etape 76 : quota (super-administrateur seul) et liste (marchand) des numeros supplementaires d'alerte.
@@ -414,12 +417,12 @@ async function insertMerchant(m) {
   if (pool) {
     await ensureMerchantsTable();
     await pool.query(
-      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, reglages_notif) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20::jsonb,$21,$22,$23,$24,$25,$26::jsonb,$27,$28,$29,$30::jsonb) " +
-        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb, izyfacture_api_key=$17, izyfacture_auto_facturation=$18, option_facturation_izyfacture=$19, derniere_erreur_alerte=$20::jsonb, filigrane_logo_actif=$21, option_caisse_pos=$22, option_vente_gros=$23, module_secondaire=$24, nb_numeros_notification_supp=$25, numeros_notification_supp=$26::jsonb, nb_photos_auto=$27, option_enseigne=$28, option_caisse_seule=$29, reglages_notif=$30::jsonb",
+      "INSERT INTO merchants (id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, option_restauration, reglages_notif) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19,$20::jsonb,$21,$22,$23,$24,$25,$26::jsonb,$27,$28,$29,$30,$31::jsonb) " +
+        "ON CONFLICT (id) DO UPDATE SET nom=$2, type=$3, phone_number_id=$4, admin_user=$5, admin_password=$6, phone_notification=$7, actif=$8, employes=$9::jsonb, logo_url=$10, image_accueil_whatsapp_url=$11, numero_whatsapp_public=$12, option_stock_illimite=$13, option_lien_commande=$14, option_notifications_statut=$15, roles_migres=$16::jsonb, izyfacture_api_key=$17, izyfacture_auto_facturation=$18, option_facturation_izyfacture=$19, derniere_erreur_alerte=$20::jsonb, filigrane_logo_actif=$21, option_caisse_pos=$22, option_vente_gros=$23, module_secondaire=$24, nb_numeros_notification_supp=$25, numeros_notification_supp=$26::jsonb, nb_photos_auto=$27, option_enseigne=$28, option_caisse_seule=$29, option_restauration=$30, reglages_notif=$31::jsonb",
       // rolesMigres absent (nouveau marchand cree via l'API, voir server.js POST /api/marchands) -> on
       // suppose qu'il n'a jamais connu l'ancien regroupement de roles, donc toutes les cles de migration
       // connues sont deja "appliquees" par defaut (rien a migrer pour un marchand qui vient de naitre).
-      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null), m.filigraneLogoActif !== false, !!m.optionCaissePos, !!m.optionVenteGros, normaliserModulesSecondaires(m.moduleSecondaire), Number.isInteger(m.nbNumerosNotificationSupp) && m.nbNumerosNotificationSupp > 0 ? m.nbNumerosNotificationSupp : 0, JSON.stringify(Array.isArray(m.numerosNotificationSupp) ? m.numerosNotificationSupp : []), m.nbPhotosAuto === 3 ? 3 : 1, !!m.optionEnseigne, !!m.optionCaisseSeule, m.reglagesNotif ? JSON.stringify(normaliserReglagesNotif(m.reglagesNotif)) : null]
+      [m.id, m.nom, m.type, m.phoneNumberId, m.adminUser, m.adminPassword, m.phoneNotification || null, m.actif !== false, JSON.stringify(m.employes || []), m.logoUrl || null, m.imageAccueilWhatsappUrl || null, m.numeroWhatsappPublic || null, !!m.optionStockIllimite, !!m.optionLienCommande, !!m.optionNotificationsStatut, JSON.stringify(Array.isArray(m.rolesMigres) ? m.rolesMigres : CLES_MIGRATIONS_ROLES_CONNUES), m.izyfactureApiKey || null, !!m.izyfactureAutoFacturation, !!m.optionFacturationIzyfacture, JSON.stringify(m.derniereErreurAlerte || null), m.filigraneLogoActif !== false, !!m.optionCaissePos, !!m.optionVenteGros, normaliserModulesSecondaires(m.moduleSecondaire), Number.isInteger(m.nbNumerosNotificationSupp) && m.nbNumerosNotificationSupp > 0 ? m.nbNumerosNotificationSupp : 0, JSON.stringify(Array.isArray(m.numerosNotificationSupp) ? m.numerosNotificationSupp : []), m.nbPhotosAuto === 3 ? 3 : 1, !!m.optionEnseigne, !!m.optionCaisseSeule, m.optionRestauration === true, m.reglagesNotif ? JSON.stringify(normaliserReglagesNotif(m.reglagesNotif)) : null]
     );
     return;
   }
@@ -437,7 +440,7 @@ async function getMerchantRecord(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, reglages_notif FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, option_restauration, reglages_notif FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -469,7 +472,7 @@ async function updateMerchantFields(id, patch) {
     // cas pour "employes" avant ce correctif : changer par ex. le numero de notification d'un marchand
     // ayant des employes les supprimait tous sans le vouloir.
     const res = await pool.query(
-      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, reglages_notif FROM merchants WHERE id = $1",
+      "SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, option_restauration, reglages_notif FROM merchants WHERE id = $1",
       [id]
     );
     if (!res.rows.length) return null;
@@ -495,6 +498,7 @@ async function updateMerchantFields(id, patch) {
     if (patch.optionVenteGros !== undefined) m.optionVenteGros = !!patch.optionVenteGros;
     if (patch.optionEnseigne !== undefined) m.optionEnseigne = !!patch.optionEnseigne;
     if (patch.optionCaisseSeule !== undefined) m.optionCaisseSeule = !!patch.optionCaisseSeule;
+    if (patch.optionRestauration !== undefined) m.optionRestauration = !!patch.optionRestauration;
     if (patch.moduleSecondaire !== undefined) m.moduleSecondaire = normaliserModulesSecondaires(patch.moduleSecondaire);
     if (patch.nbNumerosNotificationSupp !== undefined) m.nbNumerosNotificationSupp = patch.nbNumerosNotificationSupp;
     if (patch.numerosNotificationSupp !== undefined) m.numerosNotificationSupp = patch.numerosNotificationSupp;
@@ -539,6 +543,7 @@ async function updateMerchantFields(id, patch) {
   if (patch.optionVenteGros !== undefined) liste[idx].optionVenteGros = !!patch.optionVenteGros;
   if (patch.optionEnseigne !== undefined) liste[idx].optionEnseigne = !!patch.optionEnseigne;
   if (patch.optionCaisseSeule !== undefined) liste[idx].optionCaisseSeule = !!patch.optionCaisseSeule;
+  if (patch.optionRestauration !== undefined) liste[idx].optionRestauration = !!patch.optionRestauration;
   if (patch.moduleSecondaire !== undefined) liste[idx].moduleSecondaire = normaliserModulesSecondaires(patch.moduleSecondaire);
   if (patch.nbNumerosNotificationSupp !== undefined) liste[idx].nbNumerosNotificationSupp = patch.nbNumerosNotificationSupp;
   if (patch.numerosNotificationSupp !== undefined) liste[idx].numerosNotificationSupp = patch.numerosNotificationSupp;

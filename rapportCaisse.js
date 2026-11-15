@@ -63,7 +63,7 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
     .sort((a, b) => (a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : a.id - b.id));
 
   const parMode = {}; MODES.forEach((m) => { parMode[m] = { mode: m, nb: 0, montant: 0, nbAnnulees: 0, montantAnnule: 0 }; });
-  const parJour = {}, parCaissier = {}, articles = {};
+  const parJour = {}, parCaissier = {}, articles = {}, parServeur = {}, parTable = {};
   const totaux = { nbVentes: 0, brut: 0, nbAnnulees: 0, montantAnnule: 0, net: 0, nbArticles: 0, nbFacturees: 0, nbVentesRemisees: 0, remises: 0, brutAvantRemise: 0 };
   const jour = (d) => parJour[d] || (parJour[d] = { date: d, nb: 0, net: 0, nbAnnulees: 0, annule: 0, especes: 0, om: 0, momo: 0, carte: 0, cheque: 0 });
   const cais = (c) => { const k = c || "—"; return parCaissier[k] || (parCaissier[k] = { caissier: k, nb: 0, net: 0, nbAnnulees: 0, annule: 0, nbRemises: 0, remises: 0, brutAvantRemise: 0 }); };
@@ -88,6 +88,11 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
       parts.forEach((pt) => { parMode[pt.mode].nb++; parMode[pt.mode].montant += pt.montant; J[pt.mode] += pt.montant; });
       J.nb++; J.net += montant; C.nb++; C.net += montant;
       if (o.izyfactureNumero) totaux.nbFacturees++;
+      // Etape 89 : ventes issues d'une addition de table (mode restauration), par serveur (celui qui a ouvert l'addition) et par table.
+      if (o.table) {
+        const sv = o.serveur || "—", sk = parServeur[sv] || (parServeur[sv] = { serveur: sv, nb: 0, net: 0 }); sk.nb++; sk.net += montant;
+        const tk = parTable[o.table] || (parTable[o.table] = { table: o.table, nb: 0, net: 0 }); tk.nb++; tk.net += montant;
+      }
       (o.items || []).forEach((it) => {
         const k = libelleArticle(it);
         const a = articles[k] || (articles[k] = { article: k, quantite: 0, montant: 0 });
@@ -100,7 +105,7 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
       sessionId: o.sessionCaisseId != null ? o.sessionCaisseId : null, caissier: o.caissier || null,
       mode, reference: parts.length > 1 ? parts.filter((pt) => pt.reference).map((pt) => pt.mode + ":" + pt.reference).join(" ; ") || null : (o.referencePaiement || null), paiements: parts.length > 1 ? parts : undefined, montant, remise: o.remise && o.remise.montant > 0 ? o.remise.montant : 0, motifRemise: o.remise ? o.remise.motif : null, remisePar: o.remise ? o.remise.accordePar : null, statut: annulee ? "annulee" : "valide",
       raisonAnnulation: annulee ? (o.raisonAnnulation || null) : null,
-      facture: o.izyfactureNumero || null,
+      facture: o.izyfactureNumero || null, table: o.table || null, serveur: o.serveur || null,
       articles: (o.items || []).map((it) => (Number(it.quantite) || 0) + " x " + libelleArticle(it)).join(" ; ")
     };
   });
@@ -165,7 +170,8 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
     totaux, parMode: MODES.map((m) => parMode[m]), parJour: jours,
     parCaissier: Object.keys(parCaissier).sort().map((k) => parCaissier[k]),
     articles: Object.keys(articles).map((k) => articles[k]).sort((a, b) => b.montant - a.montant || (a.article < b.article ? -1 : 1)),
-    sessions: lesSessions, ecarts, ventes: detail, retours
+    sessions: lesSessions, ecarts, ventes: detail, retours,
+    restauration: Object.keys(parServeur).length ? { parServeur: Object.keys(parServeur).sort().map((k) => parServeur[k]), parTable: Object.keys(parTable).sort().map((k) => parTable[k]) } : null
   };
 }
 
@@ -179,8 +185,8 @@ function csv(rapport, vue, sep) {
   };
   let colonnes, lignes;
   if (vue === "ventes") {
-    colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "remise", "motifRemise", "remisePar", "statut", "raisonAnnulation", "facture", "articles"];
-    lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.remise, v.motifRemise, v.remisePar, v.statut, v.raisonAnnulation, v.facture, v.articles]);
+    colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "remise", "motifRemise", "remisePar", "statut", "raisonAnnulation", "facture", "articles", "table", "serveur"];
+    lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.remise, v.motifRemise, v.remisePar, v.statut, v.raisonAnnulation, v.facture, v.articles, v.table, v.serveur]);
   } else if (vue === "retours") {
     colonnes = ["piece", "vente", "date", "heure", "session", "caissier", "mode", "reference", "montant", "motif", "venteAnnulee", "articles"];
     lignes = (rapport.retours ? rapport.retours.detail : []).map((r) => [r.piece, r.vente, r.date, r.heure, r.sessionId, r.caissier, r.mode, r.reference, r.montant, r.motif, r.venteAnnulee ? "oui" : "non", r.articles]);

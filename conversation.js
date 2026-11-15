@@ -126,7 +126,11 @@ function seedState() {
     caisseSessions: [], // sessions d'ouverture/fermeture de caisse (Caisse POS, voir plus bas)
     nextCaisseSessionId: 1,
     ventesAttente: [], // Etape 88 : paniers de la Caisse mis en attente (aucune reservation de stock)
-    nextAttenteId: 1
+    nextAttenteId: 1,
+    restauration: { tables: [], categoriesPoste: {} }, // Etape 89 : mode restauration (tables, postes cuisine/bar)
+    additions: [], // Etape 89 : additions ouvertes (une par table)
+    nextAdditionId: 1,
+    additionsAnnulees: [] // Etape 89 : trace compacte des additions annulees
   };
 }
 
@@ -229,6 +233,10 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.nextCaisseSessionId) state.nextCaisseSessionId = 1;
     if (!state.ventesAttente) state.ventesAttente = []; // Etape 88
     if (!state.nextAttenteId) state.nextAttenteId = 1;
+    if (!state.restauration) state.restauration = { tables: [], categoriesPoste: {} }; // Etape 89
+    if (!state.additions) state.additions = [];
+    if (!state.nextAdditionId) state.nextAdditionId = 1;
+    if (!state.additionsAnnulees) state.additionsAnnulees = [];
     await persistance.charger();
   }
 
@@ -3610,6 +3618,264 @@ function createCatalogEngine(merchantKey, options) {
     return r.erreur ? r : { ok: true };
   }
 
+
+  // ---------------- Etape 89 : mode restauration (bar, snack, restaurant) ----------------
+  // Une ADDITION est ouverte par table et reste ouverte pendant le service : on y ajoute des articles, on les envoie au bar / a la cuisine
+  // (bons), puis on l'encaisse en une ou plusieurs fois (addition partagee : chaque client paie ses articles). Le stock n'est decompte qu'a
+  // l'encaissement, par creerVentePos (donc une vente de caisse normale : session, remises, paiement mixte, journal, rapport) ; en attendant, un
+  // article ne peut pas etre commande au-dela du stock disponible (quantites deja engagees dans les additions ouvertes comprises).
+  // Les postes (bar / cuisine) se deduisent de la CATEGORIE de l'article, reglee par le proprietaire : aucun champ de plus dans le catalogue.
+  const POSTES_RESTAURATION = ["bar", "cuisine"];
+  function configRestauration() {
+    if (!state.restauration) state.restauration = { tables: [], categoriesPoste: {} };
+    return state.restauration;
+  }
+  function definirConfigRestauration({ tables, categoriesPoste }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const cfg = configRestauration();
+    if (tables !== undefined) {
+      if (!Array.isArray(tables) || tables.length > 80) return { erreur: "Liste de tables invalide (80 maximum)." };
+      const propres = [], vus = {};
+      for (const brute of tables) {
+        const nom = (brute && typeof brute === "object" ? brute.nom : brute || "").toString().trim().slice(0, 30);
+        if (!nom) continue;
+        const cle = nom.toLowerCase();
+        if (vus[cle]) return { erreur: "Table en double : « " + nom + " »." };
+        vus[cle] = true;
+        propres.push({ nom });
+      }
+      // Une table qui porte une addition ouverte ne peut pas disparaitre de la liste.
+      const manquantes = state.additions.filter((a) => !vus[a.table.toLowerCase()]);
+      if (manquantes.length) return { erreur: "La table « " + manquantes[0].table + " » a une addition ouverte : encaissez-la ou transférez-la avant de la retirer." };
+      cfg.tables = propres;
+    }
+    if (categoriesPoste !== undefined) {
+      if (!categoriesPoste || typeof categoriesPoste !== "object" || Array.isArray(categoriesPoste)) return { erreur: "Réglage des postes invalide." };
+      const sortie = {};
+      Object.keys(categoriesPoste).forEach((cat) => {
+        const poste = categoriesPoste[cat];
+        if (POSTES_RESTAURATION.indexOf(poste) !== -1) sortie[String(cat).slice(0, 60)] = poste;
+      });
+      cfg.categoriesPoste = sortie;
+    }
+    saveState();
+    return { config: cfg };
+  }
+  function getConfigRestauration() {
+    if (!state) return { tables: [], categoriesPoste: {}, categories: [] };
+    const cfg = configRestauration();
+    const categories = Array.from(new Set(state.catalog.map((p) => p.cat || "").filter(Boolean))).sort();
+    return { tables: cfg.tables.map((t) => ({ nom: t.nom })), categoriesPoste: Object.assign({}, cfg.categoriesPoste), categories };
+  }
+  function posteDe(productId) {
+    const p = state.catalog.filter((x) => x.id === productId)[0];
+    return (p && configRestauration().categoriesPoste[p.cat || ""]) || null;
+  }
+  function tableConnue(nom) {
+    return configRestauration().tables.filter((t) => t.nom.toLowerCase() === String(nom || "").trim().toLowerCase())[0] || null;
+  }
+  function trouverAddition(id) { return state.additions.filter((a) => a.id === Number(id))[0] || null; }
+  function libelleLigneAddition(l) {
+    const p = state.catalog.filter((x) => x.id === l.productId)[0];
+    return (p ? p.nom : l.produit || l.productId) + ((l.couleur || l.taille) ? " (" + [l.couleur, l.taille].filter(Boolean).join(" ") + ")" : "");
+  }
+  function ligneAdditionPublique(l, i) {
+    const p = state.catalog.filter((x) => x.id === l.productId)[0];
+    const v = p ? p.variantes.filter((x) => x.couleur === l.couleur && x.taille === l.taille)[0] : null;
+    const prixUnitaire = v ? v.prix : 0;
+    return { index: i, productId: l.productId, produit: libelleLigneAddition(l), couleur: l.couleur, taille: l.taille, quantite: l.quantite, envoyee: l.envoyee || 0, note: l.note || "", poste: posteDe(l.productId), unite: p && p.unite && p.unite !== "piece" ? p.unite : undefined, decimal: !!(p && p.venteDecimale), prixUnitaire, prix: Math.round(prixUnitaire * l.quantite), indisponible: !v, par: l.par || null };
+  }
+  function additionPublique(a) {
+    const lignes = a.lignes.map(ligneAdditionPublique);
+    return { id: a.id, table: a.table, serveur: a.serveur, couverts: a.couverts || null, dateOuverture: a.dateOuverture, lignes, total: lignes.reduce((s, l) => s + l.prix, 0), nbArticles: arrondi3(lignes.reduce((s, l) => s + l.quantite, 0)), nbNonEnvoyes: arrondi3(lignes.reduce((s, l) => s + Math.max(0, l.quantite - l.envoyee), 0)), annulations: (a.annulations || []).length };
+  }
+  function listerTablesRestauration() {
+    if (!state) return { tables: [], hors: [] };
+    const cfg = configRestauration();
+    const par = {}; state.additions.forEach((a) => { par[a.table.toLowerCase()] = a; });
+    const resume = (a) => { const d = additionPublique(a); return { id: d.id, serveur: d.serveur, dateOuverture: d.dateOuverture, total: d.total, nbArticles: d.nbArticles, nbNonEnvoyes: d.nbNonEnvoyes, couverts: d.couverts }; };
+    return { tables: cfg.tables.map((t) => ({ nom: t.nom, addition: par[t.nom.toLowerCase()] ? resume(par[t.nom.toLowerCase()]) : null })) };
+  }
+  function getAddition(id) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const a = trouverAddition(id);
+    return a ? { addition: additionPublique(a) } : { erreur: "Addition introuvable.", statut: 404 };
+  }
+  function ouvrirAddition({ table, serveur, couverts }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const t = tableConnue(table);
+    if (!t) return { erreur: configRestauration().tables.length ? "Table inconnue." : "Aucune table n'est configurée : le propriétaire doit d'abord les définir." };
+    const existante = state.additions.filter((a) => a.table.toLowerCase() === t.nom.toLowerCase())[0];
+    if (existante) return { addition: additionPublique(existante), existante: true };
+    const c = couverts === undefined || couverts === null || couverts === "" ? null : Number(couverts);
+    if (c !== null && (!Number.isInteger(c) || c < 1 || c > 99)) return { erreur: "Nombre de couverts invalide." };
+    const a = { id: state.nextAdditionId++, table: t.nom, serveur: serveur || null, couverts: c, dateOuverture: new Date().toISOString(), lignes: [], envois: [], annulations: [] };
+    state.additions.push(a);
+    saveState();
+    return { addition: additionPublique(a), existante: false };
+  }
+  function quantiteEngagee(productId, couleur, taille, sauf) {
+    return arrondi3(state.additions.reduce((s, a) => s + a.lignes.reduce((x, l) => x + (l !== sauf && l.productId === productId && l.couleur === couleur && l.taille === taille ? l.quantite : 0), 0), 0));
+  }
+  function ajouterLignesAddition({ id, ajouts, serveur }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const a = trouverAddition(id);
+    if (!a) return { erreur: "Addition introuvable.", statut: 404 };
+    if (!Array.isArray(ajouts) || !ajouts.length) return { erreur: "Aucun article à ajouter." };
+    if (ajouts.length > 100) return { erreur: "Trop d'articles d'un coup." };
+    // Validation de TOUT avant la moindre modification (ajout atomique). Les quantites d'un meme article demandees dans cet appel s'additionnent.
+    const demandees = {};
+    const prets = [];
+    for (const aj of ajouts) {
+      const p = state.catalog.filter((x) => x.id === (aj && aj.productId))[0];
+      const v = p ? p.variantes.filter((x) => x.couleur === (aj.couleur === undefined || aj.couleur === null ? "" : aj.couleur) && x.taille === (aj.taille === undefined || aj.taille === null ? "" : aj.taille))[0] : null;
+      if (!p || !v) return { erreur: "Article introuvable (" + ((aj && aj.productId) || "?") + ")." };
+      const decimal = p.venteDecimale === true;
+      let q = Number(aj.quantite); if (!Number.isFinite(q)) q = 0; if (decimal) q = arrondi3(q);
+      if (decimal ? q < 0.001 : (!Number.isInteger(q) || q < 1)) return { erreur: "Quantité invalide pour \"" + p.nom + "\"." };
+      const cle = p.id + "|" + v.couleur + "|" + v.taille;
+      demandees[cle] = arrondi3((demandees[cle] || 0) + q);
+      const dispo = virtualStock(p.id, v);
+      if (!p.stockIllimite && quantiteEngagee(p.id, v.couleur, v.taille) + demandees[cle] > dispo) {
+        return { erreur: "Stock insuffisant pour \"" + p.nom + "\" : " + Math.max(0, arrondi3(dispo - quantiteEngagee(p.id, v.couleur, v.taille))) + " encore disponible(s) (hors commandes déjà en cours sur les tables)." };
+      }
+      prets.push({ productId: p.id, couleur: v.couleur, taille: v.taille, quantite: q, note: (aj.note || "").toString().trim().slice(0, 60) });
+    }
+    prets.forEach((n) => {
+      const existante = a.lignes.filter((l) => l.productId === n.productId && l.couleur === n.couleur && l.taille === n.taille && (l.note || "") === n.note)[0];
+      if (existante) existante.quantite = arrondi3(existante.quantite + n.quantite);
+      else a.lignes.push({ productId: n.productId, couleur: n.couleur, taille: n.taille, quantite: n.quantite, envoyee: 0, note: n.note, par: serveur || null });
+    });
+    saveState();
+    return { addition: additionPublique(a) };
+  }
+  // Retrait d'une partie ou de la totalite d'une ligne. La part NON encore envoyee se retire librement ; toucher a la part DEJA envoyee au bar ou a
+  // la cuisine exige le droit de gestion + un motif, est tracee, et produit un bon d'annulation pour le poste concerne.
+  function retirerLigneAddition({ id, index, quantite, motif, autorise, par }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const a = trouverAddition(id);
+    if (!a) return { erreur: "Addition introuvable.", statut: 404 };
+    const l = a.lignes[Number(index)];
+    if (!l) return { erreur: "Ligne introuvable." };
+    const entier = Number.isInteger(l.quantite);
+    let q = quantite === undefined || quantite === null || quantite === "" ? l.quantite : Number(quantite);
+    if (!Number.isFinite(q)) q = 0; if (!entier) q = arrondi3(q);
+    if (entier ? (!Number.isInteger(q) || q < 1) : q < 0.001) return { erreur: "Quantité à retirer invalide." };
+    if (q > l.quantite) return { erreur: "Quantité supérieure à celle de la ligne." };
+    const libre = arrondi3(l.quantite - (l.envoyee || 0));
+    const partEnvoyee = Math.max(0, arrondi3(q - libre));
+    let bonAnnulation = null;
+    if (partEnvoyee > 0) {
+      if (!autorise) return { erreur: "Cet article a déjà été envoyé en préparation : seul le propriétaire, ou un employé disposant du droit « remises », peut l'annuler.", statut: 403 };
+      const motifNet = (motif || "").toString().trim().slice(0, 120);
+      if (!motifNet) return { erreur: "Indiquez le motif de l'annulation (article déjà envoyé)." };
+      a.annulations.push({ dateISO: new Date().toISOString(), par: par || null, produit: libelleLigneAddition(l), quantite: partEnvoyee, motif: motifNet });
+      const poste = posteDe(l.productId);
+      if (poste) bonAnnulation = { type: "annulation", poste, table: a.table, serveur: par || null, dateISO: new Date().toISOString(), numero: "A" + a.id + "-" + a.annulations.length, lignes: [{ produit: libelleLigneAddition(l), quantite: partEnvoyee, unite: undefined, note: motifNet }] };
+      l.envoyee = arrondi3((l.envoyee || 0) - partEnvoyee);
+    }
+    l.quantite = arrondi3(l.quantite - q);
+    if (l.quantite <= 0) a.lignes.splice(Number(index), 1);
+    saveState();
+    return { addition: additionPublique(a), bonAnnulation, partEnvoyeeAnnulee: partEnvoyee };
+  }
+  function envoyerAddition({ id, par }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const a = trouverAddition(id);
+    if (!a) return { erreur: "Addition introuvable.", statut: 404 };
+    const groupes = {};
+    const sansPoste = [];
+    a.lignes.forEach((l) => {
+      const delta = arrondi3(l.quantite - (l.envoyee || 0));
+      if (delta <= 0) return;
+      const p = state.catalog.filter((x) => x.id === l.productId)[0];
+      const ligne = { produit: libelleLigneAddition(l), quantite: delta, unite: p && p.unite && p.unite !== "piece" ? p.unite : undefined, note: l.note || "" };
+      const poste = posteDe(l.productId);
+      if (poste) (groupes[poste] = groupes[poste] || []).push(ligne); else sansPoste.push(ligne);
+    });
+    if (!Object.keys(groupes).length && !sansPoste.length) return { erreur: "Rien de nouveau à envoyer." };
+    const maintenant = new Date().toISOString();
+    const bons = POSTES_RESTAURATION.filter((po) => groupes[po]).map((po) => ({ type: "commande", poste: po, table: a.table, serveur: par || a.serveur || null, couverts: a.couverts || null, dateISO: maintenant, numero: "B" + a.id + "-" + (a.envois.length + 1) + po.charAt(0).toUpperCase(), lignes: groupes[po] }));
+    a.lignes.forEach((l) => { l.envoyee = l.quantite; });
+    a.envois.push({ dateISO: maintenant, par: par || null, nbBons: bons.length });
+    saveState();
+    return { addition: additionPublique(a), bons, sansPoste };
+  }
+  function transfererAddition({ id, table }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const a = trouverAddition(id);
+    if (!a) return { erreur: "Addition introuvable.", statut: 404 };
+    const t = tableConnue(table);
+    if (!t) return { erreur: "Table inconnue." };
+    if (t.nom.toLowerCase() === a.table.toLowerCase()) return { erreur: "L'addition est déjà sur cette table." };
+    const cible = state.additions.filter((x) => x.table.toLowerCase() === t.nom.toLowerCase())[0];
+    if (!cible) { a.table = t.nom; saveState(); return { addition: additionPublique(a), fusion: false }; }
+    // Table occupee : fusion des deux additions (memes articles regroupes, etats « envoye » conserves).
+    a.lignes.forEach((l) => {
+      const m = cible.lignes.filter((x) => x.productId === l.productId && x.couleur === l.couleur && x.taille === l.taille && (x.note || "") === (l.note || ""))[0];
+      if (m) { m.quantite = arrondi3(m.quantite + l.quantite); m.envoyee = arrondi3((m.envoyee || 0) + (l.envoyee || 0)); } else cible.lignes.push(l);
+    });
+    cible.annulations = (cible.annulations || []).concat(a.annulations || []);
+    cible.envois = (cible.envois || []).concat(a.envois || []);
+    state.additions = state.additions.filter((x) => x !== a);
+    saveState();
+    return { addition: additionPublique(cible), fusion: true };
+  }
+  function annulerAddition({ id, motif, autorise, par }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const a = trouverAddition(id);
+    if (!a) return { erreur: "Addition introuvable.", statut: 404 };
+    const envoye = a.lignes.some((l) => (l.envoyee || 0) > 0);
+    if (envoye && !autorise) return { erreur: "Des articles ont déjà été envoyés en préparation : seul le propriétaire, ou un employé disposant du droit « remises », peut annuler cette addition.", statut: 403 };
+    const motifNet = (motif || "").toString().trim().slice(0, 120);
+    if (a.lignes.length && !motifNet) return { erreur: "Indiquez le motif de l'annulation." };
+    state.additionsAnnulees.push({ id: a.id, table: a.table, dateISO: new Date().toISOString(), par: par || null, motif: motifNet || null, envoye, lignes: a.lignes.map((l) => ({ produit: libelleLigneAddition(l), quantite: l.quantite })) });
+    if (state.additionsAnnulees.length > 200) state.additionsAnnulees.shift();
+    state.additions = state.additions.filter((x) => x !== a);
+    saveState();
+    return { ok: true, table: a.table, nbLignes: a.lignes.length, envoye };
+  }
+  // Encaissement de tout ou partie d'une addition (addition partagee : on paie ses articles, le reste demeure ouvert). C'est une vente de caisse
+  // ordinaire (creerVentePos) : si elle est refusee (session fermee, stock, paiement, remise), l'addition n'est PAS modifiee.
+  function encaisserAddition({ id, selection, paiements, remiseGlobale, motifRemise, caissier, verifierRemise }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const a = trouverAddition(id);
+    if (!a) return { erreur: "Addition introuvable.", statut: 404 };
+    if (!a.lignes.length) return { erreur: "L'addition est vide." };
+    let choix;
+    if (!selection || selection === "tout") choix = a.lignes.map((l, i) => ({ index: i, quantite: l.quantite }));
+    else {
+      if (!Array.isArray(selection) || !selection.length) return { erreur: "Aucun article sélectionné." };
+      const vus = {}; choix = [];
+      for (const c of selection) {
+        const i = Number(c && c.index); const l = Number.isInteger(i) ? a.lignes[i] : null;
+        if (!l) return { erreur: "Ligne d'addition introuvable." };
+        if (vus[i]) return { erreur: "Une même ligne ne peut figurer qu'une fois." };
+        vus[i] = true;
+        const entier = Number.isInteger(l.quantite);
+        let q = Number(c.quantite); if (!Number.isFinite(q)) q = 0; if (!entier) q = arrondi3(q);
+        if (entier ? (!Number.isInteger(q) || q < 1) : q < 0.001) return { erreur: "Quantité invalide pour \"" + libelleLigneAddition(l) + "\"." };
+        if (q > l.quantite) return { erreur: "Quantité supérieure à celle de l'addition pour \"" + libelleLigneAddition(l) + "\"." };
+        choix.push({ index: i, quantite: q });
+      }
+    }
+    const lignesVente = choix.map((c) => { const l = a.lignes[c.index]; return { productId: l.productId, couleur: l.couleur, taille: l.taille, quantite: c.quantite }; });
+    const r = creerVentePos({ lignes: lignesVente, paiements, remiseGlobale, motifRemise, caissier, verifierRemise });
+    if (r.erreur) return r;
+    const total = a.lignes.reduce((s, l) => s + l.quantite, 0);
+    // Mise a jour de l'addition (apres une vente reussie seulement).
+    choix.forEach((c) => { const l = a.lignes[c.index]; l.quantite = arrondi3(l.quantite - c.quantite); l.envoyee = Math.min(l.envoyee || 0, l.quantite); });
+    a.lignes = a.lignes.filter((l) => l.quantite > 0);
+    const soldee = a.lignes.length === 0;
+    const paye = arrondi3(choix.reduce((s, c) => s + c.quantite, 0));
+    r.order.table = a.table; r.order.serveur = a.serveur || null; r.order.additionId = a.id;
+    if (a.couverts && soldee) r.order.couverts = a.couverts;
+    if (!soldee || paye < total) r.order.additionPartielle = !soldee;
+    if (soldee) state.additions = state.additions.filter((x) => x !== a);
+    saveState();
+    return { order: r.order, addition: soldee ? null : additionPublique(a), soldee };
+  }
+
   // ---------------- Etape 78 : vente en gros - API pour server.js ----------------
   function getGros() { return state ? venteGros.assurer(state.gros) : null; }
   function enregistrerGros() { saveState(); }
@@ -3694,6 +3960,7 @@ function createCatalogEngine(merchantKey, options) {
     creerVentePos,
     creerRetourPos,
     listerVentesAttente, mettreVenteEnAttente, reprendreVenteAttente, supprimerVenteAttente,
+    definirConfigRestauration, getConfigRestauration, listerTablesRestauration, getAddition, ouvrirAddition, ajouterLignesAddition, retirerLigneAddition, envoyerAddition, transfererAddition, annulerAddition, encaisserAddition,
     ouvrirSessionCaisse,
     fermerSessionCaisse,
     getSessionsCaisse,

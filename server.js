@@ -1003,6 +1003,11 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/pos/vente": "vente_caisse",
   "POST /api/:id/pos/vente/:orderId/facture": "facture_caisse_creee",
   "POST /api/:id/pos/vente/:orderId/retour": "retour_caisse_cree", // Etape 87
+  "PUT /api/:id/restauration/config": "restauration_config_modifiee", // Etape 89
+  "POST /api/:id/pos/additions/:aid/lignes/:index/retirer": "addition_ligne_retiree",
+  "POST /api/:id/pos/additions/:aid/annuler": "addition_annulee",
+  "POST /api/:id/pos/additions/:aid/encaisser": "addition_encaissee",
+  "POST /api/:id/pos/additions/:aid/transferer": "addition_transferee",
   "POST /api/:id/caisse/session/ouvrir": "caisse_ouverte",
   "POST /api/:id/caisse/session/fermer": "caisse_fermee",
   "POST /api/:id/catalogue/importer": "catalogue_importe",
@@ -1142,6 +1147,11 @@ function detailAuditRequete(code, req) {
     case "vente_caisse_remise": return { tentative: "remise", motif: b.motifRemise || null };
     case "facture_caisse_creee": return { vente: p.orderId };
     case "retour_caisse_cree": return { vente: p.orderId };
+    case "restauration_config_modifiee": return { tables: Array.isArray(b.tables) ? b.tables.length : null, postes: b.categoriesPoste ? Object.keys(b.categoriesPoste).length : null };
+    case "addition_ligne_retiree": return { addition: p.aid, ligne: p.index, motif: b.motif || null };
+    case "addition_annulee": return { addition: p.aid, motif: b.motif || null };
+    case "addition_encaissee": return { addition: p.aid };
+    case "addition_transferee": return { addition: p.aid, vers: b.table || null };
     case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null, plafondRemise: b.plafondRemise !== undefined ? b.plafondRemise : null };
     case "employe_modifie": {
       const emp = entry && (entry.merchant.employes || []).filter((e) => e.id === p.employeId)[0];
@@ -1481,6 +1491,8 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     optionEnseigne: e.merchant.optionEnseigne === true,
     // Etape 87 : mode « Caisse seule » (point de vente sans WhatsApp) - debloque par le seul super-administrateur ; sert uniquement a masquer les volets WhatsApp dans /admin.
     optionCaisseSeule: e.merchant.optionCaisseSeule === true,
+    // Etape 89 : mode « Restauration » (debloque par le seul super-administrateur ; le marchand n'en voit que le resultat : l'ecran Tables de la caisse).
+    optionRestauration: e.merchant.optionRestauration === true,
     // Etape 85 : reglages de notification. Super-administrateur : options + regroupement ; marchand : SEULEMENT le bloc de
     // regroupement, et uniquement si le super-administrateur a ouvert l'option des alertes WhatsApp (sinon null).
     notif: vueReglagesNotif(e, req.auth.role)
@@ -1778,7 +1790,7 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, optionRestauration, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
   const patch = {};
   // Etape 85 : alertes WhatsApp commande/RDV (option payante), rappels de RDV hors fenetre de 24 h (option payante) et plancher du
   // regroupement des alertes. Reserve au super-administrateur (toute la route l'est) ; le marchand ne peut ni les voir ni les changer.
@@ -1831,6 +1843,17 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
     }
     patch.optionCaisseSeule = optionCaisseSeule === true;
   }
+  // Etape 89 : mode « Restauration » (tables, additions ouvertes, bons cuisine/bar, addition partagee). Exige l'option Caisse POS et un marchand
+  // catalogue ; reserve au super-administrateur (toute la route l'est) : le marchand ne peut ni la voir ni se l'accorder.
+  if (optionRestauration !== undefined) {
+    if (optionRestauration === true) {
+      const caisseApres = patch.optionCaissePos !== undefined ? patch.optionCaissePos : entry.merchant.optionCaissePos === true;
+      if (!caisseApres) return res.status(409).json({ erreur: "Le mode restauration exige que l'option Caisse POS soit activée." });
+      if (!entry.moteurs || !entry.moteurs.catalogue) return res.status(409).json({ erreur: "Le mode restauration exige un marchand de type catalogue." });
+    }
+    patch.optionRestauration = optionRestauration === true;
+  }
+  if (patch.optionCaissePos === false && entry.merchant.optionRestauration === true && patch.optionRestauration === undefined) patch.optionRestauration = false;
   // Retirer l'option Caisse POS referme aussi le mode caisse seule (qui n'a plus de sens sans caisse).
   if (patch.optionCaissePos === false && entry.merchant.optionCaisseSeule === true && patch.optionCaisseSeule === undefined) patch.optionCaisseSeule = false;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
@@ -1844,11 +1867,12 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionVenteGros = maj.optionVenteGros === true;
   entry.merchant.optionEnseigne = maj.optionEnseigne === true;
   entry.merchant.optionCaisseSeule = maj.optionCaisseSeule === true;
+  entry.merchant.optionRestauration = maj.optionRestauration === true;
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
   entry.merchant.nbPhotosAuto = maj.nbPhotosAuto === 3 ? 3 : 1;
   entry.merchant.reglagesNotif = maj.reglagesNotif || null;
   console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, enseigne=${maj.optionEnseigne === true}, caisse seule=${maj.optionCaisseSeule === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, optionRestauration: maj.optionRestauration === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -2868,6 +2892,91 @@ app.delete("/api/:id/pos/attente/:attenteId", protegerAcces, (req, res) => {
   const r = entry.engine.supprimerVenteAttente({ id: req.params.attenteId, caissier: req.auth.adminUser, voirTout: estGestionnaireDuMarchand(req, req.params.id) });
   if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
   res.json({ ok: true });
+});
+
+// -- Etape 89 : mode restauration (tables, additions ouvertes, bons cuisine/bar, addition partagee). Meme garde que la caisse (role « caisse » ET
+// option Caisse POS) PLUS l'option « Restauration » (super-administrateur) : sans elle, aucune de ces routes ne repond. Toute l'equipe de salle voit
+// toutes les tables (relais de service) ; annuler un article DEJA envoye en preparation est reserve au proprietaire / super-administrateur / droit « remises ».
+function gardeResto(req, res) {
+  const entry = gardeAttente(req, res); if (!entry) return null;
+  if (!entry.merchant.optionRestauration) { res.status(403).json({ erreur: "Le mode restauration n'est pas activé pour ce marchand." }); return null; }
+  return entry;
+}
+function peutAnnulerApresEnvoi(req) { return estGestionnaireDuMarchand(req, req.params.id) || (req.auth.roles || []).indexOf("remises") !== -1; }
+app.get("/api/:id/restauration/config", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  res.json(entry.engine.getConfigRestauration());
+});
+app.put("/api/:id/restauration/config", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Seul le propriétaire peut régler les tables et les postes." });
+  const { tables, categoriesPoste } = req.body || {};
+  const r = entry.engine.definirConfigRestauration({ tables, categoriesPoste });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.json(entry.engine.getConfigRestauration());
+});
+app.get("/api/:id/pos/tables", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  res.json(entry.engine.listerTablesRestauration());
+});
+app.post("/api/:id/pos/additions", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  const { table, couverts } = req.body || {};
+  const r = entry.engine.ouvrirAddition({ table, couverts, serveur: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.status(r.existante ? 200 : 201).json(r);
+});
+app.get("/api/:id/pos/additions/:aid", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  const r = entry.engine.getAddition(req.params.aid);
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json(r.addition);
+});
+app.post("/api/:id/pos/additions/:aid/lignes", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  const r = entry.engine.ajouterLignesAddition({ id: req.params.aid, ajouts: (req.body || {}).ajouts, serveur: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json(r.addition);
+});
+app.post("/api/:id/pos/additions/:aid/lignes/:index/retirer", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  const { quantite, motif } = req.body || {};
+  const r = entry.engine.retirerLigneAddition({ id: req.params.aid, index: req.params.index, quantite, motif, autorise: peutAnnulerApresEnvoi(req), par: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  // Seul le retrait d'un article DEJA envoye en preparation est journalise (un retrait avant envoi est une simple correction de saisie).
+  if (!(r.partEnvoyeeAnnulee > 0)) res.locals.audit = { ignorer: true };
+  res.json({ addition: r.addition, bonAnnulation: r.bonAnnulation });
+});
+app.post("/api/:id/pos/additions/:aid/envoyer", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  const r = entry.engine.envoyerAddition({ id: req.params.aid, par: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json({ addition: r.addition, bons: r.bons, sansPoste: r.sansPoste });
+});
+app.post("/api/:id/pos/additions/:aid/transferer", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  const r = entry.engine.transfererAddition({ id: req.params.aid, table: (req.body || {}).table });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json({ addition: r.addition, fusion: r.fusion });
+});
+app.post("/api/:id/pos/additions/:aid/annuler", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  const r = entry.engine.annulerAddition({ id: req.params.aid, motif: (req.body || {}).motif, autorise: peutAnnulerApresEnvoi(req), par: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json({ ok: true });
+});
+app.post("/api/:id/pos/additions/:aid/encaisser", protegerAcces, (req, res) => {
+  const entry = gardeResto(req, res); if (!entry) return;
+  const { selection, paiements, remiseGlobale, motifRemise } = req.body || {};
+  const r = entry.engine.encaisserAddition({
+    id: req.params.aid, selection, paiements, remiseGlobale, motifRemise, caissier: req.auth.adminUser,
+    verifierRemise: (info) => controleRemise(req, info.pourcentEffectif)
+  });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  const num = "POS-" + String(r.order.id).padStart(4, "0");
+  res.locals.audit = { detail: { addition: req.params.aid, table: r.order.table, vente: num, montant: r.order.prix, mode: r.order.modePaiement, soldee: r.soldee } };
+  if (r.order.remise) res.locals.auditExtra = [{ action: "vente_caisse_remise", statut: "ok", detail: { vente: num, brut: r.order.prixBrut, remise: r.order.remise.montant, pourcent: r.order.remise.pourcentEffectif, motif: r.order.remise.motif } }];
+  res.status(201).json({ order: r.order, addition: r.addition, soldee: r.soldee });
 });
 
 // -- Session de caisse : ouverture/fermeture + billetage (29 septembre 2026) -- (meme garde que
