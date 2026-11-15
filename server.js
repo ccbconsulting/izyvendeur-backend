@@ -1504,6 +1504,8 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     // Etape 89 : mode « Restauration » (debloque par le seul super-administrateur ; le marchand n'en voit que le resultat : l'ecran Tables de la caisse).
     optionRestauration: e.merchant.optionRestauration === true,
     optionClientsCredit: e.merchant.optionClientsCredit === true,
+    // Etape 91 : mode hors ligne de la Caisse (superadmin seul) - le marchand n'en voit que l'effet (file d'attente et synchronisation).
+    optionHorsLigne: e.merchant.optionHorsLigne === true,
     // Etape 85 : reglages de notification. Super-administrateur : options + regroupement ; marchand : SEULEMENT le bloc de
     // regroupement, et uniquement si le super-administrateur a ouvert l'option des alertes WhatsApp (sinon null).
     notif: vueReglagesNotif(e, req.auth.role)
@@ -1801,7 +1803,7 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, optionRestauration, optionClientsCredit, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, optionRestauration, optionClientsCredit, optionHorsLigne, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
   const patch = {};
   // Etape 85 : alertes WhatsApp commande/RDV (option payante), rappels de RDV hors fenetre de 24 h (option payante) et plancher du
   // regroupement des alertes. Reserve au super-administrateur (toute la route l'est) ; le marchand ne peut ni les voir ni les changer.
@@ -1874,8 +1876,19 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
     }
     patch.optionClientsCredit = optionClientsCredit === true;
   }
+  // Etape 91 : « Mode hors ligne » de la Caisse (file d'attente des ventes sans connexion, synchronisation automatique). Memes regles : Caisse POS + marchand
+  // catalogue, reserve au super-administrateur ; le marchand ne peut ni la voir ni se l'accorder.
+  if (optionHorsLigne !== undefined) {
+    if (optionHorsLigne === true) {
+      const caisseApres = patch.optionCaissePos !== undefined ? patch.optionCaissePos : entry.merchant.optionCaissePos === true;
+      if (!caisseApres) return res.status(409).json({ erreur: "Le mode hors ligne exige que l'option Caisse POS soit activée." });
+      if (!entry.moteurs || !entry.moteurs.catalogue) return res.status(409).json({ erreur: "Le mode hors ligne exige un marchand de type catalogue." });
+    }
+    patch.optionHorsLigne = optionHorsLigne === true;
+  }
   if (patch.optionCaissePos === false && entry.merchant.optionRestauration === true && patch.optionRestauration === undefined) patch.optionRestauration = false;
   if (patch.optionCaissePos === false && entry.merchant.optionClientsCredit === true && patch.optionClientsCredit === undefined) patch.optionClientsCredit = false;
+  if (patch.optionCaissePos === false && entry.merchant.optionHorsLigne === true && patch.optionHorsLigne === undefined) patch.optionHorsLigne = false;
   // Retirer l'option Caisse POS referme aussi le mode caisse seule (qui n'a plus de sens sans caisse).
   if (patch.optionCaissePos === false && entry.merchant.optionCaisseSeule === true && patch.optionCaisseSeule === undefined) patch.optionCaisseSeule = false;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
@@ -1891,11 +1904,12 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionCaisseSeule = maj.optionCaisseSeule === true;
   entry.merchant.optionRestauration = maj.optionRestauration === true;
   entry.merchant.optionClientsCredit = maj.optionClientsCredit === true;
+  entry.merchant.optionHorsLigne = maj.optionHorsLigne === true;
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
   entry.merchant.nbPhotosAuto = maj.nbPhotosAuto === 3 ? 3 : 1;
   entry.merchant.reglagesNotif = maj.reglagesNotif || null;
   console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, enseigne=${maj.optionEnseigne === true}, caisse seule=${maj.optionCaisseSeule === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, optionRestauration: maj.optionRestauration === true, optionClientsCredit: maj.optionClientsCredit === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, optionRestauration: maj.optionRestauration === true, optionClientsCredit: maj.optionClientsCredit === true, optionHorsLigne: maj.optionHorsLigne === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -2867,7 +2881,9 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise, jetonGrossiste, paiements, montantRecu, clientId, credit } = req.body || {};
+  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise, jetonGrossiste, paiements, montantRecu, clientId, credit, cle, horsLigne } = req.body || {};
+  // Etape 91 : une vente saisie hors ligne n'est acceptee que si l'option « Mode hors ligne » (super-administrateur) est activee ; sinon on ne l'executerait jamais.
+  if (horsLigne && !entry.merchant.optionHorsLigne) return res.status(403).json({ erreur: "L'option Mode hors ligne n'est pas activée pour ce marchand." });
   // Etape 90 : client et vente a credit uniquement si l'option « Clients, credit et marge » (super-administrateur) est activee.
   if ((credit || (clientId !== undefined && clientId !== null && clientId !== "")) && !entry.merchant.optionClientsCredit) return res.status(403).json({ erreur: "L'option Clients, crédit et marge n'est pas activée pour ce marchand." });
   // Etape 78 : un grossiste n'est jamais designe par le navigateur lui-meme (id libre) mais par un jeton court emis par
@@ -2880,9 +2896,12 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   }
   const resultat = entry.engine.creerVentePos({
     lignes, modePaiement, referencePaiement, paiements, montantRecu, clientId, credit, caissier: req.auth.adminUser, remiseGlobale, motifRemise, grossisteId, methodeGros: "caisse",
+    cle, horsLigne: horsLigne && typeof horsLigne === "object" ? Object.assign({}, horsLigne, { saisiPar: horsLigne.saisiPar || req.auth.adminUser }) : (horsLigne ? {} : undefined),
     verifierRemise: (info) => controleRemise(req, info.pourcentEffectif)
   });
-  if (resultat.erreur) return res.status(resultat.statut || 400).json({ erreur: resultat.erreur });
+  if (resultat.erreur) return res.status(resultat.statut || 400).json(resultat.code ? { erreur: resultat.erreur, code: resultat.code } : { erreur: resultat.erreur });
+  // Etape 91 : vente deja enregistree (meme cle) : on renvoie la commande existante, sans nouvelle ligne de journal ni nouveau decompte.
+  if (resultat.deja) { res.locals.audit = { ignorer: true }; return res.status(200).json(resultat.order); }
   if (jetonGrossiste) jetonsGrossiste.delete(jetonGrossiste); // usage unique : consomme seulement apres une vente reussie
   const extraGros = [];
   if (resultat.order.grossiste) extraGros.push({ action: "vente_caisse_gros", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), grossiste: resultat.order.grossiste.nom, economie: resultat.order.economieGros || 0 } });
@@ -2893,6 +2912,8 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   if (rm) {
     extraGros.push({ action: "vente_caisse_remise", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), brut: resultat.order.prixBrut, remise: rm.montant, pourcent: rm.pourcentEffectif, motif: rm.motif } });
   }
+  const hlo = resultat.order.horsLigne;
+  if (hlo) extraGros.push({ action: "vente_caisse_hors_ligne", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), saisieLe: hlo.saisieLe, saisiPar: hlo.saisiPar, numeroLocal: hlo.numeroLocal || null, stockInsuffisant: hlo.stockInsuffisant ? hlo.stockInsuffisant.length : 0, ecartsPrix: hlo.ecartsPrix ? hlo.ecartsPrix.length : 0, dateCorrigee: hlo.dateCorrigee === true } });
   if (resultat.order.creance) extraGros.push({ action: "vente_caisse_credit", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), client: resultat.order.clientNom, aCredit: resultat.order.creance.montant, echeance: resultat.order.creance.echeance } });
   if (extraGros.length) res.locals.auditExtra = extraGros;
   res.status(201).json(resultat.order);

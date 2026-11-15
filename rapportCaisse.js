@@ -64,7 +64,7 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier,
 
   const parMode = {}; MODES.forEach((m) => { parMode[m] = { mode: m, nb: 0, montant: 0, nbAnnulees: 0, montantAnnule: 0 }; });
   const parJour = {}, parCaissier = {}, articles = {}, parServeur = {}, parTable = {};
-  const totaux = { aCredit: 0, nbVentesCredit: 0, nbVentes: 0, brut: 0, nbAnnulees: 0, montantAnnule: 0, net: 0, nbArticles: 0, nbFacturees: 0, nbVentesRemisees: 0, remises: 0, brutAvantRemise: 0 };
+  const totaux = { nbVentesHorsLigne: 0, nbEcartsHorsLigne: 0, aCredit: 0, nbVentesCredit: 0, nbVentes: 0, brut: 0, nbAnnulees: 0, montantAnnule: 0, net: 0, nbArticles: 0, nbFacturees: 0, nbVentesRemisees: 0, remises: 0, brutAvantRemise: 0 };
   const jour = (d) => parJour[d] || (parJour[d] = { date: d, aCredit: 0, nb: 0, net: 0, nbAnnulees: 0, annule: 0, especes: 0, om: 0, momo: 0, carte: 0, cheque: 0 });
   const cais = (c) => { const k = c || "—"; return parCaissier[k] || (parCaissier[k] = { caissier: k, nb: 0, net: 0, nbAnnulees: 0, annule: 0, nbRemises: 0, remises: 0, brutAvantRemise: 0 }); };
 
@@ -89,6 +89,8 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier,
       J.nb++; J.net += montant; C.nb++; C.net += montant;
       if (o.creance) { totaux.aCredit += o.creance.montant; totaux.nbVentesCredit++; J.aCredit += o.creance.montant; }
       if (o.izyfactureNumero) totaux.nbFacturees++;
+      // Etape 91 : ventes saisies hors ligne puis synchronisees, et celles dont le stock ou le prix a change entre-temps (ecart signale).
+      if (o.horsLigne) { totaux.nbVentesHorsLigne++; if ((o.horsLigne.stockInsuffisant && o.horsLigne.stockInsuffisant.length) || (o.horsLigne.ecartsPrix && o.horsLigne.ecartsPrix.length)) totaux.nbEcartsHorsLigne++; }
       // Etape 89 : ventes issues d'une addition de table (mode restauration), par serveur (celui qui a ouvert l'addition) et par table.
       if (o.table) {
         const sv = o.serveur || "—", sk = parServeur[sv] || (parServeur[sv] = { serveur: sv, nb: 0, net: 0 }); sk.nb++; sk.net += montant;
@@ -107,6 +109,7 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier,
       mode, reference: (parts.length > 1 || o.creance) ? parts.filter((pt) => pt.reference).map((pt) => pt.mode + ":" + pt.reference).join(" ; ") || null : (o.referencePaiement || null), paiements: (parts.length > 1 || o.creance) ? parts : undefined, client: o.clientNom || null, aCredit: o.creance ? o.creance.montant : 0, montant, remise: o.remise && o.remise.montant > 0 ? o.remise.montant : 0, motifRemise: o.remise ? o.remise.motif : null, remisePar: o.remise ? o.remise.accordePar : null, statut: annulee ? "annulee" : "valide",
       raisonAnnulation: annulee ? (o.raisonAnnulation || null) : null,
       facture: o.izyfactureNumero || null, table: o.table || null, serveur: o.serveur || null,
+      horsLigne: o.horsLigne ? { saisieLe: o.horsLigne.saisieLe, saisiPar: o.horsLigne.saisiPar || null, numeroLocal: o.horsLigne.numeroLocal || null, stockInsuffisant: o.horsLigne.stockInsuffisant || [], ecartsPrix: o.horsLigne.ecartsPrix || [], dateCorrigee: o.horsLigne.dateCorrigee === true } : null,
       articles: (o.items || []).map((it) => (Number(it.quantite) || 0) + " x " + libelleArticle(it)).join(" ; ")
     };
   });
@@ -237,8 +240,8 @@ function csv(rapport, vue, sep) {
   };
   let colonnes, lignes;
   if (vue === "ventes") {
-    colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "remise", "motifRemise", "remisePar", "statut", "raisonAnnulation", "facture", "articles", "table", "serveur", "client", "aCredit"];
-    lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.remise, v.motifRemise, v.remisePar, v.statut, v.raisonAnnulation, v.facture, v.articles, v.table, v.serveur, v.client, v.aCredit]);
+    colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "remise", "motifRemise", "remisePar", "statut", "raisonAnnulation", "facture", "articles", "table", "serveur", "client", "aCredit", "horsLigne", "ecartHorsLigne"];
+    lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.remise, v.motifRemise, v.remisePar, v.statut, v.raisonAnnulation, v.facture, v.articles, v.table, v.serveur, v.client, v.aCredit, v.horsLigne ? "oui" : "", v.horsLigne && (v.horsLigne.stockInsuffisant.length || v.horsLigne.ecartsPrix.length) ? "oui" : ""]);
   } else if (vue === "retours") {
     colonnes = ["piece", "vente", "date", "heure", "session", "caissier", "mode", "reference", "montant", "motif", "venteAnnulee", "articles"];
     lignes = (rapport.retours ? rapport.retours.detail : []).map((r) => [r.piece, r.vente, r.date, r.heure, r.sessionId, r.caissier, r.mode, r.reference, r.montant, r.motif, r.venteAnnulee ? "oui" : "non", r.articles]);

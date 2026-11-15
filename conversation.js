@@ -136,6 +136,7 @@ function seedState() {
     reglementsClients: [], // Etape 90 : reglements de dettes clients
     nextReglementId: 1,
     coutsVentes: {}, // Etape 90 : cout fige de chaque vente de caisse (marge) - hors commande
+    ventesCles: {}, // Etape 91 : cles d'idempotence des ventes de caisse { cle: { id, t } } (anti-doublon, ventes hors ligne)
     creditConfig: { delaiJours: 30, plafondParDefaut: 0 }
   };
 }
@@ -247,6 +248,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.nextClientPosId) state.nextClientPosId = 1;
     if (!state.reglementsClients) state.reglementsClients = [];
     if (!state.nextReglementId) state.nextReglementId = 1;
+    if (!state.ventesCles) state.ventesCles = {}; // Etape 91
     if (!state.coutsVentes) state.coutsVentes = {};
     if (!state.creditConfig) state.creditConfig = { delaiJours: 30, plafondParDefaut: 0 };
     await persistance.charger();
@@ -3387,8 +3389,30 @@ function createCatalogEngine(merchantKey, options) {
 
   // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
   // jamais un article decompte puis un autre refuse en cours de route.
-  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros, paiements, montantRecu, clientId, credit }) {
+  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros, paiements, montantRecu, clientId, credit, cle, horsLigne }) {
     if (!state) return { erreur: "Marchand introuvable." };
+    // Etape 91 : cle d'idempotence (UUID genere par la caisse). Une vente deja enregistree avec la meme cle est RENVOYEE telle quelle, sans second
+    // decompte de stock : couvre la double validation, la reponse perdue (coupure reseau) et la synchronisation d'une vente hors ligne deja passee.
+    let cleVente = null;
+    if (cle !== undefined && cle !== null && cle !== "") {
+      cleVente = String(cle);
+      if (!/^[A-Za-z0-9_-]{8,64}$/.test(cleVente)) return { erreur: "Clé de vente invalide." };
+      const deja = state.ventesCles && state.ventesCles[cleVente];
+      if (deja) { const o = state.orders.filter((x) => x.id === deja.id)[0]; if (o) return { order: o, deja: true }; }
+    }
+    // Vente saisie hors ligne : la vente a DEJA eu lieu en boutique (stock physique sorti, client servi, prix annonce). Le serveur l'enregistre donc
+    // meme si le stock ou le prix ont change entre-temps, et SIGNALE l'ecart (commande.horsLigne) au lieu de la refuser. Aucune remise, aucun credit,
+    // aucun client, aucun prix de gros hors ligne : seules des ventes simples sont mises en file.
+    let hl = null;
+    if (horsLigne) {
+      if (remiseGlobale || credit || (clientId !== undefined && clientId !== null && clientId !== "") || grossisteId) return { erreur: "Une vente hors ligne ne peut comporter ni remise, ni crédit, ni client, ni prix de gros." };
+      let saisie = new Date(horsLigne.saisieLe), corrigee = false;
+      const maintenant = Date.now();
+      if (isNaN(saisie.getTime()) || saisie.getTime() < maintenant - 14 * 86400000 || saisie.getTime() > maintenant + 10 * 60000) { saisie = new Date(maintenant); corrigee = true; }
+      hl = { saisieLe: saisie.toISOString(), synchroLe: new Date(maintenant).toISOString(), saisiPar: typeof horsLigne.saisiPar === "string" ? horsLigne.saisiPar.slice(0, 80) : null,
+        appareil: typeof horsLigne.appareil === "string" ? horsLigne.appareil.slice(0, 40) : null, numeroLocal: typeof horsLigne.numeroLocal === "string" ? horsLigne.numeroLocal.slice(0, 20) : null,
+        dateCorrigee: corrigee || undefined, stockInsuffisant: [], ecartsPrix: [] };
+    }
     let grossisteVente = null;
     if (grossisteId) {
       if (!grosActif() || !venteGros.assurer(state.gros).caisse.identification) return { erreur: "La vente en gros n'est pas activée pour ce marchand.", statut: 403 };
@@ -3408,7 +3432,7 @@ function createCatalogEngine(merchantKey, options) {
     // sessions se chevauchent (mode multi-tiroirs).
     const sessionActive = sessionCaisseOuverte(caissier);
     if (!sessionActive) {
-      return { erreur: "Aucune session de caisse ouverte. Merci d'ouvrir la caisse (billetage) avant d'encaisser." };
+      return { erreur: "Aucune session de caisse ouverte. Merci d'ouvrir la caisse (billetage) avant d'encaisser.", statut: hl ? 409 : undefined, code: hl ? "session_fermee" : undefined };
     }
     // La reference de paiement (ex. code de confirmation Orange Money/MTN MoMo reçu par le MARCHAND sur son
     // propre telephone, numero de cheque, etc.) est obligatoire pour tout mode autre que "especes" (29 sept 2026).
@@ -3430,14 +3454,23 @@ function createCatalogEngine(merchantKey, options) {
       if (decimal) quantite = arrondi3(quantite);
       if (decimal ? quantite < 0.001 : (!Number.isInteger(quantite) || quantite < 1)) return { erreur: "Quantité invalide pour \"" + p.nom + "\"." };
       const disponible = virtualStock(p.id, v);
-      if (quantite > disponible) {
+      if (hl && quantite > disponible) hl.stockInsuffisant.push({ produit: p.nom, couleur: v.couleur, taille: v.taille, manque: arrondi3(quantite - Math.max(0, disponible)) });
+      else if (quantite > disponible) {
         return { erreur: "Stock insuffisant pour \"" + p.nom + "\" (" + joindreVariante(" ", v.couleur, v.taille) + ") : " + disponible + " disponible(s)." };
       }
-      items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, unite: p.unite && p.unite !== "piece" ? p.unite : undefined, prixUnitaire: v.prix, prix: Math.round(v.prix * quantite), _variant: v, _remise: ligne.remise });
+      // Etape 91 : hors ligne, le prix annonce au client (catalogue en cache) est conserve ; l'ecart avec le prix actuel est signale, jamais corrige en silence.
+      let prixLigne = v.prix;
+      if (hl && ligne.prixUnitaire !== undefined && ligne.prixUnitaire !== null) {
+        const pu = Number(ligne.prixUnitaire);
+        if (!Number.isFinite(pu) || pu < 0 || pu > 100000000) return { erreur: "Prix invalide pour \"" + p.nom + "\"." };
+        prixLigne = Math.round(pu);
+        if (prixLigne !== v.prix) hl.ecartsPrix.push({ produit: p.nom, couleur: v.couleur, taille: v.taille, vendu: prixLigne, actuel: v.prix });
+      }
+      items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, unite: p.unite && p.unite !== "piece" ? p.unite : undefined, prixUnitaire: prixLigne, prix: Math.round(prixLigne * quantite), _variant: v, _remise: ligne.remise });
     }
 
     // Etape 78 : prix de gros (grille du marchand) calcules cote serveur ; un grossiste identifie n'a aucun minimum.
-    if (grosOperationnel()) {
+    if (grosOperationnel() && !hl) {
       const rg = venteGros.tarifer(state.gros, items.map((it) => ({ productId: it.productId, taille: it.taille, prixDetail: it.prixUnitaire, quantite: it.quantite })), !!grossisteVente, venteGros.assurer(state.gros).caisse.paliers);
       items.forEach((it, i) => {
         if (rg.appliques[i]) { it.prixDetail = it.prixUnitaire; it.prixUnitaire = rg.prix[i]; it.prix = Math.round(rg.prix[i] * it.quantite); it.gros = true; }
@@ -3508,7 +3541,7 @@ function createCatalogEngine(merchantKey, options) {
     const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, unite: it.unite, prixUnitaire: it.prixUnitaire, prixBrut: it.prixBrut, remiseLigne: it.remiseLigne, prix: it.prix, prixDetail: it.gros ? it.prixDetail : undefined }));
     const order = {
       id: state.nextId++,
-      dateISO: new Date().toISOString(),
+      dateISO: hl ? hl.saisieLe : new Date().toISOString(),
       items: itemsPublics,
       prix: calcul.total,
       prixBrut: calcul.brutTotal,
@@ -3536,6 +3569,7 @@ function createCatalogEngine(merchantKey, options) {
       izyfactureRecuNumero: null,
       izyfacturePaiements: []
     };
+    if (hl) { if (!hl.stockInsuffisant.length) delete hl.stockInsuffisant; if (!hl.ecartsPrix.length) delete hl.ecartsPrix; order.horsLigne = hl; }
     if (paiementFinal.paiements) order.paiements = paiementFinal.paiements;
     if (paiementFinal.recu !== undefined) { order.montantRecu = paiementFinal.recu; order.rendu = paiementFinal.rendu; }
     if (clientVente) { order.clientId = clientVente.id; order.clientNom = clientVente.nom; }
@@ -3552,6 +3586,13 @@ function createCatalogEngine(merchantKey, options) {
       order.economieGros = Math.round(items.reduce((sm, x) => sm + (x.gros ? (x.prixDetail - x.prixUnitaire) * x.quantite : 0), 0));
     }
     state.orders.push(order);
+    if (cleVente) {
+      if (!state.ventesCles) state.ventesCles = {};
+      state.ventesCles[cleVente] = { id: order.id, t: Date.now() };
+      // Purge : les cles de plus de 60 jours n'ont plus de raison d'etre rejouees.
+      const limite = Date.now() - 60 * 86400000;
+      Object.keys(state.ventesCles).forEach((k) => { if (state.ventesCles[k].t < limite) delete state.ventesCles[k]; });
+    }
     saveState();
     return { order };
   }
