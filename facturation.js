@@ -396,7 +396,7 @@ function creerMoteurFacturation(merchantKey, options) {
     for (const o of (ext && ext.ventesPos) || []) {
       if (activation && dateLocale(o.dateISO) < activation) continue;
       const piece = "POS-" + String(o.id).padStart(4, "0");
-      const moyen = MOYEN_POS[o.modePaiement] || "especes";
+      const moyen = o.modePaiement === "mixte" ? "mixte" : (MOYEN_POS[o.modePaiement] || "especes"); // Etape 88 : paiement mixte
       const montant = Number(o.prix) || 0;
       if (!(montant > 0)) continue;
       const t = state.config.tva;

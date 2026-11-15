@@ -933,6 +933,28 @@ app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
 
+// Etape 88 : page de caisse installable (PWA). Comme /admin, la page elle-meme ne contient aucune donnee : elle affiche sa propre connexion
+// et passe par les memes routes protegees (/api/...) - aucun droit nouveau. Le service worker ne met en cache que la coque, jamais /api.
+app.get("/caisse", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  res.sendFile(path.join(__dirname, "public", "caisse.html"));
+});
+app.get("/caisse.webmanifest", (req, res) => {
+  res.type("application/manifest+json");
+  res.sendFile(path.join(__dirname, "public", "caisse.webmanifest"));
+});
+app.get("/caisse-sw.js", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  res.type("application/javascript");
+  res.sendFile(path.join(__dirname, "public", "caisse-sw.js"));
+});
+["192", "512"].forEach((taille) => {
+  app.get("/caisse-icon-" + taille + ".png", (req, res) => {
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    res.sendFile(path.join(__dirname, "public", "caisse-icon-" + taille + ".png"));
+  });
+});
+
 // ---------------- Journal d'audit (Etape 40) ----------------
 // Deux journaux, en ajout seul (voir db.js, table journal_audit) :
 //   - MODIFICATIONS : qui a change quoi (catalogue avec avant/apres, parametres, employes, commandes...).
@@ -1143,7 +1165,7 @@ function detailAuditRequete(code, req) {
     case "client_attente_contacte": return { entree: p.entreeId };
     case "inventaire_instantane_supprime": return { instantane: p.snapshotId };
     case "catalogue_importe": return { fichier: req.file ? req.file.originalname : null };
-    case "vente_caisse": return Object.assign({ lignes: Array.isArray(b.lignes) ? b.lignes.length : null, modePaiement: b.modePaiement || null },
+    case "vente_caisse": return Object.assign({ lignes: Array.isArray(b.lignes) ? b.lignes.length : null, modePaiement: Array.isArray(b.paiements) && b.paiements.length > 1 ? "mixte" : (Array.isArray(b.paiements) && b.paiements[0] ? b.paiements[0].mode : b.modePaiement) || null },
       (b.remiseGlobale || b.motifRemise || (Array.isArray(b.lignes) && b.lignes.some((l) => l && l.remise))) ? { tentativeRemise: true, motif: b.motifRemise || null } : {});
     case "parametres_modifies": {
       // Etape 67 : la regle d'annulation est une decision metier (le super-administrateur l'aide a la regler) :
@@ -1965,8 +1987,17 @@ async function tenterFacturationInterne(entry, order, options) {
   // paiement), et la vente au comptant du journal est annulee au profit de la facture (jamais comptee 2 fois).
   if (pos && !r.duplicate) {
     const MODE = { especes: "especes", om: "om", momo: "momo", carte: "banque", cheque: "cheque" };
-    const pay = entry.facturation.enregistrerPaiement(f.id, { montant: f.total, methode: MODE[order.modePaiement] || "especes", reference: order.referencePaiement || ("POS-" + String(order.id).padStart(4, "0")), creePar: "caisse" });
-    if (!pay.erreur) f = pay.facture;
+    // Etape 88 : une vente a paiement mixte enregistre un reglement par moyen (la somme des parts = le total de la facture).
+    const parts = order.modePaiement === "mixte" && Array.isArray(order.paiements) ? order.paiements : null;
+    if (parts) {
+      parts.forEach((pt) => {
+        const pay = entry.facturation.enregistrerPaiement(f.id, { montant: pt.montant, methode: MODE[pt.mode] || "especes", reference: pt.reference || ("POS-" + String(order.id).padStart(4, "0")), creePar: "caisse" });
+        if (!pay.erreur) f = pay.facture;
+      });
+    } else {
+      const pay = entry.facturation.enregistrerPaiement(f.id, { montant: f.total, methode: MODE[order.modePaiement] || "especes", reference: order.referencePaiement || ("POS-" + String(order.id).padStart(4, "0")), creePar: "caisse" });
+      if (!pay.erreur) f = pay.facture;
+    }
     entry.facturation.noterEvenementPos(order.id, "remplacee");
   }
   entry.engine.enregistrerEtatIzyFacture(order.id, {
@@ -2753,7 +2784,7 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise, jetonGrossiste } = req.body || {};
+  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise, jetonGrossiste, paiements, montantRecu } = req.body || {};
   // Etape 78 : un grossiste n'est jamais designe par le navigateur lui-meme (id libre) mais par un jeton court emis par
   // POST /api/:id/pos/gros/identifier pour CE caissier et CE marchand, apres une recherche reussie selon les criteres du proprietaire.
   let grossisteId = null;
@@ -2763,7 +2794,7 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
     grossisteId = jg.grossisteId;
   }
   const resultat = entry.engine.creerVentePos({
-    lignes, modePaiement, referencePaiement, caissier: req.auth.adminUser, remiseGlobale, motifRemise, grossisteId, methodeGros: "caisse",
+    lignes, modePaiement, referencePaiement, paiements, montantRecu, caissier: req.auth.adminUser, remiseGlobale, motifRemise, grossisteId, methodeGros: "caisse",
     verifierRemise: (info) => controleRemise(req, info.pourcentEffectif)
   });
   if (resultat.erreur) return res.status(resultat.statut || 400).json({ erreur: resultat.erreur });
@@ -2805,6 +2836,38 @@ app.post("/api/:id/pos/vente/:orderId/retour", protegerAcces, (req, res) => {
   if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
   res.locals.audit = { detail: { vente: "POS-" + String(r.order.id).padStart(4, "0"), retour: "RET-" + String(r.order.id).padStart(4, "0") + "-" + r.retour.id, montant: r.retour.montant, mode: r.retour.modeRemboursement, motif: r.retour.motif } };
   res.status(201).json({ order: r.order, retour: r.retour });
+});
+
+// Etape 88 : ventes en attente de la Caisse (aucun stock reserve, aucune commande creee, pas de journal d'audit : ce n'est pas une vente).
+// Un caissier ne voit que SES paniers ; le proprietaire / le super-administrateur voient ceux de tous les caissiers.
+function gardeAttente(req, res) {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return null;
+  if (entry.engine.type !== "catalogue") { res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." }); return null; }
+  if (!entry.merchant.optionCaissePos) { res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." }); return null; }
+  return entry;
+}
+app.get("/api/:id/pos/attente", protegerAcces, (req, res) => {
+  const entry = gardeAttente(req, res); if (!entry) return;
+  res.json(entry.engine.listerVentesAttente({ caissier: req.auth.adminUser, voirTout: estGestionnaireDuMarchand(req, req.params.id) }));
+});
+app.post("/api/:id/pos/attente", protegerAcces, (req, res) => {
+  const entry = gardeAttente(req, res); if (!entry) return;
+  const { lignes, libelle, remiseGlobale, motifRemise } = req.body || {};
+  const r = entry.engine.mettreVenteEnAttente({ lignes, libelle, remiseGlobale, motifRemise, caissier: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.status(201).json(r.vente);
+});
+app.post("/api/:id/pos/attente/:attenteId/reprendre", protegerAcces, (req, res) => {
+  const entry = gardeAttente(req, res); if (!entry) return;
+  const r = entry.engine.reprendreVenteAttente({ id: req.params.attenteId, caissier: req.auth.adminUser, voirTout: estGestionnaireDuMarchand(req, req.params.id) });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json(r.vente);
+});
+app.delete("/api/:id/pos/attente/:attenteId", protegerAcces, (req, res) => {
+  const entry = gardeAttente(req, res); if (!entry) return;
+  const r = entry.engine.supprimerVenteAttente({ id: req.params.attenteId, caissier: req.auth.adminUser, voirTout: estGestionnaireDuMarchand(req, req.params.id) });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json({ ok: true });
 });
 
 // -- Session de caisse : ouverture/fermeture + billetage (29 septembre 2026) -- (meme garde que

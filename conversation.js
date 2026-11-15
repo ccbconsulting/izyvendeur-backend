@@ -16,6 +16,7 @@ const enseigne = require("./enseigne");
 const db = require("./db");
 const sessionsPersistantes = require("./sessionsPersistantes");
 const sh = require("./shared");
+const paiementsLib = require("./paiements"); // Etape 88 : paiement mixte
 const { formatFcfa, piocheParmi, parseAffirmative, parseNegative, parseWantsSomethingElse } = sh;
 
 // Sentinelle "stock illimite" (voir virtualStock ci-dessous) : un article marche "Stock illimite" depuis
@@ -123,7 +124,9 @@ function seedState() {
     inventorySnapshots: [], // instantanés d'inventaire enregistrés depuis l'onglet Rapports (voir plus bas)
     listeAttenteReassort: [], // clients ayant demandé à être prévenus au réassort d'un article en rupture (voir plus bas)
     caisseSessions: [], // sessions d'ouverture/fermeture de caisse (Caisse POS, voir plus bas)
-    nextCaisseSessionId: 1
+    nextCaisseSessionId: 1,
+    ventesAttente: [], // Etape 88 : paniers de la Caisse mis en attente (aucune reservation de stock)
+    nextAttenteId: 1
   };
 }
 
@@ -224,6 +227,8 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.settings.caisse) state.settings.caisse = Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
     if (!state.caisseSessions) state.caisseSessions = [];
     if (!state.nextCaisseSessionId) state.nextCaisseSessionId = 1;
+    if (!state.ventesAttente) state.ventesAttente = []; // Etape 88
+    if (!state.nextAttenteId) state.nextAttenteId = 1;
     await persistance.charger();
   }
 
@@ -3317,8 +3322,8 @@ function createCatalogEngine(merchantKey, options) {
     // (sessionCaisseId, tague par creerVentePos ci-dessous) - jamais une simple fenetre de dates, pour
     // rester juste meme si plusieurs sessions se chevauchent (mode multi-tiroirs).
     const totalVentesEspeces = state.orders
-      .filter((o) => o.sessionCaisseId === session.id && o.modePaiement === "especes")
-      .reduce((s, o) => s + (o.prix || 0), 0);
+      .filter((o) => o.sessionCaisseId === session.id)
+      .reduce((s, o) => s + paiementsLib.partEspeces(o), 0); // Etape 88 : seule la part en especes d'une vente (mixte comprise) entre dans le tiroir
     // Etape 87 : les remboursements en especes faits depuis CE tiroir (retours en caisse) sortent du theorique. 0 sans retour : calcul inchange.
     const retoursEspeces = state.orders.reduce((somme, o) => somme + (o.retours || []).filter((r) => r.sessionCaisseId === session.id && r.modeRemboursement === "especes").reduce((x, r) => x + (r.montant || 0), 0), 0);
     const montantTheorique = session.fondInitial + totalVentesEspeces - retoursEspeces;
@@ -3358,7 +3363,7 @@ function createCatalogEngine(merchantKey, options) {
 
   // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
   // jamais un article decompte puis un autre refuse en cours de route.
-  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros }) {
+  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros, paiements, montantRecu }) {
     if (!state) return { erreur: "Marchand introuvable." };
     let grossisteVente = null;
     if (grossisteId) {
@@ -3367,7 +3372,10 @@ function createCatalogEngine(merchantKey, options) {
       if (!grossisteVente) return { erreur: "Grossiste introuvable ou désactivé." };
     }
     if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Aucun article dans la vente." };
-    if (MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
+    // Etape 88 : « paiements » (liste) remplace modePaiement/referencePaiement et permet le paiement mixte + le rendu de monnaie ; il est
+    // valide plus bas, une fois le total net connu (apres remises) et AVANT tout decompte de stock.
+    const paiementsSaisis = Array.isArray(paiements) && paiements.length ? paiements : null;
+    if (!paiementsSaisis && MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
       return { erreur: "Mode de paiement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
     }
     // Aucune vente sans caisse ouverte (29 sept 2026) : force la discipline du billetage avant d'encaisser -
@@ -3381,7 +3389,7 @@ function createCatalogEngine(merchantKey, options) {
     // La reference de paiement (ex. code de confirmation Orange Money/MTN MoMo reçu par le MARCHAND sur son
     // propre telephone, numero de cheque, etc.) est obligatoire pour tout mode autre que "especes" (29 sept 2026).
     const referenceNettoyee = (referencePaiement || "").toString().trim();
-    if (modePaiement !== "especes" && !referenceNettoyee) {
+    if (!paiementsSaisis && modePaiement !== "especes" && !referenceNettoyee) {
       return { erreur: "La référence de paiement est obligatoire pour ce mode de paiement." };
     }
 
@@ -3424,6 +3432,25 @@ function createCatalogEngine(merchantKey, options) {
     }
     items.forEach((it, i) => { it.prixBrut = calcul.lignes[i].brut; it.remiseLigne = calcul.lignes[i].remiseLigne; it.prix = calcul.lignes[i].final; });
 
+    // Etape 88 : paiement(s) valide(s) contre le total NET, toujours avant de toucher au stock (vente atomique).
+    let paiementFinal = null; // { mode, reference, paiements?, recu?, rendu? }
+    if (paiementsSaisis) {
+      const np = paiementsLib.normaliser(paiementsSaisis, calcul.total);
+      if (np.erreur) return { erreur: np.erreur };
+      if (np.paiements.length === 1) {
+        const un = np.paiements[0];
+        paiementFinal = { mode: un.mode, reference: un.reference, recu: un.mode === "especes" ? np.recu : undefined, rendu: un.mode === "especes" ? np.rendu : undefined };
+      } else {
+        paiementFinal = { mode: "mixte", reference: null, paiements: np.paiements };
+      }
+    } else if (modePaiement === "especes" && montantRecu !== undefined && montantRecu !== null && montantRecu !== "") {
+      const recu = Number(montantRecu);
+      if (!Number.isInteger(recu) || recu < calcul.total) return { erreur: "Le montant reçu (" + montantRecu + ") est inférieur au total de la vente (" + calcul.total + " FCFA)." };
+      paiementFinal = { mode: "especes", reference: null, recu, rendu: recu - calcul.total };
+    } else {
+      paiementFinal = { mode: modePaiement, reference: modePaiement === "especes" ? null : referenceNettoyee };
+    }
+
     // Decremente reellement le stock, seulement maintenant que TOUTES les lignes ci-dessus sont validees.
     items.forEach((it) => { it._variant.stockReel = Math.max(0, arrondi3(it._variant.stockReel - it.quantite)); });
 
@@ -3444,8 +3471,8 @@ function createCatalogEngine(merchantKey, options) {
       sessionCaisseId: sessionActive.id,
       fromWhatsapp: null,
       langue: "fr",
-      modePaiement,
-      referencePaiement: modePaiement === "especes" ? null : referenceNettoyee,
+      modePaiement: paiementFinal.mode,
+      referencePaiement: paiementFinal.reference,
       caissier: caissier || null,
       izyfactureStatut: null,
       izyfactureFactureId: null,
@@ -3458,6 +3485,8 @@ function createCatalogEngine(merchantKey, options) {
       izyfactureRecuNumero: null,
       izyfacturePaiements: []
     };
+    if (paiementFinal.paiements) order.paiements = paiementFinal.paiements;
+    if (paiementFinal.recu !== undefined) { order.montantRecu = paiementFinal.recu; order.rendu = paiementFinal.rendu; }
     if (grossisteVente) order.grossiste = { id: grossisteVente.id, nom: grossisteVente.nom, methode: methodeGros || "caisse" };
     if (items.some((x) => x.gros)) {
       order.venteGros = true;
@@ -3527,6 +3556,58 @@ function createCatalogEngine(merchantKey, options) {
     order.retours.push(retour);
     saveState();
     return { order, retour };
+  }
+
+  // ---------------- Etape 88 : ventes en attente de la Caisse ----------------
+  // Un panier mis en attente ne reserve AUCUN stock et ne cree AUCUNE commande : il est simplement range (articles, quantites, remise
+  // saisie, libelle libre : « Mme Ngo », « table 4 »...). A la reprise il retourne dans le panier du caissier, qui est revalide comme
+  // une vente normale (stock, prix, remise) : un prix ou un stock modifie entre-temps est donc toujours pris en compte.
+  const ATTENTE_MAX = 30, ATTENTE_LIGNES_MAX = 100;
+  function ventesAttentePour(caissier, voirTout) {
+    return state.ventesAttente.filter((v) => voirTout || v.caissier === (caissier || null));
+  }
+  function listerVentesAttente({ caissier, voirTout }) {
+    if (!state) return [];
+    return ventesAttentePour(caissier, voirTout).slice().sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1)).map((v) => ({
+      id: v.id, libelle: v.libelle, caissier: v.caissier, dateISO: v.dateISO, nbArticles: v.lignes.reduce((s, l) => s + (Number(l.quantite) || 0), 0), nbLignes: v.lignes.length
+    }));
+  }
+  function mettreVenteEnAttente({ lignes, libelle, remiseGlobale, motifRemise, caissier }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Le panier est vide : rien à mettre en attente." };
+    if (lignes.length > ATTENTE_LIGNES_MAX) return { erreur: "Panier trop long pour être mis en attente." };
+    if (state.ventesAttente.length >= ATTENTE_MAX) return { erreur: "Trop de ventes en attente (" + ATTENTE_MAX + " maximum) : reprenez ou supprimez-en avant d'en ajouter." };
+    const propres = [];
+    for (const l of lignes) {
+      const p = state.catalog.filter((x) => x.id === (l && l.productId))[0];
+      if (!p) return { erreur: "Article introuvable (" + ((l && l.productId) || "?") + ")." };
+      const q = Number(l.quantite);
+      if (!Number.isFinite(q) || q <= 0) return { erreur: "Quantité invalide pour \"" + p.nom + "\"." };
+      const ligne = { productId: p.id, couleur: l.couleur === undefined ? null : l.couleur, taille: l.taille === undefined ? null : l.taille, quantite: arrondi3(q) };
+      if (l.remise && typeof l.remise === "object") ligne.remise = l.remise;
+      propres.push(ligne);
+    }
+    const entree = {
+      id: state.nextAttenteId++, caissier: caissier || null, dateISO: new Date().toISOString(),
+      libelle: (libelle || "").toString().trim().slice(0, 40) || ("Vente " + (state.nextAttenteId - 1)),
+      lignes: propres, remiseGlobale: remiseGlobale || null, motifRemise: (motifRemise || "").toString().slice(0, 200) || null
+    };
+    state.ventesAttente.push(entree);
+    saveState();
+    return { vente: { id: entree.id, libelle: entree.libelle, dateISO: entree.dateISO } };
+  }
+  // Reprise : renvoie le panier ET le retire (une seule reprise possible, donc jamais deux caissiers sur le meme panier).
+  function reprendreVenteAttente({ id, caissier, voirTout }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const i = state.ventesAttente.findIndex((v) => v.id === Number(id) && (voirTout || v.caissier === (caissier || null)));
+    if (i === -1) return { erreur: "Vente en attente introuvable.", statut: 404 };
+    const [v] = state.ventesAttente.splice(i, 1);
+    saveState();
+    return { vente: v };
+  }
+  function supprimerVenteAttente({ id, caissier, voirTout }) {
+    const r = reprendreVenteAttente({ id, caissier, voirTout });
+    return r.erreur ? r : { ok: true };
   }
 
   // ---------------- Etape 78 : vente en gros - API pour server.js ----------------
@@ -3612,6 +3693,7 @@ function createCatalogEngine(merchantKey, options) {
     getOrderById,
     creerVentePos,
     creerRetourPos,
+    listerVentesAttente, mettreVenteEnAttente, reprendreVenteAttente, supprimerVenteAttente,
     ouvrirSessionCaisse,
     fermerSessionCaisse,
     getSessionsCaisse,

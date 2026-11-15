@@ -13,6 +13,10 @@
 // - Etape 87 (retours) : un retour appartient a la journee ou il est FAIT (jamais a celle de la vente d'origine) : les chiffres d'une journee
 //   deja passee ne changent donc pas. Il est presente a part (section « retours »), et « netApresRetours » = net des ventes - retours.
 //   Les retours portant sur une vente ensuite ANNULEE ne sont pas deduits une seconde fois du net (la vente n'y figure deja plus).
+// Etape 88 (paiement mixte) : une vente payee avec plusieurs moyens est ventilee par moyen (order.paiements) ; son « mode » de detail est alors
+//   "mixte". Elle compte une fois dans le total des ventes mais apparait dans CHAQUE moyen utilise (la somme des « nb » par moyen peut donc
+//   depasser le nombre de ventes) ; les montants par moyen, eux, s'additionnent exactement au net.
+const { repartition, partEspeces } = require("./paiements");
 const MODES = ["especes", "om", "momo", "carte", "cheque"];
 const JOURS_MAX = 366;
 
@@ -67,21 +71,22 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
   const detail = ventes.map((o) => {
     const montant = Number(o.prix) || 0;
     const annulee = o.statut === "Annulée";
-    const mode = parMode[o.modePaiement] ? o.modePaiement : "especes";
+    const parts = repartition(o);
+    const mode = parts.length > 1 ? "mixte" : parts[0].mode;
     const d = dateLocale(o.dateISO);
     const J = jour(d), C = cais(o.caissier);
     totaux.brut += montant;
     if (annulee) {
       totaux.nbAnnulees++; totaux.montantAnnule += montant;
-      parMode[mode].nbAnnulees++; parMode[mode].montantAnnule += montant;
+      parts.forEach((pt) => { parMode[pt.mode].nbAnnulees++; parMode[pt.mode].montantAnnule += pt.montant; });
       J.nbAnnulees++; J.annule += montant; C.nbAnnulees++; C.annule += montant;
     } else {
       totaux.nbVentes++; totaux.net += montant;
       const remiseMontant = o.remise && o.remise.montant > 0 ? o.remise.montant : 0;
       totaux.brutAvantRemise += montant + remiseMontant; C.brutAvantRemise += montant + remiseMontant;
       if (remiseMontant) { totaux.nbVentesRemisees++; totaux.remises += remiseMontant; C.nbRemises++; C.remises += remiseMontant; }
-      parMode[mode].nb++; parMode[mode].montant += montant;
-      J.nb++; J.net += montant; J[mode] += montant; C.nb++; C.net += montant;
+      parts.forEach((pt) => { parMode[pt.mode].nb++; parMode[pt.mode].montant += pt.montant; J[pt.mode] += pt.montant; });
+      J.nb++; J.net += montant; C.nb++; C.net += montant;
       if (o.izyfactureNumero) totaux.nbFacturees++;
       (o.items || []).forEach((it) => {
         const k = libelleArticle(it);
@@ -93,7 +98,7 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
     return {
       id: o.id, piece: "POS-" + String(o.id).padStart(4, "0"), date: d, heure: heureLocale(o.dateISO),
       sessionId: o.sessionCaisseId != null ? o.sessionCaisseId : null, caissier: o.caissier || null,
-      mode, reference: o.referencePaiement || null, montant, remise: o.remise && o.remise.montant > 0 ? o.remise.montant : 0, motifRemise: o.remise ? o.remise.motif : null, remisePar: o.remise ? o.remise.accordePar : null, statut: annulee ? "annulee" : "valide",
+      mode, reference: parts.length > 1 ? parts.filter((pt) => pt.reference).map((pt) => pt.mode + ":" + pt.reference).join(" ; ") || null : (o.referencePaiement || null), paiements: parts.length > 1 ? parts : undefined, montant, remise: o.remise && o.remise.montant > 0 ? o.remise.montant : 0, motifRemise: o.remise ? o.remise.motif : null, remisePar: o.remise ? o.remise.accordePar : null, statut: annulee ? "annulee" : "valide",
       raisonAnnulation: annulee ? (o.raisonAnnulation || null) : null,
       facture: o.izyfactureNumero || null,
       articles: (o.items || []).map((it) => (Number(it.quantite) || 0) + " x " + libelleArticle(it)).join(" ; ")
@@ -127,8 +132,8 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
 
   // Sessions ouvertes pendant la periode (jour d'ouverture), du caissier filtre le cas echeant.
   const annuleesParSession = {};
-  toutesPos.filter((o) => o.statut === "Annulée" && o.modePaiement === "especes" && o.sessionCaisseId != null)
-    .forEach((o) => { annuleesParSession[o.sessionCaisseId] = (annuleesParSession[o.sessionCaisseId] || 0) + (Number(o.prix) || 0); });
+  toutesPos.filter((o) => o.statut === "Annulée" && o.sessionCaisseId != null && partEspeces(o) > 0)
+    .forEach((o) => { annuleesParSession[o.sessionCaisseId] = (annuleesParSession[o.sessionCaisseId] || 0) + partEspeces(o); });
   const retoursEspecesParSession = {};
   retoursDetail.filter((r) => r.mode === "especes" && r.sessionId != null).forEach((r) => { retoursEspecesParSession[r.sessionId] = (retoursEspecesParSession[r.sessionId] || 0) + r.montant; });
   const lesSessions = (sessions || [])
