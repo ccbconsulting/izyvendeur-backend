@@ -330,9 +330,10 @@ function fabriquerMoteur(type, merchantKey, optionsSupplementaires) {
 }
 
 // Construit (et initialise) tous les moteurs d'un marchand + son routeur s'il est hybride.
-async function construireEntree(m) {
+async function construireEntree(m, opts) {
   const moteurs = {};
-  moteurs[m.type] = fabriquerMoteur(m.type, m.id);
+  // Etape 92 : un point de vente seul demarre avec un catalogue VIDE (pas d'articles de demonstration) ; l'etat deja enregistre n'est jamais touche.
+  moteurs[m.type] = fabriquerMoteur(m.type, m.id, opts && opts.sansDonneesDemo ? { sansDonneesDemo: true } : undefined);
   await moteurs[m.type].init();
   const modules = modulesDuMarchand(m);
   for (const second of modules.slice(1)) {
@@ -1521,7 +1522,7 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
 // ensuite depuis l'onglet "Mon compte").
 app.post("/api/marchands", protegerAcces, async (req, res) => {
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
-  const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification, moduleSecondaire } = req.body || {};
+  const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification, moduleSecondaire, profil, options } = req.body || {};
   if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
   if (type !== "catalogue" && type !== "service" && type !== "hebergement" && type !== "transport") return res.status(400).json({ erreur: "type doit être 'catalogue', 'service', 'hebergement' ou 'transport'." });
   // Marchand HYBRIDE (Etape 48, generalise a trois volets a l'Etape 66) : volets secondaires accordes des la
@@ -1530,6 +1531,12 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
   const demandeSecondaires = lireDemandeSecondaires(moduleSecondaire, type);
   if (demandeSecondaires.erreur) return res.status(400).json({ erreur: demandeSecondaires.erreur });
   if (engines[id]) return res.status(409).json({ erreur: "Un marchand avec cet id existe déjà." });
+  // Etape 92 : profil « Point de vente seul » (pos) - la Caisse POS et le mode caisse seule sont accordes des la creation, avec les options payantes demandees
+  // (restauration, clients/credit/marge, hors ligne). Toujours reserve au super-administrateur (toute la route l'est) ; un profil inconnu est refuse.
+  if (profil !== undefined && profil !== "standard" && profil !== "pos") return res.status(400).json({ erreur: "profil doit être 'standard' ou 'pos'." });
+  const profilPos = profil === "pos";
+  if (profilPos && type !== "catalogue") return res.status(400).json({ erreur: "Le profil « Point de vente seul » exige un marchand de type catalogue." });
+  if (profilPos && demandeSecondaires.liste.length) return res.status(400).json({ erreur: "Le profil « Point de vente seul » n'accepte aucun volet supplémentaire." });
   if (!adminUser || !adminPassword) return res.status(400).json({ erreur: "adminUser et adminPassword sont requis pour créer les identifiants de connexion du marchand." });
   const merchant = {
     id, nom, type,
@@ -1547,11 +1554,21 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
     // (options payantes du super-administrateur) ; les marchands historiques gardent leur comportement.
     reglagesNotif: Object.assign({}, db.REGLAGES_NOTIF_NOUVEAU)
   };
+  if (profilPos) {
+    const o = options && typeof options === "object" ? options : {};
+    merchant.optionCaissePos = true;
+    merchant.optionCaisseSeule = true;
+    merchant.optionRestauration = o.optionRestauration === true;
+    merchant.optionClientsCredit = o.optionClientsCredit === true;
+    merchant.optionHorsLigne = o.optionHorsLigne === true;
+    merchant.phoneNumberId = null; // pas de WhatsApp dans un point de vente seul
+  }
   await db.addMerchant(merchant);
-  engines[id] = await construireEntree(merchant);
+  engines[id] = await construireEntree(merchant, { sansDonneesDemo: profilPos });
   if (merchant.phoneNumberId) phoneNumberIndex[merchant.phoneNumberId] = id;
   console.log("Nouveau marchand ajoute via l'API : " + id + " (" + type + ")");
-  res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type, adminUser: merchant.adminUser, moduleSecondaire: merchant.moduleSecondaire });
+  if (profilPos) res.locals.audit = { detail: { id: merchant.id, type: merchant.type, profil: "pos", options: ["optionCaissePos", "optionCaisseSeule", "optionRestauration", "optionClientsCredit", "optionHorsLigne"].filter((k) => merchant[k] === true).join(",") } };
+  res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type, adminUser: merchant.adminUser, moduleSecondaire: merchant.moduleSecondaire, profil: profilPos ? "pos" : "standard" });
 });
 
 // Qui suis-je ? Utilise par l'interface d'administration pour savoir si l'utilisateur connecte est le
