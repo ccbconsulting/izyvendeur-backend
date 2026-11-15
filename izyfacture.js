@@ -77,13 +77,15 @@ function construireLignesPourCommande(commande) {
       let desc = it.produit || "Article";
       const variante = [it.couleur, it.taille].filter(Boolean).join(" ");
       if (variante) desc += " (" + variante + ")";
-      return { desc: (it.quantite || 1) + " x " + desc + " (remise incluse)", qty: 1, price: it.prix || 0 };
+      return { desc: String(it.quantite || 1).replace(".", ",") + (it.unite ? " " + it.unite : "") + " x " + desc + " (remise incluse)", qty: 1, price: it.prix || 0 };
     });
   }
   return (commande.items || []).map((it) => {
     let desc = it.produit || "Article";
     const variante = [it.couleur, it.taille].filter(Boolean).join(" ");
     if (variante) desc += " (" + variante + ")";
+    // Etape 87 : quantite decimale (vente au poids) -> une ligne de quantite 1 au montant exact, quantite reelle rappelee dans le libelle.
+    if (!Number.isInteger(it.quantite || 1)) return { desc: desc + " — " + String(it.quantite).replace(".", ",") + (it.unite ? " " + it.unite : ""), qty: 1, price: it.prix || 0 };
     return { desc, qty: it.quantite || 1, price: it.prixUnitaire || 0 };
   });
 }

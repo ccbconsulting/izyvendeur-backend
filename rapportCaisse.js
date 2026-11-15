@@ -10,6 +10,9 @@
 // - Une session appartient a la journee de son OUVERTURE. Son montant theorique et son ecart sont ceux figes a
 //   la fermeture (voir fermerSessionCaisse) ; on ajoute les ventes en especes annulees depuis, pour que le
 //   lecteur puisse reconstituer un ecart.
+// - Etape 87 (retours) : un retour appartient a la journee ou il est FAIT (jamais a celle de la vente d'origine) : les chiffres d'une journee
+//   deja passee ne changent donc pas. Il est presente a part (section « retours »), et « netApresRetours » = net des ventes - retours.
+//   Les retours portant sur une vente ensuite ANNULEE ne sont pas deduits une seconde fois du net (la vente n'y figure deja plus).
 const MODES = ["especes", "om", "momo", "carte", "cheque"];
 const JOURS_MAX = 366;
 
@@ -96,6 +99,29 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
       articles: (o.items || []).map((it) => (Number(it.quantite) || 0) + " x " + libelleArticle(it)).join(" ; ")
     };
   });
+  // Etape 87 : retours / remboursements faits pendant la periode (jour du retour), du caissier filtre le cas echeant.
+  const retoursDetail = [];
+  toutesPos.forEach((o) => (o.retours || []).forEach((r) => {
+    const j = dateLocale(r.dateISO);
+    if (j < p.du || j > p.au || (filtreCaissier && r.caissier !== filtreCaissier)) return;
+    const venteAnnulee = o.statut === "Annulée";
+    const mode = parMode[r.modeRemboursement] ? r.modeRemboursement : "especes";
+    retoursDetail.push({
+      piece: "RET-" + String(o.id).padStart(4, "0") + "-" + r.id, vente: "POS-" + String(o.id).padStart(4, "0"), date: j, heure: heureLocale(r.dateISO),
+      sessionId: r.sessionCaisseId != null ? r.sessionCaisseId : null, caissier: r.caissier || null, mode, reference: r.referenceRemboursement || null,
+      montant: Number(r.montant) || 0, motif: r.motif || null, venteAnnulee,
+      articles: (r.lignes || []).map((l) => (Number(l.quantite) || 0) + (l.unite ? " " + l.unite : "") + " x " + libelleArticle(l)).join(" ; ")
+    });
+  }));
+  retoursDetail.sort((a, b) => (a.date + a.heure < b.date + b.heure ? -1 : 1));
+  const retours = { nb: retoursDetail.length, montant: 0, montantDeduit: 0, parMode: {}, detail: retoursDetail };
+  MODES.forEach((m) => { retours.parMode[m] = 0; });
+  retoursDetail.forEach((r) => {
+    retours.montant += r.montant; retours.parMode[r.mode] += r.montant;
+    if (!r.venteAnnulee) { retours.montantDeduit += r.montant; jour(r.date).retours = (jour(r.date).retours || 0) + r.montant; }
+  });
+  totaux.retours = retours.montantDeduit; totaux.nbRetours = retoursDetail.filter((r) => !r.venteAnnulee).length;
+  totaux.netApresRetours = totaux.net - retours.montantDeduit;
   totaux.panierMoyen = totaux.nbVentes ? Math.round(totaux.net / totaux.nbVentes) : 0;
   totaux.pourcentRemises = totaux.brutAvantRemise ? Math.round(totaux.remises * 10000 / totaux.brutAvantRemise) / 100 : 0;
 
@@ -103,6 +129,8 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
   const annuleesParSession = {};
   toutesPos.filter((o) => o.statut === "Annulée" && o.modePaiement === "especes" && o.sessionCaisseId != null)
     .forEach((o) => { annuleesParSession[o.sessionCaisseId] = (annuleesParSession[o.sessionCaisseId] || 0) + (Number(o.prix) || 0); });
+  const retoursEspecesParSession = {};
+  retoursDetail.filter((r) => r.mode === "especes" && r.sessionId != null).forEach((r) => { retoursEspecesParSession[r.sessionId] = (retoursEspecesParSession[r.sessionId] || 0) + r.montant; });
   const lesSessions = (sessions || [])
     .filter((s) => { const j = dateLocale(s.dateOuverture); return j >= p.du && j <= p.au && (!filtreCaissier || s.caissier === filtreCaissier); })
     .sort((a, b) => (a.dateOuverture < b.dateOuverture ? -1 : 1))
@@ -111,7 +139,8 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
       dateOuverture: s.dateOuverture, dateFermeture: s.dateFermeture || null,
       fondInitial: s.fondInitial, totalVentesEspeces: s.totalVentesEspeces, montantTheorique: s.montantTheorique,
       montantCompte: s.montantCompte, ecart: s.ecart, raisonEcart: s.raisonEcart || null,
-      especesAnnulees: annuleesParSession[s.id] || 0
+      especesAnnulees: annuleesParSession[s.id] || 0,
+      retoursEspeces: retoursEspecesParSession[s.id] || 0
     }));
   const fermees = lesSessions.filter((s) => s.statut === "fermee");
   const ecarts = {
@@ -131,12 +160,12 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
     totaux, parMode: MODES.map((m) => parMode[m]), parJour: jours,
     parCaissier: Object.keys(parCaissier).sort().map((k) => parCaissier[k]),
     articles: Object.keys(articles).map((k) => articles[k]).sort((a, b) => b.montant - a.montant || (a.article < b.article ? -1 : 1)),
-    sessions: lesSessions, ecarts, ventes: detail
+    sessions: lesSessions, ecarts, ventes: detail, retours
   };
 }
 
 // --- CSV (point-virgule par defaut pour Excel en francais ; BOM UTF-8) ---
-const VUES_CSV = ["synthese", "ventes", "sessions"];
+const VUES_CSV = ["synthese", "ventes", "sessions", "retours"];
 function csv(rapport, vue, sep) {
   const s0 = sep === "," ? "," : ";";
   const echapper = (v) => {
@@ -147,6 +176,9 @@ function csv(rapport, vue, sep) {
   if (vue === "ventes") {
     colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "remise", "motifRemise", "remisePar", "statut", "raisonAnnulation", "facture", "articles"];
     lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.remise, v.motifRemise, v.remisePar, v.statut, v.raisonAnnulation, v.facture, v.articles]);
+  } else if (vue === "retours") {
+    colonnes = ["piece", "vente", "date", "heure", "session", "caissier", "mode", "reference", "montant", "motif", "venteAnnulee", "articles"];
+    lignes = (rapport.retours ? rapport.retours.detail : []).map((r) => [r.piece, r.vente, r.date, r.heure, r.sessionId, r.caissier, r.mode, r.reference, r.montant, r.motif, r.venteAnnulee ? "oui" : "non", r.articles]);
   } else if (vue === "sessions") {
     colonnes = ["session", "caissier", "statut", "ouverture", "fermeture", "fondInitial", "ventesEspeces", "montantTheorique", "montantCompte", "ecart", "raisonEcart", "especesAnnulees"];
     lignes = rapport.sessions.map((x) => [x.id, x.caissier, x.statut, x.dateOuverture, x.dateFermeture, x.fondInitial, x.totalVentesEspeces, x.montantTheorique, x.montantCompte, x.ecart, x.raisonEcart, x.especesAnnulees]);

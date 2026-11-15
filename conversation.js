@@ -660,10 +660,21 @@ function createCatalogEngine(merchantKey, options) {
     return sum;
   }
 
+  // Etape 87 : quantites decimales (articles vendus au poids / a la mesure en caisse) - tout calcul de stock est arrondi au millieme
+  // pour qu'aucune erreur de virgule flottante (0.1 + 0.2) ne fausse un stock. Sans effet sur les nombres entiers.
+  function arrondi3(x) { return Math.round(Number(x) * 1000) / 1000; }
+
   function virtualStock(productId, variant) {
     const p = state.catalog.filter((x) => x.id === productId)[0];
     if (p && p.stockIllimite) return STOCK_ILLIMITE_SENTINELLE;
-    return Math.max(0, variant.stockReel - reservedQty(productId, variant.couleur, variant.taille));
+    return Math.max(0, arrondi3(variant.stockReel - reservedQty(productId, variant.couleur, variant.taille)));
+  }
+
+  // Etape 87 : le robot WhatsApp ne vend que des quantites ENTIERES - pour un article « vente decimale » (stock 2.5), il ne voit que la partie entiere.
+  function virtualStockBot(productId, variant) {
+    const v = virtualStock(productId, variant);
+    const p = state.catalog.filter((x) => x.id === productId)[0];
+    return p && p.venteDecimale === true && !p.stockIllimite ? Math.floor(v) : v;
   }
 
   function buildProductIndex() {
@@ -845,18 +856,32 @@ function createCatalogEngine(merchantKey, options) {
     return order;
   }
 
+  // Etape 87 : quantite deja retournee (retours de caisse) pour la ligne `idx` d'une vente.
+  function quantiteRetourneeLigne(order, idx) {
+    let q = 0;
+    (order.retours || []).forEach((r) => (r.lignes || []).forEach((l) => { if (l.index === idx) q += Number(l.quantite) || 0; }));
+    return arrondi3(q);
+  }
+  function montantRembourseLigne(order, idx) {
+    let m = 0;
+    (order.retours || []).forEach((r) => (r.lignes || []).forEach((l) => { if (l.index === idx) m += Number(l.montant) || 0; }));
+    return m;
+  }
+
   function applyStatusChange(order, newStatus, raisonAnnulation) {
     const oldStatus = order.statut;
     if (oldStatus === newStatus) {
       if (newStatus === "Annulée" && raisonAnnulation) order.raisonAnnulation = raisonAnnulation;
       return;
     }
-    (order.items || []).forEach((it) => {
+    (order.items || []).forEach((it, idx) => {
       const variant = findVariant(it.productId, it.couleur, it.taille);
       if (!variant) return;
-      const qty = it.quantite || 1;
-      if (newStatus === "Livrée" && oldStatus !== "Livrée") variant.stockReel = Math.max(0, variant.stockReel - qty);
-      if (oldStatus === "Livrée" && newStatus !== "Livrée") variant.stockReel += qty;
+      // Etape 87 : les quantites deja RETOURNEES en caisse (order.retours) ont deja ete remises en stock : on ne les compte pas deux fois.
+      const qty = arrondi3((it.quantite || 1) - quantiteRetourneeLigne(order, idx));
+      if (qty <= 0) return;
+      if (newStatus === "Livrée" && oldStatus !== "Livrée") variant.stockReel = Math.max(0, arrondi3(variant.stockReel - qty));
+      if (oldStatus === "Livrée" && newStatus !== "Livrée") variant.stockReel = arrondi3(variant.stockReel + qty);
     });
     order.statut = newStatus;
     if (newStatus === "Annulée") order.raisonAnnulation = raisonAnnulation || order.raisonAnnulation || null;
@@ -1105,7 +1130,7 @@ function createCatalogEngine(merchantKey, options) {
       if (!d) { ignores.push((l.produit || l.productId) + sh.t(session, " (n'existe plus)", " (no longer sold)")); return; }
       const nom = joindreVariante(" ", d.p.nom, d.v.couleur, d.v.taille);
       if (mg && enseigne.enRupture(mg, d.p.id)) { ignores.push(nom + sh.t(session, " (indisponible dans ce magasin)", " (not available in this store)")); return; }
-      const virt = virtualStock(d.p.id, d.v);
+      const virt = virtualStockBot(d.p.id, d.v);
       const existant = session.cart.filter((it) => it.productId === d.p.id && it.couleur === d.v.couleur && it.taille === d.v.taille)[0];
       const deja = existant ? existant.quantite : 0;
       const voulue = Math.max(1, Number(l.quantite) || 1);
@@ -1920,7 +1945,7 @@ function createCatalogEngine(merchantKey, options) {
       }
       const product0 = state.catalog.filter((p) => p.id === session.productId)[0];
       const variant0 = product0 ? product0.variantes.filter((v) => v.couleur === session.couleur && v.taille === session.taille)[0] : null;
-      const virt0 = variant0 ? virtualStock(product0.id, variant0) : 0;
+      const virt0 = variant0 ? virtualStockBot(product0.id, variant0) : 0;
       const qty = parseQuantity(text);
       trace.entites = { "Quantité demandée": qty != null ? qty : "—", "Stock virtuel disponible": virt0 };
       if (qty == null || qty < 1) {
@@ -2406,7 +2431,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!couleur && !taille && availableColors.length > 1) {
       // Deux etapes aujourd'hui seulement si au moins une couleur a plusieurs tailles (sinon la taille est retenue d'office).
       const aDeuxDimensions = availableColors.some((c) => product.variantes.filter((v) => v.couleur === c && joindreVariante(" ", v.taille) !== "").length > 1);
-      const disponibles = product.variantes.filter((v) => virtualStock(product.id, v) > 0 && joindreVariante(" ", v.couleur, v.taille) !== "");
+      const disponibles = product.variantes.filter((v) => virtualStockBot(product.id, v) > 0 && joindreVariante(" ", v.couleur, v.taille) !== "");
       const libellesDistincts = disponibles.map((v) => joindreVariante(" ", v.couleur, v.taille)).filter((l, i, a) => a.indexOf(l) === i);
       if (aDeuxDimensions && libellesDistincts.length >= 2 && libellesDistincts.length <= LIGNES_MAX_VARIANTE_UNIQUE && libellesDistincts.length === disponibles.length) {
         trace.action = "Précision demandée : quelle option (couleur et taille en une seule liste) ?";
@@ -2461,17 +2486,17 @@ function createCatalogEngine(merchantKey, options) {
       );
     }
 
-    const virt = virtualStock(product.id, variant);
+    const virt = virtualStockBot(product.id, variant);
     trace.verification = product.nom + " / " + variant.couleur + " / " + variant.taille + " → " + virt + " disponible(s) (stock réel " + variant.stockReel + ")";
 
     if (virt <= 0) {
-      const alternatives = product.variantes.filter((v) => virtualStock(product.id, v) > 0);
+      const alternatives = product.variantes.filter((v) => virtualStockBot(product.id, v) > 0);
       trace.action = "Rupture détectée — alternatives proposées";
       session.couleur = null; session.taille = null;
       logTrace(session, trace);
       if (alternatives.length) {
         session.pendingChoice = { type: "variante", options: alternatives.map((v) => ({ couleur: v.couleur, taille: v.taille })) };
-        const alt = alternatives.map((v) => joindreVariante(" ", v.couleur, v.taille) + " (" + virtualStock(product.id, v) + ")").join(", ");
+        const alt = alternatives.map((v) => joindreVariante(" ", v.couleur, v.taille) + " (" + virtualStockBot(product.id, v) + ")").join(", ");
         return sh.t(session,
           "Désolée, " + joindreVariante(" ", product.nom, variant.couleur, variant.taille) + " est en rupture 😕. Il me reste : " + alt + ". Lequel voulez-vous ?",
           "Sorry, " + joindreVariante(" ", product.nom, variant.couleur, variant.taille) + " is out of stock 😕. I still have: " + alt + ". Which one would you like?"
@@ -2832,7 +2857,7 @@ function createCatalogEngine(merchantKey, options) {
     return ordre.map((cle) => {
       const a = articles[cle];
       const variantes = Object.keys(a._v).map((k) => a._v[k]).sort((x, y) => y.quantite - x.quantite);
-      return { productId: a.productId, nom: a.nom, quantite: a.quantite, montant: a.montant, variantes };
+      return { productId: a.productId, nom: a.nom, quantite: arrondi3(a.quantite), montant: a.montant, variantes: variantes.map((v) => Object.assign({}, v, { quantite: arrondi3(v.quantite) })) };
     }).sort((x, y) => y.quantite - x.quantite);
   }
 
@@ -3294,7 +3319,9 @@ function createCatalogEngine(merchantKey, options) {
     const totalVentesEspeces = state.orders
       .filter((o) => o.sessionCaisseId === session.id && o.modePaiement === "especes")
       .reduce((s, o) => s + (o.prix || 0), 0);
-    const montantTheorique = session.fondInitial + totalVentesEspeces;
+    // Etape 87 : les remboursements en especes faits depuis CE tiroir (retours en caisse) sortent du theorique. 0 sans retour : calcul inchange.
+    const retoursEspeces = state.orders.reduce((somme, o) => somme + (o.retours || []).filter((r) => r.sessionCaisseId === session.id && r.modeRemboursement === "especes").reduce((x, r) => x + (r.montant || 0), 0), 0);
+    const montantTheorique = session.fondInitial + totalVentesEspeces - retoursEspeces;
     const ecart = montantCompte - montantTheorique;
     const cfg = configCaisse();
     const raisonNettoyee = (raisonEcart || "").toString().trim();
@@ -3308,6 +3335,7 @@ function createCatalogEngine(merchantKey, options) {
     session.billetageFermeture = billetageFermeture;
     session.montantCompte = montantCompte;
     session.totalVentesEspeces = totalVentesEspeces;
+    if (retoursEspeces) session.retoursEspeces = retoursEspeces;
     session.montantTheorique = montantTheorique;
     session.ecart = ecart;
     session.raisonEcart = raisonNettoyee || null;
@@ -3362,25 +3390,30 @@ function createCatalogEngine(merchantKey, options) {
       const p = state.catalog.filter((x) => x.id === (ligne && ligne.productId))[0];
       const v = p ? p.variantes.filter((vv) => vv.couleur === ligne.couleur && vv.taille === ligne.taille)[0] : null;
       if (!p || !v) return { erreur: "Article introuvable (" + ((ligne && ligne.productId) || "?") + ")." };
-      const quantite = Number(ligne.quantite) || 0;
-      if (quantite < 1) return { erreur: "Quantité invalide pour \"" + p.nom + "\"." };
+      // Etape 87 : un article marque « vente decimale » (au kilo, au metre...) accepte une quantite au millieme (0.250) ; tout autre
+      // article exige un nombre ENTIER (comportement historique, desormais strict). Le montant d'une ligne est arrondi au FCFA.
+      const decimal = p.venteDecimale === true;
+      let quantite = Number(ligne.quantite);
+      if (!Number.isFinite(quantite)) quantite = 0;
+      if (decimal) quantite = arrondi3(quantite);
+      if (decimal ? quantite < 0.001 : (!Number.isInteger(quantite) || quantite < 1)) return { erreur: "Quantité invalide pour \"" + p.nom + "\"." };
       const disponible = virtualStock(p.id, v);
       if (quantite > disponible) {
         return { erreur: "Stock insuffisant pour \"" + p.nom + "\" (" + joindreVariante(" ", v.couleur, v.taille) + ") : " + disponible + " disponible(s)." };
       }
-      items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, prixUnitaire: v.prix, prix: v.prix * quantite, _variant: v, _remise: ligne.remise });
+      items.push({ productId: p.id, produit: p.nom, couleur: v.couleur, taille: v.taille, quantite, unite: p.unite && p.unite !== "piece" ? p.unite : undefined, prixUnitaire: v.prix, prix: Math.round(v.prix * quantite), _variant: v, _remise: ligne.remise });
     }
 
     // Etape 78 : prix de gros (grille du marchand) calcules cote serveur ; un grossiste identifie n'a aucun minimum.
     if (grosOperationnel()) {
       const rg = venteGros.tarifer(state.gros, items.map((it) => ({ productId: it.productId, taille: it.taille, prixDetail: it.prixUnitaire, quantite: it.quantite })), !!grossisteVente, venteGros.assurer(state.gros).caisse.paliers);
       items.forEach((it, i) => {
-        if (rg.appliques[i]) { it.prixDetail = it.prixUnitaire; it.prixUnitaire = rg.prix[i]; it.prix = rg.prix[i] * it.quantite; it.gros = true; }
+        if (rg.appliques[i]) { it.prixDetail = it.prixUnitaire; it.prixUnitaire = rg.prix[i]; it.prix = Math.round(rg.prix[i] * it.quantite); it.gros = true; }
       });
     }
     // Remises (Etape 59) : calculees AVANT de toucher au stock. Le net de la vente reste le seul montant
     // qui compte ailleurs (rapports, journal comptable) ; le brut et le detail des remises sont conserves.
-    const calcul = remisesLib.appliquer(items.map((it) => ({ brut: it.prixUnitaire * it.quantite, remise: it._remise })), remiseGlobale);
+    const calcul = remisesLib.appliquer(items.map((it) => ({ brut: Math.round(it.prixUnitaire * it.quantite), remise: it._remise })), remiseGlobale);
     if (calcul.erreur) return { erreur: calcul.erreur };
     let motifNettoye = null;
     if (calcul.remiseTotale > 0) {
@@ -3392,9 +3425,9 @@ function createCatalogEngine(merchantKey, options) {
     items.forEach((it, i) => { it.prixBrut = calcul.lignes[i].brut; it.remiseLigne = calcul.lignes[i].remiseLigne; it.prix = calcul.lignes[i].final; });
 
     // Decremente reellement le stock, seulement maintenant que TOUTES les lignes ci-dessus sont validees.
-    items.forEach((it) => { it._variant.stockReel = Math.max(0, it._variant.stockReel - it.quantite); });
+    items.forEach((it) => { it._variant.stockReel = Math.max(0, arrondi3(it._variant.stockReel - it.quantite)); });
 
-    const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, prixUnitaire: it.prixUnitaire, prixBrut: it.prixBrut, remiseLigne: it.remiseLigne, prix: it.prix, prixDetail: it.gros ? it.prixDetail : undefined }));
+    const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, unite: it.unite, prixUnitaire: it.prixUnitaire, prixBrut: it.prixBrut, remiseLigne: it.remiseLigne, prix: it.prix, prixDetail: it.gros ? it.prixDetail : undefined }));
     const order = {
       id: state.nextId++,
       dateISO: new Date().toISOString(),
@@ -3428,13 +3461,73 @@ function createCatalogEngine(merchantKey, options) {
     if (grossisteVente) order.grossiste = { id: grossisteVente.id, nom: grossisteVente.nom, methode: methodeGros || "caisse" };
     if (items.some((x) => x.gros)) {
       order.venteGros = true;
-      order.economieGros = items.reduce((sm, x) => sm + (x.gros ? (x.prixDetail - x.prixUnitaire) * x.quantite : 0), 0);
+      order.economieGros = Math.round(items.reduce((sm, x) => sm + (x.gros ? (x.prixDetail - x.prixUnitaire) * x.quantite : 0), 0));
     }
     state.orders.push(order);
     saveState();
     return { order };
   }
 
+
+  // ---------------- Etape 87 : retours / remboursements depuis la Caisse ----------------
+  // Un retour est rattache a la VENTE d'origine (order.retours) : l'article est remis en stock (meme stock que le robot), le montant
+  // rembourse est proportionnel a ce que le client a reellement paye (remises comprises, le dernier retour d'une ligne solde exactement),
+  // et le remboursement sort du tiroir de la session OUVERTE (modeRemboursement "especes" : voir fermerSessionCaisse). La vente d'origine
+  // n'est jamais modifiee (ni son montant, ni sa date) : un jour deja cloture ne change donc pas.
+  function creerRetourPos({ orderId, lignes, modeRemboursement, referenceRemboursement, motif, caissier }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const order = state.orders.filter((o) => o.id === Number(orderId))[0];
+    if (!order || order.source !== "pos") return { erreur: "Vente de caisse introuvable.", statut: 404 };
+    if (order.statut !== "Livrée") return { erreur: "Cette vente est annulée : aucun retour possible." };
+    const sessionActive = sessionCaisseOuverte(caissier);
+    if (!sessionActive) return { erreur: "Aucune session de caisse ouverte. Merci d'ouvrir la caisse avant un remboursement." };
+    if (MODES_PAIEMENT_POS_VALIDES.indexOf(modeRemboursement) === -1) return { erreur: "Mode de remboursement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
+    const reference = (referenceRemboursement || "").toString().trim();
+    if (modeRemboursement !== "especes" && !reference) return { erreur: "La référence du remboursement est obligatoire pour ce mode." };
+    const motifNet = (motif || "").toString().trim().slice(0, 200);
+    if (!motifNet) return { erreur: "Indiquez le motif du retour." };
+    if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Aucun article à retourner." };
+    const vus = {};
+    const detail = [];
+    for (const l of lignes) {
+      const idx = Number(l && l.index);
+      const it = Number.isInteger(idx) ? (order.items || [])[idx] : null;
+      if (!it) return { erreur: "Ligne de vente introuvable." };
+      if (vus[idx]) return { erreur: "Une même ligne ne peut figurer qu'une fois." };
+      vus[idx] = true;
+      const vendue = Number(it.quantite) || 0;
+      const entier = Number.isInteger(vendue);
+      let q = Number(l.quantite);
+      if (!Number.isFinite(q)) q = 0;
+      if (!entier) q = arrondi3(q);
+      if (entier ? (!Number.isInteger(q) || q < 1) : q < 0.001) return { erreur: "Quantité de retour invalide pour \"" + it.produit + "\"." };
+      const deja = quantiteRetourneeLigne(order, idx);
+      const restante = arrondi3(vendue - deja);
+      if (q > restante) return { erreur: "Retour trop important pour \"" + it.produit + "\" : " + restante + " restant(s) à retourner." };
+      const reste = arrondi3(deja + q) === arrondi3(vendue);
+      const montant = reste ? Math.max(0, (Number(it.prix) || 0) - montantRembourseLigne(order, idx)) : Math.round((Number(it.prix) || 0) * q / vendue);
+      detail.push({ index: idx, productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: q, unite: it.unite, montant });
+    }
+    detail.forEach((d) => {
+      const v = findVariant(d.productId, d.couleur, d.taille);
+      if (v) v.stockReel = arrondi3(v.stockReel + d.quantite); else d.sansRemiseEnStock = true; // article supprime du catalogue depuis la vente
+    });
+    const retour = {
+      id: (order.retours || []).length + 1,
+      dateISO: new Date().toISOString(),
+      caissier: caissier || null,
+      sessionCaisseId: sessionActive.id,
+      motif: motifNet,
+      modeRemboursement,
+      referenceRemboursement: modeRemboursement === "especes" ? null : reference,
+      lignes: detail,
+      montant: detail.reduce((x, d) => x + d.montant, 0)
+    };
+    if (!Array.isArray(order.retours)) order.retours = [];
+    order.retours.push(retour);
+    saveState();
+    return { order, retour };
+  }
 
   // ---------------- Etape 78 : vente en gros - API pour server.js ----------------
   function getGros() { return state ? venteGros.assurer(state.gros) : null; }
@@ -3518,6 +3611,7 @@ function createCatalogEngine(merchantKey, options) {
     getOrders,
     getOrderById,
     creerVentePos,
+    creerRetourPos,
     ouvrirSessionCaisse,
     fermerSessionCaisse,
     getSessionsCaisse,

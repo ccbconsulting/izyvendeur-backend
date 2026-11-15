@@ -980,6 +980,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "PUT /api/:id/catalogue": "catalogue_modifie",
   "POST /api/:id/pos/vente": "vente_caisse",
   "POST /api/:id/pos/vente/:orderId/facture": "facture_caisse_creee",
+  "POST /api/:id/pos/vente/:orderId/retour": "retour_caisse_cree", // Etape 87
   "POST /api/:id/caisse/session/ouvrir": "caisse_ouverte",
   "POST /api/:id/caisse/session/fermer": "caisse_fermee",
   "POST /api/:id/catalogue/importer": "catalogue_importe",
@@ -1118,6 +1119,7 @@ function detailAuditRequete(code, req) {
     case "bon_utilise": return { bon: b.code ? String(b.code).slice(0, 20) : null, commande: b.commande || null };
     case "vente_caisse_remise": return { tentative: "remise", motif: b.motifRemise || null };
     case "facture_caisse_creee": return { vente: p.orderId };
+    case "retour_caisse_cree": return { vente: p.orderId };
     case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null, plafondRemise: b.plafondRemise !== undefined ? b.plafondRemise : null };
     case "employe_modifie": {
       const emp = entry && (entry.merchant.employes || []).filter((e) => e.id === p.employeId)[0];
@@ -1455,6 +1457,8 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     optionVenteGros: e.merchant.optionVenteGros === true,
     // Etape 84 : volet « Enseigne » (reseau de magasins) - debloque par le seul super-administrateur ; invisible cote marchand tant que ferme.
     optionEnseigne: e.merchant.optionEnseigne === true,
+    // Etape 87 : mode « Caisse seule » (point de vente sans WhatsApp) - debloque par le seul super-administrateur ; sert uniquement a masquer les volets WhatsApp dans /admin.
+    optionCaisseSeule: e.merchant.optionCaisseSeule === true,
     // Etape 85 : reglages de notification. Super-administrateur : options + regroupement ; marchand : SEULEMENT le bloc de
     // regroupement, et uniquement si le super-administrateur a ouvert l'option des alertes WhatsApp (sinon null).
     notif: vueReglagesNotif(e, req.auth.role)
@@ -1752,7 +1756,7 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
   const patch = {};
   // Etape 85 : alertes WhatsApp commande/RDV (option payante), rappels de RDV hors fenetre de 24 h (option payante) et plancher du
   // regroupement des alertes. Reserve au super-administrateur (toute la route l'est) ; le marchand ne peut ni les voir ni les changer.
@@ -1796,6 +1800,17 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (optionCaissePos !== undefined) patch.optionCaissePos = !!optionCaissePos;
   if (optionVenteGros !== undefined) patch.optionVenteGros = !!optionVenteGros;
   if (optionEnseigne !== undefined) patch.optionEnseigne = optionEnseigne === true; // Etape 84 (toute la route est reservee au super-administrateur)
+  // Etape 87 : mode « Caisse seule » (point de vente sans WhatsApp). Exige l'option Caisse POS ; reserve au super-administrateur (toute la route l'est).
+  if (optionCaisseSeule !== undefined) {
+    if (optionCaisseSeule === true) {
+      const caisseApres = patch.optionCaissePos !== undefined ? patch.optionCaissePos : entry.merchant.optionCaissePos === true;
+      if (!caisseApres) return res.status(409).json({ erreur: "Le mode caisse seule exige que l'option Caisse POS soit activée." });
+      if (!entry.moteurs || !entry.moteurs.catalogue || Object.keys(entry.moteurs).filter((k) => entry.moteurs[k]).length !== 1) return res.status(409).json({ erreur: "Le mode caisse seule exige un marchand de type catalogue, sans autre volet." });
+    }
+    patch.optionCaisseSeule = optionCaisseSeule === true;
+  }
+  // Retirer l'option Caisse POS referme aussi le mode caisse seule (qui n'a plus de sens sans caisse).
+  if (patch.optionCaissePos === false && entry.merchant.optionCaisseSeule === true && patch.optionCaisseSeule === undefined) patch.optionCaisseSeule = false;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
   const maj = await db.updateMerchantFields(req.params.id, patch);
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
@@ -1806,11 +1821,12 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionCaissePos = maj.optionCaissePos;
   entry.merchant.optionVenteGros = maj.optionVenteGros === true;
   entry.merchant.optionEnseigne = maj.optionEnseigne === true;
+  entry.merchant.optionCaisseSeule = maj.optionCaisseSeule === true;
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
   entry.merchant.nbPhotosAuto = maj.nbPhotosAuto === 3 ? 3 : 1;
   entry.merchant.reglagesNotif = maj.reglagesNotif || null;
-  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, enseigne=${maj.optionEnseigne === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
+  console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, enseigne=${maj.optionEnseigne === true}, caisse seule=${maj.optionCaisseSeule === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -1828,6 +1844,8 @@ app.put("/api/marchands/:id/module-secondaire", protegerAcces, async (req, res) 
   if (lecture.erreur) return res.status(400).json({ erreur: lecture.erreur });
   const demande = lecture.liste;
   const avant = modulesDuMarchand(entry.merchant).slice(1);
+  // Etape 87 : un marchand en mode « caisse seule » n'a pas de volet WhatsApp : on retire d'abord le mode avant d'ajouter un volet.
+  if (entry.merchant.optionCaisseSeule === true && demande.length) return res.status(409).json({ erreur: "Ce marchand est en mode caisse seule : retirez d'abord ce mode (Options payantes) avant d'ajouter un volet." });
   try {
     if (demande.join(",") !== avant.join(",")) {
       const maj = await db.updateMerchantFields(req.params.id, { moduleSecondaire: demande.join(",") || null });
@@ -1906,7 +1924,10 @@ function lignesFactureInterne(entry, order) {
     let d = it.produit || "Article";
     const variante = [it.couleur, it.taille].filter((x) => x && x !== "-" && x !== "—" && x !== "–").join(" ");
     if (variante) d += " (" + variante + ")";
-    const l = { designation: d, quantite: it.quantite || 1, prixUnitaire: it.prixUnitaire || 0 };
+    let l = { designation: d, quantite: it.quantite || 1, prixUnitaire: it.prixUnitaire || 0 };
+    // Etape 87 : quantite decimale (vente au poids / a la mesure) -> une ligne de quantite 1 au montant exact (la facture integree
+    // ne manipule que des quantites entieres) ; la quantite reelle est rappelee dans la designation.
+    if (!Number.isInteger(l.quantite)) l = { designation: d + " — " + String(it.quantite).replace(".", ",") + (it.unite ? " " + it.unite : ""), quantite: 1, prixUnitaire: it.prixBrut != null ? it.prixBrut : (it.prix || 0) };
     if (it.remiseLigne > 0) l.remise = { type: "montant", valeur: it.remiseLigne };
     return l;
   });
@@ -2635,6 +2656,42 @@ app.get("/api/:id/catalogue", protegerAcces, (req, res) => {
   res.json(entry.engine.getCatalog());
 });
 
+// Etape 87 : champs OPTIONNELS du catalogue pour la caisse - reference (article), code-barres (variante), unite de vente et
+// vente decimale (article). Tous absents par defaut : un catalogue qui n'en parle pas n'est PAS modifie. Valides cote serveur
+// (jamais de confiance au navigateur) ; la vente decimale n'est retenue que si l'option Caisse POS est active (filet, comme le
+// stock illimite). Les codes-barres doivent etre uniques dans tout le catalogue (un scan doit designer UNE seule variante).
+const UNITES_VENTE = ["piece", "kg", "g", "l", "m"];
+const RE_CODE_BARRES = /^[A-Za-z0-9._\-\/]{1,48}$/;
+function nettoyerChampsCaisseCatalogue(catalogue, caisseActive) {
+  const vus = new Map(); // code (minuscule) -> libelle de l'article
+  const sortie = [];
+  for (const p of catalogue) {
+    if (!p || typeof p !== "object") { sortie.push(p); continue; }
+    const q = Object.assign({}, p);
+    const nom = String(q.nom || "").slice(0, 80);
+    const ref = q.reference == null ? "" : String(q.reference).trim().slice(0, 40);
+    if (ref) q.reference = ref; else delete q.reference;
+    if (UNITES_VENTE.indexOf(q.unite) !== -1 && q.unite !== "piece") q.unite = q.unite; else delete q.unite;
+    if (q.venteDecimale === true && caisseActive) q.venteDecimale = true; else delete q.venteDecimale;
+    if (Array.isArray(q.variantes)) {
+      q.variantes = q.variantes.map((v) => {
+        if (!v || typeof v !== "object") return v;
+        const w = Object.assign({}, v);
+        const code = w.codeBarres == null ? "" : String(w.codeBarres).trim();
+        if (!code) { delete w.codeBarres; return w; }
+        if (!RE_CODE_BARRES.test(code)) throw new Error("Code-barres invalide pour \"" + nom + "\" : lettres, chiffres, . _ - / uniquement (48 caractères maximum).");
+        const cle = code.toLowerCase();
+        if (vus.has(cle)) throw new Error("Code-barres en double (" + code + ") : \"" + vus.get(cle) + "\" et \"" + nom + "\". Un code-barres doit désigner une seule variante.");
+        vus.set(cle, nom);
+        w.codeBarres = code;
+        return w;
+      });
+    }
+    sortie.push(q);
+  }
+  return sortie;
+}
+
 app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
@@ -2667,6 +2724,10 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
     const filet = appliquerFiletEmployeCatalogue(catalogueActuel, corps);
     corps = filet.catalogue;
     suppressionsBloquees = suppressionsBloquees.concat(filet.restaures);
+  }
+  if (Array.isArray(corps)) {
+    try { corps = nettoyerChampsCaisseCatalogue(corps, entry.merchant.optionCaissePos === true); }
+    catch (e) { return res.status(400).json({ erreur: e.message }); }
   }
   const nouveau = entry.engine.updateCatalog(corps);
   if (!nouveau) return res.status(400).json({ erreur: "Corps de requête invalide (tableau attendu)." });
@@ -2718,6 +2779,32 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   }
   if (extraGros.length) res.locals.auditExtra = extraGros;
   res.status(201).json(resultat.order);
+});
+
+// Etape 87 : lecture d'UNE vente de la Caisse (ecran de retour) - meme garde que les autres routes de caisse.
+app.get("/api/:id/pos/vente/:orderId", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const order = entry.engine.getOrderById(req.params.orderId);
+  if (!order || order.source !== "pos") return res.status(404).json({ erreur: "Vente de caisse introuvable." });
+  res.json(order);
+});
+
+// Etape 87 : retour / remboursement d'une vente de la Caisse (articles remis en stock, remboursement tire du tiroir de la session ouverte).
+// Reserve au proprietaire, au super-administrateur et a l'employe ayant le droit « remises » : un remboursement est une sortie d'argent.
+app.post("/api/:id/pos/vente/:orderId/retour", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  if (!estGestionnaireDuMarchand(req, req.params.id) && (req.auth.roles || []).indexOf("remises") === -1) {
+    return res.status(403).json({ erreur: "Seul le propriétaire, ou un employé disposant du droit « remises », peut effectuer un retour." });
+  }
+  const { lignes, modeRemboursement, referenceRemboursement, motif } = req.body || {};
+  const r = entry.engine.creerRetourPos({ orderId: req.params.orderId, lignes, modeRemboursement, referenceRemboursement, motif, caissier: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.locals.audit = { detail: { vente: "POS-" + String(r.order.id).padStart(4, "0"), retour: "RET-" + String(r.order.id).padStart(4, "0") + "-" + r.retour.id, montant: r.retour.montant, mode: r.retour.modeRemboursement, motif: r.retour.motif } };
+  res.status(201).json({ order: r.order, retour: r.retour });
 });
 
 // -- Session de caisse : ouverture/fermeture + billetage (29 septembre 2026) -- (meme garde que
@@ -2846,6 +2933,10 @@ app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.si
   const iSeuil = idx("seuil");
   const iCouleur = idx("couleur");
   const iTaille = idx("taille");
+  // Etape 87 : colonnes facultatives (reference de l'article, code-barres de la variante, unite de vente).
+  const iRef = entetes.findIndex((h) => h.indexOf("référence") !== -1 || h.indexOf("reference") !== -1);
+  const iCode = entetes.findIndex((h) => h.indexOf("barre") !== -1);
+  const iUnite = entetes.findIndex((h) => h.indexOf("unité") !== -1 || h.indexOf("unite") !== -1);
   if (iNom === -1 || iPrix === -1) {
     return res.status(400).json({ erreur: "Colonnes attendues introuvables (au minimum \"Nom\" et \"Prix\")." });
   }
@@ -2874,22 +2965,30 @@ app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.si
     const taille = (iTaille !== -1 && champs[iTaille]) ? champs[iTaille] : "Unique";
 
     const cle = cat.toLowerCase() + "||" + nom.toLowerCase();
-    if (!groupes.has(cle)) groupes.set(cle, { cat, nom, variantes: [] });
-    groupes.get(cle).variantes.push({ couleur, taille, prix, stockReel, seuilAlerte });
+    if (!groupes.has(cle)) groupes.set(cle, { cat, nom, variantes: [], reference: "", unite: "" });
+    const variante = { couleur, taille, prix, stockReel, seuilAlerte };
+    const codeBarres = iCode !== -1 ? (champs[iCode] || "").trim() : "";
+    if (codeBarres) variante.codeBarres = codeBarres;
+    groupes.get(cle).variantes.push(variante);
+    if (iRef !== -1 && (champs[iRef] || "").trim() && !groupes.get(cle).reference) groupes.get(cle).reference = champs[iRef].trim();
+    if (iUnite !== -1 && (champs[iUnite] || "").trim()) { const u = champs[iUnite].trim().toLowerCase().replace("pièce", "piece"); if (UNITES_VENTE.indexOf(u) !== -1) groupes.get(cle).unite = u; }
   }
 
-  const nouveauxArticles = Array.from(groupes.values()).map((g, i) => ({
-    id: "imp" + Date.now() + "_" + i,
-    nom: g.nom,
-    cat: g.cat,
-    variantes: g.variantes
-  }));
+  const nouveauxArticles = Array.from(groupes.values()).map((g, i) => {
+    const a = { id: "imp" + Date.now() + "_" + i, nom: g.nom, cat: g.cat, variantes: g.variantes };
+    if (g.reference) a.reference = g.reference;
+    if (g.unite && g.unite !== "piece") a.unite = g.unite;
+    return a;
+  });
 
   if (!nouveauxArticles.length) {
     return res.json({ ajoutes: 0, doublonsIgnores: doublons, erreurs });
   }
 
-  const nouveau = entry.engine.updateCatalog(catalogueActuel.concat(nouveauxArticles));
+  let catalogueFinal;
+  try { catalogueFinal = nettoyerChampsCaisseCatalogue(catalogueActuel.concat(nouveauxArticles), entry.merchant.optionCaissePos === true); }
+  catch (e) { return res.status(400).json({ erreur: "Import refusé, rien n'a été ajouté : " + e.message }); }
+  const nouveau = entry.engine.updateCatalog(catalogueFinal);
   res.json({ ajoutes: nouveauxArticles.length, doublonsIgnores: doublons, erreurs, catalogue: nouveau });
 });
 
