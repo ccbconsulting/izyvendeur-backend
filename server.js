@@ -1008,6 +1008,11 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/pos/additions/:aid/annuler": "addition_annulee",
   "POST /api/:id/pos/additions/:aid/encaisser": "addition_encaissee",
   "POST /api/:id/pos/additions/:aid/transferer": "addition_transferee",
+  "POST /api/:id/pos/clients": "client_cree", // Etape 90
+  "PUT /api/:id/pos/clients/:cid": "client_modifie",
+  "POST /api/:id/pos/clients/:cid/reglements": "reglement_client_encaisse",
+  "POST /api/:id/pos/reglements/:rid/annuler": "reglement_client_annule",
+  "PUT /api/:id/pos/credit/config": "credit_config_modifiee",
   "POST /api/:id/caisse/session/ouvrir": "caisse_ouverte",
   "POST /api/:id/caisse/session/fermer": "caisse_fermee",
   "POST /api/:id/catalogue/importer": "catalogue_importe",
@@ -1151,6 +1156,11 @@ function detailAuditRequete(code, req) {
     case "addition_ligne_retiree": return { addition: p.aid, ligne: p.index, motif: b.motif || null };
     case "addition_annulee": return { addition: p.aid, motif: b.motif || null };
     case "addition_encaissee": return { addition: p.aid };
+    case "client_cree": return { client: b.nom ? String(b.nom).slice(0, 60) : null };
+    case "client_modifie": return { client: p.cid };
+    case "reglement_client_encaisse": return { client: p.cid, montant: b.montant !== undefined ? b.montant : null, mode: b.mode || null };
+    case "reglement_client_annule": return { reglement: p.rid, motif: b.motif || null };
+    case "credit_config_modifiee": return { delaiJours: b.delaiJours !== undefined ? b.delaiJours : null, plafondParDefaut: b.plafondParDefaut !== undefined ? b.plafondParDefaut : null };
     case "addition_transferee": return { addition: p.aid, vers: b.table || null };
     case "employe_cree": return { employe: b.nom || null, roles: Array.isArray(b.roles) ? b.roles : null, plafondRemise: b.plafondRemise !== undefined ? b.plafondRemise : null };
     case "employe_modifie": {
@@ -1493,6 +1503,7 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     optionCaisseSeule: e.merchant.optionCaisseSeule === true,
     // Etape 89 : mode « Restauration » (debloque par le seul super-administrateur ; le marchand n'en voit que le resultat : l'ecran Tables de la caisse).
     optionRestauration: e.merchant.optionRestauration === true,
+    optionClientsCredit: e.merchant.optionClientsCredit === true,
     // Etape 85 : reglages de notification. Super-administrateur : options + regroupement ; marchand : SEULEMENT le bloc de
     // regroupement, et uniquement si le super-administrateur a ouvert l'option des alertes WhatsApp (sinon null).
     notif: vueReglagesNotif(e, req.auth.role)
@@ -1790,7 +1801,7 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, optionRestauration, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, optionRestauration, optionClientsCredit, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
   const patch = {};
   // Etape 85 : alertes WhatsApp commande/RDV (option payante), rappels de RDV hors fenetre de 24 h (option payante) et plancher du
   // regroupement des alertes. Reserve au super-administrateur (toute la route l'est) ; le marchand ne peut ni les voir ni les changer.
@@ -1853,7 +1864,18 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
     }
     patch.optionRestauration = optionRestauration === true;
   }
+  // Etape 90 : « Clients, credit et marge » (fiches clients, ventes a credit, reglements, prix d'achat). Meme regles : Caisse POS + marchand catalogue,
+  // reserve au super-administrateur ; le marchand ne peut ni la voir ni se l'accorder.
+  if (optionClientsCredit !== undefined) {
+    if (optionClientsCredit === true) {
+      const caisseApres = patch.optionCaissePos !== undefined ? patch.optionCaissePos : entry.merchant.optionCaissePos === true;
+      if (!caisseApres) return res.status(409).json({ erreur: "L'option Clients, crédit et marge exige que l'option Caisse POS soit activée." });
+      if (!entry.moteurs || !entry.moteurs.catalogue) return res.status(409).json({ erreur: "L'option Clients, crédit et marge exige un marchand de type catalogue." });
+    }
+    patch.optionClientsCredit = optionClientsCredit === true;
+  }
   if (patch.optionCaissePos === false && entry.merchant.optionRestauration === true && patch.optionRestauration === undefined) patch.optionRestauration = false;
+  if (patch.optionCaissePos === false && entry.merchant.optionClientsCredit === true && patch.optionClientsCredit === undefined) patch.optionClientsCredit = false;
   // Retirer l'option Caisse POS referme aussi le mode caisse seule (qui n'a plus de sens sans caisse).
   if (patch.optionCaissePos === false && entry.merchant.optionCaisseSeule === true && patch.optionCaisseSeule === undefined) patch.optionCaisseSeule = false;
   if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
@@ -1868,11 +1890,12 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.optionEnseigne = maj.optionEnseigne === true;
   entry.merchant.optionCaisseSeule = maj.optionCaisseSeule === true;
   entry.merchant.optionRestauration = maj.optionRestauration === true;
+  entry.merchant.optionClientsCredit = maj.optionClientsCredit === true;
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
   entry.merchant.nbPhotosAuto = maj.nbPhotosAuto === 3 ? 3 : 1;
   entry.merchant.reglagesNotif = maj.reglagesNotif || null;
   console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, enseigne=${maj.optionEnseigne === true}, caisse seule=${maj.optionCaisseSeule === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, optionRestauration: maj.optionRestauration === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
+  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, optionRestauration: maj.optionRestauration === true, optionClientsCredit: maj.optionClientsCredit === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -2253,7 +2276,7 @@ function filtreJournalDepuisRequete(req) {
 }
 function repondreJournalFacturation(entry, req, res) {
   const filtre = filtreJournalDepuisRequete(req);
-  const ext = { ventesPos: ventesPosDuMarchand(entry) };
+  const ext = { ventesPos: ventesPosDuMarchand(entry), reglementsPos: entry.merchant.optionClientsCredit && entry.moteurs && entry.moteurs.catalogue ? entry.moteurs.catalogue.getReglementsClients() : [] };
   if (String(req.query.format || "").toLowerCase() === "csv") {
     const sep = String(req.query.sep || "") === ";" || String(req.query.sep || "").toLowerCase() === "semicolon" ? ";" : ",";
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -2609,6 +2632,7 @@ app.post("/api/:id/pos/vente/:orderId/facture", protegerAcces, async (req, res) 
   if (!order) return res.status(404).json({ erreur: "Vente introuvable." });
   if (order.source !== "pos") return res.status(400).json({ erreur: "Cette route ne concerne que les ventes de la Caisse." });
   if (order.statut === "Annulée") return res.status(400).json({ erreur: "Cette vente est annulée : impossible de la facturer." });
+  if (order.creance) return res.status(400).json({ erreur: "Une vente à crédit ne peut pas être facturée depuis la Caisse (la facture serait enregistrée comme payée) : encaissez d'abord la dette." });
   const refus = refusFacturationManuelle(entry, order, "facturer");
   if (refus) return res.status(refus.status).json({ erreur: refus.erreur });
   await tenterFacturationCommande(entry, order, { client: (req.body || {}).client });
@@ -2708,7 +2732,7 @@ app.delete("/api/marchands/:id", protegerAcces, async (req, res) => {
 app.get("/api/:id/catalogue", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, ["catalogue", "caisse"]); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
-  res.json(entry.engine.getCatalog());
+  res.json(peutGererCouts(req, entry) ? entry.engine.getCatalog() : sansCouts(entry.engine.getCatalog()));
 });
 
 // Etape 87 : champs OPTIONNELS du catalogue pour la caisse - reference (article), code-barres (variante), unite de vente et
@@ -2747,6 +2771,41 @@ function nettoyerChampsCaisseCatalogue(catalogue, caisseActive) {
   return sortie;
 }
 
+// Etape 90 : PRIX D'ACHAT (marge). Champ facultatif de chaque variante, reserve au PROPRIETAIRE / super-administrateur et a l'option « Clients, credit et
+// marge » : jamais envoye a un employe (meme avec le role « catalogue » ou « caisse »), jamais ecrasable par lui (on conserve la valeur enregistree).
+function peutGererCouts(req, entry) { return entry.merchant.optionClientsCredit === true && estGestionnaireDuMarchand(req, req.params.id); }
+function sansCouts(x) {
+  const c = JSON.parse(JSON.stringify(x));
+  (Array.isArray(c) ? c : [c]).forEach((p) => { if (p && Array.isArray(p.variantes)) p.variantes.forEach((v) => { if (v && typeof v === "object") delete v.prixAchat; }); });
+  return c;
+}
+function fusionnerPrixAchat(nouveau, actuel, peutModifier) {
+  const cle = (pid, v) => pid + "|" + v.couleur + "|" + v.taille;
+  const anciens = new Map();
+  (actuel || []).forEach((p) => (p && p.variantes || []).forEach((v) => { if (v && v.prixAchat !== undefined && v.prixAchat !== null) anciens.set(cle(p.id, v), v.prixAchat); }));
+  return nouveau.map((p) => {
+    if (!p || typeof p !== "object" || !Array.isArray(p.variantes)) return p;
+    const q = Object.assign({}, p);
+    q.variantes = p.variantes.map((v) => {
+      if (!v || typeof v !== "object") return v;
+      const w = Object.assign({}, v);
+      if (peutModifier) {
+        if (w.prixAchat === undefined || w.prixAchat === null || w.prixAchat === "") delete w.prixAchat;
+        else {
+          const n = Number(w.prixAchat);
+          if (!Number.isFinite(n) || n < 0 || n > 1000000000) throw new Error("Prix d'achat invalide pour \"" + String(p.nom || "").slice(0, 80) + "\" (nombre de FCFA positif ou nul).");
+          w.prixAchat = Math.round(n * 100) / 100;
+        }
+      } else {
+        const a = anciens.get(cle(p.id, w));
+        if (a !== undefined) w.prixAchat = a; else delete w.prixAchat;
+      }
+      return w;
+    });
+    return q;
+  });
+}
+
 app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
@@ -2781,7 +2840,7 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
     suppressionsBloquees = suppressionsBloquees.concat(filet.restaures);
   }
   if (Array.isArray(corps)) {
-    try { corps = nettoyerChampsCaisseCatalogue(corps, entry.merchant.optionCaissePos === true); }
+    try { corps = nettoyerChampsCaisseCatalogue(corps, entry.merchant.optionCaissePos === true); corps = fusionnerPrixAchat(corps, catalogueAvant, peutGererCouts(req, entry)); }
     catch (e) { return res.status(400).json({ erreur: e.message }); }
   }
   const nouveau = entry.engine.updateCatalog(corps);
@@ -2796,7 +2855,7 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
   if (suppressionsBloquees.length) {
     res.locals.auditExtra = [{ action: "suppression_bloquee", statut: "refuse", detail: { changes: suppressionsBloquees.slice(0, 100) } }];
   }
-  res.json(nouveau);
+  res.json(peutGererCouts(req, entry) ? nouveau : sansCouts(nouveau));
 });
 
 // -- Caisse POS (29 septembre 2026) -- (permission employe requise : "caisse", ET option payante
@@ -2808,7 +2867,9 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "caisse"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
-  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise, jetonGrossiste, paiements, montantRecu } = req.body || {};
+  const { lignes, modePaiement, referencePaiement, remiseGlobale, motifRemise, jetonGrossiste, paiements, montantRecu, clientId, credit } = req.body || {};
+  // Etape 90 : client et vente a credit uniquement si l'option « Clients, credit et marge » (super-administrateur) est activee.
+  if ((credit || (clientId !== undefined && clientId !== null && clientId !== "")) && !entry.merchant.optionClientsCredit) return res.status(403).json({ erreur: "L'option Clients, crédit et marge n'est pas activée pour ce marchand." });
   // Etape 78 : un grossiste n'est jamais designe par le navigateur lui-meme (id libre) mais par un jeton court emis par
   // POST /api/:id/pos/gros/identifier pour CE caissier et CE marchand, apres une recherche reussie selon les criteres du proprietaire.
   let grossisteId = null;
@@ -2818,7 +2879,7 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
     grossisteId = jg.grossisteId;
   }
   const resultat = entry.engine.creerVentePos({
-    lignes, modePaiement, referencePaiement, paiements, montantRecu, caissier: req.auth.adminUser, remiseGlobale, motifRemise, grossisteId, methodeGros: "caisse",
+    lignes, modePaiement, referencePaiement, paiements, montantRecu, clientId, credit, caissier: req.auth.adminUser, remiseGlobale, motifRemise, grossisteId, methodeGros: "caisse",
     verifierRemise: (info) => controleRemise(req, info.pourcentEffectif)
   });
   if (resultat.erreur) return res.status(resultat.statut || 400).json({ erreur: resultat.erreur });
@@ -2832,6 +2893,7 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
   if (rm) {
     extraGros.push({ action: "vente_caisse_remise", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), brut: resultat.order.prixBrut, remise: rm.montant, pourcent: rm.pourcentEffectif, motif: rm.motif } });
   }
+  if (resultat.order.creance) extraGros.push({ action: "vente_caisse_credit", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), client: resultat.order.clientNom, aCredit: resultat.order.creance.montant, echeance: resultat.order.creance.echeance } });
   if (extraGros.length) res.locals.auditExtra = extraGros;
   res.status(201).json(resultat.order);
 });
@@ -2967,16 +3029,94 @@ app.post("/api/:id/pos/additions/:aid/annuler", protegerAcces, (req, res) => {
 });
 app.post("/api/:id/pos/additions/:aid/encaisser", protegerAcces, (req, res) => {
   const entry = gardeResto(req, res); if (!entry) return;
-  const { selection, paiements, remiseGlobale, motifRemise } = req.body || {};
+  const { selection, paiements, remiseGlobale, motifRemise, clientId, credit } = req.body || {};
+  if ((credit || (clientId !== undefined && clientId !== null && clientId !== "")) && !entry.merchant.optionClientsCredit) return res.status(403).json({ erreur: "L'option Clients, crédit et marge n'est pas activée pour ce marchand." });
   const r = entry.engine.encaisserAddition({
-    id: req.params.aid, selection, paiements, remiseGlobale, motifRemise, caissier: req.auth.adminUser,
+    id: req.params.aid, selection, paiements, remiseGlobale, motifRemise, clientId, credit, caissier: req.auth.adminUser,
     verifierRemise: (info) => controleRemise(req, info.pourcentEffectif)
   });
   if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
   const num = "POS-" + String(r.order.id).padStart(4, "0");
   res.locals.audit = { detail: { addition: req.params.aid, table: r.order.table, vente: num, montant: r.order.prix, mode: r.order.modePaiement, soldee: r.soldee } };
-  if (r.order.remise) res.locals.auditExtra = [{ action: "vente_caisse_remise", statut: "ok", detail: { vente: num, brut: r.order.prixBrut, remise: r.order.remise.montant, pourcent: r.order.remise.pourcentEffectif, motif: r.order.remise.motif } }];
+  const extraAdd = [];
+  if (r.order.remise) extraAdd.push({ action: "vente_caisse_remise", statut: "ok", detail: { vente: num, brut: r.order.prixBrut, remise: r.order.remise.montant, pourcent: r.order.remise.pourcentEffectif, motif: r.order.remise.motif } });
+  if (r.order.creance) extraAdd.push({ action: "vente_caisse_credit", statut: "ok", detail: { vente: num, client: r.order.clientNom, aCredit: r.order.creance.montant, echeance: r.order.creance.echeance } });
+  if (extraAdd.length) res.locals.auditExtra = extraAdd;
   res.status(201).json({ order: r.order, addition: r.addition, soldee: r.soldee });
+});
+
+// -- Etape 90 : clients, credit (ardoise) et marge. Meme garde que la caisse (role « caisse » ET option Caisse POS) PLUS l'option « Clients, credit et
+// marge » (super-administrateur) : sans elle, aucune de ces routes ne repond. Fixer ou changer le PLAFOND d'un client, desactiver un client, regler le
+// delai de paiement : proprietaire / super-administrateur uniquement. Annuler un reglement : proprietaire ou droit « remises » (avec motif).
+function gardeClients(req, res) {
+  const entry = gardeAttente(req, res); if (!entry) return null;
+  if (!entry.merchant.optionClientsCredit) { res.status(403).json({ erreur: "L'option Clients, crédit et marge n'est pas activée pour ce marchand." }); return null; }
+  return entry;
+}
+function aDroitRemises(req) { return (req.auth.roles || []).indexOf("remises") !== -1; }
+app.get("/api/:id/pos/clients", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  const gest = estGestionnaireDuMarchand(req, req.params.id);
+  res.json(entry.engine.listerClientsPos({ recherche: req.query.q, seulementDette: req.query.dette === "1", inclureInactifs: gest && req.query.inactifs === "1" }));
+});
+app.post("/api/:id/pos/clients", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  const { nom, telephone, note, plafond } = req.body || {};
+  const gest = estGestionnaireDuMarchand(req, req.params.id);
+  const r = entry.engine.creerClientPos({ nom, telephone, note, plafond, par: req.auth.adminUser, peutFixerPlafond: gest });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.locals.audit = { detail: { client: r.client.nom } };
+  res.status(201).json(r.client);
+});
+app.put("/api/:id/pos/clients/:cid", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Seul le propriétaire peut modifier un client ou son plafond de crédit." });
+  const { nom, telephone, note, plafond, actif } = req.body || {};
+  const avant = entry.engine.releveClientPos(req.params.cid);
+  const r = entry.engine.modifierClientPos(req.params.cid, { nom, telephone, note, plafond, actif });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.locals.audit = { detail: { client: r.client.nom, plafond: plafond !== undefined ? r.client.plafond : undefined, plafondAvant: plafond !== undefined && avant.client ? avant.client.plafond : undefined, actif: actif !== undefined ? r.client.actif : undefined } };
+  res.json(r.client);
+});
+app.get("/api/:id/pos/clients/:cid", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  const r = entry.engine.releveClientPos(req.params.cid);
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.json(r);
+});
+app.post("/api/:id/pos/clients/:cid/reglements", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  const { montant, mode, reference, note } = req.body || {};
+  const r = entry.engine.enregistrerReglementClient({ clientId: req.params.cid, montant, mode, reference, note, caissier: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.locals.audit = { detail: { client: r.reglement.clientNom, montant: r.reglement.montant, mode: r.reglement.mode, reglement: "REG-" + String(r.reglement.id).padStart(4, "0") } };
+  res.status(201).json({ reglement: r.reglement, client: r.client });
+});
+app.post("/api/:id/pos/reglements/:rid/annuler", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id) && !aDroitRemises(req)) return res.status(403).json({ erreur: "Seul le propriétaire, ou un employé disposant du droit « remises », peut annuler un règlement." });
+  const r = entry.engine.annulerReglementClient({ id: req.params.rid, motif: (req.body || {}).motif, caissier: req.auth.adminUser });
+  if (r.erreur) return res.status(r.statut || 400).json({ erreur: r.erreur });
+  res.locals.audit = { detail: { client: r.reglement.clientNom, montant: r.reglement.montant, mode: r.reglement.mode, reglement: "REG-" + String(r.reglement.id).padStart(4, "0"), motif: r.reglement.annulation.motif } };
+  res.json({ reglement: r.reglement, client: r.client });
+});
+app.get("/api/:id/pos/creances", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id) && !aDroitRemises(req)) return res.status(403).json({ erreur: "Réservé au propriétaire ou à un employé disposant du droit « remises »." });
+  res.json(entry.engine.listerCreances());
+});
+app.get("/api/:id/pos/credit/config", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  res.json(entry.engine.getConfigCredit());
+});
+app.put("/api/:id/pos/credit/config", protegerAcces, (req, res) => {
+  const entry = gardeClients(req, res); if (!entry) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Seul le propriétaire peut régler le crédit client." });
+  const { delaiJours, plafondParDefaut } = req.body || {};
+  const r = entry.engine.definirConfigCredit({ delaiJours, plafondParDefaut });
+  if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  res.locals.audit = { detail: { delaiJours: r.config.delaiJours, plafondParDefaut: r.config.plafondParDefaut } };
+  res.json(r.config);
 });
 
 // -- Session de caisse : ouverture/fermeture + billetage (29 septembre 2026) -- (meme garde que
@@ -3011,9 +3151,17 @@ app.get("/api/:id/caisse/rapport", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, ["caisse", "rapports"]); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
   if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  // Etape 90 : sections credit (option « Clients, credit et marge ») ; la MARGE (prix d'achat) n'est jamais donnee qu'au proprietaire / super-administrateur.
+  const optionCredit = entry.merchant.optionClientsCredit === true;
+  const gest = estGestionnaireDuMarchand(req, req.params.id);
+  const vueDemandee = String(req.query.vue || "synthese");
+  if (String(req.query.format || "").toLowerCase() === "csv" && ((vueDemandee === "marge" && !(optionCredit && gest)) || (vueDemandee === "reglements" && !optionCredit))) return res.status(403).json({ erreur: "Vue non disponible." });
   const r = rapportCaisse.genererRapportCaisse({
     marchand: req.params.id, commandes: entry.engine.getOrders(), sessions: entry.engine.getSessionsCaisse(),
-    du: req.query.du, au: req.query.au, caissier: req.query.caissier
+    du: req.query.du, au: req.query.au, caissier: req.query.caissier,
+    reglements: optionCredit ? entry.engine.getReglementsClients() : undefined,
+    creances: optionCredit && (gest || aDroitRemises(req)) ? entry.engine.listerCreances() : undefined,
+    couts: optionCredit && gest ? entry.engine.getCoutsVentes() : undefined
   });
   if (r.erreur) return res.status(400).json({ erreur: r.erreur });
   if (String(req.query.format || "").toLowerCase() === "csv") {
@@ -3100,7 +3248,8 @@ app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.si
   const idx = (motCle) => entetes.findIndex((h) => h.indexOf(motCle) !== -1);
   const iCat = idx("categorie");
   const iNom = idx("nom");
-  const iPrix = idx("prix");
+  const iPrix = entetes.findIndex((h) => h.indexOf("prix") !== -1 && h.indexOf("achat") === -1 && h.indexOf("revient") === -1); // Etape 90 : « Prix d'achat » n'est pas le prix de vente
+  const iAchat = entetes.findIndex((h) => h.indexOf("prix d'achat") !== -1 || h.indexOf("prix achat") !== -1 || h.indexOf("cout") !== -1 || h.indexOf("coût") !== -1 || h.indexOf("revient") !== -1);
   const iStock = idx("stock");
   const iSeuil = idx("seuil");
   const iCouleur = idx("couleur");
@@ -3141,6 +3290,7 @@ app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.si
     const variante = { couleur, taille, prix, stockReel, seuilAlerte };
     const codeBarres = iCode !== -1 ? (champs[iCode] || "").trim() : "";
     if (codeBarres) variante.codeBarres = codeBarres;
+    if (iAchat !== -1 && peutGererCouts(req, entry)) { const pa = parserPrixFcfa(champs[iAchat]); if (pa != null && champs[iAchat] !== "") variante.prixAchat = pa; }
     groupes.get(cle).variantes.push(variante);
     if (iRef !== -1 && (champs[iRef] || "").trim() && !groupes.get(cle).reference) groupes.get(cle).reference = champs[iRef].trim();
     if (iUnite !== -1 && (champs[iUnite] || "").trim()) { const u = champs[iUnite].trim().toLowerCase().replace("pièce", "piece"); if (UNITES_VENTE.indexOf(u) !== -1) groupes.get(cle).unite = u; }
@@ -3158,10 +3308,10 @@ app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.si
   }
 
   let catalogueFinal;
-  try { catalogueFinal = nettoyerChampsCaisseCatalogue(catalogueActuel.concat(nouveauxArticles), entry.merchant.optionCaissePos === true); }
+  try { catalogueFinal = fusionnerPrixAchat(nettoyerChampsCaisseCatalogue(catalogueActuel.concat(nouveauxArticles), entry.merchant.optionCaissePos === true), catalogueActuel, peutGererCouts(req, entry)); }
   catch (e) { return res.status(400).json({ erreur: "Import refusé, rien n'a été ajouté : " + e.message }); }
   const nouveau = entry.engine.updateCatalog(catalogueFinal);
-  res.json({ ajoutes: nouveauxArticles.length, doublonsIgnores: doublons, erreurs, catalogue: nouveau });
+  res.json({ ajoutes: nouveauxArticles.length, doublonsIgnores: doublons, erreurs, catalogue: peutGererCouts(req, entry) ? nouveau : sansCouts(nouveau) });
 });
 
 // Photo d'un article : uploadee vers Cloudflare R2 (voir storage.js), puis son URL publique est ajoutee
@@ -3184,7 +3334,7 @@ app.post("/api/:id/catalogue/:productId/photos", protegerAcces, uploadPhoto.sing
     });
     const produit = entry.engine.ajouterPhotoProduit(req.params.productId, url);
     if (!produit) return res.status(404).json({ erreur: "Article introuvable." });
-    res.status(201).json({ url, produit });
+    res.status(201).json({ url, produit: sansCouts(produit) });
   } catch (erreur) {
     res.status(400).json({ erreur: erreur.message || "Échec de l'envoi de la photo." });
   }
@@ -3200,7 +3350,7 @@ app.delete("/api/:id/catalogue/:productId/photos", protegerAcces, async (req, re
   const produit = entry.engine.supprimerPhotoProduit(req.params.productId, url);
   if (!produit) return res.status(404).json({ erreur: "Article introuvable." });
   await storage.supprimerPhotoProduit(url); // best-effort, ne bloque jamais la reponse
-  res.json({ ok: true, produit });
+  res.json({ ok: true, produit: sansCouts(produit) });
 });
 
 // Permission "commandes", role a part entiere depuis le 25 septembre 2026 (voir ROLES_EMPLOYE_VALIDES) :

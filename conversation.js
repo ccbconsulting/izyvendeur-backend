@@ -130,7 +130,13 @@ function seedState() {
     restauration: { tables: [], categoriesPoste: {} }, // Etape 89 : mode restauration (tables, postes cuisine/bar)
     additions: [], // Etape 89 : additions ouvertes (une par table)
     nextAdditionId: 1,
-    additionsAnnulees: [] // Etape 89 : trace compacte des additions annulees
+    additionsAnnulees: [], // Etape 89 : trace compacte des additions annulees
+    clientsPos: [], // Etape 90 : fiches clients de la Caisse
+    nextClientPosId: 1,
+    reglementsClients: [], // Etape 90 : reglements de dettes clients
+    nextReglementId: 1,
+    coutsVentes: {}, // Etape 90 : cout fige de chaque vente de caisse (marge) - hors commande
+    creditConfig: { delaiJours: 30, plafondParDefaut: 0 }
   };
 }
 
@@ -237,6 +243,12 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.additions) state.additions = [];
     if (!state.nextAdditionId) state.nextAdditionId = 1;
     if (!state.additionsAnnulees) state.additionsAnnulees = [];
+    if (!state.clientsPos) state.clientsPos = []; // Etape 90
+    if (!state.nextClientPosId) state.nextClientPosId = 1;
+    if (!state.reglementsClients) state.reglementsClients = [];
+    if (!state.nextReglementId) state.nextReglementId = 1;
+    if (!state.coutsVentes) state.coutsVentes = {};
+    if (!state.creditConfig) state.creditConfig = { delaiJours: 30, plafondParDefaut: 0 };
     await persistance.charger();
   }
 
@@ -3333,8 +3345,11 @@ function createCatalogEngine(merchantKey, options) {
       .filter((o) => o.sessionCaisseId === session.id)
       .reduce((s, o) => s + paiementsLib.partEspeces(o), 0); // Etape 88 : seule la part en especes d'une vente (mixte comprise) entre dans le tiroir
     // Etape 87 : les remboursements en especes faits depuis CE tiroir (retours en caisse) sortent du theorique. 0 sans retour : calcul inchange.
-    const retoursEspeces = state.orders.reduce((somme, o) => somme + (o.retours || []).filter((r) => r.sessionCaisseId === session.id && r.modeRemboursement === "especes").reduce((x, r) => x + (r.montant || 0), 0), 0);
-    const montantTheorique = session.fondInitial + totalVentesEspeces - retoursEspeces;
+    const retoursEspeces = state.orders.reduce((somme, o) => somme + (o.retours || []).filter((r) => r.sessionCaisseId === session.id && r.modeRemboursement === "especes").reduce((x, r) => x + ((r.montant || 0) - (r.reductionCreance || 0)), 0), 0);
+    // Etape 90 : reglements de dettes encaisses en especes dans CETTE session (entrees), moins ceux annules/rembourses depuis CE tiroir (sorties).
+    const reglementsEspeces = (state.reglementsClients || []).filter((r) => r.mode === "especes" && r.sessionCaisseId === session.id).reduce((x, r) => x + r.montant, 0)
+      - (state.reglementsClients || []).filter((r) => r.mode === "especes" && r.annulation && r.annulation.sessionCaisseId === session.id).reduce((x, r) => x + r.montant, 0);
+    const montantTheorique = session.fondInitial + totalVentesEspeces - retoursEspeces + reglementsEspeces;
     const ecart = montantCompte - montantTheorique;
     const cfg = configCaisse();
     const raisonNettoyee = (raisonEcart || "").toString().trim();
@@ -3349,6 +3364,7 @@ function createCatalogEngine(merchantKey, options) {
     session.montantCompte = montantCompte;
     session.totalVentesEspeces = totalVentesEspeces;
     if (retoursEspeces) session.retoursEspeces = retoursEspeces;
+    if (reglementsEspeces) session.reglementsEspeces = reglementsEspeces;
     session.montantTheorique = montantTheorique;
     session.ecart = ecart;
     session.raisonEcart = raisonNettoyee || null;
@@ -3371,7 +3387,7 @@ function createCatalogEngine(merchantKey, options) {
 
   // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
   // jamais un article decompte puis un autre refuse en cours de route.
-  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros, paiements, montantRecu }) {
+  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros, paiements, montantRecu, clientId, credit }) {
     if (!state) return { erreur: "Marchand introuvable." };
     let grossisteVente = null;
     if (grossisteId) {
@@ -3383,7 +3399,7 @@ function createCatalogEngine(merchantKey, options) {
     // Etape 88 : « paiements » (liste) remplace modePaiement/referencePaiement et permet le paiement mixte + le rendu de monnaie ; il est
     // valide plus bas, une fois le total net connu (apres remises) et AVANT tout decompte de stock.
     const paiementsSaisis = Array.isArray(paiements) && paiements.length ? paiements : null;
-    if (!paiementsSaisis && MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
+    if (!credit && !paiementsSaisis && MODES_PAIEMENT_POS_VALIDES.indexOf(modePaiement) === -1) {
       return { erreur: "Mode de paiement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
     }
     // Aucune vente sans caisse ouverte (29 sept 2026) : force la discipline du billetage avant d'encaisser -
@@ -3397,7 +3413,7 @@ function createCatalogEngine(merchantKey, options) {
     // La reference de paiement (ex. code de confirmation Orange Money/MTN MoMo reçu par le MARCHAND sur son
     // propre telephone, numero de cheque, etc.) est obligatoire pour tout mode autre que "especes" (29 sept 2026).
     const referenceNettoyee = (referencePaiement || "").toString().trim();
-    if (!paiementsSaisis && modePaiement !== "especes" && !referenceNettoyee) {
+    if (!credit && !paiementsSaisis && modePaiement !== "especes" && !referenceNettoyee) {
       return { erreur: "La référence de paiement est obligatoire pour ce mode de paiement." };
     }
 
@@ -3440,9 +3456,36 @@ function createCatalogEngine(merchantKey, options) {
     }
     items.forEach((it, i) => { it.prixBrut = calcul.lignes[i].brut; it.remiseLigne = calcul.lignes[i].remiseLigne; it.prix = calcul.lignes[i].final; });
 
+    // Etape 90 : client rattache a la vente (historique d'achats) et part VENDUE A CREDIT, validees contre le total NET avant tout decompte de stock.
+    let clientVente = null, montantCredit = 0;
+    if (clientId !== undefined && clientId !== null && clientId !== "") {
+      clientVente = clientPos(clientId);
+      if (!clientVente) return { erreur: "Client introuvable." };
+      if (clientVente.actif === false) return { erreur: "Ce client est désactivé." };
+    }
+    if (credit) {
+      if (!clientVente) return { erreur: "Une vente à crédit exige un client." };
+      montantCredit = Number(credit.montant);
+      if (!Number.isInteger(montantCredit) || montantCredit <= 0) return { erreur: "Le montant à crédit doit être un entier supérieur à 0." };
+      if (montantCredit > calcul.total) return { erreur: "Le montant à crédit (" + montantCredit + " FCFA) dépasse le total de la vente (" + calcul.total + " FCFA)." };
+      const dette = soldeClientPos(clientVente.id), plafondClient = Number(clientVente.plafond) || 0;
+      if (dette + montantCredit > plafondClient) return { erreur: "Plafond de crédit dépassé pour " + clientVente.nom + " : dette actuelle " + Math.max(0, dette) + " FCFA, plafond " + plafondClient + " FCFA." + (plafondClient === 0 ? " Le propriétaire doit d'abord fixer un plafond à ce client." : "") };
+    }
     // Etape 88 : paiement(s) valide(s) contre le total NET, toujours avant de toucher au stock (vente atomique).
     let paiementFinal = null; // { mode, reference, paiements?, recu?, rendu? }
-    if (paiementsSaisis) {
+    if (credit) {
+      // Etape 90 : la part payee comptant (« paiements ») se valide contre total - credit ; vente entierement a credit = aucun paiement, mode « credit ».
+      const aPayerMaintenant = calcul.total - montantCredit;
+      if (aPayerMaintenant > 0) {
+        if (!paiementsSaisis) return { erreur: "Indiquez le paiement de la part réglée comptant (" + aPayerMaintenant + " FCFA)." };
+        const npc = paiementsLib.normaliser(paiementsSaisis, aPayerMaintenant);
+        if (npc.erreur) return { erreur: npc.erreur };
+        paiementFinal = { mode: "mixte", reference: null, paiements: npc.paiements };
+      } else {
+        if (paiementsSaisis) return { erreur: "Vente entièrement à crédit : aucun paiement à saisir." };
+        paiementFinal = { mode: "credit", reference: null, paiements: [] };
+      }
+    } else if (paiementsSaisis) {
       const np = paiementsLib.normaliser(paiementsSaisis, calcul.total);
       if (np.erreur) return { erreur: np.erreur };
       if (np.paiements.length === 1) {
@@ -3495,6 +3538,14 @@ function createCatalogEngine(merchantKey, options) {
     };
     if (paiementFinal.paiements) order.paiements = paiementFinal.paiements;
     if (paiementFinal.recu !== undefined) { order.montantRecu = paiementFinal.recu; order.rendu = paiementFinal.rendu; }
+    if (clientVente) { order.clientId = clientVente.id; order.clientNom = clientVente.nom; }
+    if (montantCredit > 0) {
+      const delai = getConfigCredit().delaiJours;
+      order.creance = { clientId: clientVente.id, montant: montantCredit, regle: 0, reduit: 0, echeance: delai > 0 ? dateJourCameroun(delai) : null };
+    }
+    // Etape 90 : cout FIGE de la vente (marge), garde hors de la commande ; ligne sans prix d'achat = null (non comptee dans la marge).
+    const coutsLignes = items.map((it) => { const c = it._variant && it._variant.prixAchat; return c !== undefined && c !== null && c !== "" && Number.isFinite(Number(c)) && Number(c) >= 0 ? Number(c) : null; });
+    if (coutsLignes.some((x) => x !== null)) { if (!state.coutsVentes) state.coutsVentes = {}; state.coutsVentes[order.id] = { lignes: coutsLignes }; }
     if (grossisteVente) order.grossiste = { id: grossisteVente.id, nom: grossisteVente.nom, methode: methodeGros || "caisse" };
     if (items.some((x) => x.gros)) {
       order.venteGros = true;
@@ -3518,9 +3569,12 @@ function createCatalogEngine(merchantKey, options) {
     if (order.statut !== "Livrée") return { erreur: "Cette vente est annulée : aucun retour possible." };
     const sessionActive = sessionCaisseOuverte(caissier);
     if (!sessionActive) return { erreur: "Aucune session de caisse ouverte. Merci d'ouvrir la caisse avant un remboursement." };
-    if (MODES_PAIEMENT_POS_VALIDES.indexOf(modeRemboursement) === -1) return { erreur: "Mode de remboursement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
+    // Etape 90 : sur une vente a credit, le retour REDUIT D'ABORD la dette restante ; seul le surplus est rembourse en argent (mode alors requis).
     const reference = (referenceRemboursement || "").toString().trim();
-    if (modeRemboursement !== "especes" && !reference) return { erreur: "La référence du remboursement est obligatoire pour ce mode." };
+    if (!order.creance) {
+      if (MODES_PAIEMENT_POS_VALIDES.indexOf(modeRemboursement) === -1) return { erreur: "Mode de remboursement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
+      if (modeRemboursement !== "especes" && !reference) return { erreur: "La référence du remboursement est obligatoire pour ce mode." };
+    }
     const motifNet = (motif || "").toString().trim().slice(0, 200);
     if (!motifNet) return { erreur: "Indiquez le motif du retour." };
     if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Aucun article à retourner." };
@@ -3545,21 +3599,33 @@ function createCatalogEngine(merchantKey, options) {
       const montant = reste ? Math.max(0, (Number(it.prix) || 0) - montantRembourseLigne(order, idx)) : Math.round((Number(it.prix) || 0) * q / vendue);
       detail.push({ index: idx, productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: q, unite: it.unite, montant });
     }
+    const montantRetour = detail.reduce((x, d) => x + d.montant, 0);
+    let reductionCreance = 0;
+    if (order.creance) {
+      reductionCreance = Math.min(resteCreance(order), montantRetour);
+      if (montantRetour - reductionCreance > 0) {
+        if (MODES_PAIEMENT_POS_VALIDES.indexOf(modeRemboursement) === -1) return { erreur: "Une partie du retour (" + (montantRetour - reductionCreance) + " FCFA) est à rembourser : indiquez le mode de remboursement (" + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
+        if (modeRemboursement !== "especes" && !reference) return { erreur: "La référence du remboursement est obligatoire pour ce mode." };
+      }
+    }
+    const modeRetour = montantRetour - reductionCreance > 0 || !order.creance ? modeRemboursement : "credit";
     detail.forEach((d) => {
       const v = findVariant(d.productId, d.couleur, d.taille);
       if (v) v.stockReel = arrondi3(v.stockReel + d.quantite); else d.sansRemiseEnStock = true; // article supprime du catalogue depuis la vente
     });
+    if (reductionCreance > 0) order.creance.reduit = (Number(order.creance.reduit) || 0) + reductionCreance;
     const retour = {
       id: (order.retours || []).length + 1,
       dateISO: new Date().toISOString(),
       caissier: caissier || null,
       sessionCaisseId: sessionActive.id,
       motif: motifNet,
-      modeRemboursement,
-      referenceRemboursement: modeRemboursement === "especes" ? null : reference,
+      modeRemboursement: modeRetour,
+      referenceRemboursement: modeRetour === "especes" || modeRetour === "credit" ? null : reference,
       lignes: detail,
-      montant: detail.reduce((x, d) => x + d.montant, 0)
+      montant: montantRetour
     };
+    if (reductionCreance > 0) retour.reductionCreance = reductionCreance;
     if (!Array.isArray(order.retours)) order.retours = [];
     order.retours.push(retour);
     saveState();
@@ -3837,7 +3903,7 @@ function createCatalogEngine(merchantKey, options) {
   }
   // Encaissement de tout ou partie d'une addition (addition partagee : on paie ses articles, le reste demeure ouvert). C'est une vente de caisse
   // ordinaire (creerVentePos) : si elle est refusee (session fermee, stock, paiement, remise), l'addition n'est PAS modifiee.
-  function encaisserAddition({ id, selection, paiements, remiseGlobale, motifRemise, caissier, verifierRemise }) {
+  function encaisserAddition({ id, selection, paiements, remiseGlobale, motifRemise, caissier, verifierRemise, clientId, credit }) {
     if (!state) return { erreur: "Marchand introuvable." };
     const a = trouverAddition(id);
     if (!a) return { erreur: "Addition introuvable.", statut: 404 };
@@ -3860,7 +3926,7 @@ function createCatalogEngine(merchantKey, options) {
       }
     }
     const lignesVente = choix.map((c) => { const l = a.lignes[c.index]; return { productId: l.productId, couleur: l.couleur, taille: l.taille, quantite: c.quantite }; });
-    const r = creerVentePos({ lignes: lignesVente, paiements, remiseGlobale, motifRemise, caissier, verifierRemise });
+    const r = creerVentePos({ lignes: lignesVente, paiements, remiseGlobale, motifRemise, caissier, verifierRemise, clientId, credit });
     if (r.erreur) return r;
     const total = a.lignes.reduce((s, l) => s + l.quantite, 0);
     // Mise a jour de l'addition (apres une vente reussie seulement).
@@ -3875,6 +3941,197 @@ function createCatalogEngine(merchantKey, options) {
     saveState();
     return { order: r.order, addition: soldee ? null : additionPublique(a), soldee };
   }
+
+  // ---------------- Etape 90 : clients, credit (ardoise) et marge ----------------
+  // FICHES CLIENTS de la Caisse (distinctes des contacts WhatsApp) : nom, telephone facultatif, note, PLAFOND de credit. Une vente peut etre rattachee a
+  // un client (historique d'achats) ; elle peut etre vendue A CREDIT, en tout ou en partie : order.creance = { clientId, montant, regle, reduit, echeance }.
+  // La dette d'un client = creances de ses ventes non annulees (moins les retours deduits) - reglements non annules. Un reglement (acompte, solde) est
+  // impute automatiquement sur les creances les plus anciennes (jamais au-dela de la dette) ; l'argent encaisse entre dans le tiroir de la session ouverte
+  // (fermerSessionCaisse). Plafond par defaut 0 : AUCUN credit tant que le proprietaire n'a pas fixe un plafond au client.
+  // MARGE : prix d'achat facultatif par variante (variante.prixAchat, reserve au proprietaire cote serveur) ; le cout de chaque vente est FIGE a la vente
+  // (state.coutsVentes, hors de la commande : aucune route de commandes ne l'expose), donc un changement de prix d'achat ne reecrit pas le passe.
+  const CLIENTS_MAX = 5000, REGLEMENTS_MAX = 20000;
+  function dateJourCameroun(decalageJours) { return new Date(Date.now() + 3600 * 1000 + (decalageJours || 0) * 86400000).toISOString().slice(0, 10); }
+  function normaliserTelephoneClient(t) {
+    const d = (t == null ? "" : String(t)).replace(/[^\d]/g, "");
+    if (!d) return "";
+    return d.length >= 6 && d.length <= 15 ? d : null;
+  }
+  function clientPos(id) { return (state.clientsPos || []).filter((c) => c.id === Number(id))[0] || null; }
+  function resteCreance(o) { const c = o && o.creance; return c ? Math.max(0, (Number(c.montant) || 0) - (Number(c.regle) || 0) - (Number(c.reduit) || 0)) : 0; }
+  function creancesOuvertes(clientId) {
+    return state.orders.filter((o) => o.source === "pos" && o.creance && o.creance.clientId === clientId && o.statut !== "Annulée" && resteCreance(o) > 0)
+      .sort((a, b) => (a.dateISO < b.dateISO ? -1 : a.dateISO > b.dateISO ? 1 : a.id - b.id));
+  }
+  function soldeClientPos(clientId) {
+    let du = 0;
+    state.orders.forEach((o) => { if (o.source === "pos" && o.creance && o.creance.clientId === clientId && o.statut !== "Annulée") du += (Number(o.creance.montant) || 0) - (Number(o.creance.reduit) || 0); });
+    (state.reglementsClients || []).forEach((r) => { if (r.clientId === clientId && !r.annulation) du -= r.montant; });
+    return du;
+  }
+  function vueClientPos(c) {
+    const today = dateJourCameroun(0);
+    let enRetard = 0, nbVentes = 0, totalAchats = 0, dernier = null;
+    state.orders.forEach((o) => {
+      if (o.source !== "pos" || o.clientId !== c.id || o.statut === "Annulée") return;
+      nbVentes++; totalAchats += (Number(o.prix) || 0) - (o.retours || []).reduce((s, r) => s + (Number(r.montant) || 0), 0);
+      if (!dernier || o.dateISO > dernier) dernier = o.dateISO;
+      if (o.creance && o.creance.echeance && o.creance.echeance < today) enRetard += resteCreance(o);
+    });
+    return { id: c.id, nom: c.nom, telephone: c.telephone || "", note: c.note || "", plafond: Number(c.plafond) || 0, actif: c.actif !== false, creeLe: c.creeLe, solde: soldeClientPos(c.id), enRetard, nbVentes, totalAchats, dernierAchat: dernier };
+  }
+  function getConfigCredit() { return Object.assign({ delaiJours: 30, plafondParDefaut: 0 }, state.creditConfig || {}); }
+  function definirConfigCredit({ delaiJours, plafondParDefaut }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const cfg = getConfigCredit();
+    if (delaiJours !== undefined) {
+      const d = Number(delaiJours);
+      if (!Number.isInteger(d) || d < 0 || d > 365) return { erreur: "Délai de paiement invalide (0 à 365 jours ; 0 = pas d'échéance)." };
+      cfg.delaiJours = d;
+    }
+    if (plafondParDefaut !== undefined) {
+      const p = Number(plafondParDefaut);
+      if (!Number.isInteger(p) || p < 0 || p > 1000000000) return { erreur: "Plafond par défaut invalide (entier de FCFA, 0 = aucun crédit)." };
+      cfg.plafondParDefaut = p;
+    }
+    state.creditConfig = cfg;
+    saveState();
+    return { config: cfg };
+  }
+  function listerClientsPos({ recherche, seulementDette, inclureInactifs } = {}) {
+    if (!state) return [];
+    const q = (recherche || "").toString().trim().toLowerCase(), qn = q.replace(/[^\d]/g, "");
+    let liste = (state.clientsPos || []).filter((c) => (inclureInactifs || c.actif !== false) && (!q || c.nom.toLowerCase().indexOf(q) !== -1 || (qn.length >= 3 && (c.telephone || "").indexOf(qn) !== -1)));
+    let vues = liste.map(vueClientPos);
+    if (seulementDette) vues = vues.filter((v) => v.solde > 0);
+    vues.sort((a, b) => (seulementDette ? b.solde - a.solde : (a.nom < b.nom ? -1 : 1)));
+    return vues.slice(0, 500);
+  }
+  function creerClientPos({ nom, telephone, note, plafond, par, peutFixerPlafond }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const n = (nom || "").toString().trim().replace(/\s+/g, " ");
+    if (n.length < 2 || n.length > 60) return { erreur: "Le nom du client doit comporter 2 à 60 caractères." };
+    const tel = normaliserTelephoneClient(telephone);
+    if (tel === null) return { erreur: "Numéro de téléphone invalide (6 à 15 chiffres)." };
+    if (tel) { const dup = state.clientsPos.filter((c) => c.telephone === tel)[0]; if (dup) return { erreur: "Un client porte déjà ce numéro : " + dup.nom + ".", statut: 409 }; }
+    if (state.clientsPos.length >= CLIENTS_MAX) return { erreur: "Nombre maximum de clients atteint (" + CLIENTS_MAX + ")." };
+    let pl = getConfigCredit().plafondParDefaut;
+    if (peutFixerPlafond && plafond !== undefined && plafond !== null && plafond !== "") {
+      pl = Number(plafond);
+      if (!Number.isInteger(pl) || pl < 0 || pl > 1000000000) return { erreur: "Plafond de crédit invalide (entier de FCFA, 0 = aucun crédit)." };
+    }
+    const c = { id: state.nextClientPosId++, nom: n, telephone: tel, note: (note || "").toString().trim().slice(0, 200), plafond: pl, actif: true, creeLe: new Date().toISOString(), creePar: par || null };
+    state.clientsPos.push(c);
+    saveState();
+    return { client: vueClientPos(c) };
+  }
+  function modifierClientPos(id, { nom, telephone, note, plafond, actif }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const c = clientPos(id);
+    if (!c) return { erreur: "Client introuvable.", statut: 404 };
+    if (nom !== undefined) { const n = (nom || "").toString().trim().replace(/\s+/g, " "); if (n.length < 2 || n.length > 60) return { erreur: "Le nom du client doit comporter 2 à 60 caractères." }; c.nom = n; }
+    if (telephone !== undefined) {
+      const tel = normaliserTelephoneClient(telephone);
+      if (tel === null) return { erreur: "Numéro de téléphone invalide (6 à 15 chiffres)." };
+      if (tel) { const dup = state.clientsPos.filter((x) => x.telephone === tel && x.id !== c.id)[0]; if (dup) return { erreur: "Un client porte déjà ce numéro : " + dup.nom + ".", statut: 409 }; }
+      c.telephone = tel;
+    }
+    if (note !== undefined) c.note = (note || "").toString().trim().slice(0, 200);
+    if (plafond !== undefined) { const p = Number(plafond); if (!Number.isInteger(p) || p < 0 || p > 1000000000) return { erreur: "Plafond de crédit invalide (entier de FCFA, 0 = aucun crédit)." }; c.plafond = p; }
+    if (actif !== undefined) {
+      if (actif === false && soldeClientPos(c.id) !== 0) return { erreur: "Ce client a un solde non nul : réglez-le avant de le désactiver." };
+      c.actif = actif !== false;
+    }
+    saveState();
+    return { client: vueClientPos(c) };
+  }
+  function releveClientPos(id) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const c = clientPos(id);
+    if (!c) return { erreur: "Client introuvable.", statut: 404 };
+    const piece = (o) => "POS-" + String(o.id).padStart(4, "0");
+    const ventes = state.orders.filter((o) => o.source === "pos" && o.clientId === c.id).sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1)).slice(0, 200).map((o) => ({
+      id: o.id, piece: piece(o), dateISO: o.dateISO, montant: Number(o.prix) || 0, statut: o.statut === "Annulée" ? "annulee" : "valide",
+      aCredit: o.creance ? o.creance.montant : 0, reste: o.statut === "Annulée" ? 0 : resteCreance(o), echeance: o.creance ? o.creance.echeance || null : null,
+      articles: (o.items || []).map((it) => it.quantite + " x " + it.produit).join(" ; ")
+    }));
+    const reglements = state.reglementsClients.filter((r) => r.clientId === c.id).sort((a, b) => (a.dateISO < b.dateISO ? 1 : -1)).slice(0, 200).map((r) => ({
+      id: r.id, dateISO: r.dateISO, montant: r.montant, mode: r.mode, reference: r.reference || null, caissier: r.caissier || null, note: r.note || null,
+      annule: !!r.annulation, motifAnnulation: r.annulation ? r.annulation.motif : null, affectations: r.affectations.map((a) => ({ vente: "POS-" + String(a.orderId).padStart(4, "0"), montant: a.montant }))
+    }));
+    return { client: vueClientPos(c), ventes, reglements };
+  }
+  // Encaisse un reglement (acompte ou solde) : exige une session de caisse ouverte (comme toute entree d'argent), une reference hors especes, et ne
+  // depasse jamais la dette. Imputation sur les creances les plus anciennes d'abord.
+  function enregistrerReglementClient({ clientId, montant, mode, reference, note, caissier }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const c = clientPos(clientId);
+    if (!c) return { erreur: "Client introuvable.", statut: 404 };
+    const m = Number(montant);
+    if (!Number.isInteger(m) || m <= 0) return { erreur: "Le montant du règlement doit être un entier supérieur à 0." };
+    if (MODES_PAIEMENT_POS_VALIDES.indexOf(mode) === -1) return { erreur: "Mode de paiement invalide (attendu : " + MODES_PAIEMENT_POS_VALIDES.join("/") + ")." };
+    const ref = (reference || "").toString().trim().slice(0, 80);
+    if (mode !== "especes" && !ref) return { erreur: "La référence de paiement est obligatoire pour ce mode de paiement." };
+    const session = sessionCaisseOuverte(caissier);
+    if (!session) return { erreur: "Aucune session de caisse ouverte. Merci d'ouvrir la caisse (billetage) avant d'encaisser." };
+    const ouvertes = creancesOuvertes(c.id);
+    const dette = ouvertes.reduce((s, o) => s + resteCreance(o), 0);
+    if (dette <= 0) return { erreur: "Ce client n'a aucune dette à régler." };
+    if (m > dette) return { erreur: "Le règlement (" + m + " FCFA) dépasse la dette du client (" + dette + " FCFA)." };
+    if (state.reglementsClients.length >= REGLEMENTS_MAX) return { erreur: "Nombre maximum de règlements atteint." };
+    let restant = m;
+    const affectations = [];
+    for (const o of ouvertes) {
+      if (restant <= 0) break;
+      const part = Math.min(restant, resteCreance(o));
+      o.creance.regle = (Number(o.creance.regle) || 0) + part;
+      affectations.push({ orderId: o.id, montant: part });
+      restant -= part;
+    }
+    const r = { id: state.nextReglementId++, clientId: c.id, clientNom: c.nom, dateISO: new Date().toISOString(), montant: m, mode, reference: mode === "especes" ? null : ref, caissier: caissier || null, sessionCaisseId: session.id, note: (note || "").toString().trim().slice(0, 200) || null, affectations, annulation: null };
+    state.reglementsClients.push(r);
+    saveState();
+    return { reglement: r, client: vueClientPos(c) };
+  }
+  function annulerReglementClient({ id, motif, caissier }) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const r = state.reglementsClients.filter((x) => x.id === Number(id))[0];
+    if (!r) return { erreur: "Règlement introuvable.", statut: 404 };
+    if (r.annulation) return { erreur: "Ce règlement est déjà annulé." };
+    const mt = (motif || "").toString().trim().slice(0, 200);
+    if (!mt) return { erreur: "Indiquez le motif de l'annulation." };
+    let sessionId = null;
+    if (r.mode === "especes") {
+      const s = sessionCaisseOuverte(caissier);
+      if (!s) return { erreur: "Aucune session de caisse ouverte : l'argent rendu au client sort du tiroir, ouvrez la caisse d'abord." };
+      sessionId = s.id;
+    }
+    r.affectations.forEach((a) => { const o = state.orders.filter((x) => x.id === a.orderId)[0]; if (o && o.creance) o.creance.regle = Math.max(0, (Number(o.creance.regle) || 0) - a.montant); });
+    r.annulation = { dateISO: new Date().toISOString(), par: caissier || null, motif: mt, sessionCaisseId: sessionId };
+    saveState();
+    const c = clientPos(r.clientId);
+    return { reglement: r, client: c ? vueClientPos(c) : null };
+  }
+  // Creances ouvertes (suivi du recouvrement) : une ligne par client debiteur, avec l'echeance la plus ancienne.
+  function listerCreances() {
+    if (!state) return { clients: [], total: 0, enRetard: 0 };
+    const today = dateJourCameroun(0);
+    const clients = [];
+    let total = 0, enRetardTotal = 0;
+    (state.clientsPos || []).forEach((c) => {
+      const ouvertes = creancesOuvertes(c.id);
+      const solde = soldeClientPos(c.id);
+      if (solde <= 0 && !ouvertes.length) return;
+      const retard = ouvertes.filter((o) => o.creance.echeance && o.creance.echeance < today).reduce((s, o) => s + resteCreance(o), 0);
+      const echeances = ouvertes.map((o) => o.creance.echeance).filter(Boolean).sort();
+      total += Math.max(0, solde); enRetardTotal += retard;
+      clients.push({ id: c.id, nom: c.nom, telephone: c.telephone || "", solde, plafond: Number(c.plafond) || 0, enRetard: retard, premiereEcheance: echeances[0] || null, nbVentes: ouvertes.length });
+    });
+    clients.sort((a, b) => b.enRetard - a.enRetard || b.solde - a.solde);
+    return { clients, total, enRetard: enRetardTotal };
+  }
+  function getReglementsClients() { return state ? (state.reglementsClients || []) : []; }
+  function getCoutsVentes() { return state ? (state.coutsVentes || {}) : {}; }
 
   // ---------------- Etape 78 : vente en gros - API pour server.js ----------------
   function getGros() { return state ? venteGros.assurer(state.gros) : null; }
@@ -3960,6 +4217,7 @@ function createCatalogEngine(merchantKey, options) {
     creerVentePos,
     creerRetourPos,
     listerVentesAttente, mettreVenteEnAttente, reprendreVenteAttente, supprimerVenteAttente,
+    getConfigCredit, definirConfigCredit, listerClientsPos, creerClientPos, modifierClientPos, releveClientPos, enregistrerReglementClient, annulerReglementClient, listerCreances, getReglementsClients, getCoutsVentes,
     definirConfigRestauration, getConfigRestauration, listerTablesRestauration, getAddition, ouvrirAddition, ajouterLignesAddition, retirerLigneAddition, envoyerAddition, transfererAddition, annulerAddition, encaisserAddition,
     ouvrirSessionCaisse,
     fermerSessionCaisse,

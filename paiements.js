@@ -10,6 +10,8 @@ const MAX_PAIEMENTS = 6;
 // Ventilation d'une vente par moyen de paiement, quelle que soit son age : [{ mode, montant, reference }].
 function repartition(order) {
   if (!order) return [];
+  // Etape 90 : vente avec une part A CREDIT : seules les parts reellement encaissees (order.paiements, eventuellement vide) sont des paiements.
+  if (order.creance) return (Array.isArray(order.paiements) ? order.paiements : []).map((p) => ({ mode: MODES.indexOf(p.mode) !== -1 ? p.mode : "especes", montant: Number(p.montant) || 0, reference: p.reference || null }));
   if (Array.isArray(order.paiements) && order.paiements.length) {
     return order.paiements.map((p) => ({ mode: MODES.indexOf(p.mode) !== -1 ? p.mode : "especes", montant: Number(p.montant) || 0, reference: p.reference || null }));
   }

@@ -396,7 +396,7 @@ function creerMoteurFacturation(merchantKey, options) {
     for (const o of (ext && ext.ventesPos) || []) {
       if (activation && dateLocale(o.dateISO) < activation) continue;
       const piece = "POS-" + String(o.id).padStart(4, "0");
-      const moyen = o.modePaiement === "mixte" ? "mixte" : (MOYEN_POS[o.modePaiement] || "especes"); // Etape 88 : paiement mixte
+      const moyen = o.modePaiement === "mixte" ? "mixte" : o.modePaiement === "credit" ? "credit" : (MOYEN_POS[o.modePaiement] || "especes"); // Etape 88 : paiement mixte ; Etape 90 : vente entierement a credit
       const montant = Number(o.prix) || 0;
       if (!(montant > 0)) continue;
       const t = state.config.tva;
@@ -407,6 +407,13 @@ function creerMoteurFacturation(merchantKey, options) {
       if (quand) {
         ajouter({ id: merchantKey + ":" + piece + ":ANN", type: "vente_comptant_annulation", journal: "VE", date: dateLocale(quand), creeLe: quand, piece, refFacture: null, tiers: "Vente en boutique", telephoneTiers: null, libelle: ev.remplaceeLe ? "Annulation de la vente " + piece + " (remplacée par une facture)" : "Annulation de la vente " + piece, montant, moyen, categorie: null, origine: "pos:" + o.id, ...(tvaPos ? { montantHT: tvaPos.ht, tva: tvaPos.tva, tauxTva: t.taux } : {}) });
       }
+    }
+    // Etape 90 : reglements de dettes clients (encaissement d'une vente a credit) et leur annulation eventuelle, dans le journal de tresorerie.
+    for (const r of (ext && ext.reglementsPos) || []) {
+      if (activation && dateLocale(r.dateISO) < activation) continue;
+      const piece = "REG-" + String(r.id).padStart(4, "0");
+      ajouter({ id: merchantKey + ":" + piece, type: "reglement_client", journal: "TR", date: dateLocale(r.dateISO), creeLe: r.dateISO, piece, refFacture: null, tiers: r.clientNom || "Client", telephoneTiers: null, libelle: "Règlement client " + piece + " (vente à crédit)", montant: r.montant, moyen: MOYEN_POS[r.mode] || "especes", categorie: null, origine: "reglement:" + r.id });
+      if (r.annulation) ajouter({ id: merchantKey + ":" + piece + ":ANN", type: "reglement_client_annulation", journal: "TR", date: dateLocale(r.annulation.dateISO), creeLe: r.annulation.dateISO, piece, refFacture: null, tiers: r.clientNom || "Client", telephoneTiers: null, libelle: "Annulation du règlement client " + piece, montant: r.montant, moyen: MOYEN_POS[r.mode] || "especes", categorie: null, origine: "reglement:" + r.id });
     }
     sortie.sort((a, b) => (a.creeLe < b.creeLe ? -1 : a.creeLe > b.creeLe ? 1 : a.id < b.id ? -1 : 1));
     return sortie.map((e) => Object.assign({ source: SOURCE_JOURNAL, marchand: merchantKey, devise: "XAF" }, e));

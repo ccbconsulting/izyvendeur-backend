@@ -49,7 +49,7 @@ function libelleArticle(it) {
   return it.produit + (v ? " (" + v + ")" : "");
 }
 
-function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier }) {
+function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier, reglements, creances, couts }) {
   const p = normaliserPeriode(du, au);
   if (p.erreur) return p;
   const filtreCaissier = caissier ? String(caissier) : null;
@@ -64,15 +64,15 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
 
   const parMode = {}; MODES.forEach((m) => { parMode[m] = { mode: m, nb: 0, montant: 0, nbAnnulees: 0, montantAnnule: 0 }; });
   const parJour = {}, parCaissier = {}, articles = {}, parServeur = {}, parTable = {};
-  const totaux = { nbVentes: 0, brut: 0, nbAnnulees: 0, montantAnnule: 0, net: 0, nbArticles: 0, nbFacturees: 0, nbVentesRemisees: 0, remises: 0, brutAvantRemise: 0 };
-  const jour = (d) => parJour[d] || (parJour[d] = { date: d, nb: 0, net: 0, nbAnnulees: 0, annule: 0, especes: 0, om: 0, momo: 0, carte: 0, cheque: 0 });
+  const totaux = { aCredit: 0, nbVentesCredit: 0, nbVentes: 0, brut: 0, nbAnnulees: 0, montantAnnule: 0, net: 0, nbArticles: 0, nbFacturees: 0, nbVentesRemisees: 0, remises: 0, brutAvantRemise: 0 };
+  const jour = (d) => parJour[d] || (parJour[d] = { date: d, aCredit: 0, nb: 0, net: 0, nbAnnulees: 0, annule: 0, especes: 0, om: 0, momo: 0, carte: 0, cheque: 0 });
   const cais = (c) => { const k = c || "—"; return parCaissier[k] || (parCaissier[k] = { caissier: k, nb: 0, net: 0, nbAnnulees: 0, annule: 0, nbRemises: 0, remises: 0, brutAvantRemise: 0 }); };
 
   const detail = ventes.map((o) => {
     const montant = Number(o.prix) || 0;
     const annulee = o.statut === "Annulée";
     const parts = repartition(o);
-    const mode = parts.length > 1 ? "mixte" : parts[0].mode;
+    const mode = o.creance ? (parts.length ? "mixte" : "credit") : (parts.length > 1 ? "mixte" : parts[0].mode); // Etape 90 : part a credit
     const d = dateLocale(o.dateISO);
     const J = jour(d), C = cais(o.caissier);
     totaux.brut += montant;
@@ -87,6 +87,7 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
       if (remiseMontant) { totaux.nbVentesRemisees++; totaux.remises += remiseMontant; C.nbRemises++; C.remises += remiseMontant; }
       parts.forEach((pt) => { parMode[pt.mode].nb++; parMode[pt.mode].montant += pt.montant; J[pt.mode] += pt.montant; });
       J.nb++; J.net += montant; C.nb++; C.net += montant;
+      if (o.creance) { totaux.aCredit += o.creance.montant; totaux.nbVentesCredit++; J.aCredit += o.creance.montant; }
       if (o.izyfactureNumero) totaux.nbFacturees++;
       // Etape 89 : ventes issues d'une addition de table (mode restauration), par serveur (celui qui a ouvert l'addition) et par table.
       if (o.table) {
@@ -103,7 +104,7 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
     return {
       id: o.id, piece: "POS-" + String(o.id).padStart(4, "0"), date: d, heure: heureLocale(o.dateISO),
       sessionId: o.sessionCaisseId != null ? o.sessionCaisseId : null, caissier: o.caissier || null,
-      mode, reference: parts.length > 1 ? parts.filter((pt) => pt.reference).map((pt) => pt.mode + ":" + pt.reference).join(" ; ") || null : (o.referencePaiement || null), paiements: parts.length > 1 ? parts : undefined, montant, remise: o.remise && o.remise.montant > 0 ? o.remise.montant : 0, motifRemise: o.remise ? o.remise.motif : null, remisePar: o.remise ? o.remise.accordePar : null, statut: annulee ? "annulee" : "valide",
+      mode, reference: (parts.length > 1 || o.creance) ? parts.filter((pt) => pt.reference).map((pt) => pt.mode + ":" + pt.reference).join(" ; ") || null : (o.referencePaiement || null), paiements: (parts.length > 1 || o.creance) ? parts : undefined, client: o.clientNom || null, aCredit: o.creance ? o.creance.montant : 0, montant, remise: o.remise && o.remise.montant > 0 ? o.remise.montant : 0, motifRemise: o.remise ? o.remise.motif : null, remisePar: o.remise ? o.remise.accordePar : null, statut: annulee ? "annulee" : "valide",
       raisonAnnulation: annulee ? (o.raisonAnnulation || null) : null,
       facture: o.izyfactureNumero || null, table: o.table || null, serveur: o.serveur || null,
       articles: (o.items || []).map((it) => (Number(it.quantite) || 0) + " x " + libelleArticle(it)).join(" ; ")
@@ -111,23 +112,29 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
   });
   // Etape 87 : retours / remboursements faits pendant la periode (jour du retour), du caissier filtre le cas echeant.
   const retoursDetail = [];
+  let margeRetourCa = 0, margeRetourCout = 0;
   toutesPos.forEach((o) => (o.retours || []).forEach((r) => {
     const j = dateLocale(r.dateISO);
     if (j < p.du || j > p.au || (filtreCaissier && r.caissier !== filtreCaissier)) return;
     const venteAnnulee = o.statut === "Annulée";
-    const mode = parMode[r.modeRemboursement] ? r.modeRemboursement : "especes";
+    const mode = parMode[r.modeRemboursement] ? r.modeRemboursement : (r.modeRemboursement === "credit" ? "credit" : "especes");
+    const reduction = Number(r.reductionCreance) || 0;
+    if (!venteAnnulee && couts) { // marge : on retire du chiffre d'affaires ET du cout ce qui est retourne
+      const cl = couts[o.id];
+      (r.lignes || []).forEach((l) => { const cu = cl && cl.lignes ? cl.lignes[l.index] : null; if (cu != null) { margeRetourCa += Number(l.montant) || 0; margeRetourCout += Math.round(cu * (Number(l.quantite) || 0)); } });
+    }
     retoursDetail.push({
       piece: "RET-" + String(o.id).padStart(4, "0") + "-" + r.id, vente: "POS-" + String(o.id).padStart(4, "0"), date: j, heure: heureLocale(r.dateISO),
       sessionId: r.sessionCaisseId != null ? r.sessionCaisseId : null, caissier: r.caissier || null, mode, reference: r.referenceRemboursement || null,
-      montant: Number(r.montant) || 0, motif: r.motif || null, venteAnnulee,
+      montant: Number(r.montant) || 0, montantRembourse: (Number(r.montant) || 0) - reduction, reductionCreance: reduction, motif: r.motif || null, venteAnnulee,
       articles: (r.lignes || []).map((l) => (Number(l.quantite) || 0) + (l.unite ? " " + l.unite : "") + " x " + libelleArticle(l)).join(" ; ")
     });
   }));
   retoursDetail.sort((a, b) => (a.date + a.heure < b.date + b.heure ? -1 : 1));
-  const retours = { nb: retoursDetail.length, montant: 0, montantDeduit: 0, parMode: {}, detail: retoursDetail };
+  const retours = { nb: retoursDetail.length, montant: 0, montantDeduit: 0, reductionCreance: 0, parMode: {}, detail: retoursDetail };
   MODES.forEach((m) => { retours.parMode[m] = 0; });
   retoursDetail.forEach((r) => {
-    retours.montant += r.montant; retours.parMode[r.mode] += r.montant;
+    retours.montant += r.montant; retours.reductionCreance += r.reductionCreance; if (retours.parMode[r.mode] !== undefined) retours.parMode[r.mode] += r.montantRembourse;
     if (!r.venteAnnulee) { retours.montantDeduit += r.montant; jour(r.date).retours = (jour(r.date).retours || 0) + r.montant; }
   });
   totaux.retours = retours.montantDeduit; totaux.nbRetours = retoursDetail.filter((r) => !r.venteAnnulee).length;
@@ -140,7 +147,7 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
   toutesPos.filter((o) => o.statut === "Annulée" && o.sessionCaisseId != null && partEspeces(o) > 0)
     .forEach((o) => { annuleesParSession[o.sessionCaisseId] = (annuleesParSession[o.sessionCaisseId] || 0) + partEspeces(o); });
   const retoursEspecesParSession = {};
-  retoursDetail.filter((r) => r.mode === "especes" && r.sessionId != null).forEach((r) => { retoursEspecesParSession[r.sessionId] = (retoursEspecesParSession[r.sessionId] || 0) + r.montant; });
+  retoursDetail.filter((r) => r.mode === "especes" && r.sessionId != null).forEach((r) => { retoursEspecesParSession[r.sessionId] = (retoursEspecesParSession[r.sessionId] || 0) + r.montantRembourse; });
   const lesSessions = (sessions || [])
     .filter((s) => { const j = dateLocale(s.dateOuverture); return j >= p.du && j <= p.au && (!filtreCaissier || s.caissier === filtreCaissier); })
     .sort((a, b) => (a.dateOuverture < b.dateOuverture ? -1 : 1))
@@ -150,7 +157,8 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
       fondInitial: s.fondInitial, totalVentesEspeces: s.totalVentesEspeces, montantTheorique: s.montantTheorique,
       montantCompte: s.montantCompte, ecart: s.ecart, raisonEcart: s.raisonEcart || null,
       especesAnnulees: annuleesParSession[s.id] || 0,
-      retoursEspeces: retoursEspecesParSession[s.id] || 0
+      retoursEspeces: retoursEspecesParSession[s.id] || 0,
+      reglementsEspeces: s.reglementsEspeces || 0
     }));
   const fermees = lesSessions.filter((s) => s.statut === "fermee");
   const ecarts = {
@@ -165,18 +173,62 @@ function genererRapportCaisse({ marchand, commandes, sessions, du, au, caissier 
   for (let d = new Date(p.du + "T00:00:00Z"); d.toISOString().slice(0, 10) <= p.au; d = new Date(d.getTime() + 86400000)) jours.push(jour(d.toISOString().slice(0, 10)));
   jours.sort((a, b) => (a.date < b.date ? -1 : 1));
 
+  // Etape 90 : clients et credit (null si l'option n'est pas activee : `reglements` n'est alors pas fourni).
+  let credit = null;
+  if (Array.isArray(reglements)) {
+    const regDetail = reglements.filter((r) => { const j = dateLocale(r.dateISO); return j >= p.du && j <= p.au && (!filtreCaissier || r.caissier === filtreCaissier); })
+      .sort((a, b) => (a.dateISO < b.dateISO ? -1 : 1))
+      .map((r) => ({ id: r.id, date: dateLocale(r.dateISO), heure: heureLocale(r.dateISO), client: r.clientNom, mode: MODES.indexOf(r.mode) !== -1 ? r.mode : "especes", reference: r.reference || null, montant: r.montant, caissier: r.caissier || null, sessionId: r.sessionCaisseId != null ? r.sessionCaisseId : null, annule: !!r.annulation, motifAnnulation: r.annulation ? r.annulation.motif : null }));
+    const valides = regDetail.filter((r) => !r.annule);
+    const parModeReg = {}; MODES.forEach((m) => { parModeReg[m] = 0; });
+    valides.forEach((r) => { parModeReg[r.mode] += r.montant; });
+    const jRegl = {}; valides.forEach((r) => { jRegl[r.date] = (jRegl[r.date] || 0) + r.montant; });
+    jours.forEach((j) => { j.reglements = jRegl[j.date] || 0; });
+    credit = {
+      aCredit: totaux.aCredit, nbVentesCredit: totaux.nbVentesCredit,
+      reglements: { nb: valides.length, nbAnnules: regDetail.length - valides.length, montant: valides.reduce((x, r) => x + r.montant, 0), parMode: parModeReg, detail: regDetail },
+      encours: creances ? { total: creances.total, enRetard: creances.enRetard, nbClients: creances.clients.length, clients: creances.clients } : null
+    };
+  }
+  // Etape 90 : marge (si `couts` est fourni : proprietaire / super-administrateur uniquement, cote serveur). Seules les lignes dont le prix d'achat est
+  // connu entrent dans la marge ; « couverture » dit quelle part du chiffre d'affaires est couverte. Les retours retirent chiffre d'affaires ET cout.
+  let marge = null;
+  if (couts && typeof couts === "object") {
+    let caConnu = 0, coutConnu = 0, caInconnu = 0;
+    const parArticle = {};
+    ventes.forEach((o) => {
+      if (o.statut === "Annulée") return;
+      const cl = couts[o.id];
+      (o.items || []).forEach((it, i) => {
+        const cu = cl && cl.lignes ? cl.lignes[i] : null; const ca = Number(it.prix) || 0;
+        if (cu == null) { caInconnu += ca; return; }
+        const cout = Math.round(cu * (Number(it.quantite) || 0));
+        caConnu += ca; coutConnu += cout;
+        const k = libelleArticle(it), a = parArticle[k] || (parArticle[k] = { article: k, quantite: 0, ca: 0, cout: 0, marge: 0, taux: 0 });
+        a.quantite += Number(it.quantite) || 0; a.ca += ca; a.cout += cout; a.marge += ca - cout;
+      });
+    });
+    const caNet = caConnu - margeRetourCa, coutNet = coutConnu - margeRetourCout;
+    Object.keys(parArticle).forEach((k) => { const a = parArticle[k]; a.taux = a.ca ? Math.round(a.marge * 10000 / a.ca) / 100 : 0; });
+    marge = {
+      ca: caNet, cout: coutNet, marge: caNet - coutNet, taux: caNet ? Math.round((caNet - coutNet) * 10000 / caNet) / 100 : 0,
+      couverture: (caConnu + caInconnu) ? Math.round(caConnu * 10000 / (caConnu + caInconnu)) / 100 : 100, caSansCout: caInconnu, retoursCa: margeRetourCa, retoursCout: margeRetourCout,
+      parArticle: Object.keys(parArticle).map((k) => parArticle[k]).sort((a, b) => b.marge - a.marge || (a.article < b.article ? -1 : 1)).slice(0, 200)
+    };
+  }
+
   return {
     marchand, du: p.du, au: p.au, caissier: filtreCaissier, caissiers, genereLe: new Date().toISOString(),
     totaux, parMode: MODES.map((m) => parMode[m]), parJour: jours,
     parCaissier: Object.keys(parCaissier).sort().map((k) => parCaissier[k]),
     articles: Object.keys(articles).map((k) => articles[k]).sort((a, b) => b.montant - a.montant || (a.article < b.article ? -1 : 1)),
-    sessions: lesSessions, ecarts, ventes: detail, retours,
+    sessions: lesSessions, ecarts, ventes: detail, retours, credit, marge,
     restauration: Object.keys(parServeur).length ? { parServeur: Object.keys(parServeur).sort().map((k) => parServeur[k]), parTable: Object.keys(parTable).sort().map((k) => parTable[k]) } : null
   };
 }
 
 // --- CSV (point-virgule par defaut pour Excel en francais ; BOM UTF-8) ---
-const VUES_CSV = ["synthese", "ventes", "sessions", "retours"];
+const VUES_CSV = ["synthese", "ventes", "sessions", "retours", "reglements", "marge"];
 function csv(rapport, vue, sep) {
   const s0 = sep === "," ? "," : ";";
   const echapper = (v) => {
@@ -185,11 +237,17 @@ function csv(rapport, vue, sep) {
   };
   let colonnes, lignes;
   if (vue === "ventes") {
-    colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "remise", "motifRemise", "remisePar", "statut", "raisonAnnulation", "facture", "articles", "table", "serveur"];
-    lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.remise, v.motifRemise, v.remisePar, v.statut, v.raisonAnnulation, v.facture, v.articles, v.table, v.serveur]);
+    colonnes = ["piece", "date", "heure", "session", "caissier", "mode", "reference", "montant", "remise", "motifRemise", "remisePar", "statut", "raisonAnnulation", "facture", "articles", "table", "serveur", "client", "aCredit"];
+    lignes = rapport.ventes.map((v) => [v.piece, v.date, v.heure, v.sessionId, v.caissier, v.mode, v.reference, v.montant, v.remise, v.motifRemise, v.remisePar, v.statut, v.raisonAnnulation, v.facture, v.articles, v.table, v.serveur, v.client, v.aCredit]);
   } else if (vue === "retours") {
     colonnes = ["piece", "vente", "date", "heure", "session", "caissier", "mode", "reference", "montant", "motif", "venteAnnulee", "articles"];
     lignes = (rapport.retours ? rapport.retours.detail : []).map((r) => [r.piece, r.vente, r.date, r.heure, r.sessionId, r.caissier, r.mode, r.reference, r.montant, r.motif, r.venteAnnulee ? "oui" : "non", r.articles]);
+  } else if (vue === "reglements") {
+    colonnes = ["reglement", "date", "heure", "client", "mode", "reference", "montant", "caissier", "session", "annule", "motifAnnulation"];
+    lignes = (rapport.credit ? rapport.credit.reglements.detail : []).map((r) => ["REG-" + String(r.id).padStart(4, "0"), r.date, r.heure, r.client, r.mode, r.reference, r.montant, r.caissier, r.sessionId, r.annule ? "oui" : "non", r.motifAnnulation]);
+  } else if (vue === "marge") {
+    colonnes = ["article", "quantite", "chiffreAffaires", "cout", "marge", "tauxMarge"];
+    lignes = (rapport.marge ? rapport.marge.parArticle : []).map((a) => [a.article, a.quantite, a.ca, a.cout, a.marge, a.taux]);
   } else if (vue === "sessions") {
     colonnes = ["session", "caissier", "statut", "ouverture", "fermeture", "fondInitial", "ventesEspeces", "montantTheorique", "montantCompte", "ecart", "raisonEcart", "especesAnnulees"];
     lignes = rapport.sessions.map((x) => [x.id, x.caissier, x.statut, x.dateOuverture, x.dateFermeture, x.fondInitial, x.totalVentesEspeces, x.montantTheorique, x.montantCompte, x.ecart, x.raisonEcart, x.especesAnnulees]);
