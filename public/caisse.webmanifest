@@ -1,0 +1,16 @@
+{
+  "name": "IzyVendeur Caisse",
+  "short_name": "Caisse",
+  "description": "Point de vente IzyVendeur : encaissement, tickets, ventes en attente.",
+  "start_url": "/caisse",
+  "scope": "/caisse",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#14213d",
+  "theme_color": "#14213d",
+  "lang": "fr",
+  "icons": [
+    { "src": "/caisse-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/caisse-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

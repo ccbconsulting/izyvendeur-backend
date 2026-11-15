@@ -229,6 +229,7 @@ const I18N = {
     promptSuppressionMarchand: "Suppression DÉFINITIVE du marchand \"{nom}\" ({id}).\n\nSon catalogue/ses commandes (ou services/rendez-vous) et son historique de conversations restent en base mais deviendront inaccessibles depuis /admin.\n\nPour confirmer, retapez l'identifiant du marchand : {id}",
     alertIdentifiantNonConcordant: "Identifiant non concordant — suppression annulée.",
 
+    nmTitre: "Nouveau marchand", nmProfil: "Profil", nmProfilStd: "Marchand standard (WhatsApp et vente)", nmProfilPos: "Point de vente seul (sans WhatsApp)", nmNom: "Nom affiché", nmId: "Identifiant technique (lettres minuscules, chiffres, tirets)", nmType: "Type", nmVolets: "Volets supplémentaires (facultatif : catalogue, service, hebergement, transport, séparés par une virgule)", nmPhone: "phone_number_id WhatsApp (facultatif)", nmOptions: "Options du point de vente (modifiables ensuite dans « Mon compte »)", nmOptResto: "Restauration (tables, additions, bons cuisine et bar)", nmOptCredit: "Clients, crédit et marge", nmOptHL: "Mode hors ligne", nmUser: "Nom d'utilisateur de connexion", nmMdp: "Mot de passe initial (6 caractères minimum)", nmGenerer: "Générer", nmCreer: "Créer le marchand", nmAnnuler: "Annuler", nmErrId: "Identifiant invalide : 2 à 40 caractères, lettres minuscules, chiffres et tirets.", nmErrChamps: "Nom, identifiant, nom d'utilisateur et mot de passe sont obligatoires.", nmErrMdp: "Le mot de passe doit contenir au moins 6 caractères.", nmCree: "Marchand créé", nmACommuniquer: "À communiquer au marchand :", nmUrlAdmin: "Gestion", nmUrlCaisse: "Caisse (point de vente)", nmUtilisateur: "Utilisateur", nmMotDePasse: "Mot de passe", nmCopier: "Copier les accès", nmCopie: "Copié", nmOuvrir: "Ouvrir ce marchand", nmSuitePos: "Étapes suivantes : ajoutez ses articles dans « Catalogue & stock » (ou demandez-lui de le faire), puis il se connecte sur la page Caisse, ouvre la caisse avec le billetage et vend. Les options cochées sont actives ; vous pouvez en changer dans « Mon compte ».", nmSuiteStd: "Étapes suivantes : ouvrez « Mon compte » pour cocher les options payantes (Caisse POS, etc.), ajoutez son catalogue, puis associez son numéro WhatsApp dans « Modifier ».", ongletVentes: "Ventes", libelleVentesPeriodeDash: "Ventes", dashCaisseTitre: "Caisse", dashCaisseOuverte: "Caisse ouverte par {u} depuis {h} (fond de caisse {f} FCFA)", dashCaisseFermee: "Caisse fermée. Ouvrez-la sur la page Caisse pour vendre.", dashCaisseOuvrir: "Ouvrir la page Caisse",
     promptIdMarchand: "Identifiant technique du marchand (sans espaces, ex: don-william) :",
     promptNomMarchand: "Nom affiché du marchand :",
     promptTypeMarchand: "Type : 'catalogue' (vente de produits), 'service' (prise de rendez-vous), 'hebergement' (réservation de chambres) ou 'transport' (billets de train, car, navette) ?",
@@ -286,6 +287,12 @@ const I18N = {
     act_vente_caisse_remise: "Vente en caisse avec remise",
     act_facture_interne_creee: "Facture intégrée créée",
     act_facture_caisse_creee: "Facture établie pour une vente de caisse",
+    act_retour_caisse_cree: "Retour / remboursement en caisse",
+    act_restauration_config_modifiee: "Tables et postes modifiés",
+    act_addition_ligne_retiree: "Article déjà envoyé retiré d'une addition",
+    act_addition_annulee: "Addition annulée",
+    act_addition_encaissee: "Addition encaissée",
+    act_addition_transferee: "Addition transférée de table",
     rcsTuileRemises: "Remises accordées",
     rcsColRemises: "Remises",
     rcsPdfRemises: "Remises accordées",
@@ -363,6 +370,10 @@ const I18N = {
     rcsParMode: "Par mode de paiement",
     rcsParJour: "Par jour",
     rcsParCaissier: "Par caissier",
+    rcsParServeur: "Par serveur (tables)",
+    rcsServeur: "Serveur",
+    rcsParTable: "Par table",
+    tableLabel: "Table",
     rcsArticles: "Articles vendus",
     rcsSessions: "Sessions de caisse",
     rcsAucuneVente: "Aucune vente sur cette période.",
@@ -1292,6 +1303,7 @@ const I18N = {
     btnDefinirMdp: "Définir ce mot de passe",
     btnGenererMdp: "Générer un mot de passe aléatoire",
     h3Logo: "Logo (interface /admin)",
+    descLogoCaisseSeule: "Facultatif. Affiché en haut de l'écran /admin et sur les tickets de la caisse — votre identité de marque. JPEG, PNG ou WEBP, 5 Mo maximum.",
     descLogo: "Facultatif. Affiché en haut de l'écran /admin uniquement — votre identité de marque stable. N'est PAS envoyé aux clients sur WhatsApp (voir \"Image d'accueil WhatsApp\" ci-dessous pour ça). JPEG, PNG ou WEBP, 5 Mo maximum.",
     btnUploaderLogo: "Envoyer",
     confirmSupprimerLogo: "Supprimer ce logo ?",
@@ -1359,9 +1371,44 @@ const I18N = {
     labelOptionNotifStatut: "Notifications de statut (message WhatsApp automatique au client)",
     labelOptionFacturationIzyfacture: "Facturation IzyFacture (facturation automatique des commandes confirmées ou des rendez-vous honorés)",
     labelOptionCaissePos: "Caisse POS (encaissement en boutique physique, onglet Caisse — utilise le même stock que la vente en ligne)",
+    caisseCodeInconnu: "Aucun article ne correspond à ce code-barres ou cette référence.",
+    btnRetourVenteCaisse: "Retour / remboursement",
+    retourTitre: "Retour / remboursement d'une vente",
+    retourNote: "Retrouvez la vente par son numéro (ex. POS-0012 ou 12), choisissez les articles rendus : ils repartent en stock. Un remboursement en espèces sort du tiroir de la session ouverte. La vente d'origine n'est jamais modifiée.",
+    retourNumeroPlaceholder: "N° de la vente (ex. POS-0012)", retourChercher: "Rechercher", retourRetourCaisse: "Retour à la caisse",
+    retourNumeroInvalide: "Indiquez le numéro de la vente (chiffres).", retourVenteAnnulee: "Cette vente est annulée : aucun retour possible.",
+    retourColVendue: "Vendue", retourColDejaRendue: "Déjà rendue", retourColARendre: "À rendre", retourColMontant: "Remboursement",
+    retourTotalARembourser: "Total à rembourser :", retourModeLabel: "Mode de remboursement", retourReferenceLabel: "Référence du remboursement (code de transaction, n° de chèque…)",
+    retourMotifLabel: "Motif du retour (obligatoire)", retourConfirmer: "Confirmer le retour et rembourser",
+    retourAucuneLigne: "Indiquez la quantité à rendre pour au moins un article.", retourMotifObligatoire: "Indiquez le motif du retour.", retourReferenceObligatoire: "La référence du remboursement est obligatoire pour ce mode.",
+    retourEnregistre: "Retour enregistré", retourARendre: "Rendez {montant} au client ({mode}).", retourStockRemis: "Les articles ont été remis en stock.",
+    rcsTuileRetours: "Retours (nb / montant)", rcsTuileNetRetours: "Net après retours", rcsRetoursTitre: "Retours et remboursements",
+    rcsRetoursNote: "Un retour est compté au jour où il est fait. Les ventes d'origine ne sont jamais modifiées ; le net après retours = net des ventes − retours (hors ventes annulées).",
+    rcsColPiece: "Pièce", rcsColVente: "Vente", rcsColMotif: "Motif", rcsVenteAnnulee: "annulée", rcsVueRetours: "Retours",
+    labelOptionHorsLigne: "Mode hors ligne (la caisse /caisse enregistre les ventes simples sans connexion et les envoie au retour du réseau ; exige la Caisse POS)",
+    badgeHorsLigne: "Saisie hors ligne", rcsHLTitre: "Ventes saisies hors ligne", rcsHLNote: "Ventes enregistrées sans connexion puis synchronisées. Un écart signale un stock insuffisant ou un prix différent du catalogue au moment de la synchronisation : à vérifier.", rcsTuileHL: "Ventes hors ligne", rcsTuileHLEcart: "Dont avec écart", rcsHLColSaisie: "Saisie le", rcsHLColPar: "Saisi par", rcsHLColNum: "N° local", rcsHLColEcart: "Écart",
+    labelOptionClientsCredit: "Clients, crédit et marge (fiches clients, ventes à crédit avec plafond et règlements, prix d'achat et marge ; sur la caisse /caisse et dans /admin ; exige l'option Caisse POS ; réversible, aucune donnée supprimée)",
+    theadPrixAchat: "Prix d'achat", titreMargeUnitaire: "Marge unitaire : {m} FCFA ({p} %)", ongletClients: "Clients et crédit",
+    clTitre: "Clients et crédit", clNote: "Fiches clients de la caisse, dettes (ventes à crédit) et règlements. Les ventes à crédit se font depuis la caisse /caisse ; un règlement en espèces entre dans le tiroir de la session ouverte. Le plafond de crédit est fixé par le propriétaire (0 = aucun crédit).",
+    clTotalDu: "Total dû par les clients", clTotalRetard: "Dont en retard", clNbDebiteurs: "Clients débiteurs", clConfigTitre: "Réglages du crédit", clDelai: "Délai de paiement (jours, 0 = aucune échéance)", clPlafondDefaut: "Plafond par défaut des nouveaux clients (FCFA)", clConfigNote: "Un nouveau client créé par un employé reçoit ce plafond ; 0 signifie qu'aucun crédit n'est possible tant que vous n'avez pas fixé un plafond.", clConfigOk: "Réglages du crédit enregistrés.",
+    clNouveau: "Nouveau client", clNom: "Nom", clTel: "Téléphone", clNoteC: "Note", clPlafond: "Plafond de crédit", clAjouter: "Ajouter", clRechercher: "Rechercher un client…", clExporter: "Exporter les créances (CSV)", clSolde: "Dette", clEnRetard: "En retard", clPremiereEcheance: "Première échéance", clReleve: "Relevé", clRelancer: "Relancer (WhatsApp)", clAucun: "Aucun client.", clInactif: "inactif", clActif: "Client actif", clModifier: "Modifier le client",
+    clMontantReglement: "Montant du règlement (FCFA)", clMode: "Mode de paiement", clReference: "Référence (hors espèces)", clEncaisser: "Encaisser le règlement", clReglementNote: "Un règlement en espèces exige une session de caisse ouverte (l'argent entre dans le tiroir).", clAchats: "Achats", clReglements: "Règlements", clReste: "Reste dû", clAnnuler: "Annuler", clMotifAnnulation: "Motif de l'annulation du règlement :",
+    clMsgRelance: "Bonjour {nom}, sauf erreur de notre part, il vous reste {montant} FCFA à régler chez {commerce}. Merci de votre confiance.",
+    rcsCreditTitre: "Crédit clients", rcsTuileACredit: "Vendu à crédit", rcsTuileReglements: "Règlements encaissés", rcsTuileEncours: "Créances en cours", rcsTuileEnRetard: "Dont en retard", rcsColClient: "Client", rcsColEcheance: "Échéance", rcsCreancesTitre: "Créances en cours", rcsVueReglements: "Règlements", rcsVueMarge: "Marge par article", rcsMode_credit: "À crédit",
+    rcsMargeTitre: "Marge (réservé au propriétaire)", rcsMargeNote: "Calculée sur les ventes de la caisse dont le prix d'achat est renseigné ; le coût est figé au moment de la vente et les retours sont déduits.", rcsTuileCA: "Chiffre d'affaires", rcsTuileCout: "Coût d'achat", rcsTuileMarge: "Marge", rcsTuileTaux: "Taux de marge", rcsTuileCouverture: "Couverture", rcsMargeCouverture: "{n} FCFA de ventes n'ont pas de prix d'achat : ils ne sont pas dans la marge.",
+    act_client_cree: "Client créé", act_client_modifie: "Client modifié (plafond, statut)", act_reglement_client_encaisse: "Règlement client encaissé", act_reglement_client_annule: "Règlement client annulé", act_credit_config_modifiee: "Réglages du crédit modifiés", act_vente_caisse_credit: "Vente en caisse à crédit", act_vente_caisse_hors_ligne: "Vente en caisse saisie hors ligne (synchronisée)",
+    placeholderReference: "Référence (facultatif)",
+    placeholderCodeBarres: "Code-barres (scan)",
+    theadCodeBarres: "Code-barres",
+    labelUnite: "Unité de vente",
+    unite_piece: "Pièce", unite_kg: "Kilogramme (kg)", unite_g: "Gramme (g)", unite_l: "Litre (l)", unite_m: "Mètre (m)",
+    labelVenteDecimale: "Vente au poids / à la mesure (quantités décimales en caisse)",
+    noteVenteDecimale: "Le stock de cet article peut avoir des décimales (ex. 12,5). En caisse, saisissez la quantité vendue au millième (ex. 0,250). Réservé à la Caisse : les clients WhatsApp ne commandent que des quantités entières.",
+    labelOptionRestauration: "Mode restauration (bar, snack, restaurant : tables, additions ouvertes, bons cuisine/bar, addition partagée sur la caisse /caisse ; exige l'option Caisse POS ; réversible, aucune donnée supprimée)",
+    labelOptionCaisseSeule: "Mode caisse seule (point de vente sans WhatsApp : masque les volets WhatsApp — simulateur, conversations, numéro d'alerte, QR code, messages d'accueil ; exige l'option Caisse POS ; réversible, aucune donnée supprimée)",
     alertOptionsEnregistrees: "Options enregistrées.",
 
-    placeholderRechercheCaisse: "Rechercher un article à vendre (nom, catégorie, couleur, taille…)",
+    placeholderRechercheCaisse: "Rechercher ou scanner un article (nom, référence, code-barres, couleur, taille…)",
     caisseAucunResultat: "Aucun article ne correspond à cette recherche.",
     caisseEpuise: "épuisé",
     caisseEpuiseMessage: "Cet article est en rupture de stock et ne peut pas être ajouté à la vente.",
@@ -1377,6 +1424,10 @@ const I18N = {
     caisseMode_momo: "MTN Mobile Money",
     caisseMode_carte: "Carte de crédit",
     caisseMode_cheque: "Chèque",
+    caisseMode_mixte: "Paiement mixte", caisseMode_credit: "À crédit",
+    caisseRecuMontantRecu: "Montant reçu",
+    caisseRecuRendu: "Monnaie rendue",
+    lienCaissePleinEcran: "Caisse plein écran (installable)",
     caisseReferencePaiementLabel: "Référence de paiement",
     caisseReferencePaiementObligatoire: "La référence de paiement est obligatoire pour ce mode de paiement.",
     caisseReferenceAide_om: "Référence reçue par SMS/notification sur le téléphone du marchand lors du paiement.",
@@ -1670,6 +1721,7 @@ const I18N = {
     promptSuppressionMarchand: "PERMANENT deletion of merchant \"{nom}\" ({id}).\n\nTheir catalog/orders (or services/appointments) and conversation history stay in the database but become inaccessible from /admin.\n\nTo confirm, retype the merchant's identifier: {id}",
     alertIdentifiantNonConcordant: "Identifier didn't match — deletion cancelled.",
 
+    nmTitre: "New merchant", nmProfil: "Profile", nmProfilStd: "Standard merchant (WhatsApp and sales)", nmProfilPos: "Point of sale only (no WhatsApp)", nmNom: "Display name", nmId: "Technical identifier (lowercase letters, digits, hyphens)", nmType: "Type", nmVolets: "Additional modules (optional: catalogue, service, hebergement, transport, comma-separated)", nmPhone: "WhatsApp phone_number_id (optional)", nmOptions: "Point-of-sale options (can be changed later in \"My account\")", nmOptResto: "Restaurant (tables, tabs, kitchen and bar tickets)", nmOptCredit: "Customers, credit and margin", nmOptHL: "Offline mode", nmUser: "Login username", nmMdp: "Initial password (6 characters minimum)", nmGenerer: "Generate", nmCreer: "Create merchant", nmAnnuler: "Cancel", nmErrId: "Invalid identifier: 2 to 40 characters, lowercase letters, digits and hyphens.", nmErrChamps: "Name, identifier, username and password are required.", nmErrMdp: "The password must be at least 6 characters.", nmCree: "Merchant created", nmACommuniquer: "To give to the merchant:", nmUrlAdmin: "Back office", nmUrlCaisse: "Till (point of sale)", nmUtilisateur: "Username", nmMotDePasse: "Password", nmCopier: "Copy access details", nmCopie: "Copied", nmOuvrir: "Open this merchant", nmSuitePos: "Next steps: add the items in \"Catalogue & stock\" (or ask the merchant to), then they sign in on the Till page, open the till with the cash count and start selling. The ticked options are active; you can change them in \"My account\".", nmSuiteStd: "Next steps: open \"My account\" to tick the paid options (POS till, etc.), add the catalogue, then link the WhatsApp number in \"Edit\".", ongletVentes: "Sales", libelleVentesPeriodeDash: "Sales", dashCaisseTitre: "Till", dashCaisseOuverte: "Till opened by {u} at {h} (opening float {f} FCFA)", dashCaisseFermee: "Till closed. Open it on the Till page to sell.", dashCaisseOuvrir: "Open the Till page",
     promptIdMarchand: "Merchant's technical identifier (no spaces, e.g. don-william):",
     promptNomMarchand: "Merchant's display name:",
     promptTypeMarchand: "Type: 'catalogue' (selling products), 'service' (appointment booking), 'hebergement' (room booking) or 'transport' (train, coach, shuttle tickets)?",
@@ -1727,6 +1779,12 @@ const I18N = {
     act_vente_caisse_remise: "Register sale with discount",
     act_facture_interne_creee: "Built-in invoice created",
     act_facture_caisse_creee: "Invoice issued for a register sale",
+    act_retour_caisse_cree: "Register return / refund",
+    act_restauration_config_modifiee: "Tables and stations changed",
+    act_addition_ligne_retiree: "Already-sent item removed from a tab",
+    act_addition_annulee: "Tab cancelled",
+    act_addition_encaissee: "Tab paid",
+    act_addition_transferee: "Tab moved to another table",
     rcsTuileRemises: "Discounts granted",
     rcsColRemises: "Discounts",
     rcsPdfRemises: "Discounts granted",
@@ -1804,6 +1862,10 @@ const I18N = {
     rcsParMode: "By payment method",
     rcsParJour: "By day",
     rcsParCaissier: "By cashier",
+    rcsParServeur: "By server (tables)",
+    rcsServeur: "Server",
+    rcsParTable: "By table",
+    tableLabel: "Table",
     rcsArticles: "Items sold",
     rcsSessions: "Cash sessions",
     rcsAucuneVente: "No sale in this period.",
@@ -2733,6 +2795,7 @@ const I18N = {
     btnDefinirMdp: "Set this password",
     btnGenererMdp: "Generate a random password",
     h3Logo: "Logo (/admin interface)",
+    descLogoCaisseSeule: "Optional. Shown at the top of the /admin screen and on the till receipts — your brand identity. JPEG, PNG or WEBP, 5 MB maximum.",
     descLogo: "Optional. Shown at the top of the /admin screen only — your stable brand identity. NOT sent to customers on WhatsApp (see \"WhatsApp welcome image\" below for that). JPEG, PNG or WEBP, 5 MB max.",
     btnUploaderLogo: "Upload",
     confirmSupprimerLogo: "Delete this logo?",
@@ -2800,9 +2863,44 @@ const I18N = {
     labelOptionNotifStatut: "Status notifications (automatic WhatsApp message to the customer)",
     labelOptionFacturationIzyfacture: "IzyFacture invoicing (automatic invoicing of confirmed orders or completed appointments)",
     labelOptionCaissePos: "POS Register (in-store checkout, Register tab — uses the same stock as online sales)",
+    caisseCodeInconnu: "No item matches this barcode or reference.",
+    btnRetourVenteCaisse: "Return / refund",
+    retourTitre: "Return / refund of a sale",
+    retourNote: "Find the sale by its number (e.g. POS-0012 or 12) and choose the returned items: they go back into stock. A cash refund comes out of the open session's drawer. The original sale is never modified.",
+    retourNumeroPlaceholder: "Sale no. (e.g. POS-0012)", retourChercher: "Search", retourRetourCaisse: "Back to the register",
+    retourNumeroInvalide: "Enter the sale number (digits).", retourVenteAnnulee: "This sale is cancelled: no return possible.",
+    retourColVendue: "Sold", retourColDejaRendue: "Already returned", retourColARendre: "To return", retourColMontant: "Refund",
+    retourTotalARembourser: "Total to refund:", retourModeLabel: "Refund method", retourReferenceLabel: "Refund reference (transaction code, cheque no…)",
+    retourMotifLabel: "Reason for the return (required)", retourConfirmer: "Confirm the return and refund",
+    retourAucuneLigne: "Enter the quantity to return for at least one item.", retourMotifObligatoire: "Enter the reason for the return.", retourReferenceObligatoire: "The refund reference is required for this method.",
+    retourEnregistre: "Return recorded", retourARendre: "Give {montant} back to the customer ({mode}).", retourStockRemis: "The items have been put back into stock.",
+    rcsTuileRetours: "Returns (count / amount)", rcsTuileNetRetours: "Net after returns", rcsRetoursTitre: "Returns and refunds",
+    rcsRetoursNote: "A return is counted on the day it is made. Original sales are never modified; net after returns = net sales − returns (cancelled sales excluded).",
+    rcsColPiece: "Document", rcsColVente: "Sale", rcsColMotif: "Reason", rcsVenteAnnulee: "cancelled", rcsVueRetours: "Returns",
+    labelOptionHorsLigne: "Offline mode (the /caisse till records simple sales without a connection and sends them when the network is back; requires the POS till)",
+    badgeHorsLigne: "Entered offline", rcsHLTitre: "Sales entered offline", rcsHLNote: "Sales recorded without a connection and then synced. A difference flags insufficient stock or a price different from the catalogue at sync time: please check.", rcsTuileHL: "Offline sales", rcsTuileHLEcart: "Of which with a difference", rcsHLColSaisie: "Entered on", rcsHLColPar: "Entered by", rcsHLColNum: "Local no.", rcsHLColEcart: "Difference",
+    labelOptionClientsCredit: "Customers, credit and margin (customer records, credit sales with limits and payments, purchase prices and margin; on the /caisse till and in /admin; requires the POS Register option; reversible, no data deleted)",
+    theadPrixAchat: "Purchase price", titreMargeUnitaire: "Unit margin: {m} FCFA ({p} %)", ongletClients: "Customers and credit",
+    clTitre: "Customers and credit", clNote: "Till customer records, debts (credit sales) and payments. Credit sales are made from the /caisse till; a cash payment enters the open session's drawer. The credit limit is set by the owner (0 = no credit).",
+    clTotalDu: "Total owed by customers", clTotalRetard: "Of which overdue", clNbDebiteurs: "Customers in debt", clConfigTitre: "Credit settings", clDelai: "Payment term (days, 0 = no due date)", clPlafondDefaut: "Default limit for new customers (FCFA)", clConfigNote: "A new customer created by an employee gets this limit; 0 means no credit is possible until you set a limit.", clConfigOk: "Credit settings saved.",
+    clNouveau: "New customer", clNom: "Name", clTel: "Phone", clNoteC: "Note", clPlafond: "Credit limit", clAjouter: "Add", clRechercher: "Search a customer…", clExporter: "Export receivables (CSV)", clSolde: "Debt", clEnRetard: "Overdue", clPremiereEcheance: "Earliest due date", clReleve: "Statement", clRelancer: "Remind (WhatsApp)", clAucun: "No customer.", clInactif: "inactive", clActif: "Active customer", clModifier: "Edit customer",
+    clMontantReglement: "Payment amount (FCFA)", clMode: "Payment method", clReference: "Reference (non-cash)", clEncaisser: "Collect the payment", clReglementNote: "A cash payment requires an open till session (the money enters the drawer).", clAchats: "Purchases", clReglements: "Payments", clReste: "Still owed", clAnnuler: "Cancel", clMotifAnnulation: "Reason for cancelling the payment:",
+    clMsgRelance: "Hello {nom}, unless we are mistaken, you still owe {montant} FCFA at {commerce}. Thank you for your trust.",
+    rcsCreditTitre: "Customer credit", rcsTuileACredit: "Sold on credit", rcsTuileReglements: "Payments collected", rcsTuileEncours: "Outstanding receivables", rcsTuileEnRetard: "Of which overdue", rcsColClient: "Customer", rcsColEcheance: "Due date", rcsCreancesTitre: "Outstanding receivables", rcsVueReglements: "Payments", rcsVueMarge: "Margin by item", rcsMode_credit: "On credit",
+    rcsMargeTitre: "Margin (owner only)", rcsMargeNote: "Computed on till sales whose purchase price is filled in; the cost is frozen at the time of the sale and returns are deducted.", rcsTuileCA: "Revenue", rcsTuileCout: "Purchase cost", rcsTuileMarge: "Margin", rcsTuileTaux: "Margin rate", rcsTuileCouverture: "Coverage", rcsMargeCouverture: "{n} FCFA of sales have no purchase price: they are not in the margin.",
+    act_client_cree: "Customer created", act_client_modifie: "Customer changed (limit, status)", act_reglement_client_encaisse: "Customer payment collected", act_reglement_client_annule: "Customer payment cancelled", act_credit_config_modifiee: "Credit settings changed", act_vente_caisse_credit: "Register sale on credit", act_vente_caisse_hors_ligne: "Register sale entered offline (synced)",
+    placeholderReference: "Reference (optional)",
+    placeholderCodeBarres: "Barcode (scan)",
+    theadCodeBarres: "Barcode",
+    labelUnite: "Selling unit",
+    unite_piece: "Piece", unite_kg: "Kilogram (kg)", unite_g: "Gram (g)", unite_l: "Litre (l)", unite_m: "Metre (m)",
+    labelVenteDecimale: "Sold by weight / measure (decimal quantities at the register)",
+    noteVenteDecimale: "This item's stock may have decimals (e.g. 12.5). At the register, enter the quantity sold to the thousandth (e.g. 0.250). Register only: WhatsApp customers order whole quantities only.",
+    labelOptionRestauration: "Restaurant mode (bar, snack, restaurant: tables, open tabs, kitchen/bar tickets, split bill on the /caisse till; requires the POS Register option; reversible, no data deleted)",
+    labelOptionCaisseSeule: "Register-only mode (point of sale without WhatsApp: hides the WhatsApp areas — simulator, conversations, alert number, QR code, welcome messages; requires the POS Register option; reversible, no data deleted)",
     alertOptionsEnregistrees: "Options saved.",
 
-    placeholderRechercheCaisse: "Search for an item to sell (name, category, color, size…)",
+    placeholderRechercheCaisse: "Search or scan an item (name, reference, barcode, color, size…)",
     caisseAucunResultat: "No item matches this search.",
     caisseEpuise: "out of stock",
     caisseEpuiseMessage: "This item is out of stock and cannot be added to the sale.",
@@ -2818,6 +2916,10 @@ const I18N = {
     caisseMode_momo: "MTN Mobile Money",
     caisseMode_carte: "Credit card",
     caisseMode_cheque: "Cheque",
+    caisseMode_mixte: "Split payment", caisseMode_credit: "On credit",
+    caisseRecuMontantRecu: "Amount received",
+    caisseRecuRendu: "Change given",
+    lienCaissePleinEcran: "Full-screen till (installable)",
     caisseReferencePaiementLabel: "Payment reference",
     caisseReferencePaiementObligatoire: "A payment reference is required for this payment method.",
     caisseReferenceAide_om: "Reference received by SMS/notification on the merchant's own phone when the payment arrives.",
@@ -3233,7 +3335,7 @@ let moi = null; // { role: "superadmin" | "marchand", merchantId, adminUser }
 // memoire pour rester stable si on quitte l'onglet puis qu'on y revient.
 let dashboardPeriodeActuelle = "jour";
 
-async function demarrer() {
+async function demarrer(idASelectionner) {
   const sel = document.getElementById("selecteurMarchand");
   const nomSeul = document.getElementById("nomMarchandSeul");
   const btnNouveau = document.getElementById("btnNouveauMarchand");
@@ -3340,7 +3442,7 @@ async function demarrer() {
     nomSeul.style.display = "";
     nomSeul.textContent = marchands.length ? marchands[0].nom + " (id: " + marchands[0].id + ")" : "";
   }
-  if (marchands.length) choisirMarchand(marchands[0].id);
+  if (marchands.length) choisirMarchand(typeof idASelectionner === "string" && marchands.some((m) => m.id === idASelectionner) ? idASelectionner : marchands[0].id);
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("aucunMarchandConfigure") + "</div>";
   // Marqueur de fin de rendu (2 octobre 2026) : permet aux tests automatises (et a tout code appelant) de
   // savoir avec certitude QUAND demarrer() a fini de s'executer POUR TEL ROLE precis, plutot que de deviner
@@ -3349,25 +3451,70 @@ async function demarrer() {
   document.body.dataset.demarrePourRole = moi.role;
 }
 
-document.getElementById("btnNouveauMarchand").onclick = async () => {
-  const id = prompt(t("promptIdMarchand"));
-  if (!id) return;
-  const nom = prompt(t("promptNomMarchand"), id) || id;
-  const type = (prompt(t("promptTypeMarchand"), "catalogue") || "").trim();
-  // Second volet (marchand hybride) : propose uniquement ici, dans l'ecran du super-administrateur.
-  // Etape 66 : jusqu'a deux volets secondaires, separes par une virgule (ex. « service,hebergement »).
-  const moduleSecondaire = (prompt(t("promptModuleSecondaire"), "") || "").trim();
-  if (moduleSecondaire && moduleSecondaire.split(",").map((x) => x.trim()).indexOf(type) !== -1) { alert(t("alertModuleSecondaireIdentique")); return; }
-  const phoneNumberId = prompt(t("promptPhoneNumberIdCreation")) || null;
-  const adminUser = prompt(t("promptAdminUser"), id) || id;
-  const adminPassword = prompt(t("promptAdminPassword"));
-  if (!adminPassword) { alert(t("alertMdpInitialRequis")); return; }
-  try {
-    await api("/api/marchands", { method: "POST", body: JSON.stringify({ id, nom, type, phoneNumberId, adminUser, adminPassword, moduleSecondaire: moduleSecondaire || undefined }) });
-    alert(t("alertMarchandCree", { u: adminUser, p: adminPassword }));
-    await demarrer();
-  } catch (e) { alert(t("erreurPrefixe") + e.message); }
-};
+// Etape 92 : creation d'un marchand par un vrai formulaire (au lieu de 7 fenetres successives), avec le profil « Point de vente seul » qui accorde d'emblee
+// la Caisse POS, le mode caisse seule et les options demandees ; le nouveau marchand est ensuite SELECTIONNE automatiquement.
+document.getElementById("btnNouveauMarchand").onclick = () => ouvrirFormulaireNouveauMarchand();
+function ouvrirFormulaireNouveauMarchand() {
+  const ancien = document.getElementById("voileNouveauMarchand"); if (ancien) ancien.remove();
+  const voile = document.createElement("div"); voile.id = "voileNouveauMarchand";
+  voile.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1000;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px;";
+  const champ = (id, lib, extra) => "<label style='display:block;margin-top:10px;font-weight:600;'>" + esc(lib) + "</label><input id='" + id + "' style='width:100%;box-sizing:border-box;' " + (extra || "") + " />";
+  voile.innerHTML = "<div id='nmFenetre' style='background:#fff;color:#111;border-radius:12px;max-width:560px;width:100%;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.3);'>" +
+    "<h2 style='margin-top:0;'>" + esc(t("nmTitre")) + "</h2>" +
+    "<div id='nmCorps'>" +
+    "<label style='display:block;font-weight:600;'>" + esc(t("nmProfil")) + "</label>" +
+    "<label style='display:block;margin-top:4px;'><input type='radio' name='nmProfil' value='standard' checked /> " + esc(t("nmProfilStd")) + "</label>" +
+    "<label style='display:block;margin-top:4px;'><input type='radio' name='nmProfil' value='pos' /> " + esc(t("nmProfilPos")) + "</label>" +
+    champ("nmNom", t("nmNom"), "maxlength='80'") + champ("nmId", t("nmId"), "maxlength='40'") +
+    "<div id='nmBlocType'><label style='display:block;margin-top:10px;font-weight:600;'>" + esc(t("nmType")) + "</label><select id='nmType' style='width:100%;'><option value='catalogue'>catalogue</option><option value='service'>service</option><option value='hebergement'>hebergement</option><option value='transport'>transport</option></select></div>" +
+    "<div id='nmBlocStd'>" + champ("nmVolets", t("nmVolets")) + champ("nmPhone", t("nmPhone")) + "</div>" +
+    "<div id='nmBlocPos' style='display:none;margin-top:12px;padding:10px;background:#f4f6f8;border-radius:8px;'><div style='font-weight:600;margin-bottom:4px;'>" + esc(t("nmOptions")) + "</div>" +
+      "<label style='display:block;'><input type='checkbox' id='nmOptResto' /> " + esc(t("nmOptResto")) + "</label>" +
+      "<label style='display:block;'><input type='checkbox' id='nmOptCredit' /> " + esc(t("nmOptCredit")) + "</label>" +
+      "<label style='display:block;'><input type='checkbox' id='nmOptHL' /> " + esc(t("nmOptHL")) + "</label></div>" +
+    champ("nmUser", t("nmUser"), "maxlength='60' autocomplete='off'") +
+    "<label style='display:block;margin-top:10px;font-weight:600;'>" + esc(t("nmMdp")) + "</label><div style='display:flex;gap:8px;'><input id='nmMdp' autocomplete='off' style='flex:1;box-sizing:border-box;' /><button type='button' id='nmGen'>" + esc(t("nmGenerer")) + "</button></div>" +
+    "<div id='nmErr' style='color:#b42318;margin-top:10px;display:none;'></div>" +
+    "<div style='display:flex;gap:8px;margin-top:16px;justify-content:flex-end;'><button type='button' id='nmAnnuler'>" + esc(t("nmAnnuler")) + "</button><button type='button' id='nmCreer' class='principal'>" + esc(t("nmCreer")) + "</button></div>" +
+    "</div></div>";
+  document.body.appendChild(voile);
+  const $n = (id) => document.getElementById(id);
+  let idModifie = false, userModifie = false;
+  const profil = () => (voile.querySelector("input[name='nmProfil']:checked") || {}).value || "standard";
+  const slug = (x) => String(x).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  const majProfil = () => { const pos = profil() === "pos"; $n("nmBlocStd").style.display = pos ? "none" : ""; $n("nmBlocPos").style.display = pos ? "" : "none"; $n("nmBlocType").style.display = pos ? "none" : ""; if (pos) $n("nmType").value = "catalogue"; };
+  Array.prototype.forEach.call(voile.querySelectorAll("input[name='nmProfil']"), (r) => { r.onchange = majProfil; });
+  $n("nmNom").oninput = () => { if (!idModifie) $n("nmId").value = slug($n("nmNom").value); if (!userModifie) $n("nmUser").value = $n("nmId").value; };
+  $n("nmId").oninput = () => { idModifie = true; if (!userModifie) $n("nmUser").value = $n("nmId").value; };
+  $n("nmUser").oninput = () => { userModifie = true; };
+  $n("nmGen").onclick = () => { const a = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789", b = new Uint32Array(12); (window.crypto || {}).getRandomValues ? crypto.getRandomValues(b) : b.forEach((_, i) => { b[i] = Math.floor(Math.random() * 4e9); }); $n("nmMdp").value = Array.prototype.map.call(b, (x) => a[x % a.length]).join("") + "#7"; };
+  $n("nmAnnuler").onclick = () => voile.remove();
+  const erreurForm = (m) => { const z = $n("nmErr"); z.textContent = m; z.style.display = ""; };
+  $n("nmCreer").onclick = async () => {
+    const pos = profil() === "pos";
+    const id = $n("nmId").value.trim(), nom = $n("nmNom").value.trim(), adminUser = $n("nmUser").value.trim(), adminPassword = $n("nmMdp").value;
+    if (!id || !nom || !adminUser || !adminPassword) return erreurForm(t("nmErrChamps"));
+    if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(id)) return erreurForm(t("nmErrId"));
+    if (adminPassword.length < 6) return erreurForm(t("nmErrMdp"));
+    const type = pos ? "catalogue" : $n("nmType").value;
+    const moduleSecondaire = pos ? "" : $n("nmVolets").value.trim();
+    if (moduleSecondaire && moduleSecondaire.split(",").map((x) => x.trim()).indexOf(type) !== -1) return erreurForm(t("alertModuleSecondaireIdentique"));
+    const corps = { id, nom, type, adminUser, adminPassword };
+    if (pos) { corps.profil = "pos"; corps.options = { optionRestauration: $n("nmOptResto").checked, optionClientsCredit: $n("nmOptCredit").checked, optionHorsLigne: $n("nmOptHL").checked }; }
+    else { corps.phoneNumberId = $n("nmPhone").value.trim() || null; if (moduleSecondaire) corps.moduleSecondaire = moduleSecondaire; }
+    $n("nmCreer").disabled = true;
+    try { await api("/api/marchands", { method: "POST", body: JSON.stringify(corps) }); }
+    catch (e) { $n("nmCreer").disabled = false; return erreurForm(t("erreurPrefixe") + e.message); }
+    const base = location.origin, accesTexte = [t("nmUrlAdmin") + " : " + base + "/admin", pos ? t("nmUrlCaisse") + " : " + base + "/caisse" : null, t("nmUtilisateur") + " : " + adminUser, t("nmMotDePasse") + " : " + adminPassword].filter(Boolean).join("\n");
+    $n("nmCorps").innerHTML = "<p style='font-weight:700;color:#166534;'>" + esc(t("nmCree")) + " : " + esc(nom) + "</p><p>" + esc(t("nmACommuniquer")) + "</p>" +
+      "<pre id='nmAcces' style='background:#f4f6f8;padding:10px;border-radius:8px;white-space:pre-wrap;user-select:all;'>" + esc(accesTexte) + "</pre>" +
+      "<p class='raison'>" + esc(pos ? t("nmSuitePos") : t("nmSuiteStd")) + "</p>" +
+      "<div style='display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;'><button type='button' id='nmCopier'>" + esc(t("nmCopier")) + "</button><button type='button' id='nmOuvrir' class='principal'>" + esc(t("nmOuvrir")) + "</button></div>";
+    $n("nmCopier").onclick = async () => { try { await navigator.clipboard.writeText(accesTexte); $n("nmCopier").textContent = t("nmCopie"); } catch (e) { const r = document.createRange(); r.selectNodeContents($n("nmAcces")); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); } };
+    $n("nmOuvrir").onclick = async () => { voile.remove(); await demarrer(id); };
+  };
+  $n("nmNom").focus();
+}
 
 // Filigrane du logo /admin (29 septembre 2026) : reprend le logo du marchand actif en tres faible
 // opacite, en arriere-plan de la zone de contenu (#contenuOnglet) - donc visible sur TOUS les onglets sans
@@ -3431,6 +3578,8 @@ function choisirMarchand(id) {
 function sourceFacturationAdmin() {
   return marchandActif.sourceFacturation || (marchandActif.optionFacturationIzyfacture ? "izyfacture" : "aucune");
 }
+// Etape 87 : mode « Caisse seule » (point de vente sans WhatsApp), debloque par le seul super-administrateur : masque les volets WhatsApp.
+function caisseSeuleAdmin() { return !!marchandActif && marchandActif.optionCaisseSeule === true; }
 function colonneFactureActive() { return sourceFacturationAdmin() !== "aucune"; }
 // Roles "facturation" (ecriture) et "comptable" (lecture + export) : n'ont de sens que si le module
 // integre est (ou a ete) utilise par ce marchand, sinon on ne les propose meme pas.
@@ -3507,7 +3656,7 @@ function rolesDisponiblesBase() {
     ["rapports", t("roleRapports")],
     ["inventaire", t("roleInventaire")],
     ["parametres", t("roleParametres")]
-  ].concat(marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : [], marchandActif.optionEnseigne ? [["preparation", t("rolePreparation")]] : []);
+  ].concat(marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : [], marchandActif.optionEnseigne ? [["preparation", t("rolePreparation")]] : []).filter((r) => !(caisseSeuleAdmin() && r[0] === "conversations"));
 }
 
 function construireOnglets() {
@@ -3523,9 +3672,10 @@ function construireOnglets() {
   // routeur, Conversations regroupees, Employes, Journal, Mon compte).
   const ongletsCatalogue = () => [
     ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue", "catalogue"],
-    ["commandes", t("ongletCommandes"), renderCommandes, "commandes", "catalogue"],
+    ["commandes", t(caisseSeuleAdmin() ? "ongletVentes" : "ongletCommandes"), renderCommandes, "commandes", "catalogue"],
     marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse", "catalogue"] : null,
     marchandActif.optionCaissePos ? ["rapportcaisse", t("ongletRapportCaisse"), renderRapportCaisse, ["caisse", "rapports"], "catalogue"] : null,
+    marchandActif.optionCaissePos && marchandActif.optionClientsCredit ? ["clients", t("ongletClients"), renderClients, "caisse", "catalogue"] : null,
     marchandActif.optionVenteGros ? ["gros", t("ongletVenteGros"), renderVenteGros, "gestion", "catalogue"] : null,
     // Etape 84 : volet enseigne (option payante superadmin) - onglets absents tant que l'option est fermee.
     marchandActif.optionEnseigne ? ["magasins", t("ongletMagasins"), renderEnsMagasins, "gestion", "catalogue"] : null,
@@ -3617,13 +3767,14 @@ function construireOnglets() {
     : [
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
         ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue"],
-        ["commandes", t("ongletCommandes"), renderCommandes, "commandes"],
+        ["commandes", t(caisseSeuleAdmin() ? "ongletVentes" : "ongletCommandes"), renderCommandes, "commandes"],
         // "Caisse" (29 septembre 2026, option payante superadmin "optionCaissePos") : cet onglet entier
         // n'existe meme pas dans le tableau (pas seulement filtre par role) tant que l'option n'est pas
         // debloquee - invisible pour TOUT LE MONDE, y compris le proprietaire du marchand, contrairement
         // aux autres onglets ci-dessous qui ne dependent que du role de l'utilisateur connecte.
         marchandActif.optionCaissePos ? ["caisse", t("ongletCaisse"), renderCaisse, "caisse"] : null,
         marchandActif.optionCaissePos ? ["rapportcaisse", t("ongletRapportCaisse"), renderRapportCaisse, ["caisse", "rapports"]] : null,
+        marchandActif.optionCaissePos && marchandActif.optionClientsCredit ? ["clients", t("ongletClients"), renderClients, "caisse"] : null,
         // Etape 78 : « Vente en gros » (option payante superadmin) - onglet reserve au proprietaire / super-administrateur ("gestion").
         marchandActif.optionVenteGros ? ["gros", t("ongletVenteGros"), renderVenteGros, "gestion"] : null,
         // Etape 84 : volet enseigne (option payante superadmin) - onglets absents tant que l'option est fermee.
@@ -3631,10 +3782,10 @@ function construireOnglets() {
         marchandActif.optionEnseigne ? ["preparation", t("ongletPreparation"), renderEnsPreparation, "preparation"] : null,
         marchandActif.optionEnseigne ? ["fidelite", t("ongletFidelite"), renderEnsFidelite, "gestion"] : null,
         marchandActif.optionEnseigne ? ["direction", t("ongletDirection"), renderEnsDirection, "rapports"] : null,
-        ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
+        caisseSeuleAdmin() ? null : ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", t("ongletRapports"), renderRapports, "rapports"],
         ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire"],
-        ["conversations", t("ongletConversations"), renderConversations, "conversations"],
+        caisseSeuleAdmin() ? null : ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
         marchandActif.facturationInterneVisible ? ["facturation", t("ongletFacturation"), renderFacturation, ["facturation", "comptable"]] : null,
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
@@ -3643,7 +3794,7 @@ function construireOnglets() {
       ].filter(Boolean);
 
   // Etape 80 : onglet « Consommation Meta » - super-administrateur UNIQUEMENT (absent du tableau pour tout autre role).
-  if (moi && moi.role === "superadmin") {
+  if (moi && moi.role === "superadmin" && !caisseSeuleAdmin()) { // Etape 92 : la consommation Meta (WhatsApp) n'a aucun sens pour un point de vente seul
     const iCompte = onglets.findIndex((o) => o[0] === "compte");
     const ongletConso = ["consometa", t("ongletConsoMeta"), renderConsoMeta, null].concat(hybride ? [null] : []);
     onglets.splice(iCompte < 0 ? onglets.length : iCompte, 0, ongletConso);
@@ -3661,7 +3812,7 @@ function construireOnglets() {
   // Etape 64 : marchand HYBRIDE = onglets regroupes (Tableau de bord, Produits, Rendez-vous, Echanges, Administration).
   // Les boutons d'onglet restent TOUS dans le DOM (allerVersOnglet() et les tuiles du Tableau de bord continuent de
   // fonctionner) ; seuls ceux du groupe actif sont affiches. Marchand a un seul volet : rien n'est regroupe.
-  const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", gros: "produits", magasins: "produits", preparation: "produits", fidelite: "produits", direction: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
+  const GROUPE_DE = { dashboard: "dashboard", catalogue: "produits", commandes: "produits", caisse: "produits", rapportcaisse: "produits", clients: "produits", gros: "produits", magasins: "produits", preparation: "produits", fidelite: "produits", direction: "produits", rapports: "produits", inventaire: "produits", parametres: "produits",
     services: "rdv", rendezvous: "rdv", parametresService: "rdv", chambres: "hebergement", sejours: "hebergement", calendrier: "hebergement", parametresHeb: "hebergement", lignes: "transport", departs: "transport", billets: "transport", manifeste: "transport", parametresTrp: "transport", simulateur: "echanges", conversations: "echanges", facturation: "admin", employes: "admin", journal: "admin", compte: "admin" };
   const LIBELLE_GROUPE = { dashboard: t("ongletTableauDeBord"), produits: t("groupeProduits"), rdv: t("groupeRdv"), hebergement: t("groupeHebergement"), transport: t("groupeTransport"), echanges: t("groupeEchanges"), admin: t("groupeAdmin") };
   const barreGroupes = document.getElementById("barreGroupes");
@@ -3812,7 +3963,9 @@ function articleCorrespond(p, texte) {
   if (!cible) return true;
   if (normaliserRecherche(p.nom).indexOf(cible) !== -1) return true;
   if (normaliserRecherche(p.cat || "").indexOf(cible) !== -1) return true;
+  if (normaliserRecherche(p.reference || "").indexOf(cible) !== -1) return true; // Etape 87
   return (p.variantes || []).some((v) =>
+    normaliserRecherche(v.codeBarres || "").indexOf(cible) !== -1 ||
     normaliserRecherche(v.couleur || "").indexOf(cible) !== -1 ||
     normaliserRecherche(v.taille || "").indexOf(cible) !== -1
   );
@@ -4018,6 +4171,7 @@ async function renderCatalogue() {
   // pour les instantanés d'inventaire plus bas dans ce fichier. Filet de securite cote serveur egalement
   // (voir PUT /api/:id/catalogue) pour un appel direct hors interface.
   const estGestionnaireCatalogue = moi.role === "marchand" || moi.role === "superadmin";
+  const coutsVisibles = marchandActif.optionClientsCredit === true && estGestionnaireCatalogue; // Etape 90 : prix d'achat (marge) - proprietaire seul
 
   // La photo, elle, s'enregistre immediatement (upload direct vers le serveur), contrairement au reste
   // du catalogue qui reste local tant que "Enregistrer le catalogue" n'est pas cliqué — d'où la nécessité
@@ -4030,7 +4184,7 @@ async function renderCatalogue() {
     return "<div class='bloc-photos'>" +
       (photos.length ? "<div class='miniatures-photos'>" + photos.map((url) =>
         "<div class='miniature'><img src=\"" + esc(url) + "\" alt='' />" + (estGestionnaireCatalogue ? "<button data-suppr-photo='" + pi + ":" + esc(url) + "' class='danger'>×</button>" : "") + "</div>"
-      ).join("") + "</div>" : "<p class='raison'>" + t("msgAucunePhoto") + "</p>") +
+      ).join("") + "</div>" : (caisseSeuleAdmin() ? "" : "<p class='raison'>" + t("msgAucunePhoto") + "</p>")) +
       "<input type='file' accept='image/png,image/jpeg,image/webp' data-fichier-photo='" + pi + "' /> " +
       "<button data-ajouter-photo='" + pi + "'>" + t("btnAjouterPhoto") + "</button>" +
       "</div>";
@@ -4066,11 +4220,11 @@ async function renderCatalogue() {
       (estGestionnaireCatalogue ? "" : "<p class='raison' id='noteEmployeSuppression'>" + t("noteEmployeSuppression") + "</p>") +
       // Panneau "Clients en attente de réassort" EN HAUT de l'onglet (demande du 5 octobre 2026) : c'est un
       // outil de vente/marketing, il doit etre visible au premier coup d'oeil avant la liste des articles.
-      "<div class='bloc-liste-attente' id='blocListeAttente'>" +
+      (caisseSeuleAdmin() ? "" : "<div class='bloc-liste-attente' id='blocListeAttente'>" +
         "<h3>" + t("titreListeAttente") + " <span id='badgeAttenteCompte' class='badge-attente-compte' style='display:none;'></span></h3>" +
         "<p class='raison'>" + t("noteListeAttente") + "</p>" +
         "<div id='zoneListeAttente'></div>" +
-      "</div>" +
+      "</div>") +
       (local.length
         ? "<div style='display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;'>" +
             "<input id='champRechercheArticle' type='search' value=\"" + esc(catalogueTexteRecherche) + "\" placeholder=\"" + esc(t("placeholderRechercheArticle")) + "\" style='flex:1;min-width:220px;max-width:380px;' />" +
@@ -4086,6 +4240,15 @@ async function renderCatalogue() {
             "<input data-p='" + pi + "' data-champ='cat' value=\"" + esc(p.cat || "") + "\" placeholder=\"" + esc(t("placeholderCategorie")) + "\" />" +
             (estGestionnaireCatalogue ? "<button data-suppr-produit='" + pi + "' class='danger'>" + t("btnSupprimerArticle") + "</button>" : "") +
           "</div>" +
+          // Etape 87 : champs facultatifs de la caisse (reference, unite de vente, vente decimale) - visibles seulement avec l'option Caisse POS.
+          (marchandActif.optionCaissePos
+            ? "<div class='ligne-caisse-produit' style='display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:6px 0 10px;'>" +
+                "<input data-p='" + pi + "' data-champ='reference' value=\"" + esc(p.reference || "") + "\" placeholder=\"" + esc(t("placeholderReference")) + "\" style='max-width:200px;' />" +
+                "<label>" + t("labelUnite") + " <select data-unite='" + pi + "'>" + ["piece", "kg", "g", "l", "m"].map((u) => "<option value='" + u + "'" + ((p.unite || "piece") === u ? " selected" : "") + ">" + t("unite_" + u) + "</option>").join("") + "</select></label>" +
+                "<label><input type='checkbox' data-decimale='" + pi + "'" + (p.venteDecimale ? " checked" : "") + " /> " + t("labelVenteDecimale") + "</label>" +
+              "</div>" +
+              (p.venteDecimale ? "<p class='raison'>" + t("noteVenteDecimale") + "</p>" : "")
+            : "") +
           (marchandActif.optionStockIllimite
             ? "<label style='display:inline-block;margin-bottom:8px;'>" +
                 "<input type='checkbox' data-illimite='" + pi + "'" + (p.stockIllimite ? " checked" : "") + " /> " + t("labelStockIllimite") +
@@ -4093,15 +4256,17 @@ async function renderCatalogue() {
               "<p class='raison'>" + t("noteStockIllimite") + "</p>"
             : "") +
           rendreBlocPhotos(p, pi, catalogue.some((c) => c.id === p.id)) +
-          "<table class='table-variantes'><tr><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadPrixFcfa") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadStockVirtuel") + "</th><th>" + t("theadSeuilAlerte") + "</th><th></th></tr>" +
+          "<table class='table-variantes'><tr><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadPrixFcfa") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadStockVirtuel") + "</th><th>" + t("theadSeuilAlerte") + "</th>" + (marchandActif.optionCaissePos ? "<th>" + t("theadCodeBarres") + "</th>" : "") + (coutsVisibles ? "<th>" + t("theadPrixAchat") + "</th>" : "") + "<th></th></tr>" +
           p.variantes.map((v, vi) =>
             "<tr>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='couleur' value=\"" + esc(v.couleur) + "\" /></td>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='taille' value=\"" + esc(v.taille) + "\" /></td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='prix' value='" + v.prix + "' /></td>" +
-              "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='stockReel' value='" + v.stockReel + "' class=\"" + (!p.stockIllimite && v.stockReel <= (v.seuilAlerte || 0) ? "alerte-stock" : "") + "\" /></td>" +
+              "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='stockReel' step='" + (p.venteDecimale ? "any" : "1") + "' value='" + v.stockReel + "' class=\"" + (!p.stockIllimite && v.stockReel <= (v.seuilAlerte || 0) ? "alerte-stock" : "") + "\" /></td>" +
               "<td title=\"" + esc(t("titleStockVirtuel")) + "\">" + (p.stockIllimite ? "∞ " + t("stockIllimiteSymbole") : (v.stockVirtuel != null ? v.stockVirtuel : v.stockReel)) + "</td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='seuilAlerte' value='" + (v.seuilAlerte || 0) + "' /></td>" +
+              (marchandActif.optionCaissePos ? "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='codeBarres' value=\"" + esc(v.codeBarres || "") + "\" placeholder=\"" + esc(t("placeholderCodeBarres")) + "\" style='min-width:0;width:100%;' /></td>" : "") +
+              (coutsVisibles ? "<td><input type='number' min='0' step='any' data-p='" + pi + "' data-v='" + vi + "' data-champ='prixAchat' value='" + (v.prixAchat != null ? v.prixAchat : "") + "' title=\"" + esc(v.prixAchat != null && v.prix > 0 ? t("titreMargeUnitaire", { m: formaterNb(v.prix - v.prixAchat), p: Math.round((v.prix - v.prixAchat) * 100 / v.prix) }) : "") + "\" style='min-width:0;width:100%;' /></td>" : "") +
               "<td>" + (estGestionnaireCatalogue ? "<button data-suppr-variante='" + pi + ":" + vi + "' class='danger'>×</button>" : "") + "</td>" +
             "</tr>"
           ).join("") +
@@ -4154,13 +4319,27 @@ async function renderCatalogue() {
         redraw();
       });
     });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-unite]"), (sel) => {
+      sel.addEventListener("change", () => {
+        const a = local[Number(sel.dataset.unite)];
+        if (sel.value === "piece") delete a.unite; else a.unite = sel.value;
+      });
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-decimale]"), (chk) => {
+      chk.addEventListener("change", () => {
+        const a = local[Number(chk.dataset.decimale)];
+        if (chk.checked) a.venteDecimale = true; else delete a.venteDecimale;
+        redraw();
+      });
+    });
     Array.prototype.forEach.call(zone.querySelectorAll("input[data-champ]"), (inp) => {
       inp.addEventListener("input", () => {
         const pi = Number(inp.dataset.p);
         const champ = inp.dataset.champ;
         if (inp.dataset.v !== undefined) {
           const vi = Number(inp.dataset.v);
-          local[pi].variantes[vi][champ] = (champ === "prix" || champ === "stockReel" || champ === "seuilAlerte") ? Number(inp.value) : inp.value;
+          if (champ === "prixAchat") { if (inp.value === "") delete local[pi].variantes[vi].prixAchat; else local[pi].variantes[vi].prixAchat = Number(inp.value); }
+          else local[pi].variantes[vi][champ] = (champ === "prix" || champ === "stockReel" || champ === "seuilAlerte") ? Number(inp.value) : inp.value;
         } else {
           local[pi][champ] = inp.value;
         }
@@ -4336,6 +4515,8 @@ let commandesFiltrePlageAu = new Date().toISOString().slice(0, 10);
 // si le caissier consulte par erreur un autre onglet puis revient sur Caisse.
 let caissePanier = []; // [{productId, produit, couleur, taille, prixUnitaire, quantite, stockVirtuel}]
 let caisseTexteRecherche = "";
+let caisseRedonnerFocus = false; // Etape 87 : apres un scan de code-barres, le champ de recherche reprend le focus (scan suivant)
+function uniteCourte(u) { return u && u !== "piece" ? u : ""; }
 let caisseModePaiement = "especes";
 // Reference de paiement (ex. code de confirmation Orange Money/MTN MoMo reçu par le MARCHAND sur son propre
 // telephone, numero de cheque...) - obligatoire pour tout mode autre que "especes" (29 sept 2026). Remise a
@@ -4409,7 +4590,7 @@ async function renderCaisse() {
   const toutesLesLignes = [];
   catalogue.forEach((p) => {
     (p.variantes || []).forEach((v) => {
-      toutesLesLignes.push({ productId: p.id, produit: p.nom, cat: p.cat || "", couleur: v.couleur, taille: v.taille, prix: v.prix, stockVirtuel: v.stockVirtuel, seuilAlerte: Number(v.seuilAlerte) || 0 });
+      toutesLesLignes.push({ productId: p.id, produit: p.nom, cat: p.cat || "", reference: p.reference || "", codeBarres: v.codeBarres || "", unite: p.unite || "piece", decimal: p.venteDecimale === true, couleur: v.couleur, taille: v.taille, prix: v.prix, stockVirtuel: v.stockVirtuel, seuilAlerte: Number(v.seuilAlerte) || 0 });
     });
   });
 
@@ -4417,6 +4598,8 @@ async function renderCaisse() {
     const cible = normaliserRecherche(texte);
     if (!cible) return true;
     return normaliserRecherche(l.produit).indexOf(cible) !== -1 ||
+      normaliserRecherche(l.reference).indexOf(cible) !== -1 ||
+      normaliserRecherche(l.codeBarres).indexOf(cible) !== -1 ||
       normaliserRecherche(l.cat).indexOf(cible) !== -1 ||
       normaliserRecherche(l.couleur).indexOf(cible) !== -1 ||
       normaliserRecherche(l.taille).indexOf(cible) !== -1;
@@ -4461,9 +4644,40 @@ async function renderCaisse() {
   function ajouterAuPanier(l) {
     const existante = trouverLignePanier(l.productId, l.couleur, l.taille);
     const dejaAu = existante ? existante.quantite : 0;
-    if (dejaAu + 1 > l.stockVirtuel) { alert(t("caisseStockInsuffisant", { n: l.stockVirtuel })); return; }
-    if (existante) existante.quantite += 1;
-    else caissePanier.push({ productId: l.productId, produit: l.produit, couleur: l.couleur, taille: l.taille, prixUnitaire: l.prix, quantite: 1, stockVirtuel: l.stockVirtuel, remVal: "", remType: "pourcent" });
+    // Etape 87 : un article decimal (au kilo...) entre au panier avec 1 unite (ou tout le stock s'il en reste moins), quantite ensuite modifiable.
+    const pas = l.decimal ? Math.min(1, l.stockVirtuel) : 1;
+    if (Math.round((dejaAu + pas) * 1000) / 1000 > l.stockVirtuel) { alert(t("caisseStockInsuffisant", { n: l.stockVirtuel })); return; }
+    if (existante) existante.quantite = Math.round((existante.quantite + pas) * 1000) / 1000;
+    else caissePanier.push({ productId: l.productId, produit: l.produit, couleur: l.couleur, taille: l.taille, prixUnitaire: l.prix, quantite: pas, stockVirtuel: l.stockVirtuel, decimal: l.decimal, unite: l.unite, remVal: "", remType: "pourcent" });
+    changerPanier();
+  }
+
+  // Etape 87 : scan de code-barres / saisie d'une reference exacte dans le champ de recherche, validee par Entree (les lecteurs USB
+  // « tapent » le code puis Entree). Seule une correspondance EXACTE ajoute l'article ; une recherche partielle ne fait que filtrer.
+  function traiterScan(saisie) {
+    const c = String(saisie || "").trim().toLowerCase();
+    if (!c) return false;
+    let trouvees = toutesLesLignes.filter((l) => l.codeBarres && l.codeBarres.toLowerCase() === c);
+    if (!trouvees.length) {
+      const parRef = toutesLesLignes.filter((l) => l.reference && l.reference.toLowerCase() === c);
+      if (parRef.length === 1) trouvees = parRef;
+    }
+    if (trouvees.length !== 1) return false;
+    const l = trouvees[0];
+    caisseTexteRecherche = "";
+    caisseRedonnerFocus = true;
+    if (l.stockVirtuel <= 0) { alert(t("caisseEpuiseMessage")); caisseRedonnerFocus = true; redraw(); return true; }
+    ajouterAuPanier(l);
+    return true;
+  }
+
+  function changerQuantiteDecimale(idx, valeurBrute) {
+    const it = caissePanier[idx];
+    if (!it) return;
+    const q = Math.round(Number(String(valeurBrute).replace(",", ".")) * 1000) / 1000;
+    if (!(q >= 0.001)) { redraw(); return; }
+    if (q > it.stockVirtuel) { alert(t("caisseStockInsuffisant", { n: it.stockVirtuel })); redraw(); return; }
+    it.quantite = q;
     changerPanier();
   }
 
@@ -4480,7 +4694,7 @@ async function renderCaisse() {
   const remiseDe = (it) => specRemiseSaisie(it.remVal, it.remType);
   const remiseGlobaleSaisie = () => specRemiseSaisie(caisseRemiseGlobale.valeur, caisseRemiseGlobale.type);
   function apercuPanier() {
-    return apercuRemises(caissePanier.map((it) => ({ brut: it.prixUnitaire * it.quantite, remise: peutAccorderRemises() ? remiseDe(it) : null })), peutAccorderRemises() ? remiseGlobaleSaisie() : null);
+    return apercuRemises(caissePanier.map((it) => ({ brut: Math.round(it.prixUnitaire * it.quantite), remise: peutAccorderRemises() ? remiseDe(it) : null })), peutAccorderRemises() ? remiseGlobaleSaisie() : null);
   }
   function totalPanier() { return apercuPanier().total; }
   // Met a jour les montants affiches SANS reconstruire le DOM (sinon le champ en cours de saisie perd le focus).
@@ -4488,7 +4702,7 @@ async function renderCaisse() {
     const a = apercuPanier();
     caissePanier.forEach((it, i) => {
       const c = zone.querySelector("[data-caisse-ligne-total='" + i + "']");
-      const brut = it.prixUnitaire * it.quantite;
+      const brut = Math.round(it.prixUnitaire * it.quantite);
       if (c) c.textContent = (brut - remiseLocale(brut, peutAccorderRemises() ? remiseDe(it) : null)).toLocaleString(localeCourante()) + " FCFA";
     });
     const h = document.getElementById("caisseTotalNet");
@@ -4516,7 +4730,7 @@ async function renderCaisse() {
     zone.innerHTML =
       "<div style='background:#eef7ee; border:1px solid #bfe3bf; border-radius:8px; padding:10px 14px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;'>" +
         "<span>" + t("caisseSessionOuverteDepuis", { heure: esc(new Date(sessionActive.dateOuverture).toLocaleString(localeCourante())), caissier: esc(sessionActive.caissier || ""), fond: sessionActive.fondInitial.toLocaleString(localeCourante()) }) + "</span>" +
-        "<button id='btnFermerCaisse' class='danger'>" + t("btnFermerCaisse") + "</button>" +
+        "<span><a href='/caisse' target='_blank' rel='noopener' style='margin-right:10px;'>" + t("lienCaissePleinEcran") + "</a>" + (peutAccorderRemises() ? "<button id='btnRetourCaisse'>" + t("btnRetourVenteCaisse") + "</button> " : "") + "<button id='btnFermerCaisse' class='danger'>" + t("btnFermerCaisse") + "</button></span>" +
       "</div>" +
       "<h2>" + t("ongletCaisse") + "</h2>" +
       "<div style='display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start;'>" +
@@ -4528,8 +4742,8 @@ async function renderCaisse() {
               const stockFaible = !epuise && l.stockVirtuel <= l.seuilAlerte;
               const visible = ligneCorrespond(l, caisseTexteRecherche);
               return "<button data-ligne-caisse='" + idx + "'" + (epuise ? " disabled" : "") + (epuise ? " title=\"" + esc(t("caisseEpuiseMessage")) + "\"" : "") + " class=\"" + (stockFaible ? "alerte-stock" : "") + "\" style='display:" + (visible ? "" : "none") + "; width:100%; text-align:left; padding:10px 12px; border:none; border-bottom:1px solid #eee; background:" + (epuise ? "#fdecec" : "#fff") + "; cursor:" + (epuise ? "not-allowed" : "pointer") + ";'>" +
-                "<strong>" + esc(l.produit) + "</strong> — " + esc(l.couleur) + " " + esc(l.taille) +
-                "<span style='float:right; color:" + (epuise ? "#b3261e" : "#666") + ";'>" + l.prix.toLocaleString(localeCourante()) + " FCFA · " + (epuise ? t("caisseEpuise") : t("caisseStockDisponible", { n: l.stockVirtuel })) + "</span>" +
+                "<strong>" + esc(l.produit) + "</strong> — " + esc(l.couleur) + " " + esc(l.taille) + (l.reference ? " <span class='raison'>[" + esc(l.reference) + "]</span>" : "") +
+                "<span style='float:right; color:" + (epuise ? "#b3261e" : "#666") + ";'>" + l.prix.toLocaleString(localeCourante()) + " FCFA" + (uniteCourte(l.unite) ? "/" + esc(uniteCourte(l.unite)) : "") + " · " + (epuise ? t("caisseEpuise") : t("caisseStockDisponible", { n: l.stockVirtuel }) + (uniteCourte(l.unite) ? " " + esc(uniteCourte(l.unite)) : "")) + "</span>" +
               "</button>";
             }).join("") : "") +
           "</div>" +
@@ -4546,8 +4760,10 @@ async function renderCaisse() {
                     (peutAccorderRemises()
                       ? "<div style='margin-top:4px;white-space:nowrap;'><input type='number' min='0' step='any' data-caisse-rem-val='" + i + "' value=\"" + esc(String(it.remVal || "")) + "\" placeholder=\"" + esc(t("remiseLigneLabel")) + "\" style='width:80px;' /> <select data-caisse-rem-type='" + i + "'>" + optionsTypeRemise(it.remType) + "</select></div>"
                       : "") + "</td>" +
-                  "<td style='white-space:nowrap;'><button data-caisse-moins='" + i + "'>−</button> " + it.quantite + " <button data-caisse-plus='" + i + "'>+</button></td>" +
-                  "<td data-caisse-ligne-total='" + i + "'>" + (it.prixUnitaire * it.quantite - remiseLocale(it.prixUnitaire * it.quantite, peutAccorderRemises() ? remiseDe(it) : null)).toLocaleString(localeCourante()) + " FCFA</td>" +
+                  (it.decimal
+                    ? "<td style='white-space:nowrap;'><input type='number' min='0.001' step='any' data-caisse-qte='" + i + "' value='" + it.quantite + "' style='width:84px;' /> " + esc(uniteCourte(it.unite)) + "</td>"
+                    : "<td style='white-space:nowrap;'><button data-caisse-moins='" + i + "'>−</button> " + it.quantite + " <button data-caisse-plus='" + i + "'>+</button></td>") +
+                  "<td data-caisse-ligne-total='" + i + "'>" + (Math.round(it.prixUnitaire * it.quantite) - remiseLocale(Math.round(it.prixUnitaire * it.quantite), peutAccorderRemises() ? remiseDe(it) : null)).toLocaleString(localeCourante()) + " FCFA</td>" +
                   "<td><button data-caisse-retirer='" + i + "' class='danger'>×</button></td>" +
                 "</tr>"
               ).join("") +
@@ -4586,6 +4802,9 @@ async function renderCaisse() {
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-plus]"), (btn) => {
       btn.onclick = () => changerQuantite(Number(btn.dataset.caissePlus), 1);
+    });
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-qte]"), (inp) => {
+      inp.addEventListener("change", () => changerQuantiteDecimale(Number(inp.dataset.caisseQte), inp.value));
     });
     Array.prototype.forEach.call(zone.querySelectorAll("[data-caisse-moins]"), (btn) => {
       btn.onclick = () => changerQuantite(Number(btn.dataset.caisseMoins), -1);
@@ -4634,12 +4853,23 @@ async function renderCaisse() {
     const btnGrosRetirer = document.getElementById("btnGrosRetirer");
     if (btnGrosRetirer) btnGrosRetirer.onclick = () => { caisseGrossiste = null; changerPanier(); };
     document.getElementById("btnFermerCaisse").onclick = () => afficherFermetureCaisse(configCaisse, sessionActive);
+    const btnRetourCaisse = document.getElementById("btnRetourCaisse");
+    if (btnRetourCaisse) btnRetourCaisse.onclick = () => afficherRetourCaisse();
     const champRecherche = document.getElementById("champRechercheCaisse");
     if (champRecherche) {
       champRecherche.addEventListener("input", () => {
         caisseTexteRecherche = champRecherche.value;
         appliquerFiltreRechercheCaisse();
       });
+      champRecherche.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        if (!traiterScan(champRecherche.value)) {
+          const aucune = toutesLesLignes.every((l) => !ligneCorrespond(l, champRecherche.value));
+          if (aucune && champRecherche.value.trim()) alert(t("caisseCodeInconnu"));
+        }
+      });
+      if (caisseRedonnerFocus) { caisseRedonnerFocus = false; champRecherche.focus(); }
     }
     const btnEncaisser = document.getElementById("btnEncaisser");
     if (btnEncaisser) {
@@ -4935,6 +5165,98 @@ async function renderVenteGros() {
 // Ecran de confirmation apres un encaissement reussi - remplace tout le contenu de l'onglet (rien d'autre
 // a l'ecran) pour que "Imprimer le reçu" (window.print(), aucune integration materielle ESC-POS/Bluetooth
 // necessaire pour cette V1) imprime bien UNIQUEMENT le reçu, pas le reste de l'interface /admin.
+// Etape 87 : ecran « Retour / remboursement » (proprietaire, super-administrateur, employe avec le droit « remises » ; le serveur verifie).
+// On retrouve la vente par son numero, on choisit les quantites rendues, le mode de remboursement et le motif. Les articles repartent
+// en stock et le remboursement en especes sort du tiroir de la session ouverte. La vente d'origine n'est jamais modifiee.
+function afficherRetourCaisse() {
+  const zone = document.getElementById("contenuOnglet");
+  const f = (n) => (n || 0).toLocaleString(localeCourante()) + " FCFA";
+  const deja = (o, idx) => { let q = 0; (o.retours || []).forEach((r) => (r.lignes || []).forEach((l) => { if (l.index === idx) q += Number(l.quantite) || 0; })); return Math.round(q * 1000) / 1000; };
+  zone.innerHTML =
+    "<h2>" + t("retourTitre") + "</h2><p class='raison'>" + t("retourNote") + "</p>" +
+    "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:center;'><input id='retourNumero' placeholder=\"" + esc(t("retourNumeroPlaceholder")) + "\" style='width:220px;' /> <button id='retourChercher' class='principal'>" + t("retourChercher") + "</button> <button id='retourAnnuler'>" + t("retourRetourCaisse") + "</button></div>" +
+    "<div id='retourZone' style='margin-top:14px;'></div>";
+  document.getElementById("retourAnnuler").onclick = () => renderCaisse();
+  async function chercher() {
+    const brut = document.getElementById("retourNumero").value;
+    const num = parseInt(String(brut).replace(/[^0-9]/g, ""), 10);
+    const rz = document.getElementById("retourZone");
+    if (!num) { rz.innerHTML = "<p class='erreur'>" + t("retourNumeroInvalide") + "</p>"; return; }
+    let o;
+    try { o = await api("/api/" + marchandActif.id + "/pos/vente/" + num); }
+    catch (e) { rz.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+    if (o.statut === "Annulée") { rz.innerHTML = "<p class='erreur'>" + t("retourVenteAnnulee") + "</p>"; return; }
+    let mode = "especes";
+    function dessiner() {
+      rz.innerHTML =
+        "<p><strong>POS-" + String(o.id).padStart(4, "0") + "</strong> — " + esc(new Date(o.dateISO).toLocaleString(localeCourante())) + " — " + f(o.prix) + " — " + esc(libellePaiementCaisse(o)) + "</p>" +
+        "<table class='table-donnees'><tr><th>" + t("theadArticles") + "</th><th>" + t("retourColVendue") + "</th><th>" + t("retourColDejaRendue") + "</th><th>" + t("retourColARendre") + "</th><th>" + t("retourColMontant") + "</th></tr>" +
+        (o.items || []).map((it, i) => {
+          const rest = Math.round(((Number(it.quantite) || 0) - deja(o, i)) * 1000) / 1000;
+          const u = it.unite ? " " + esc(it.unite) : "";
+          return "<tr><td>" + esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ")</td><td>" + it.quantite + u + "</td><td>" + deja(o, i) + u + "</td><td>" +
+            (rest > 0 ? "<input type='number' min='0' max='" + rest + "' step='" + (Number.isInteger(Number(it.quantite)) ? "1" : "any") + "' data-retour-qte='" + i + "' value='0' style='width:84px;' />" : "—") + "</td><td data-retour-montant='" + i + "'>0 FCFA</td></tr>";
+        }).join("") + "</table>" +
+        "<p><strong id='retourTotal'>" + t("retourTotalARembourser") + " 0 FCFA</strong></p>" +
+        "<label style='display:block;margin-top:8px;'>" + t("retourModeLabel") + "</label><div style='display:flex;gap:10px;flex-wrap:wrap;margin:6px 0;'>" +
+        ["especes", "om", "momo", "carte", "cheque"].map((m) => "<label style='border:1px solid " + (mode === m ? "#1e6fd9" : "#ccc") + ";border-radius:8px;padding:6px 12px;cursor:pointer;'><input type='radio' name='retourMode' value='" + m + "'" + (mode === m ? " checked" : "") + " style='margin-right:6px;' />" + t("caisseMode_" + m) + "</label>").join("") + "</div>" +
+        (mode !== "especes" ? "<label style='display:block;'>" + t("retourReferenceLabel") + "</label><input id='retourReference' style='width:100%;box-sizing:border-box;' />" : "") +
+        "<label style='display:block;margin-top:8px;'>" + t("retourMotifLabel") + "</label><input id='retourMotif' style='width:100%;box-sizing:border-box;' />" +
+        "<div style='margin-top:12px;'><button id='retourConfirmer' class='principal'>" + t("retourConfirmer") + "</button></div>";
+      const maj = () => {
+        let total = 0;
+        Array.prototype.forEach.call(rz.querySelectorAll("[data-retour-qte]"), (inp) => {
+          const i = Number(inp.dataset.retourQte), it = o.items[i];
+          const q = Math.max(0, Number(String(inp.value).replace(",", ".")) || 0);
+          const rest = Math.round(((Number(it.quantite) || 0) - deja(o, i)) * 1000) / 1000;
+          const m = q > 0 ? (Math.round((q + deja(o, i)) * 1000) / 1000 >= Number(it.quantite) ? Math.max(0, (it.prix || 0) - (o.retours || []).reduce((x, r) => x + (r.lignes || []).filter((l) => l.index === i).reduce((y, l) => y + (l.montant || 0), 0), 0)) : Math.round((it.prix || 0) * q / it.quantite)) : 0;
+          if (q > rest) { inp.style.borderColor = "#b3261e"; } else { inp.style.borderColor = ""; total += m; }
+          rz.querySelector("[data-retour-montant='" + i + "']").textContent = f(q > rest ? 0 : m);
+        });
+        document.getElementById("retourTotal").textContent = t("retourTotalARembourser") + " " + f(total);
+      };
+      Array.prototype.forEach.call(rz.querySelectorAll("[data-retour-qte]"), (inp) => inp.addEventListener("input", maj));
+      Array.prototype.forEach.call(rz.querySelectorAll("input[name='retourMode']"), (r) => { r.onchange = () => { mode = r.value; dessiner(); }; });
+      document.getElementById("retourConfirmer").onclick = async () => {
+        const lignes = [];
+        Array.prototype.forEach.call(rz.querySelectorAll("[data-retour-qte]"), (inp) => {
+          const q = Number(String(inp.value).replace(",", "."));
+          if (q > 0) lignes.push({ index: Number(inp.dataset.retourQte), quantite: q });
+        });
+        if (!lignes.length) { alert(t("retourAucuneLigne")); return; }
+        const motif = document.getElementById("retourMotif").value.trim();
+        if (!motif) { alert(t("retourMotifObligatoire")); return; }
+        const refEl = document.getElementById("retourReference");
+        if (mode !== "especes" && !(refEl && refEl.value.trim())) { alert(t("retourReferenceObligatoire")); return; }
+        const btn = document.getElementById("retourConfirmer");
+        btn.disabled = true;
+        try {
+          const rep = await api("/api/" + marchandActif.id + "/pos/vente/" + o.id + "/retour", { method: "POST", body: JSON.stringify({ lignes, modeRemboursement: mode, referenceRemboursement: refEl ? refEl.value.trim() : undefined, motif }) });
+          rz.innerHTML = "<div class='tuile' style='padding:14px;border-radius:8px;'><h3 style='margin-top:0;'>" + t("retourEnregistre") + "</h3><p>" + t("retourARendre", { montant: f(rep.retour.montant), mode: esc(t("caisseMode_" + rep.retour.modeRemboursement)) }) + "</p><p class='raison'>" + t("retourStockRemis") + "</p><button id='retourFin' class='principal'>" + t("retourRetourCaisse") + "</button></div>";
+          document.getElementById("retourFin").onclick = () => renderCaisse();
+        } catch (e) { alert(t("erreurPrefixe") + e.message); btn.disabled = false; }
+      };
+    }
+    dessiner();
+  }
+  document.getElementById("retourChercher").onclick = chercher;
+  document.getElementById("retourNumero").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); chercher(); } });
+}
+
+// Etape 88 : libelle du paiement d'une vente de caisse. Paiement mixte : « Paiement mixte : Espèces 3 000 + Orange Money 5 000 (réf.) ».
+function libellePaiementCaisse(o) {
+  // Etape 90 : part a credit (la dette reste a la charge du client) - entierement a credit ou « mixte » avec une part encaissee.
+  if (o && o.creance) {
+    const parts = (Array.isArray(o.paiements) ? o.paiements : []).map((p) => t("caisseMode_" + p.mode) + " " + (p.montant || 0).toLocaleString(localeCourante()) + (p.reference ? " (" + p.reference + ")" : ""));
+    parts.push(t("caisseMode_credit") + " " + (o.creance.montant || 0).toLocaleString(localeCourante()) + (o.clientNom ? " (" + o.clientNom + ")" : ""));
+    return parts.join(" + ");
+  }
+  if (o && o.modePaiement === "mixte" && Array.isArray(o.paiements)) {
+    return t("caisseMode_mixte") + " : " + o.paiements.map((p) => t("caisseMode_" + p.mode) + " " + (p.montant || 0).toLocaleString(localeCourante()) + (p.reference ? " (" + p.reference + ")" : "")).join(" + ");
+  }
+  return t("caisseMode_" + (o && o.modePaiement));
+}
+
 function afficherRecuCaisse(commande) {
   const zone = document.getElementById("contenuOnglet");
   const f = (n) => (n || 0).toLocaleString(localeCourante()) + " FCFA";
@@ -4951,12 +5273,13 @@ function afficherRecuCaisse(commande) {
         (commande.items || []).map((it) =>
           "<tr><td>" + esc(it.produit) + " (" + esc(it.couleur) + " " + esc(it.taille) + ")" +
             (it.remiseLigne > 0 ? "<br/><span class='raison'>" + esc(t("remiseSurLigne", { montant: it.remiseLigne.toLocaleString(localeCourante()) })) + "</span>" : "") +
-          "</td><td>" + it.quantite + "</td><td>" + f(it.prixBrut != null ? it.prixBrut : it.prix) + "</td></tr>"
+          "</td><td>" + it.quantite + (it.unite ? " " + esc(it.unite) : "") + "</td><td>" + f(it.prixBrut != null ? it.prixBrut : it.prix) + "</td></tr>"
         ).join("") +
       "</table>" +
       (rm ? "<p>" + t("remiseBrut") + " : " + f(commande.prixBrut) + "</p><p>" + esc(t("remiseSurRecu", { motif: rm.motif || "" })) + " : −" + f(rm.montant) + "</p>" : "") +
       "<h3>" + t("caisseTotalLabel") + " " + f(commande.prix) + "</h3>" +
-      "<p>" + t("caisseModePaiementLabel") + " : " + t("caisseMode_" + commande.modePaiement) + "</p>" +
+      "<p>" + t("caisseModePaiementLabel") + " : " + esc(libellePaiementCaisse(commande)) + "</p>" +
+      (commande.rendu > 0 ? "<p>" + t("caisseRecuMontantRecu") + " : " + (commande.montantRecu || 0).toLocaleString(localeCourante()) + " FCFA — " + t("caisseRecuRendu") + " : " + commande.rendu.toLocaleString(localeCourante()) + " FCFA</p>" : "") +
       (commande.referencePaiement ? "<p>" + t("caisseReferencePaiementLabel") + " : " + esc(commande.referencePaiement) + "</p>" : "") +
     "</div>" +
     "<div class='no-print' style='margin-top:16px;'>" +
@@ -5345,6 +5668,10 @@ async function renderCommandes() {
         "<td>" + (o.prix || 0).toLocaleString(localeCourante()) + " FCFA</td>" +
         "<td>" + (o.source === "pos"
           ? "<span style='background:#ece3fb; color:#5a3a9a; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeCaisse") + "</span>" +
+            (o.table ? "<div class='raison'>" + t("tableLabel") + " " + esc(o.table) + (o.serveur ? " · " + esc(o.serveur) : "") + "</div>" : "") +
+            (o.clientNom ? "<div class='raison'>" + esc(o.clientNom) + (o.creance ? " · <span style='color:#b42318'>" + esc(t("rcsTuileACredit")) + " " + formaterNb(o.creance.montant) + " FCFA</span>" : "") + "</div>" : "") +
+            (o.modePaiement === "mixte" ? "<div class='raison'>" + esc(libellePaiementCaisse(o)) + "</div>" : "") +
+            (o.horsLigne ? "<div class='raison' style='color:#b45309'>" + esc(t("badgeHorsLigne")) + (o.horsLigne.stockInsuffisant || o.horsLigne.ecartsPrix ? " · " + esc(t("rcsHLColEcart")) : "") + "</div>" : "") +
             (o.referencePaiement ? "<div class='raison'>" + t("caisseReferencePaiementLabel") + " : " + esc(o.referencePaiement) + "</div>" : "")
           : o.modeLivraison === "retrait"
           ? "<span style='background:#fff3cd; color:#7a5c00; padding:2px 8px; border-radius:10px; font-size:0.85em; white-space:nowrap;'>" + t("badgeRetrait") + "</span>"
@@ -5633,6 +5960,7 @@ async function renderParametresCatalogue() {
   const retrait = parametres.retrait || {};
   zone.innerHTML =
     "<h2>" + t("paramTitre") + "</h2>" +
+    (caisseSeuleAdmin() ? "" :
     "<h3>" + t("h3AccueilPerso") + "</h3>" +
     "<p style='color:#666; font-size:0.9em;'>" + t("descAccueilPerso") + "</p>" +
     "<label>" + t("labelAccueilPersoFr") + "</label>" +
@@ -5648,14 +5976,14 @@ async function renderParametresCatalogue() {
     "<label>" + t("labelAdresseBoutique") + "</label>" +
     "<input id='retraitAdresse' value=\"" + esc(retrait.adresse || "") + "\" placeholder=\"" + esc(t("placeholderAdresseBoutique")) + "\" />" +
     "<label>" + t("labelHorairesRetrait") + "</label>" +
-    "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder=\"" + esc(t("placeholderHorairesRetrait")) + "\" />" +
-    (marchandActif.optionNotificationsStatut ? blocNotifStatutHtml(parametres.notifStatut) : "") +
+    "<input id='retraitHoraires' value=\"" + esc(retrait.horaires || "") + "\" placeholder=\"" + esc(t("placeholderHorairesRetrait")) + "\" />") +
+    (marchandActif.optionNotificationsStatut && !caisseSeuleAdmin() ? blocNotifStatutHtml(parametres.notifStatut) : "") +
     (marchandActif.optionCaissePos ? blocCaisseParametresHtml(parametres.caisse) : "") +
     "<div><button id='btnSauverParams' class='principal'>" + t("enregistrer") + "</button></div>" +
     (izyfactureDebloquee ? blocIzyfactureHtml(izyfactureEtat) : "");
   document.getElementById("btnSauverParams").onclick = async () => {
     try {
-      const corps = {
+      const corps = caisseSeuleAdmin() ? {} : {
         messageAccueilSupplementaire: document.getElementById("accueilPerso").value,
         messageAccueilSupplementaireEn: document.getElementById("accueilPersoEn").value,
         autoConfirmMessage: document.getElementById("msgConfirm").value,
@@ -5665,7 +5993,7 @@ async function renderParametresCatalogue() {
           horaires: document.getElementById("retraitHoraires").value.trim()
         }
       };
-      if (marchandActif.optionNotificationsStatut) corps.notifStatut = lireNotifStatutFormulaire();
+      if (marchandActif.optionNotificationsStatut && !caisseSeuleAdmin()) corps.notifStatut = lireNotifStatutFormulaire();
       if (marchandActif.optionCaissePos) corps.caisse = lireCaisseParametresFormulaire();
       await api("/api/" + marchandActif.id + "/parametres", { method: "PUT", body: JSON.stringify(corps) });
       alert(t("alertParametresEnregistres"));
@@ -7544,6 +7872,9 @@ async function renderTableauDeBord() {
   // Marchand hybride (Etape 48) : un tableau de bord COMBINE (une section par volet, meme periode).
   const voletsDash = modulesAdmin();
   const hybrideDash = voletsDash.length > 1;
+  const posSeul = caisseSeuleAdmin() && !hybrideDash && voletsDash[0] === "catalogue"; // Etape 92 : tableau de bord de vente seule (rien sur WhatsApp)
+  let sessionDash = null;
+  if (posSeul) { try { sessionDash = await api("/api/" + marchandActif.id + "/caisse/session/active"); } catch (e) { sessionDash = null; } }
   const donneesDash = await Promise.all(voletsDash.map((v) =>
     api("/api/" + marchandActif.id + "/tableau-de-bord?periode=" + encodeURIComponent(dashboardPeriodeActuelle) + (hybrideDash ? "&volet=" + v : ""))
   ));
@@ -7582,9 +7913,9 @@ async function renderTableauDeBord() {
   function sectionDashboard(d, estCatalogue) {
   const maxSpark = Math.max(1, ...d.sparkline7j);
   let tuiles = "<div class='tuiles'>" +
-    tuile(estCatalogue ? "commandes" : "rendezvous", d.commandesPeriode, estCatalogue ? t("libelleCommandesPeriodeDash") : t("libelleRdvPeriodeDash")) +
-    tuile(estCatalogue ? "rapports" : "rendezvous", (d.caPeriode || 0).toLocaleString(localeCourante()) + " FCFA", t("libelleCaPeriodeDash")) +
-    tuile("conversations", d.conversationsEnAttente, t("libelleConvEnAttente"), d.conversationsEnAttente);
+    tuile(estCatalogue ? "commandes" : "rendezvous", d.commandesPeriode, estCatalogue ? t(posSeul ? "libelleVentesPeriodeDash" : "libelleCommandesPeriodeDash") : t("libelleRdvPeriodeDash")) +
+    tuile(estCatalogue ? (posSeul ? "rapportcaisse" : "rapports") : "rendezvous", (d.caPeriode || 0).toLocaleString(localeCourante()) + " FCFA", t("libelleCaPeriodeDash")) +
+    (posSeul ? "" : tuile("conversations", d.conversationsEnAttente, t("libelleConvEnAttente"), d.conversationsEnAttente));
   if (estCatalogue) {
     tuiles +=
       tuile("inventaire", d.alertesStock, t("libelleArticlesSurveiller"), d.alertesStock) +
@@ -7632,7 +7963,11 @@ async function renderTableauDeBord() {
         : "<p class='raison'>" + t("msgAucunRdvProchain") + "</p>");
   }
 
-  return tuiles + sparkline + top + bas;
+  // Etape 92 : etat de la caisse en tete du tableau de bord d'un point de vente seul.
+  const carteCaisse = !posSeul ? "" : "<div class='tuile' style='margin:12px 0;'><div class='libelle' style='font-weight:700;'>" + esc(t("dashCaisseTitre")) + "</div><div>" +
+    (sessionDash ? esc(t("dashCaisseOuverte", { u: sessionDash.caissier || "—", h: new Date(sessionDash.dateOuverture).toLocaleTimeString(localeCourante(), { hour: "2-digit", minute: "2-digit" }), f: (sessionDash.fondInitial || 0).toLocaleString(localeCourante()) })) : esc(t("dashCaisseFermee"))) +
+    "</div><div style='margin-top:8px;'><a href='/caisse' target='_blank' rel='noopener'>" + esc(t("dashCaisseOuvrir")) + "</a></div></div>";
+  return carteCaisse + tuiles + sparkline + top + bas;
   }
 
   function sectionDashboardHeb(d) {
@@ -7696,9 +8031,9 @@ async function renderTableauDeBord() {
     (v === "hebergement" ? sectionDashboardHeb(donneesDash[i]) : v === "transport" ? sectionDashboardTransport(donneesDash[i]) : sectionDashboard(donneesDash[i], v !== "service"))
   ).join("");
   zone.innerHTML = "<h2>" + t("tableauDeBordTitre") + "</h2>" + selecteurPeriode +
-    (voletsDash.indexOf("catalogue") !== -1 && estOngletVisible("commandes") ? "<div id='zoneARelancer'></div>" : "") + sectionsDash;
+    (voletsDash.indexOf("catalogue") !== -1 && estOngletVisible("commandes") && !posSeul ? "<div id='zoneARelancer'></div>" : "") + sectionsDash;
   brancherDeplierVentes(zone);
-  monterARelancer(document.getElementById("zoneARelancer")); // Etape 73 : chargee apres coup, sans jamais bloquer le tableau de bord
+  if (document.getElementById("zoneARelancer")) monterARelancer(document.getElementById("zoneARelancer")); // Etape 73 : chargee apres coup, sans jamais bloquer le tableau de bord
 
   Array.prototype.forEach.call(zone.querySelectorAll(".tuile.cliquable"), (el) => {
     const cible = el.dataset.tuileOnglet;
@@ -8209,6 +8544,8 @@ function contenuPdfRapportCaisse(r) {
         t("rcsTuileVentes") + " : " + T.nbVentes, t("rcsTuileNet") + " : " + nombrePdf(T.net) + " FCFA",
         t("rcsTuileAnnule") + " : " + T.nbAnnulees + " / " + nombrePdf(T.montantAnnule) + " FCFA", t("rcsTuilePanier") + " : " + nombrePdf(T.panierMoyen) + " FCFA",
         t("rcsTuileArticles") + " : " + T.nbArticles, t("rcsTuileEcart") + " : " + nombrePdf(r.ecarts.totalEcart) + " FCFA" ].concat(T.remises > 0 ? [t("rcsPdfRemises") + " : " + nombrePdf(T.remises) + " FCFA (" + T.pourcentRemises + " %), " + T.nbVentesRemisees] : []) },
+      ...(r.credit ? [{ titre: t("rcsCreditTitre"), lignes: [t("rcsTuileACredit") + " : " + nombrePdf(r.credit.aCredit) + " FCFA (" + r.credit.nbVentesCredit + ")", t("rcsTuileReglements") + " : " + nombrePdf(r.credit.reglements.montant) + " FCFA (" + r.credit.reglements.nb + ")"].concat(r.credit.encours ? [t("rcsTuileEncours") + " : " + nombrePdf(r.credit.encours.total) + " FCFA", t("rcsTuileEnRetard") + " : " + nombrePdf(r.credit.encours.enRetard) + " FCFA"].concat(r.credit.encours.clients.slice(0, 25).map((c) => c.nom + " : " + nombrePdf(c.solde) + " FCFA" + (c.enRetard ? " (" + t("clEnRetard") + " " + nombrePdf(c.enRetard) + ")" : ""))) : []) }] : []),
+      ...(r.marge ? [{ titre: t("rcsMargeTitre"), lignes: [t("rcsTuileCA") + " : " + nombrePdf(r.marge.ca) + " FCFA", t("rcsTuileCout") + " : " + nombrePdf(r.marge.cout) + " FCFA", t("rcsTuileMarge") + " : " + nombrePdf(r.marge.marge) + " FCFA (" + r.marge.taux + " %)", t("rcsTuileCouverture") + " : " + r.marge.couverture + " %"].concat(r.marge.parArticle.slice(0, 20).map((a) => a.article + " : " + nombrePdf(a.marge) + " FCFA (" + a.taux + " %)")) }] : []),
       { titre: t("rcsParMode"), lignes: r.parMode.filter((m) => m.nb || m.nbAnnulees).map((m) => t("rcsMode_" + m.mode) + " : " + m.nb + " / " + nombrePdf(m.montant) + " FCFA" + (m.nbAnnulees ? " (" + t("rcsTuileAnnule") + " " + nombrePdf(m.montantAnnule) + ")" : "")), texteVide: t("rcsAucuneVente") },
       { titre: t("rcsParJour"), lignes: jours.map((j) => t("rcsPdfLigneJour", { date: j.date, nb: j.nb, net: nombrePdf(j.net), annule: nombrePdf(j.annule) })), texteVide: t("rcsAucuneVente") },
       { titre: t("rcsParCaissier"), lignes: r.parCaissier.map((c) => c.caissier + " : " + c.nb + " / " + nombrePdf(c.net) + " FCFA"), texteVide: t("rcsAucuneVente") },
@@ -8217,6 +8554,102 @@ function contenuPdfRapportCaisse(r) {
     ]
   };
 }
+// ---------------- Etape 90 : onglet « Clients et crédit » (option payante superadmin « Clients, crédit et marge ») ----------------
+function numeroWhatsappClient(tel) {
+  const d = String(tel || "").replace(/[^\d]/g, "");
+  if (!d) return "";
+  return d.length === 9 ? "237" + d : d; // numeros camerounais saisis sans indicatif
+}
+function lienRelanceWhatsapp(c) {
+  const num = numeroWhatsappClient(c.telephone);
+  if (!num) return "";
+  const msg = t("clMsgRelance", { nom: c.nom, montant: formaterNb(c.solde), commerce: marchandActif.nom || marchandActif.id });
+  return "https://wa.me/" + num + "?text=" + encodeURIComponent(msg);
+}
+async function renderClients() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const base = "/api/" + marchandActif.id;
+  const gest = moi.role === "marchand" || moi.role === "superadmin";
+  const droitCreances = gest || (moi.roles || []).indexOf("remises") !== -1;
+  const peutAnnuler = droitCreances;
+  let clients, cfg, creances = null;
+  try {
+    const res = await Promise.all([api(base + "/pos/clients" + (gest ? "?inactifs=1" : "")), api(base + "/pos/credit/config")]);
+    clients = res[0]; cfg = res[1];
+    if (droitCreances) creances = await api(base + "/pos/creances");
+  } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+  const tuile = (lib, val) => "<div class='tuile' style='flex:1;min-width:150px;padding:10px;'><div class='raison'>" + esc(lib) + "</div><strong>" + esc(val) + "</strong></div>";
+  let filtre = "";
+  const lignesClients = () => {
+    const q = filtre.trim().toLowerCase();
+    return clients.filter((c) => !q || c.nom.toLowerCase().indexOf(q) !== -1 || (c.telephone || "").indexOf(q.replace(/[^\d]/g, "") || "§") !== -1);
+  };
+  const dessinerTable = () => {
+    const l = lignesClients();
+    document.getElementById("clTable").innerHTML = l.length
+      ? "<table class='table-donnees' id='clTab'><tr><th>" + t("clNom") + "</th><th>" + t("clTel") + "</th><th>" + t("clSolde") + "</th><th>" + t("clPlafond") + "</th><th>" + t("clEnRetard") + "</th><th></th></tr>" +
+        l.map((c) => "<tr" + (c.actif ? "" : " style='opacity:.5;'") + "><td>" + esc(c.nom) + (c.actif ? "" : " <em>(" + t("clInactif") + ")</em>") + "</td><td>" + esc(c.telephone || "") + "</td><td><strong style='color:" + (c.solde > 0 ? "#b42318" : "inherit") + "'>" + formaterNb(c.solde) + " FCFA</strong></td><td>" + formaterNb(c.plafond) + "</td><td>" + (c.enRetard > 0 ? "<span style='color:#b42318'>" + formaterNb(c.enRetard) + "</span>" : "—") + "</td><td>" +
+          "<button data-rel='" + c.id + "'>" + t("clReleve") + "</button> " + (c.solde > 0 && lienRelanceWhatsapp(c) ? "<a href='" + esc(lienRelanceWhatsapp(c)) + "' target='_blank' rel='noopener'><button type='button'>" + t("clRelancer") + "</button></a>" : "") + "</td></tr>").join("") + "</table>"
+      : "<p class='raison'>" + t("clAucun") + "</p>";
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-rel]"), (b) => { b.onclick = () => ouvrirReleve(Number(b.dataset.rel)); });
+  };
+  const exporterCsv = () => {
+    const sep = ";", ech = (v) => { const s = v == null ? "" : String(v); return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const lignes = [[t("clNom"), t("clTel"), t("clSolde"), t("clPlafond"), t("clEnRetard"), t("clPremiereEcheance")].join(sep)].concat((creances ? creances.clients : clients.filter((c) => c.solde > 0)).map((c) => [c.nom, c.telephone, c.solde, c.plafond, c.enRetard, c.premiereEcheance || ""].map(ech).join(sep)));
+    const blob = new Blob(["﻿" + lignes.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "creances-" + marchandActif.id + ".csv"; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  };
+  zone.innerHTML = "<h2>" + t("clTitre") + "</h2><p class='raison'>" + t("clNote") + "</p>" +
+    (creances ? "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;'>" + tuile(t("clTotalDu"), formaterNb(creances.total) + " FCFA") + tuile(t("clTotalRetard"), formaterNb(creances.enRetard) + " FCFA") + tuile(t("clNbDebiteurs"), String(creances.clients.length)) + "</div>" : "") +
+    (gest ? "<div class='tuile' style='padding:12px;margin:10px 0;'><strong>" + t("clConfigTitre") + "</strong><div class='controles-rapport' style='margin-top:6px;'><div><label>" + t("clDelai") + "</label><input type='number' id='clCfgDelai' min='0' max='365' value='" + cfg.delaiJours + "' /></div><div><label>" + t("clPlafondDefaut") + "</label><input type='number' id='clCfgPlafond' min='0' value='" + cfg.plafondParDefaut + "' /></div><div><button id='clCfgSauver'>" + t("enregistrer") + "</button></div></div><p class='raison'>" + t("clConfigNote") + "</p></div>" : "") +
+    "<div class='tuile' style='padding:12px;margin:10px 0;'><strong>" + t("clNouveau") + "</strong><div class='controles-rapport' style='margin-top:6px;'><div><label>" + t("clNom") + "</label><input id='clNvNom' maxlength='60' /></div><div><label>" + t("clTel") + "</label><input id='clNvTel' maxlength='20' /></div><div><label>" + t("clNoteC") + "</label><input id='clNvNote' maxlength='200' /></div>" +
+      (gest ? "<div><label>" + t("clPlafond") + "</label><input type='number' id='clNvPlafond' min='0' placeholder='" + esc(String(cfg.plafondParDefaut)) + "' /></div>" : "") + "<div><button id='clNvOk' class='principal'>" + t("clAjouter") + "</button></div></div></div>" +
+    "<div class='controles-rapport' style='margin:10px 0;'><div><input id='clFiltre' type='search' placeholder='" + esc(t("clRechercher")) + "' /></div><div><button id='clCsv'>" + t("clExporter") + "</button></div></div>" +
+    "<div id='clTable' style='overflow-x:auto;'></div><div id='clDetail' style='margin-top:14px;overflow-x:auto;'></div>";
+  dessinerTable();
+  document.getElementById("clFiltre").oninput = (ev) => { filtre = ev.target.value; dessinerTable(); };
+  document.getElementById("clCsv").onclick = exporterCsv;
+  if (gest) document.getElementById("clCfgSauver").onclick = async () => {
+    try { await api(base + "/pos/credit/config", { method: "PUT", body: JSON.stringify({ delaiJours: Number(document.getElementById("clCfgDelai").value), plafondParDefaut: Number(document.getElementById("clCfgPlafond").value) }) }); alert(t("clConfigOk")); renderClients(); }
+    catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  document.getElementById("clNvOk").onclick = async () => {
+    try {
+      const corps = { nom: document.getElementById("clNvNom").value, telephone: document.getElementById("clNvTel").value, note: document.getElementById("clNvNote").value };
+      if (gest && document.getElementById("clNvPlafond").value !== "") corps.plafond = Number(document.getElementById("clNvPlafond").value);
+      await api(base + "/pos/clients", { method: "POST", body: JSON.stringify(corps) }); renderClients();
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
+  async function ouvrirReleve(id) {
+    const zd = document.getElementById("clDetail");
+    zd.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+    let r;
+    try { r = await api(base + "/pos/clients/" + id); } catch (e) { zd.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+    const c = r.client;
+    const modes = ["especes", "om", "momo", "carte", "cheque"];
+    zd.innerHTML = "<div class='tuile' id='clReleveBloc' style='padding:12px;'><h3 style='margin-top:0'>" + esc(c.nom) + "</h3><p class='raison'>" + esc(c.telephone || "") + " · " + t("clSolde") + " : <strong>" + formaterNb(c.solde) + " FCFA</strong> · " + t("clPlafond") + " : " + formaterNb(c.plafond) + (c.enRetard > 0 ? " · <span style='color:#b42318'>" + t("clEnRetard") + " " + formaterNb(c.enRetard) + "</span>" : "") + "</p>" +
+      (c.solde > 0 ? "<div class='controles-rapport'><div><label>" + t("clMontantReglement") + "</label><input type='number' id='clRgMontant' min='1' value='" + c.solde + "' /></div><div><label>" + t("clMode") + "</label><select id='clRgMode'>" + modes.map((m) => "<option value='" + m + "'>" + esc(t("rcsMode_" + m)) + "</option>").join("") + "</select></div><div><label>" + t("clReference") + "</label><input id='clRgRef' maxlength='80' /></div><div><button id='clRgOk' class='principal'>" + t("clEncaisser") + "</button></div></div><p class='raison'>" + t("clReglementNote") + "</p>" : "") +
+      (gest ? "<details style='margin:8px 0;'><summary>" + t("clModifier") + "</summary><div class='controles-rapport' style='margin-top:6px;'><div><label>" + t("clNom") + "</label><input id='clMdNom' value=\"" + esc(c.nom) + "\" maxlength='60' /></div><div><label>" + t("clTel") + "</label><input id='clMdTel' value=\"" + esc(c.telephone) + "\" maxlength='20' /></div><div><label>" + t("clNoteC") + "</label><input id='clMdNote' value=\"" + esc(c.note) + "\" maxlength='200' /></div><div><label>" + t("clPlafond") + "</label><input type='number' id='clMdPlafond' min='0' value='" + c.plafond + "' /></div><div><label><input type='checkbox' id='clMdActif'" + (c.actif ? " checked" : "") + " /> " + t("clActif") + "</label></div><div><button id='clMdOk'>" + t("enregistrer") + "</button></div></div></details>" : "") +
+      "<h4>" + t("clAchats") + "</h4>" + (r.ventes.length ? "<table class='table-donnees'><tr><th>" + t("rcsColPiece") + "</th><th>" + t("rcsColDate") + "</th><th>" + t("rcsColMontant") + "</th><th>" + t("rcsTuileACredit") + "</th><th>" + t("clReste") + "</th><th>" + t("rcsColEcheance") + "</th></tr>" + r.ventes.map((v) => "<tr" + (v.statut === "annulee" ? " style='opacity:.5'" : "") + "><td>" + esc(v.piece) + "</td><td>" + esc(new Date(v.dateISO).toLocaleDateString(localeCourante())) + "</td><td>" + formaterNb(v.montant) + "</td><td>" + (v.aCredit ? formaterNb(v.aCredit) : "—") + "</td><td>" + (v.reste ? formaterNb(v.reste) : "—") + "</td><td>" + (v.echeance && v.reste ? esc(v.echeance) : "—") + "</td></tr>").join("") + "</table>" : "<p class='raison'>—</p>") +
+      "<h4>" + t("clReglements") + "</h4>" + (r.reglements.length ? "<table class='table-donnees'><tr><th>" + t("rcsColDate") + "</th><th>" + t("rcsColMontant") + "</th><th>" + t("clMode") + "</th><th></th></tr>" + r.reglements.map((g) => "<tr" + (g.annule ? " style='opacity:.5;text-decoration:line-through'" : "") + "><td>REG-" + String(g.id).padStart(4, "0") + " · " + esc(new Date(g.dateISO).toLocaleDateString(localeCourante())) + "</td><td>" + formaterNb(g.montant) + "</td><td>" + esc(t("rcsMode_" + g.mode)) + "</td><td>" + (g.annule ? esc(g.motifAnnulation || "") : (peutAnnuler ? "<button data-ann='" + g.id + "' class='danger'>" + t("clAnnuler") + "</button>" : "")) + "</td></tr>").join("") + "</table>" : "<p class='raison'>—</p>") + "</div>";
+    if (document.getElementById("clRgOk")) document.getElementById("clRgOk").onclick = async () => {
+      try { const mode = document.getElementById("clRgMode").value; await api(base + "/pos/clients/" + id + "/reglements", { method: "POST", body: JSON.stringify({ montant: Number(document.getElementById("clRgMontant").value), mode, reference: mode === "especes" ? undefined : document.getElementById("clRgRef").value }) }); await renderClients(); ouvrirReleve(id); }
+      catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+    if (document.getElementById("clMdOk")) document.getElementById("clMdOk").onclick = async () => {
+      try { await api(base + "/pos/clients/" + id, { method: "PUT", body: JSON.stringify({ nom: document.getElementById("clMdNom").value, telephone: document.getElementById("clMdTel").value, note: document.getElementById("clMdNote").value, plafond: Number(document.getElementById("clMdPlafond").value), actif: document.getElementById("clMdActif").checked }) }); await renderClients(); ouvrirReleve(id); }
+      catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+    Array.prototype.forEach.call(zd.querySelectorAll("[data-ann]"), (b) => { b.onclick = async () => {
+      const motif = prompt(t("clMotifAnnulation")); if (!motif) return;
+      try { await api(base + "/pos/reglements/" + b.dataset.ann + "/annuler", { method: "POST", body: JSON.stringify({ motif }) }); await renderClients(); ouvrirReleve(id); }
+      catch (e) { alert(t("erreurPrefixe") + e.message); }
+    }; });
+    zd.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
 async function renderRapportCaisse() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -8237,7 +8670,7 @@ async function renderRapportCaisse() {
     "</div>" +
     "<div class='controles-rapport' style='margin-top:6px;'>" +
       "<div><button id='rcsPdf'>" + t("rcsPdf") + "</button></div>" +
-      "<div><select id='rcsVueCsv'><option value='synthese'>" + t("rcsVueSynthese") + "</option><option value='ventes'>" + t("rcsVueVentes") + "</option><option value='sessions'>" + t("rcsVueSessions") + "</option></select> <button id='rcsCsv'>" + t("rcsCsv") + "</button></div>" +
+      "<div><select id='rcsVueCsv'><option value='synthese'>" + t("rcsVueSynthese") + "</option><option value='ventes'>" + t("rcsVueVentes") + "</option><option value='sessions'>" + t("rcsVueSessions") + "</option><option value='retours'>" + t("rcsVueRetours") + "</option>" + (r.credit ? "<option value='reglements'>" + t("rcsVueReglements") + "</option>" : "") + (r.marge ? "<option value='marge'>" + t("rcsVueMarge") + "</option>" : "") + "</select> <button id='rcsCsv'>" + t("rcsCsv") + "</button></div>" +
     "</div>" +
     "<div id='rcsResultat'></div>";
 
@@ -8248,29 +8681,66 @@ async function renderRapportCaisse() {
     let h = "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;'>" +
       tuile(t("rcsTuileVentes"), String(T.nbVentes)) + tuile(t("rcsTuileNet"), formaterNb(T.net) + " FCFA") + tuile(t("rcsTuileAnnule"), T.nbAnnulees + " / " + formaterNb(T.montantAnnule) + " FCFA") +
       tuile(t("rcsTuilePanier"), formaterNb(T.panierMoyen) + " FCFA") + tuile(t("rcsTuileArticles"), String(T.nbArticles)) + tuile(t("rcsTuileEcart"), formaterNb(rap.ecarts.totalEcart) + " FCFA") +
-      (T.remises > 0 ? tuile(t("rcsTuileRemises"), formaterNb(T.remises) + " FCFA (" + T.pourcentRemises + " %) · " + T.nbVentesRemisees) : "") + "</div>";
+      (T.remises > 0 ? tuile(t("rcsTuileRemises"), formaterNb(T.remises) + " FCFA (" + T.pourcentRemises + " %) · " + T.nbVentesRemisees) : "") +
+      (T.nbRetours > 0 ? tuile(t("rcsTuileRetours"), T.nbRetours + " / " + formaterNb(T.retours) + " FCFA") + tuile(t("rcsTuileNetRetours"), formaterNb(T.netApresRetours) + " FCFA") : "") + "</div>";
     if (T.nbFacturees) h += "<p class='raison'>" + esc(t("rcsInfoFacturees", { n: T.nbFacturees })) + "</p>";
     h += "<h3>" + t("rcsParMode") + "</h3>";
     h += T.nbVentes || T.nbAnnulees
       ? "<table class='table-donnees' id='rcsTabMode'><tr><th>" + t("rcsColMode") + "</th><th>" + t("rcsColNb") + "</th><th>" + t("rcsColTotal") + "</th><th>" + t("rcsColPart") + "</th><th>" + t("rcsColAnnule") + "</th></tr>" +
-        rap.parMode.map((m) => "<tr><td>" + esc(t("rcsMode_" + m.mode)) + "</td><td>" + m.nb + "</td><td>" + formaterNb(m.montant) + " FCFA</td><td>" + (T.net ? Math.round(m.montant * 100 / T.net) : 0) + " %</td><td>" + (m.nbAnnulees ? m.nbAnnulees + " / " + formaterNb(m.montantAnnule) + " FCFA" : "—") + "</td></tr>").join("") + "</table>"
+        rap.parMode.map((m) => "<tr><td>" + esc(t("rcsMode_" + m.mode)) + "</td><td>" + m.nb + "</td><td>" + formaterNb(m.montant) + " FCFA</td><td>" + (T.net ? Math.round(m.montant * 100 / T.net) : 0) + " %</td><td>" + (m.nbAnnulees ? m.nbAnnulees + " / " + formaterNb(m.montantAnnule) + " FCFA" : "—") + "</td></tr>").join("") + (T.aCredit > 0 ? "<tr><td>" + esc(t("rcsTuileACredit")) + "</td><td>" + T.nbVentesCredit + "</td><td>" + formaterNb(T.aCredit) + " FCFA</td><td>" + (T.net ? Math.round(T.aCredit * 100 / T.net) : 0) + " %</td><td>—</td></tr>" : "") + "</table>"
       : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
     h += "<h3>" + t("rcsParJour") + "</h3>";
     const jours = rap.parJour.length > 31 ? rap.parJour.filter((j) => j.nb || j.nbAnnulees) : rap.parJour;
     h += jours.length
-      ? "<table class='table-donnees' id='rcsTabJour'><tr><th>" + t("rcsColDate") + "</th><th>" + t("rcsColNb") + "</th>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => "<th>" + esc(t("rcsMode_" + m)) + "</th>").join("") + "<th>" + t("rcsColTotal") + "</th><th>" + t("rcsColAnnule") + "</th></tr>" +
-        jours.map((j) => "<tr><td>" + esc(j.date) + "</td><td>" + j.nb + "</td>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => "<td>" + formaterNb(j[m]) + "</td>").join("") + "<td><strong>" + formaterNb(j.net) + "</strong></td><td>" + (j.nbAnnulees ? j.nbAnnulees + " / " + formaterNb(j.annule) : "—") + "</td></tr>").join("") + "</table>"
+      ? "<table class='table-donnees' id='rcsTabJour'><tr><th>" + t("rcsColDate") + "</th><th>" + t("rcsColNb") + "</th>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => "<th>" + esc(t("rcsMode_" + m)) + "</th>").join("") + (T.aCredit > 0 ? "<th>" + esc(t("rcsTuileACredit")) + "</th>" : "") + "<th>" + t("rcsColTotal") + "</th><th>" + t("rcsColAnnule") + "</th></tr>" +
+        jours.map((j) => "<tr><td>" + esc(j.date) + "</td><td>" + j.nb + "</td>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => "<td>" + formaterNb(j[m]) + "</td>").join("") + (T.aCredit > 0 ? "<td>" + (j.aCredit ? formaterNb(j.aCredit) : "—") + "</td>" : "") + "<td><strong>" + formaterNb(j.net) + "</strong></td><td>" + (j.nbAnnulees ? j.nbAnnulees + " / " + formaterNb(j.annule) : "—") + "</td></tr>").join("") + "</table>"
       : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
     h += "<h3>" + t("rcsParCaissier") + "</h3>";
     h += rap.parCaissier.length
       ? "<table class='table-donnees' id='rcsTabCaissier'><tr><th>" + t("rcsCaissier") + "</th><th>" + t("rcsColNb") + "</th><th>" + t("rcsColTotal") + "</th>" + (T.remises > 0 ? "<th>" + t("rcsColRemises") + "</th>" : "") + "<th>" + t("rcsColAnnule") + "</th></tr>" +
         rap.parCaissier.map((c) => "<tr><td>" + esc(c.caissier) + "</td><td>" + c.nb + "</td><td>" + formaterNb(c.net) + " FCFA</td>" + (T.remises > 0 ? "<td>" + (c.remises ? c.nbRemises + " / " + formaterNb(c.remises) + " FCFA" : "—") + "</td>" : "") + "<td>" + (c.nbAnnulees ? c.nbAnnulees + " / " + formaterNb(c.annule) + " FCFA" : "—") + "</td></tr>").join("") + "</table>"
       : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
+    // Etape 91 : ventes saisies hors ligne puis synchronisees (ecarts de stock ou de prix signales).
+    if (T.nbVentesHorsLigne > 0) {
+      const hlv = (rap.ventes || []).filter((v) => v.horsLigne);
+      h += "<h3>" + t("rcsHLTitre") + "</h3><p class='raison'>" + t("rcsHLNote") + "</p><div style='display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;'>" + tuile(t("rcsTuileHL"), String(T.nbVentesHorsLigne)) + tuile(t("rcsTuileHLEcart"), String(T.nbEcartsHorsLigne || 0)) + "</div>" +
+        "<table class='table-donnees' id='rcsTabHL'><tr><th>" + t("rcsColPiece") + "</th><th>" + t("rcsHLColNum") + "</th><th>" + t("rcsHLColSaisie") + "</th><th>" + t("rcsHLColPar") + "</th><th>" + t("rcsColMontant") + "</th><th>" + t("rcsHLColEcart") + "</th></tr>" +
+        hlv.map((v) => { const h1 = v.horsLigne; const ec = (h1.stockInsuffisant || []).map((x) => esc(x.produit) + " : −" + x.manque).concat((h1.ecartsPrix || []).map((x) => esc(x.produit) + " : " + formaterNb(x.vendu) + " → " + formaterNb(x.actuel))).join(" ; ");
+          return "<tr><td>" + esc(v.piece) + "</td><td>" + esc(h1.numeroLocal || "") + "</td><td>" + esc(new Date(h1.saisieLe).toLocaleString(localeCourante())) + "</td><td>" + esc(h1.saisiPar || "") + "</td><td>" + formaterNb(v.montant) + " FCFA</td><td>" + (ec || "—") + "</td></tr>"; }).join("") + "</table>";
+    }
+    // Etape 89 : ventes issues d'additions de table (mode restauration) - par serveur et par table.
+    if (rap.restauration) {
+      h += "<h3>" + t("rcsParServeur") + "</h3><table class='table-donnees' id='rcsTabServeur'><tr><th>" + t("rcsServeur") + "</th><th>" + t("rcsColNb") + "</th><th>" + t("rcsColTotal") + "</th></tr>" +
+        rap.restauration.parServeur.map((x) => "<tr><td>" + esc(x.serveur) + "</td><td>" + x.nb + "</td><td>" + formaterNb(x.net) + " FCFA</td></tr>").join("") + "</table>";
+      h += "<h3>" + t("rcsParTable") + "</h3><table class='table-donnees' id='rcsTabTable'><tr><th>" + t("tableLabel") + "</th><th>" + t("rcsColNb") + "</th><th>" + t("rcsColTotal") + "</th></tr>" +
+        rap.restauration.parTable.map((x) => "<tr><td>" + esc(x.table) + "</td><td>" + x.nb + "</td><td>" + formaterNb(x.net) + " FCFA</td></tr>").join("") + "</table>";
+    }
     h += "<h3>" + t("rcsArticles") + "</h3>";
     h += rap.articles.length
       ? "<table class='table-donnees' id='rcsTabArticles'><tr><th>" + t("rcsColArticle") + "</th><th>" + t("rcsColQte") + "</th><th>" + t("rcsColMontant") + "</th></tr>" +
         rap.articles.map((a) => "<tr><td>" + esc(a.article) + "</td><td>" + a.quantite + "</td><td>" + formaterNb(a.montant) + " FCFA</td></tr>").join("") + "</table>"
       : "<p class='raison'>" + t("rcsAucuneVente") + "</p>";
+    if (rap.retours && rap.retours.nb) {
+      h += "<h3>" + t("rcsRetoursTitre") + "</h3><p class='raison'>" + t("rcsRetoursNote") + "</p>" +
+        "<table class='table-donnees' id='rcsTabRetours'><tr><th>" + t("rcsColPiece") + "</th><th>" + t("rcsColVente") + "</th><th>" + t("rcsColDate") + "</th><th>" + t("rcsCaissier") + "</th><th>" + t("rcsColMode") + "</th><th>" + t("rcsColMontant") + "</th><th>" + t("rcsColMotif") + "</th><th>" + t("rcsColArticle") + "</th></tr>" +
+        rap.retours.detail.map((x) => "<tr><td>" + esc(x.piece) + "</td><td>" + esc(x.vente) + (x.venteAnnulee ? " <em>(" + t("rcsVenteAnnulee") + ")</em>" : "") + "</td><td>" + esc(x.date) + " " + esc(x.heure) + "</td><td>" + esc(x.caissier || "") + "</td><td>" + esc(t("rcsMode_" + x.mode)) + "</td><td>" + formaterNb(x.montant) + " FCFA</td><td>" + esc(x.motif || "") + "</td><td>" + esc(x.articles) + "</td></tr>").join("") + "</table>";
+    }
+    if (rap.credit) {
+      const CR = rap.credit;
+      h += "<h3>" + t("rcsCreditTitre") + "</h3><div style='display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;'>" + tuile(t("rcsTuileACredit"), formaterNb(CR.aCredit) + " FCFA · " + CR.nbVentesCredit) + tuile(t("rcsTuileReglements"), formaterNb(CR.reglements.montant) + " FCFA · " + CR.reglements.nb) +
+        (CR.encours ? tuile(t("rcsTuileEncours"), formaterNb(CR.encours.total) + " FCFA") + tuile(t("rcsTuileEnRetard"), formaterNb(CR.encours.enRetard) + " FCFA") : "") + "</div>";
+      if (CR.reglements.detail.length) h += "<table class='table-donnees' id='rcsTabReglements'><tr><th>" + t("rcsColPiece") + "</th><th>" + t("rcsColDate") + "</th><th>" + t("rcsColClient") + "</th><th>" + t("rcsColMode") + "</th><th>" + t("rcsColMontant") + "</th></tr>" +
+        CR.reglements.detail.map((x) => "<tr" + (x.annule ? " style='opacity:.5;text-decoration:line-through'" : "") + "><td>REG-" + String(x.id).padStart(4, "0") + "</td><td>" + esc(x.date) + " " + esc(x.heure) + "</td><td>" + esc(x.client || "") + "</td><td>" + esc(t("rcsMode_" + x.mode)) + "</td><td>" + formaterNb(x.montant) + " FCFA</td></tr>").join("") + "</table>";
+      if (CR.encours && CR.encours.clients.length) h += "<h4>" + t("rcsCreancesTitre") + "</h4><table class='table-donnees' id='rcsTabCreances'><tr><th>" + t("rcsColClient") + "</th><th>" + t("clSolde") + "</th><th>" + t("clPlafond") + "</th><th>" + t("clEnRetard") + "</th><th>" + t("rcsColEcheance") + "</th></tr>" +
+        CR.encours.clients.map((x) => "<tr><td>" + esc(x.nom) + "</td><td>" + formaterNb(x.solde) + " FCFA</td><td>" + formaterNb(x.plafond) + "</td><td>" + (x.enRetard ? "<span style='color:#b42318'>" + formaterNb(x.enRetard) + "</span>" : "—") + "</td><td>" + esc(x.premiereEcheance || "—") + "</td></tr>").join("") + "</table>";
+    }
+    if (rap.marge) {
+      const M = rap.marge;
+      h += "<h3>" + t("rcsMargeTitre") + "</h3><p class='raison'>" + t("rcsMargeNote") + "</p><div style='display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;'>" + tuile(t("rcsTuileCA"), formaterNb(M.ca) + " FCFA") + tuile(t("rcsTuileCout"), formaterNb(M.cout) + " FCFA") + tuile(t("rcsTuileMarge"), formaterNb(M.marge) + " FCFA") + tuile(t("rcsTuileTaux"), M.taux + " %") + tuile(t("rcsTuileCouverture"), M.couverture + " %") + "</div>";
+      if (M.couverture < 100) h += "<p class='raison' style='color:#b54708'>" + esc(t("rcsMargeCouverture", { n: formaterNb(M.caSansCout) })) + "</p>";
+      if (M.parArticle.length) h += "<table class='table-donnees' id='rcsTabMarge'><tr><th>" + t("rcsColArticle") + "</th><th>" + t("rcsColQte") + "</th><th>" + t("rcsTuileCA") + "</th><th>" + t("rcsTuileCout") + "</th><th>" + t("rcsTuileMarge") + "</th><th>" + t("rcsTuileTaux") + "</th></tr>" +
+        M.parArticle.map((a) => "<tr><td>" + esc(a.article) + "</td><td>" + a.quantite + "</td><td>" + formaterNb(a.ca) + "</td><td>" + formaterNb(a.cout) + "</td><td><strong>" + formaterNb(a.marge) + "</strong></td><td>" + a.taux + " %</td></tr>").join("") + "</table>";
+    }
     h += "<h3>" + t("rcsSessions") + "</h3>";
     h += rap.sessions.length
       ? "<p class='raison'>" + t("rcsNoteSessions") + "</p><table class='table-donnees' id='rcsTabSessions'><tr><th>" + t("rcsColSession") + "</th><th>" + t("rcsCaissier") + "</th><th>" + t("rcsColOuverture") + "</th><th>" + t("rcsColFermeture") + "</th><th>" + t("rcsColFond") + "</th><th>" + t("rcsColTheorique") + "</th><th>" + t("rcsColCompte") + "</th><th>" + t("rcsColEcart") + "</th><th>" + t("rcsColAnnulesEsp") + "</th></tr>" +
@@ -8495,7 +8965,7 @@ async function renderInventaire() {
 // gerant un marchand, et marchand gerant son propre compte) - meme HTML, memes branchements d'evenements.
 function blocLogoHtml() {
   return "<h3>" + t("h3Logo") + "</h3>" +
-    "<p class='raison'>" + t("descLogo") + "</p>" +
+    "<p class='raison'>" + t(caisseSeuleAdmin() ? "descLogoCaisseSeule" : "descLogo") + "</p>" +
     "<div class='bloc-logo'>" +
       (marchandActif.logoUrl
         ? "<img src=\"" + esc(marchandActif.logoUrl) + "\" alt='' />"
@@ -8889,6 +9359,10 @@ function blocOptionsPayantesHtml() {
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaissePos'" + (marchandActif.optionCaissePos ? " checked" : "") + " /> " + t("labelOptionCaissePos") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionVenteGros'" + (marchandActif.optionVenteGros ? " checked" : "") + " /> " + t("labelOptionVenteGros") + "</label>" +
     "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionEnseigne'" + (marchandActif.optionEnseigne ? " checked" : "") + " /> " + t("labelOptionEnseigne") + "</label>" +
+    (marchandActif.type === "catalogue" ? "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionRestauration'" + (marchandActif.optionRestauration ? " checked" : "") + " /> " + t("labelOptionRestauration") + "</label>" : "") +
+    (marchandActif.type === "catalogue" ? "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionHorsLigne'" + (marchandActif.optionHorsLigne ? " checked" : "") + " /> " + t("labelOptionHorsLigne") + "</label>" : "") +
+    (marchandActif.type === "catalogue" ? "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionClientsCredit'" + (marchandActif.optionClientsCredit ? " checked" : "") + " /> " + t("labelOptionClientsCredit") + "</label>" : "") +
+    ((marchandActif.type === "catalogue" && modulesAdmin().length === 1) ? "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaisseSeule'" + (marchandActif.optionCaisseSeule ? " checked" : "") + " /> " + t("labelOptionCaisseSeule") + "</label>" : "") +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
     (principalHeb ? "" : blocSourceFacturationHtml() + blocCleComptableHtml()) +
     blocModuleSecondaireHtml() + blocPhotosAutoHtml();
@@ -9052,7 +9526,11 @@ function brancherBlocOptionsPayantes() {
           optionNotificationsStatut: document.getElementById("champOptionNotifStatut").checked,
           optionCaissePos: document.getElementById("champOptionCaissePos").checked,
           optionVenteGros: document.getElementById("champOptionVenteGros").checked,
-          optionEnseigne: document.getElementById("champOptionEnseigne").checked
+          optionEnseigne: document.getElementById("champOptionEnseigne").checked,
+          ...(document.getElementById("champOptionRestauration") ? { optionRestauration: document.getElementById("champOptionRestauration").checked } : {}),
+          ...(document.getElementById("champOptionHorsLigne") ? { optionHorsLigne: document.getElementById("champOptionHorsLigne").checked } : {}),
+          ...(document.getElementById("champOptionClientsCredit") ? { optionClientsCredit: document.getElementById("champOptionClientsCredit").checked } : {}),
+          ...(document.getElementById("champOptionCaisseSeule") ? { optionCaisseSeule: document.getElementById("champOptionCaisseSeule").checked } : {})
         })
       });
       alert(t("alertOptionsEnregistrees"));
@@ -9285,6 +9763,7 @@ async function renderCompte() {
         "<button id='btnDefinirMdp' class='principal'>" + t("btnDefinirMdp") + "</button> " +
         "<button id='btnGenererMdp'>" + t("btnGenererMdp") + "</button>" +
       "</div>" +
+      (caisseSeuleAdmin() ? "" :
       "<h3>" + t("h3NumeroNotification") + "</h3>" +
       "<p class='raison'>" + t("noteNumeroNotifSuperadmin") + "</p>" +
       "<label>" + t("labelNumeroNotif") + "</label>" +
@@ -9293,18 +9772,21 @@ async function renderCompte() {
       blocTesterAlerteHtml() +
       blocNumerosSuppHtml() +
       blocAlertesHtml() +
-      (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "") +
+      (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "")) +
       blocLogoHtml() +
-      blocImageAccueilWhatsappHtml() +
-      blocQrHtml();
+      (caisseSeuleAdmin() ? "" : blocImageAccueilWhatsappHtml() + blocQrHtml());
     brancherBlocOptionsPayantes();
-    brancherBlocTesterAlerte();
-    brancherBlocNumerosSupp();
-    brancherBlocAlertes();
-    if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
+    if (!caisseSeuleAdmin()) {
+      brancherBlocTesterAlerte();
+      brancherBlocNumerosSupp();
+      brancherBlocAlertes();
+      if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
+    }
     brancherBlocLogo();
-    brancherBlocImageAccueilWhatsapp();
-    brancherBlocQr();
+    if (!caisseSeuleAdmin()) {
+      brancherBlocImageAccueilWhatsapp();
+      brancherBlocQr();
+    }
 
     document.getElementById("btnSauverUtilisateur").onclick = async () => {
       const nouvUtilisateur = document.getElementById("champUtilisateur").value.trim();
@@ -9329,7 +9811,7 @@ async function renderCompte() {
         alert(t("alertNouveauMdpGenereCommuniquer", { mdp: rep.nouveauMotDePasse }));
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
-    document.getElementById("btnSauverNotification").onclick = async () => {
+    if (!caisseSeuleAdmin()) document.getElementById("btnSauverNotification").onclick = async () => {
       try {
         await api("/api/" + marchandActif.id + "/notification", { method: "PUT", body: JSON.stringify({ phoneNotification: document.getElementById("champNotification").value.trim() || null }) });
         alert(t("alertNumeroNotifEnregistre"));
@@ -9379,6 +9861,7 @@ async function renderCompte() {
     "<input id='champNouveauMdp2' type='password' />" +
     "<div style='margin-top:14px;'><button id='btnChangerMdp' class='principal'>" + t("btnChangerMdp") + "</button></div>" +
     "<p class='raison'>" + t("noteRechargementMdp") + "</p>" +
+    (caisseSeuleAdmin() ? "" :
     "<h3>" + t("h3NumeroNotification") + "</h3>" +
     "<p class='raison'>" + t("noteNumeroNotifMarchand") + "</p>" +
     "<label>" + t("labelNumeroNotif") + "</label>" +
@@ -9387,17 +9870,20 @@ async function renderCompte() {
     blocTesterAlerteHtml() +
     blocNumerosSuppHtml() +
     blocAlertesHtml() +
-    (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "") +
+    (marchandActif.optionLienCommande ? blocNumeroPublicHtml() : "")) +
     blocLogoHtml() +
-    blocImageAccueilWhatsappHtml() +
-    blocQrHtml();
-  brancherBlocTesterAlerte();
-  brancherBlocNumerosSupp();
-  brancherBlocAlertes();
-  if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
+    (caisseSeuleAdmin() ? "" : blocImageAccueilWhatsappHtml() + blocQrHtml());
+  if (!caisseSeuleAdmin()) {
+    brancherBlocTesterAlerte();
+    brancherBlocNumerosSupp();
+    brancherBlocAlertes();
+    if (marchandActif.optionLienCommande) brancherBlocNumeroPublic();
+  }
   brancherBlocLogo();
-  brancherBlocImageAccueilWhatsapp();
-  brancherBlocQr();
+  if (!caisseSeuleAdmin()) {
+    brancherBlocImageAccueilWhatsapp();
+    brancherBlocQr();
+  }
 
   document.getElementById("btnChangerMdp").onclick = async () => {
     const m1 = document.getElementById("champNouveauMdp1").value;
@@ -9410,7 +9896,7 @@ async function renderCompte() {
       location.reload();
     } catch (e) { alert(t("erreurPrefixe") + e.message); }
   };
-  document.getElementById("btnSauverNotification").onclick = async () => {
+  if (!caisseSeuleAdmin()) document.getElementById("btnSauverNotification").onclick = async () => {
     try {
       await api("/api/" + marchandActif.id + "/notification", { method: "PUT", body: JSON.stringify({ phoneNotification: document.getElementById("champNotification").value.trim() || null }) });
       alert(t("alertNumeroNotifEnregistre"));

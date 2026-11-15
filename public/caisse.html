@@ -1,0 +1,1266 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#14213d" />
+<meta name="robots" content="noindex, nofollow" />
+<link rel="manifest" href="/caisse.webmanifest" />
+<link rel="icon" type="image/png" href="/caisse-icon-192.png" />
+<link rel="apple-touch-icon" href="/caisse-icon-192.png" />
+<title>IzyVendeur Caisse</title>
+<style>
+  :root { --marine: #14213d; --vert: #1f7a4d; --vert-clair: #e6f4ec; --gris: #6b7280; --bord: #d9dee7; --fond: #f3f5f9; --rouge: #b42318; --rouge-clair: #fdecea; --orange: #b54708; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--fond); color: #1b2333; font-size: 16px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--bord); background: #fff; color: var(--marine); padding: 10px 14px; min-height: 44px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.principal { background: var(--marine); color: #fff; border-color: var(--marine); }
+  button.vert { background: var(--vert); color: #fff; border-color: var(--vert); }
+  button.danger { color: var(--rouge); }
+  input, select, textarea { font: inherit; padding: 10px 12px; border: 1px solid var(--bord); border-radius: 8px; background: #fff; width: 100%; min-height: 44px; }
+  label { display: block; font-size: .85em; color: var(--gris); margin: 10px 0 4px; }
+  h1, h2, h3 { margin: 0 0 8px; color: var(--marine); }
+  .cache { display: none !important; }
+  #btnHL.hors { background: #b45309 !important; border-color: #fbbf24 !important; font-weight: 700; }
+  #bandeauHL { background: #fef3c7; color: #92400e; padding: 6px 12px; font-size: .85em; border-bottom: 1px solid #fcd34d; }
+  .raison { color: var(--gris); font-size: .88em; }
+
+  /* ecrans plein cadre : connexion, ouverture, cloture */
+  .ecran { max-width: 520px; margin: 0 auto; padding: 24px 16px 40px; }
+  .carte { background: #fff; border: 1px solid var(--bord); border-radius: 12px; padding: 18px; }
+  .logo-titre { text-align: center; margin: 12px 0 18px; }
+  .logo-titre img { width: 64px; height: 64px; border-radius: 14px; }
+  #erreurGlobale { position: fixed; left: 50%; transform: translateX(-50%); top: 10px; z-index: 50; max-width: 92vw; background: var(--rouge-clair); color: var(--rouge); border: 1px solid #f3b8b1; padding: 10px 16px; border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+  #infoGlobale { position: fixed; left: 50%; transform: translateX(-50%); top: 10px; z-index: 50; max-width: 92vw; background: var(--vert-clair); color: var(--vert); border: 1px solid #b7dfc8; padding: 10px 16px; border-radius: 10px; }
+
+  /* billetage */
+  table.billetage { width: 100%; border-collapse: collapse; }
+  table.billetage td { padding: 4px 6px; border-bottom: 1px solid var(--bord); }
+  table.billetage input { width: 90px; text-align: right; }
+
+  /* ecran de vente */
+  #vente { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .barre { display: flex; align-items: center; gap: 8px; background: var(--marine); color: #fff; padding: 8px 12px; padding-top: max(8px, env(safe-area-inset-top)); flex-wrap: wrap; }
+  .barre .nom { font-weight: 700; margin-right: auto; }
+  .barre .sous { font-size: .8em; opacity: .8; font-weight: 400; display: block; }
+  .barre button { background: rgba(255,255,255,.12); color: #fff; border-color: rgba(255,255,255,.25); min-height: 38px; padding: 6px 10px; font-size: .9em; }
+  .barre a { color: #fff; font-size: .9em; text-decoration: underline; opacity: .85; }
+  .corps { flex: 1; display: grid; grid-template-columns: 1.4fr 1fr; gap: 0; min-height: 0; }
+  .gauche, .droite { display: flex; flex-direction: column; min-height: 0; }
+  .gauche { padding: 10px; border-right: 1px solid var(--bord); }
+  .droite { background: #fff; padding: 10px; }
+  #recherche { font-size: 1.05em; }
+  #listeArticles { flex: 1; overflow: auto; margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-content: start; padding-bottom: 8px; }
+  .tuile { background: #fff; border: 1px solid var(--bord); border-radius: 10px; padding: 10px; text-align: left; display: flex; flex-direction: column; gap: 4px; min-height: 84px; }
+  .tuile .n { font-weight: 600; line-height: 1.2; }
+  .tuile .p { color: var(--vert); font-weight: 700; }
+  .tuile .s { color: var(--gris); font-size: .8em; margin-top: auto; }
+  .tuile.rupture { opacity: .45; }
+  #lignesPanier { flex: 1; overflow: auto; }
+  .lp { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--bord); }
+  .lp .t { font-weight: 600; }
+  .lp .m { text-align: right; font-weight: 700; }
+  .lp .q { display: flex; align-items: center; gap: 4px; }
+  .lp .q button { min-height: 36px; min-width: 36px; padding: 0; }
+  .lp .q input { width: 74px; min-height: 36px; text-align: center; padding: 4px; }
+  .gros { color: var(--orange); font-size: .8em; }
+  .totaux { border-top: 2px solid var(--marine); padding-top: 8px; margin-top: 6px; }
+  .totaux .l { display: flex; justify-content: space-between; }
+  .totaux .grand { font-size: 1.5em; font-weight: 800; color: var(--marine); }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .actions .payer { grid-column: 1 / -1; font-size: 1.15em; min-height: 54px; }
+  @media (max-width: 760px) {
+    .corps { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    .gauche { border-right: 0; border-bottom: 1px solid var(--bord); }
+    #listeArticles { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  }
+
+  /* fenetres */
+  .voile { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
+  .fenetre { background: #fff; width: 100%; max-width: 560px; max-height: 92vh; overflow: auto; border-radius: 16px 16px 0 0; padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  @media (min-width: 761px) { .voile { align-items: center; } .fenetre { border-radius: 16px; } }
+  .modes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .modes button { padding: 8px 2px; font-size: .85em; }
+  .lpay { border: 1px solid var(--bord); border-radius: 10px; padding: 10px; margin-top: 8px; background: #fafbfd; }
+  .lpay .tete { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+  .lpay .grille { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ok { color: var(--vert); font-weight: 700; }
+  .ko { color: var(--rouge); font-weight: 700; }
+  .rapides { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .rapides button { min-height: 36px; padding: 4px 10px; font-size: .9em; }
+  .attente-l { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--bord); }
+  .attente-l .i { flex: 1; }
+
+  /* restauration */
+  .modes-vente { display: inline-flex; gap: 0; }
+  .modes-vente button { border-radius: 0; }
+  .modes-vente button:first-child { border-radius: 8px 0 0 8px; }
+  .modes-vente button:last-child { border-radius: 0 8px 8px 0; }
+  .barre .modes-vente button.actif { background: #fff; color: var(--marine); font-weight: 700; }
+  #vueTables { flex: 1; overflow: auto; padding: 12px; }
+  #grilleTables { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .table-t { border: 2px solid var(--bord); border-radius: 12px; background: #fff; padding: 12px; min-height: 96px; text-align: left; display: flex; flex-direction: column; gap: 4px; }
+  .table-t .nom { font-weight: 700; font-size: 1.05em; }
+  .table-t.libre { color: var(--gris); border-style: dashed; }
+  .table-t.occupee { border-color: var(--vert); background: var(--vert-clair); }
+  .table-t.attend { border-color: var(--orange); background: #fff4e5; }
+  .table-t .tot { font-weight: 800; color: var(--marine); }
+  .titre-section { font-size: .8em; text-transform: uppercase; letter-spacing: .04em; color: var(--gris); margin: 10px 0 4px; }
+  .la { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 8px; padding: 6px 0; border-bottom: 1px solid var(--bord); align-items: center; }
+  .la .nt { font-size: .82em; color: var(--orange); grid-column: 1 / -1; }
+  .env { color: var(--vert); font-size: .8em; }
+  .nouveau { color: var(--orange); font-size: .8em; font-weight: 700; }
+  .sel-l { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--bord); }
+  .sel-l input[type=checkbox] { width: 22px; height: 22px; min-height: 0; }
+  .sel-l input[type=number] { width: 80px; min-height: 36px; padding: 4px; text-align: center; }
+  .bon { background: #fff; border: 1px dashed var(--bord); width: 302px; margin: 8px auto; padding: 8px 10px; font-family: "DejaVu Sans Mono", "Courier New", monospace; font-size: 13px; line-height: 1.35; color: #000; }
+  .bon .poste { text-align: center; font-size: 22px; font-weight: 800; letter-spacing: 2px; border: 2px solid #000; padding: 2px; margin-bottom: 4px; }
+  .bon.annul .poste { background: #000; color: #fff; }
+  .bon .c { text-align: center; }
+  .bon .big { font-size: 16px; font-weight: 700; }
+  .bon .tr { border-top: 1px dashed #000; margin: 6px 0; }
+  .bon .note { font-weight: 700; padding-left: 14px; }
+  #ticket .bon { border: 0; margin: 0; width: auto; padding: 0 0 2mm; break-after: page; }
+  #ticket .bon:last-child { break-after: auto; }
+  /* ticket 80 mm */
+  #ticket { background: #fff; border: 1px dashed var(--bord); width: 302px; margin: 0 auto; padding: 8px 10px; font-family: "DejaVu Sans Mono", "Courier New", monospace; font-size: 12px; line-height: 1.35; color: #000; }
+  #ticket .c { text-align: center; }
+  #ticket .g { font-weight: 700; }
+  #ticket .tr { border-top: 1px dashed #000; margin: 6px 0; }
+  #ticket .r { display: flex; justify-content: space-between; gap: 6px; }
+  #ticket .r span:first-child { flex: 1; overflow-wrap: anywhere; }
+  #ticket img.lg { max-width: 120px; max-height: 60px; display: block; margin: 0 auto 4px; }
+  @page { size: 80mm 200mm; margin: 0; } /* la hauteur reelle est ajustee a l'impression (voir imprimerTicket) */
+  @media print {
+    body { background: #fff; }
+    body > *:not(#zoneImpression) { display: none !important; }
+    #zoneImpression { display: block !important; }
+    #zoneImpression #ticket { border: 0; width: 72mm; margin: 0; padding: 2mm 3mm; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="erreurGlobale" class="cache" role="alert"></div>
+<div id="infoGlobale" class="cache"></div>
+
+<!-- Connexion -->
+<div id="ecranConnexion" class="ecran cache">
+  <div class="logo-titre"><img src="/caisse-icon-192.png" alt="" /><h1 data-i="titreApp">IzyVendeur Caisse</h1><div class="raison" data-i="sousTitreApp"></div></div>
+  <div class="carte">
+    <label for="cxId" data-i="identifiant"></label><input id="cxId" autocomplete="username" autocapitalize="none" />
+    <label for="cxMdp" data-i="motDePasse"></label><input id="cxMdp" type="password" autocomplete="current-password" />
+    <button id="cxBtn" class="principal" style="width:100%;margin-top:14px;" data-i="seConnecter"></button>
+    <div style="text-align:center;margin-top:12px;"><button id="cxLang" style="min-height:34px;padding:4px 10px;"></button></div>
+  </div>
+</div>
+
+<!-- Choix du marchand (super-administrateur) -->
+<div id="ecranChoix" class="ecran cache">
+  <h2 data-i="choisirMarchand"></h2>
+  <div class="carte"><div id="listeMarchands"></div></div>
+  <div style="margin-top:12px;"><button id="choixDeco" data-i="deconnexion"></button></div>
+</div>
+
+<!-- Ouverture de caisse -->
+<div id="ecranOuverture" class="ecran cache">
+  <h2 data-i="ouvertureTitre"></h2>
+  <div class="raison" data-i="ouvertureDesc" style="margin-bottom:10px;"></div>
+  <div class="carte">
+    <div id="tabOuv"></div>
+    <h3 style="margin-top:12px;"><span data-i="totalBilletage"></span> <span id="totOuv">0</span> FCFA</h3>
+    <button id="btnOuvrir" class="vert" style="width:100%;" data-i="ouvrirCaisse"></button>
+  </div>
+  <div style="margin-top:12px;display:flex;gap:8px;"><button id="ouvDeco" data-i="deconnexion"></button><a href="/admin" style="align-self:center;" data-i="backOffice"></a></div>
+</div>
+
+<!-- Fermeture de caisse -->
+<div id="ecranFermeture" class="ecran cache">
+  <h2 data-i="fermetureTitre"></h2>
+  <div class="raison" data-i="fermetureDesc" style="margin-bottom:10px;"></div>
+  <div class="carte">
+    <div id="tabFer"></div>
+    <h3 style="margin-top:12px;"><span data-i="totalBilletage"></span> <span id="totFer">0</span> FCFA</h3>
+    <label for="raisonEcart" data-i="raisonEcart"></label><textarea id="raisonEcart" rows="2"></textarea>
+    <div class="raison" id="aideEcart"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;"><button id="btnFermer" class="principal" style="flex:1;" data-i="confirmerFermeture"></button><button id="btnAnnulerFermer" data-i="annuler"></button></div>
+  </div>
+</div>
+
+<!-- Recapitulatif de cloture -->
+<div id="ecranRecap" class="ecran cache">
+  <h2 data-i="sessionFermee"></h2>
+  <div class="carte" id="recapCorps"></div>
+  <button id="recapOk" class="principal" style="margin-top:12px;width:100%;" data-i="retourCaisse"></button>
+</div>
+
+<!-- Vente -->
+<div id="vente" class="cache">
+  <div class="barre">
+    <div class="nom"><span id="nomMarchand"></span><span class="sous" id="sousBarre"></span></div>
+    <span id="modesVente" class="modes-vente cache"><button id="btnModeDirect" data-i="venteDirecte"></button><button id="btnModeTables" data-i="tables"></button></span>
+    <button id="btnHL" class="cache"></button>
+    <button id="btnClients" class="cache" data-i="cl_titre"></button>
+    <button id="btnAttentes"></button>
+    <button id="btnDernierTicket" data-i="dernierTicket"></button>
+    <button id="btnCloture" data-i="cloturer"></button>
+    <a href="/admin" data-i="backOffice"></a>
+    <button id="btnLang"></button>
+    <button id="btnDeco" data-i="deconnexion"></button>
+  </div>
+  <div id="bandeauHL" class="cache" data-i="hlBandeau"></div>
+  <div id="vueTables" class="cache">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;"><h3 style="margin:0;margin-right:auto;" data-i="tables"></h3><button id="btnActualiserTables" data-i="actualiser"></button><button id="btnReglagesResto" class="cache" data-i="reglagesTables"></button></div>
+    <div id="grilleTables"></div>
+  </div>
+  <div class="corps" id="corpsVente">
+    <div class="gauche">
+      <input id="recherche" type="search" autocomplete="off" data-ip="rechercher" />
+      <div id="listeArticles"></div>
+    </div>
+    <div class="droite">
+      <div id="droiteDirect" style="display:flex;flex-direction:column;min-height:0;flex:1;">
+      <h3 data-i="panier"></h3>
+      <div id="lignesPanier"></div>
+      <div class="totaux">
+        <div class="l"><span data-i="sousTotal"></span><span id="tSous">0</span></div>
+        <div class="l cache" id="ligneRemise"><span id="libRemise"></span><span id="tRemise">0</span></div>
+        <div class="l grand"><span data-i="total"></span><span id="tTotal">0 FCFA</span></div>
+      </div>
+      <div class="actions">
+        <button id="btnRemise" class="cache" data-i="remise"></button>
+        <button id="btnMettreAttente" data-i="mettreAttente"></button>
+        <button id="btnVider" class="danger" data-i="vider"></button>
+        <button id="btnPayer" class="vert payer" data-i="payer"></button>
+      </div>
+      </div>
+      <div id="droiteResto" class="cache" style="display:flex;flex-direction:column;min-height:0;flex:1;overflow:auto;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Fenetres -->
+<div id="voile" class="voile cache"><div class="fenetre" id="fenetre"></div></div>
+
+<!-- Ticket (imprimable en 80 mm) -->
+<div id="zoneImpression" class="cache"><div id="ticket"></div></div>
+
+<script>
+"use strict";
+/* ============ Traductions ============ */
+const TXT = {
+  fr: {
+    titreApp: "IzyVendeur Caisse", sousTitreApp: "Point de vente", identifiant: "Identifiant", motDePasse: "Mot de passe", seConnecter: "Se connecter", deconnexion: "Déconnexion",
+    choisirMarchand: "Choisissez le commerce", aucunMarchandCaisse: "Aucun commerce n'a la caisse activée.", droitCaisseManquant: "Ce compte n'a pas le droit d'utiliser la caisse.",
+    ouvertureTitre: "Ouverture de caisse", ouvertureDesc: "Comptez le fond de caisse, coupure par coupure, avant de commencer à vendre.", totalBilletage: "Total compté :", ouvrirCaisse: "Ouvrir la caisse",
+    fermetureTitre: "Clôture de caisse", fermetureDesc: "Recomptez le tiroir, coupure par coupure.", raisonEcart: "Raison de l'écart (si besoin)", aideEcart: "Au-delà de {seuil} FCFA d'écart, une raison est obligatoire.", confirmerFermeture: "Clôturer la caisse", annuler: "Annuler",
+    sessionFermee: "Caisse clôturée", fondInitial: "Fond de caisse", ventesEspeces: "Ventes en espèces", montantTheorique: "Montant théorique", montantCompte: "Montant compté", ecart: "Écart", retourCaisse: "Retour à la caisse",
+    backOffice: "Retours et rapports", dernierTicket: "Dernier ticket", cloturer: "Clôturer", rechercher: "Rechercher ou scanner un article…", panier: "Panier", sousTotal: "Sous-total", total: "Total", remise: "Remise", mettreAttente: "Mettre en attente", vider: "Vider", payer: "Encaisser",
+    panierVide: "Le panier est vide.", stock: "Stock : {n}", rupture: "Rupture", attentes: "En attente ({n})", aucuneAttente: "Aucune vente en attente.", reprendre: "Reprendre", supprimer: "Supprimer", libelleAttente: "Nom de la vente en attente (client, table…)", enregistrer: "Enregistrer", fermer: "Fermer",
+    attenteTitre: "Ventes en attente", panierNonVide: "Videz le panier ou mettez-le en attente avant d'en reprendre un autre.", reprisePartielle: "Certains articles n'existent plus et ont été ignorés.", articles: "{n} article(s)",
+    paiementTitre: "Paiement", resteAPayer: "Reste à payer", especes: "Espèces", om: "Orange Money", momo: "MTN MoMo", carte: "Carte", cheque: "Chèque", mixte: "Paiement mixte",
+    montant: "Montant", montantRecu: "Montant reçu", reference: "Référence (code de confirmation, n° de chèque…)", exact: "Exact", rendu: "Monnaie à rendre", manque: "Il manque", valider: "Valider la vente", retirer: "Retirer", ajouterPaiement: "Ajouter un moyen de paiement",
+    paiementsElec: "Paiements hors espèces", especesDues: "Espèces à encaisser",
+    remiseTitre: "Remise sur la vente", remisePourcent: "Pourcentage (%)", remiseMontant: "Montant (FCFA)", valeur: "Valeur", motif: "Motif de la remise", appliquer: "Appliquer", retirerRemise: "Retirer la remise", remiseLib: "Remise",
+    venteOk: "Vente enregistrée", nouvelleVente: "Nouvelle vente", imprimer: "Imprimer le ticket", ticketNum: "Ticket {n}", date: "Date", caissier: "Caissier", merci: "Merci de votre visite", recu: "Reçu", monnaie: "Monnaie", paye: "Payé", qte: "Qté",
+    hlHorsLigne: "Hors ligne", hlAEnvoyer: "{n} à envoyer", hlSynchro: "Envoi…", hlTitre: "Ventes hors ligne", hlAttente: "En attente d'envoi", hlErreur: "Refusée", hlRetry: "Réessayer", hlAbandon: "Abandonner", hlConfirmAbandon: "Confirmer l'abandon", hlSync: "Envoyer maintenant", hlExport: "Exporter (CSV)", hlAucune: "Aucune vente en attente.", hlBandeau: "Mode hors ligne : les ventes sont enregistrées sur cet appareil et envoyées dès le retour de la connexion. Remises, clients, tables et paiements à crédit ne sont pas disponibles.", hlNonDispo: "Hors ligne : cette action exige la connexion (remise, client, crédit, table).", hlFermerBloque: "Des ventes hors ligne n'ont pas encore été envoyées : synchronisez-les avant de clôturer la caisse.", hlSessionFermee: "La caisse est fermée : ouvrez-la (avec la connexion) pour envoyer les ventes hors ligne.", hlSyncOk: "{n} vente(s) hors ligne envoyée(s).", hlSyncEcart: "{n} avec écart de stock ou de prix (signalé au propriétaire).", hlAncien: "Données hors ligne trop anciennes : connectez-vous une fois avec Internet.", hlPasDeSession: "Aucune caisse ouverte sur cet appareil : ouvrez-la avec Internet avant de vendre hors ligne.", hlTicketNum: "N° local {n}", hlTicketMention: "VENTE HORS LIGNE - à confirmer",
+    sessionOuverteLe: "Caisse ouverte {h}", chargement: "Chargement…", erreurReseau: "Connexion impossible. Vérifiez le réseau.", sessionExpiree: "Session expirée : reconnectez-vous.", pasDeSession: "Aucune session de caisse ouverte.",
+    venteDirecte: "Vente directe", tables: "Tables", actualiser: "Actualiser", reglagesTables: "Tables et postes", tableLibre: "Libre", tableOccupee: "{n} article(s)", nonEnvoye: "{n} à envoyer", depuis: "depuis {m} min", par: "par {nom}", couverts: "Couverts", ouvrirTable: "Ouvrir la table", additionTitre: "Addition", retourTables: "← Tables", dejaCommande: "Déjà commandé", aAjouter: "À ajouter", ajouterTable: "Ajouter à la table", envoyerPrepa: "Envoyer en préparation", encaisserAddition: "Encaisser…", transferer: "Changer de table", annulerAddition: "Annuler l'addition", additionVide: "Aucun article sur cette table.", envoye: "envoyé", nouveau: "à envoyer", noteArticle: "Note (cuisson, sans glace…)", retirerLigne: "Retirer", quantiteARetirer: "Quantité à retirer", motifAnnulation: "Motif (article déjà envoyé)", confirmer: "Confirmer", bonsTitre: "Bons de préparation", imprimerBons: "Imprimer les bons", sansPoste: "Servis directement (sans bon) : {liste}", posteBar: "BAR", posteCuisine: "CUISINE", bonAnnulation: "ANNULATION", encaisserTitre: "Encaisser — sélection", toutSelectionner: "Tout", aucun: "Aucun", totalSelection: "Total de la sélection", continuerPaiement: "Passer au paiement", transfertTitre: "Transférer vers…", tableOccupeeFusion: "(occupée : fusion)", annulerAdditionTitre: "Annuler l'addition", motifAnnulAddition: "Motif de l'annulation", reglagesTitre: "Tables et postes", listeTables: "Tables (une par ligne)", postesParCategorie: "Poste de préparation par catégorie", aucunPoste: "Aucun (servi directement)", enregistrer2: "Enregistrer", additionSoldee: "Addition soldée", restePayer: "Reste sur la table : {n} article(s)", pasDeTables: "Aucune table configurée.", configurerTables: "Ajoutez vos tables dans « Tables et postes ».", rafraichi: "Mis à jour", tableNom: "Table", serveurLib: "Serveur",
+    tuileSansStock: "Plus de stock", quantiteMax: "Quantité supérieure au stock disponible", installer: "Installer", langue: "EN", gros: "prix de gros", articleAjoute: "Ajouté : {nom}", codeInconnu: "Code inconnu : {code}", venteAttenteOk: "Vente mise en attente", coupure: "Coupure", quantite: "Quantité",
+    credit: "À crédit", cl_titre: "Clients", cl_client: "Client", cl_choisir: "Choisir un client", cl_selectionner: "Choisir", cl_rechercher: "Nom ou téléphone…", cl_nouveau: "Nouveau client", cl_aucun: "Aucun client trouvé.", cl_nom: "Nom", cl_tel: "Téléphone (facultatif)", cl_note: "Note (facultatif)", cl_plafond: "Plafond de crédit", cl_plafondProprio: "Le plafond de crédit est fixé ensuite par le propriétaire (0 = aucun crédit).", cl_cree: "Client enregistré", cl_modifie: "Client modifié", cl_modifier: "Modifier le client", cl_actif: "Client actif",
+    cl_dette: "Dette", cl_dispo: "Crédit disponible", cl_montantCredit: "Montant à mettre à crédit", cl_toutCredit: "Tout à crédit", cl_plafondAtteint: "Plafond de crédit atteint : aucun nouveau crédit possible.", cl_pasDePlafond: "Aucun plafond de crédit : le propriétaire doit en fixer un pour ce client.", cl_depassePlafond: "Dépasse le crédit disponible", cl_enRetard: "en retard", cl_releve: "Relevé", cl_reglement: "Règlement", cl_reglementTitre: "Règlement d'une dette", cl_mode: "Mode de paiement", cl_encaisser: "Encaisser le règlement", cl_resteApres: "Reste dû après règlement", cl_reglementOk: "Règlement encaissé", cl_ventes: "Achats", cl_reglements: "Règlements", cl_reste: "reste", cl_echeance: "Échéance", cl_annule: "annulé", cl_annulerReglement: "Annuler", cl_reglementAnnule: "Règlement annulé"
+  },
+  en: {
+    titreApp: "IzyVendeur Till", sousTitreApp: "Point of sale", identifiant: "Username", motDePasse: "Password", seConnecter: "Sign in", deconnexion: "Sign out",
+    choisirMarchand: "Choose the business", aucunMarchandCaisse: "No business has the till enabled.", droitCaisseManquant: "This account is not allowed to use the till.",
+    ouvertureTitre: "Open the till", ouvertureDesc: "Count the opening float, denomination by denomination, before selling.", totalBilletage: "Counted total:", ouvrirCaisse: "Open the till",
+    fermetureTitre: "Close the till", fermetureDesc: "Recount the drawer, denomination by denomination.", raisonEcart: "Reason for the gap (if any)", aideEcart: "Beyond {seuil} FCFA of gap, a reason is required.", confirmerFermeture: "Close the till", annuler: "Cancel",
+    sessionFermee: "Till closed", fondInitial: "Opening float", ventesEspeces: "Cash sales", montantTheorique: "Expected amount", montantCompte: "Counted amount", ecart: "Gap", retourCaisse: "Back to the till",
+    backOffice: "Returns and reports", dernierTicket: "Last receipt", cloturer: "Close till", rechercher: "Search or scan an item…", panier: "Cart", sousTotal: "Subtotal", total: "Total", remise: "Discount", mettreAttente: "Hold sale", vider: "Clear", payer: "Charge",
+    panierVide: "The cart is empty.", stock: "Stock: {n}", rupture: "Out of stock", attentes: "On hold ({n})", aucuneAttente: "No sale on hold.", reprendre: "Resume", supprimer: "Delete", libelleAttente: "Name of the held sale (customer, table…)", enregistrer: "Save", fermer: "Close",
+    attenteTitre: "Held sales", panierNonVide: "Clear the cart or hold it before resuming another sale.", reprisePartielle: "Some items no longer exist and were skipped.", articles: "{n} item(s)",
+    paiementTitre: "Payment", resteAPayer: "Left to pay", especes: "Cash", om: "Orange Money", momo: "MTN MoMo", carte: "Card", cheque: "Cheque", mixte: "Split payment",
+    montant: "Amount", montantRecu: "Amount received", reference: "Reference (confirmation code, cheque no…)", exact: "Exact", rendu: "Change to give", manque: "Missing", valider: "Confirm the sale", retirer: "Remove", ajouterPaiement: "Add a payment method",
+    paiementsElec: "Non-cash payments", especesDues: "Cash to collect",
+    remiseTitre: "Discount on the sale", remisePourcent: "Percentage (%)", remiseMontant: "Amount (FCFA)", valeur: "Value", motif: "Reason for the discount", appliquer: "Apply", retirerRemise: "Remove the discount", remiseLib: "Discount",
+    venteOk: "Sale recorded", nouvelleVente: "New sale", imprimer: "Print the receipt", ticketNum: "Receipt {n}", date: "Date", caissier: "Cashier", merci: "Thank you for your visit", recu: "Received", monnaie: "Change", paye: "Paid", qte: "Qty",
+    hlHorsLigne: "Offline", hlAEnvoyer: "{n} to send", hlSynchro: "Sending…", hlTitre: "Offline sales", hlAttente: "Waiting to be sent", hlErreur: "Rejected", hlRetry: "Retry", hlAbandon: "Discard", hlConfirmAbandon: "Confirm discard", hlSync: "Send now", hlExport: "Export (CSV)", hlAucune: "No pending sales.", hlBandeau: "Offline mode: sales are saved on this device and sent as soon as the connection is back. Discounts, customers, tables and credit payments are not available.", hlNonDispo: "Offline: this action needs a connection (discount, customer, credit, table).", hlFermerBloque: "Some offline sales have not been sent yet: sync them before closing the till.", hlSessionFermee: "The till is closed: open it (with a connection) to send the offline sales.", hlSyncOk: "{n} offline sale(s) sent.", hlSyncEcart: "{n} with a stock or price difference (reported to the owner).", hlAncien: "Offline data is too old: sign in once with Internet.", hlPasDeSession: "No till open on this device: open it with Internet before selling offline.", hlTicketNum: "Local no. {n}", hlTicketMention: "OFFLINE SALE - to be confirmed",
+    sessionOuverteLe: "Till opened {h}", chargement: "Loading…", erreurReseau: "Cannot connect. Check the network.", sessionExpiree: "Session expired: please sign in again.", pasDeSession: "No till session is open.",
+    venteDirecte: "Direct sale", tables: "Tables", actualiser: "Refresh", reglagesTables: "Tables and stations", tableLibre: "Free", tableOccupee: "{n} item(s)", nonEnvoye: "{n} to send", depuis: "{m} min ago", par: "by {nom}", couverts: "Covers", ouvrirTable: "Open the table", additionTitre: "Tab", retourTables: "← Tables", dejaCommande: "Already ordered", aAjouter: "To add", ajouterTable: "Add to the table", envoyerPrepa: "Send to kitchen/bar", encaisserAddition: "Pay…", transferer: "Move table", annulerAddition: "Cancel the tab", additionVide: "Nothing on this table.", envoye: "sent", nouveau: "to send", noteArticle: "Note (cooking, no ice…)", retirerLigne: "Remove", quantiteARetirer: "Quantity to remove", motifAnnulation: "Reason (item already sent)", confirmer: "Confirm", bonsTitre: "Preparation tickets", imprimerBons: "Print the tickets", sansPoste: "Served directly (no ticket): {liste}", posteBar: "BAR", posteCuisine: "KITCHEN", bonAnnulation: "CANCELLATION", encaisserTitre: "Pay — selection", toutSelectionner: "All", aucun: "None", totalSelection: "Selection total", continuerPaiement: "Go to payment", transfertTitre: "Move to…", tableOccupeeFusion: "(occupied: merge)", annulerAdditionTitre: "Cancel the tab", motifAnnulAddition: "Reason for cancelling", reglagesTitre: "Tables and stations", listeTables: "Tables (one per line)", postesParCategorie: "Preparation station per category", aucunPoste: "None (served directly)", enregistrer2: "Save", additionSoldee: "Tab settled", restePayer: "Left on the table: {n} item(s)", pasDeTables: "No table configured.", configurerTables: "Add your tables under “Tables and stations”.", rafraichi: "Updated", tableNom: "Table", serveurLib: "Server",
+    tuileSansStock: "Out of stock", quantiteMax: "Quantity above the available stock", installer: "Install", langue: "FR", gros: "wholesale price", articleAjoute: "Added: {nom}", codeInconnu: "Unknown code: {code}", venteAttenteOk: "Sale put on hold", coupure: "Denomination", quantite: "Quantity",
+    credit: "On credit", cl_titre: "Customers", cl_client: "Customer", cl_choisir: "Choose a customer", cl_selectionner: "Select", cl_rechercher: "Name or phone…", cl_nouveau: "New customer", cl_aucun: "No customer found.", cl_nom: "Name", cl_tel: "Phone (optional)", cl_note: "Note (optional)", cl_plafond: "Credit limit", cl_plafondProprio: "The credit limit is set afterwards by the owner (0 = no credit).", cl_cree: "Customer saved", cl_modifie: "Customer updated", cl_modifier: "Edit customer", cl_actif: "Active customer",
+    cl_dette: "Debt", cl_dispo: "Credit available", cl_montantCredit: "Amount to put on credit", cl_toutCredit: "All on credit", cl_plafondAtteint: "Credit limit reached: no new credit possible.", cl_pasDePlafond: "No credit limit: the owner must set one for this customer.", cl_depassePlafond: "Exceeds the available credit", cl_enRetard: "overdue", cl_releve: "Statement", cl_reglement: "Payment", cl_reglementTitre: "Debt payment", cl_mode: "Payment method", cl_encaisser: "Collect the payment", cl_resteApres: "Still owed after payment", cl_reglementOk: "Payment collected", cl_ventes: "Purchases", cl_reglements: "Payments", cl_reste: "left", cl_echeance: "Due date", cl_annule: "cancelled", cl_annulerReglement: "Cancel", cl_reglementAnnule: "Payment cancelled"
+  }
+};
+let LANG = "fr";
+try { LANG = localStorage.getItem("izy_caisse_lang") || (/^en/i.test(navigator.language || "") ? "en" : "fr"); } catch (e) {}
+if (!TXT[LANG]) LANG = "fr";
+function t(cle, vars) {
+  let s = (TXT[LANG] && TXT[LANG][cle]) || TXT.fr[cle] || cle;
+  if (vars) Object.keys(vars).forEach((k) => { s = s.split("{" + k + "}").join(vars[k]); });
+  return s;
+}
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function nombre(n) { return (Number(n) || 0).toLocaleString(LANG === "en" ? "en-US" : "fr-FR").replace(/ | /g, " "); }
+function f(n) { return nombre(n) + " FCFA"; }
+function appliquerLangue() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll("[data-i]").forEach((el) => { el.textContent = t(el.dataset.i); });
+  document.querySelectorAll("[data-ip]").forEach((el) => { el.placeholder = t(el.dataset.ip); });
+  document.getElementById("cxLang").textContent = t("langue");
+  document.getElementById("btnLang").textContent = t("langue");
+  if (E.marchand) majBarre();
+}
+function basculerLangue() { LANG = LANG === "fr" ? "en" : "fr"; try { localStorage.setItem("izy_caisse_lang", LANG); } catch (e) {} appliquerLangue(); if (E.vue === "vente") { dessinerArticles(); dessinerPanier(); if (E.mode === "tables" && E.tables) dessinerTables(); else if (E.mode === "addition" && E.addition) dessinerAddition(); } }
+
+/* ============ Etat et appels ============ */
+const E = { mode: "direct", tables: null, addition: null, encaissement: null, base: null, vue: "", moi: null, marchand: null, config: null, session: null, lignes: [], panier: [], attentes: [], grosActif: false, remise: null, motifRemise: "", dernier: null, gros: false };
+const $ = (id) => document.getElementById(id);
+let minuteurErr = null;
+function erreur(msg) { const z = $("erreurGlobale"); z.textContent = msg; z.classList.remove("cache"); clearTimeout(minuteurErr); minuteurErr = setTimeout(() => z.classList.add("cache"), 5000); }
+function info(msg) { const z = $("infoGlobale"); z.textContent = msg; z.classList.remove("cache"); setTimeout(() => z.classList.add("cache"), 1800); }
+async function api(chemin, opts) {
+  const options = Object.assign({ headers: { "Content-Type": "application/json" }, credentials: "same-origin" }, opts || {});
+  let res, minuteurAbandon = null;
+  // Etape 91 : delai maximal (un reseau capture ou tres lent ne doit pas figer la caisse) ; une coupure est reconnue par err.reseau.
+  if (typeof AbortController !== "undefined") { const c = new AbortController(); options.signal = c.signal; minuteurAbandon = setTimeout(() => c.abort(), 20000); }
+  try { res = await fetch(chemin, options); } catch (e) { const er = new Error(t("erreurReseau")); er.reseau = true; try { HL.signalerCoupure(); } catch (x) {} throw er; }
+  finally { if (minuteurAbandon) clearTimeout(minuteurAbandon); }
+  if (res.status === 401 && chemin.indexOf("/api/connexion") === -1) { montrer("ecranConnexion"); const er = new Error(t("sessionExpiree")); er.statut = 401; throw er; }
+  let j = null; try { j = await res.json(); } catch (e) {}
+  if (!res.ok) { const er = new Error((j && j.erreur) || res.statusText); er.statut = res.status; if (j && j.code) er.code = j.code; throw er; }
+  return j;
+}
+const ECRANS = ["ecranConnexion", "ecranChoix", "ecranOuverture", "ecranFermeture", "ecranRecap", "vente"];
+function montrer(id) { E.vue = id === "vente" ? "vente" : id; ECRANS.forEach((x) => $(x).classList.toggle("cache", x !== id)); if (id === "vente") setTimeout(() => $("recherche").focus(), 50); }
+const ID = () => encodeURIComponent(E.marchand.id);
+
+/* ============ Connexion ============ */
+async function connexion() {
+  const identifiant = $("cxId").value.trim(), motDePasse = $("cxMdp").value;
+  if (!identifiant || !motDePasse) return;
+  $("cxBtn").disabled = true;
+  try {
+    E.moi = await api("/api/connexion", { method: "POST", body: JSON.stringify({ identifiant, motDePasse }) });
+    $("cxMdp").value = "";
+    await choisirMarchand();
+  } catch (e) { erreur(e.message); } finally { $("cxBtn").disabled = false; }
+}
+async function choisirMarchand() {
+  const liste = await api("/api/marchands");
+  // Le commerce doit avoir la Caisse activee ; un employe doit avoir le role « caisse ».
+  if (E.moi.role === "employe" && (E.moi.roles || []).indexOf("caisse") === -1) { erreur(t("droitCaisseManquant")); await api("/api/deconnexion", { method: "POST" }).catch(() => {}); montrer("ecranConnexion"); return; }
+  const dispo = liste.filter((m) => m.optionCaissePos && m.type === "catalogue" && m.actif !== false);
+  if (!dispo.length) { erreur(t("aucunMarchandCaisse")); if (E.moi.role !== "superadmin") { await api("/api/deconnexion", { method: "POST" }).catch(() => {}); montrer("ecranConnexion"); return; } }
+  if (dispo.length === 1 && E.moi.role !== "superadmin") return demarrerMarchand(dispo[0]);
+  $("listeMarchands").innerHTML = dispo.map((m, i) => "<button data-i='" + i + "' style='width:100%;margin-bottom:8px;text-align:left;'>" + esc(m.nom) + "</button>").join("") || "<div class='raison'>" + esc(t("aucunMarchandCaisse")) + "</div>";
+  Array.prototype.forEach.call($("listeMarchands").querySelectorAll("button"), (b) => { b.onclick = () => demarrerMarchand(dispo[Number(b.dataset.i)]); });
+  montrer("ecranChoix");
+}
+async function demarrerMarchand(m) {
+  E.marchand = m; E.panier = []; E.remise = null; E.motifRemise = ""; E.dernier = null;
+  try {
+    const [config, session] = await Promise.all([api("/api/" + ID() + "/caisse/config"), api("/api/" + ID() + "/caisse/session/active")]);
+    E.config = config; E.session = session;
+    E.grosActif = false;
+    if (m.optionVenteGros) { try { const g = await api("/api/" + ID() + "/pos/gros/config"); E.grosActif = !!g.actif; } catch (e) {} }
+    if (!session) return ecranOuverture();
+    await chargerVente();
+  } catch (e) { erreur(e.message); }
+}
+
+/* ============ Billetage : ouverture / fermeture ============ */
+function tableBilletage(prefixe, coupures) {
+  return "<table class='billetage'>" + (coupures || []).map((c) => "<tr><td>" + nombre(c) + " FCFA</td><td style='text-align:right;'><input type='number' inputmode='numeric' min='0' step='1' value='0' data-b='" + prefixe + "' data-c='" + c + "' /></td></tr>").join("") + "</table>";
+}
+function brancherBilletage(prefixe, idTotal) {
+  const maj = () => { let tot = 0; document.querySelectorAll("[data-b='" + prefixe + "']").forEach((i) => { tot += Math.max(0, Math.floor(Number(i.value) || 0)) * Number(i.dataset.c); }); $(idTotal).textContent = nombre(tot); };
+  document.querySelectorAll("[data-b='" + prefixe + "']").forEach((i) => i.addEventListener("input", maj));
+  maj();
+}
+function lireBilletage(prefixe) {
+  const b = {};
+  document.querySelectorAll("[data-b='" + prefixe + "']").forEach((i) => { const q = Math.max(0, Math.floor(Number(i.value) || 0)); if (q > 0) b[i.dataset.c] = (b[i.dataset.c] || 0) + q; });
+  return b;
+}
+function ecranOuverture() {
+  $("tabOuv").innerHTML = tableBilletage("ouv", E.config.coupures);
+  brancherBilletage("ouv", "totOuv");
+  montrer("ecranOuverture");
+}
+async function ouvrirCaisse() {
+  $("btnOuvrir").disabled = true;
+  try { await api("/api/" + ID() + "/caisse/session/ouvrir", { method: "POST", body: JSON.stringify({ billetage: lireBilletage("ouv") }) }); E.session = await api("/api/" + ID() + "/caisse/session/active"); await chargerVente(); }
+  catch (e) { erreur(e.message); } finally { $("btnOuvrir").disabled = false; }
+}
+function ecranFermeture() {
+  if (HL.option() && (HL.actif || HL.fileDuMarchand().length)) { erreur(t("hlFermerBloque")); return; }
+  $("tabFer").innerHTML = tableBilletage("fer", E.config.coupures);
+  brancherBilletage("fer", "totFer");
+  $("raisonEcart").value = "";
+  $("aideEcart").textContent = t("aideEcart", { seuil: nombre(E.config.seuilEcart || 0) });
+  montrer("ecranFermeture");
+}
+async function fermerCaisse() {
+  $("btnFermer").disabled = true;
+  try {
+    const s = await api("/api/" + ID() + "/caisse/session/fermer", { method: "POST", body: JSON.stringify({ sessionId: E.session.id, billetageFermeture: lireBilletage("fer"), raisonEcart: $("raisonEcart").value }) });
+    $("recapCorps").innerHTML = [["fondInitial", s.fondInitial], ["ventesEspeces", s.totalVentesEspeces], ["montantTheorique", s.montantTheorique], ["montantCompte", s.montantCompte], ["ecart", s.ecart]].map((x) => "<p><strong>" + esc(t(x[0])) + " :</strong> " + f(x[1]) + "</p>").join("") + (s.raisonEcart ? "<p class='raison'>" + esc(s.raisonEcart) + "</p>" : "");
+    E.session = null; E.panier = [];
+    montrer("ecranRecap");
+  } catch (e) { erreur(e.message); } finally { $("btnFermer").disabled = false; }
+}
+
+/* ============ Catalogue et panier ============ */
+async function actualiserLignes() {
+  const cat = await api("/api/" + ID() + "/catalogue");
+  E.lignes = [];
+  cat.forEach((p) => (p.variantes || []).forEach((v) => {
+    E.lignes.push({ cle: p.id + "|" + (v.couleur || "") + "|" + (v.taille || ""), productId: p.id, produit: p.nom, cat: p.categorie || p.cat || "", reference: p.reference || "", codeBarres: v.codeBarres || "", unite: p.unite && p.unite !== "piece" ? p.unite : "", decimal: p.venteDecimale === true, couleur: v.couleur || "", taille: v.taille || "", prix: Number(v.prix) || 0, stock: Number(v.stockReel) || 0, illimite: v.stockIllimite === true || p.stockIllimite === true });
+  }));
+  if (E.vue === "vente") { dessinerArticles(); }
+}
+async function chargerVente() {
+  await HL.charger();
+  await actualiserLignes();
+  try { E.attentes = await api("/api/" + ID() + "/pos/attente"); } catch (e) { E.attentes = []; }
+  E.mode = E.marchand.optionRestauration ? "tables" : "direct";
+  HL.sauverInstantane(); HL.demarrerSurveillance();
+  majBarre(); dessinerArticles(); dessinerPanier();
+  $("recherche").value = "";
+  montrer("vente");
+  afficherMode();
+}
+function majBarre() {
+  if (!E.marchand) return;
+  $("nomMarchand").textContent = E.marchand.nom;
+  $("sousBarre").textContent = (E.moi && E.moi.adminUser ? E.moi.adminUser + " · " : "") + (E.session ? t("sessionOuverteLe", { h: new Date(E.session.dateOuverture).toLocaleTimeString(LANG === "en" ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" }) }) : "");
+  $("btnAttentes").textContent = t("attentes", { n: (E.attentes || []).length });
+  const peutRemise = E.moi && (E.moi.role !== "employe" || (E.moi.roles || []).indexOf("remises") !== -1);
+  $("btnRemise").classList.toggle("cache", !peutRemise || HL.actif);
+  const resto = !!E.marchand.optionRestauration;
+  $("modesVente").classList.toggle("cache", !resto);
+  $("btnModeDirect").classList.toggle("actif", E.mode === "direct");
+  $("btnModeTables").classList.toggle("actif", E.mode !== "direct");
+  $("btnAttentes").classList.toggle("cache", E.mode !== "direct");
+  $("btnClients").classList.toggle("cache", !credOn());
+  HL.majStatut();
+  $("btnReglagesResto").classList.toggle("cache", !(resto && E.moi && E.moi.role !== "employe"));
+}
+function norm(s) { return (s || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim(); }
+function libelleLigne(l) { return l.produit + ((l.couleur || l.taille) ? " (" + [l.couleur, l.taille].filter(Boolean).join(" ") + ")" : ""); }
+function dessinerArticles() {
+  const q = norm($("recherche").value);
+  const liste = E.lignes.filter((l) => !q || norm(l.produit).indexOf(q) !== -1 || norm(l.reference).indexOf(q) !== -1 || norm(l.codeBarres).indexOf(q) !== -1 || norm(l.cat).indexOf(q) !== -1 || norm(l.couleur).indexOf(q) !== -1 || norm(l.taille).indexOf(q) !== -1).slice(0, 150);
+  $("listeArticles").innerHTML = liste.map((l) => {
+    const vide = !l.illimite && l.stock <= 0;
+    return "<button class='tuile" + (vide ? " rupture" : "") + "' data-k='" + esc(l.cle) + "'" + (vide ? " disabled" : "") + "><span class='n'>" + esc(libelleLigne(l)) + "</span><span class='p'>" + f(l.prix) + (l.unite ? " / " + esc(l.unite) : "") + "</span><span class='s'>" + (vide ? esc(t("rupture")) : l.illimite ? "" : esc(t("stock", { n: nombre(l.stock) }))) + "</span></button>";
+  }).join("");
+  Array.prototype.forEach.call($("listeArticles").querySelectorAll("button"), (b) => { b.onclick = () => ajouterAuPanier(b.dataset.k, 1); });
+}
+function ajouterAuPanier(cle, qte) {
+  const l = E.lignes.find((x) => x.cle === cle); if (!l) return;
+  let it = E.panier.find((x) => x.cle === cle);
+  if (it) it.quantite = arrondi(it.quantite + qte, l.decimal);
+  else E.panier.push({ cle, productId: l.productId, couleur: l.couleur, taille: l.taille, quantite: qte, prixUnitaire: l.prix, decimal: l.decimal });
+  changerPanier();
+}
+function arrondi(q, dec) { return dec ? Math.round(q * 1000) / 1000 : Math.round(q); }
+function ligneDe(it) { return E.lignes.find((x) => x.cle === it.cle) || {}; }
+function brut(it) { return Math.round(it.prixUnitaire * it.quantite); }
+function calcul() {
+  const sous = E.base !== null ? E.base : E.panier.reduce((s, it) => s + brut(it), 0);
+  let remise = 0;
+  if (E.remise && sous > 0) remise = E.remise.type === "pourcent" ? Math.min(sous, Math.round(sous * E.remise.valeur / 100)) : Math.min(sous, Math.round(E.remise.valeur));
+  return { sous, remise, total: sous - remise };
+}
+let minuteurGros = null;
+function changerPanier() { if (E.mode === "addition") { dessinerAddition(); return; } dessinerPanier(); if (E.grosActif) { clearTimeout(minuteurGros); minuteurGros = setTimeout(majGros, 250); } }
+async function majGros() {
+  if (!E.panier.length) return;
+  const envoye = E.panier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite }));
+  try {
+    const ap = await api("/api/" + ID() + "/pos/gros/apercu", { method: "POST", body: JSON.stringify({ lignes: envoye }) });
+    if (ap.actif && ap.lignes && E.panier.length === envoye.length) { E.panier.forEach((it, i) => { const l = ap.lignes[i]; if (l) { it.prixUnitaire = l.prixUnitaire; it.gros = !!l.gros; } }); dessinerPanier(true); }
+  } catch (e) { /* l'apercu est un confort : le serveur recalcule de toute facon a la vente */ }
+}
+function dessinerPanier(sansMaj) {
+  const z = $("lignesPanier");
+  if (!E.panier.length) z.innerHTML = "<p class='raison'>" + esc(t("panierVide")) + "</p>";
+  else z.innerHTML = E.panier.map((it, i) => {
+    const l = ligneDe(it);
+    return "<div class='lp'><div><div class='t'>" + esc(libelleLigne(l.produit ? l : { produit: it.productId, couleur: it.couleur, taille: it.taille })) + "</div><div class='raison'>" + f(it.prixUnitaire) + (l.unite ? " / " + esc(l.unite) : "") + (it.gros ? " <span class='gros'>· " + esc(t("gros")) + "</span>" : "") + "</div></div><div class='m'>" + f(brut(it)) + "</div>" +
+      "<div class='q'><button data-a='moins' data-i='" + i + "'>−</button><input type='number' inputmode='decimal' data-q='" + i + "' value='" + it.quantite + "' min='0' step='" + (it.decimal ? "0.001" : "1") + "' /><button data-a='plus' data-i='" + i + "'>+</button></div><div style='text-align:right;'><button class='danger' data-a='x' data-i='" + i + "' style='min-height:36px;padding:2px 10px;'>✕</button></div></div>";
+  }).join("");
+  Array.prototype.forEach.call(z.querySelectorAll("button[data-a]"), (b) => {
+    b.onclick = () => {
+      const i = Number(b.dataset.i), it = E.panier[i]; if (!it) return;
+      if (b.dataset.a === "x") E.panier.splice(i, 1);
+      else { const pas = it.decimal ? (it.quantite >= 1 ? 1 : 0.1) : 1; it.quantite = arrondi(it.quantite + (b.dataset.a === "plus" ? pas : -pas), it.decimal); if (it.quantite <= 0) E.panier.splice(i, 1); }
+      changerPanier();
+    };
+  });
+  Array.prototype.forEach.call(z.querySelectorAll("input[data-q]"), (inp) => {
+    inp.onchange = () => { const it = E.panier[Number(inp.dataset.q)]; if (!it) return; let q = Number(String(inp.value).replace(",", ".")); if (!Number.isFinite(q) || q <= 0) { E.panier.splice(Number(inp.dataset.q), 1); } else { it.quantite = arrondi(q, it.decimal); if (!it.decimal && it.quantite < 1) it.quantite = 1; } changerPanier(); };
+  });
+  const c = calcul();
+  $("tSous").textContent = f(c.sous);
+  $("ligneRemise").classList.toggle("cache", !c.remise);
+  $("libRemise").textContent = t("remiseLib") + (E.remise && E.remise.type === "pourcent" ? " (" + E.remise.valeur + " %)" : "");
+  $("tRemise").textContent = "− " + f(c.remise);
+  $("tTotal").textContent = f(c.total);
+  $("btnPayer").disabled = !E.panier.length;
+  $("btnMettreAttente").disabled = !E.panier.length;
+  $("btnVider").disabled = !E.panier.length;
+}
+function scanner(valeur) {
+  const v = norm(valeur); if (!v) return false;
+  const exact = E.lignes.filter((l) => (l.codeBarres && norm(l.codeBarres) === v) || (l.reference && norm(l.reference) === v));
+  if (exact.length === 1) { ajouterAuPanier(exact[0].cle, 1); info(t("articleAjoute", { nom: exact[0].produit })); return true; }
+  return false;
+}
+
+/* ============ Fenetres ============ */
+function ouvrirFenetre(html) { $("fenetre").innerHTML = html; $("voile").classList.remove("cache"); }
+function fermerFenetre() { $("voile").classList.add("cache"); $("fenetre").innerHTML = ""; if (E.vue === "vente") $("recherche").focus(); }
+$("voile").addEventListener("mousedown", (ev) => { if (ev.target === $("voile")) fermerFenetre(); });
+
+/* ---- Remise ---- */
+function fenetreRemise() {
+  const r = E.remise || { type: "pourcent", valeur: "" };
+  ouvrirFenetre("<h3>" + esc(t("remiseTitre")) + "</h3><div class='grille' style='display:grid;grid-template-columns:1fr 1fr;gap:8px;'><div><label>" + esc(t("remisePourcent")) + " / " + esc(t("remiseMontant")) + "</label><select id='rmType'><option value='pourcent'" + (r.type === "pourcent" ? " selected" : "") + ">%</option><option value='montant'" + (r.type === "montant" ? " selected" : "") + ">FCFA</option></select></div><div><label>" + esc(t("valeur")) + "</label><input id='rmVal' type='number' inputmode='decimal' min='0' value='" + esc(r.valeur) + "'/></div></div><label>" + esc(t("motif")) + "</label><input id='rmMotif' value='" + esc(E.motifRemise) + "' maxlength='200' />" +
+    "<div style='display:flex;gap:8px;margin-top:14px;'><button class='principal' id='rmOk' style='flex:1;'>" + esc(t("appliquer")) + "</button><button id='rmNon'>" + esc(t("retirerRemise")) + "</button><button id='rmX'>" + esc(t("annuler")) + "</button></div>");
+  $("rmOk").onclick = () => { const v = Number($("rmVal").value); if (!(v > 0)) { E.remise = null; } else { E.remise = { type: $("rmType").value, valeur: v }; E.motifRemise = $("rmMotif").value.trim(); if (!E.motifRemise) { erreur(t("motif")); return; } } fermerFenetre(); dessinerPanier(); };
+  $("rmNon").onclick = () => { E.remise = null; E.motifRemise = ""; fermerFenetre(); dessinerPanier(); };
+  $("rmX").onclick = fermerFenetre;
+}
+
+/* ---- Ventes en attente ---- */
+function fenetreMettreAttente() {
+  ouvrirFenetre("<h3>" + esc(t("mettreAttente")) + "</h3><label>" + esc(t("libelleAttente")) + "</label><input id='atLib' maxlength='40' /><div style='display:flex;gap:8px;margin-top:14px;'><button class='principal' id='atOk' style='flex:1;'>" + esc(t("enregistrer")) + "</button><button id='atX'>" + esc(t("annuler")) + "</button></div>");
+  $("atLib").focus();
+  const go = async () => {
+    try {
+      const lignes = E.panier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite }));
+      await api("/api/" + ID() + "/pos/attente", { method: "POST", body: JSON.stringify({ lignes, libelle: $("atLib").value.trim(), remiseGlobale: E.remise || undefined, motifRemise: E.motifRemise || undefined }) });
+      E.panier = []; E.remise = null; E.motifRemise = "";
+      E.attentes = await api("/api/" + ID() + "/pos/attente");
+      fermerFenetre(); majBarre(); dessinerPanier(); info(t("venteAttenteOk"));
+    } catch (e) { erreur(e.message); }
+  };
+  $("atOk").onclick = go; $("atLib").addEventListener("keydown", (ev) => { if (ev.key === "Enter") go(); }); $("atX").onclick = fermerFenetre;
+}
+function fenetreAttentes() {
+  const liste = E.attentes || [];
+  ouvrirFenetre("<h3>" + esc(t("attenteTitre")) + "</h3>" + (liste.length ? liste.map((a) => "<div class='attente-l'><div class='i'><strong>" + esc(a.libelle) + "</strong><div class='raison'>" + esc(t("articles", { n: nombre(a.nbArticles) })) + " · " + esc(new Date(a.dateISO).toLocaleTimeString(LANG === "en" ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" })) + (a.caissier && E.moi && a.caissier !== E.moi.adminUser ? " · " + esc(a.caissier) : "") + "</div></div><button class='vert' data-r='" + a.id + "'>" + esc(t("reprendre")) + "</button><button class='danger' data-d='" + a.id + "'>" + esc(t("supprimer")) + "</button></div>").join("") : "<p class='raison'>" + esc(t("aucuneAttente")) + "</p>") + "<div style='margin-top:12px;'><button id='atFerme'>" + esc(t("fermer")) + "</button></div>");
+  $("atFerme").onclick = fermerFenetre;
+  Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-r]"), (b) => { b.onclick = async () => {
+    if (E.panier.length) { erreur(t("panierNonVide")); return; }
+    try {
+      const v = await api("/api/" + ID() + "/pos/attente/" + b.dataset.r + "/reprendre", { method: "POST" });
+      let perdu = false;
+      v.lignes.forEach((l) => { const x = E.lignes.find((y) => y.productId === l.productId && y.couleur === (l.couleur || "") && y.taille === (l.taille || "")); if (!x) { perdu = true; return; } E.panier.push({ cle: x.cle, productId: x.productId, couleur: x.couleur, taille: x.taille, quantite: l.quantite, prixUnitaire: x.prix, decimal: x.decimal }); });
+      E.remise = v.remiseGlobale && v.remiseGlobale.type ? { type: v.remiseGlobale.type, valeur: v.remiseGlobale.valeur } : null; E.motifRemise = v.motifRemise || "";
+      E.attentes = await api("/api/" + ID() + "/pos/attente");
+      fermerFenetre(); majBarre(); changerPanier(); if (perdu) erreur(t("reprisePartielle"));
+    } catch (e) { erreur(e.message); }
+  }; });
+  Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-d]"), (b) => { b.onclick = async () => {
+    try { await api("/api/" + ID() + "/pos/attente/" + b.dataset.d, { method: "DELETE" }); E.attentes = await api("/api/" + ID() + "/pos/attente"); majBarre(); fenetreAttentes(); } catch (e) { erreur(e.message); }
+  }; });
+}
+
+/* ---- Paiement (mixte) ---- */
+const MODES = ["especes", "om", "momo", "carte", "cheque"];
+let PAY = []; // [{ mode, montant (texte), reference, manuel }] ; la ligne especes est « auto » (= reste a payer) tant que le caissier n'y touche pas
+function entier(x) { const n = Math.round(Number(x)); return Number.isFinite(n) ? n : 0; }
+function recalcAuto() {
+  const total = calcul().total - creditSaisi(); // Etape 90 : la part a credit n'est pas a encaisser
+  const elec = PAY.filter((p) => p.mode !== "especes").reduce((s, p) => s + entier(p.montant), 0);
+  const esp = PAY.find((p) => p.mode === "especes");
+  if (esp && !esp.manuel) esp.montant = String(Math.max(0, total - elec));
+}
+function etatPaiement() {
+  const brut = calcul().total, credit = creditSaisi(), total = brut - credit;
+  const elec = PAY.filter((p) => p.mode !== "especes").reduce((s, p) => s + entier(p.montant), 0);
+  const esp = PAY.find((p) => p.mode === "especes");
+  const recu = esp ? entier(esp.montant) : 0;
+  const especesDues = Math.max(0, total - elec);
+  let ok = PAY.length > 0, msg = "";
+  if (elec > total) { ok = false; msg = "elec"; }
+  const manque = Math.max(0, especesDues - recu);
+  if (manque > 0) ok = false;
+  if (especesDues === 0 && recu > 0) { ok = false; msg = "inutile"; }
+  const rendu = Math.max(0, recu - especesDues);
+  PAY.forEach((p) => { if (p.mode !== "especes" && (!(entier(p.montant) > 0) || !(p.reference || "").trim())) ok = false; });
+  if (!PAY.some((p) => p.mode !== "especes" ? true : entier(p.montant) > 0)) ok = false;
+  // Etape 90 : part a credit (jamais au-dela du total ni du credit disponible du client) ; vente entierement a credit = aucun paiement.
+  if (credit > 0) {
+    if (!CRED.client || credit > brut || credit > dispoCredit(CRED.client)) { ok = false; msg = "credit"; }
+    else if (total === 0) ok = PAY.every((p) => p.mode === "especes" && entier(p.montant) === 0);
+  }
+  return { total, brut, credit, elec, recu, especesDues, manque, rendu, ok, msg };
+}
+function fenetrePaiement() {
+  E.cleVente = HL.nouvelleCle();
+  CRED = { client: null, montant: "" };
+  PAY = [{ mode: "especes", montant: String(calcul().total), reference: "", manuel: false }];
+  dessinerPaiement();
+}
+function ajouterMode(mode) {
+  const cur = etatPaiement();
+  if (mode === "especes") {
+    if (PAY.some((p) => p.mode === "especes")) return;
+    PAY.push({ mode, montant: String(Math.max(0, cur.total - cur.elec)), reference: "", manuel: false });
+  } else {
+    // Un seul moyen non-especes : il remplace la ligne especes encore intacte et prend le total (cas le plus courant : tout en Mobile Money).
+    const esp = PAY.find((p) => p.mode === "especes");
+    if (esp && !esp.manuel && PAY.length === 1) PAY = [];
+    const reste = Math.max(0, cur.total - PAY.filter((p) => p.mode !== "especes").reduce((s, p) => s + entier(p.montant), 0));
+    PAY.push({ mode, montant: reste > 0 ? String(reste) : "", reference: "", manuel: true });
+  }
+  recalcAuto();
+  dessinerPaiement();
+}
+function resumePaiement() {
+  const e = etatPaiement();
+  let h = "";
+  if (e.credit > 0) h += "<div class='l'><span>" + esc(t("credit")) + "</span><span>" + f(e.credit) + "</span></div>" + (CRED.client && e.credit > dispoCredit(CRED.client) ? "<div class='l ko'><span>" + esc(t("cl_depassePlafond")) + "</span><span></span></div>" : "");
+  if (PAY.length > 1 || e.elec) h += "<div class='l'><span>" + esc(t("paiementsElec")) + "</span><span>" + f(e.elec) + "</span></div><div class='l'><span>" + esc(t("especesDues")) + "</span><span>" + f(e.especesDues) + "</span></div>";
+  if (e.manque > 0) h += "<div class='l ko'><span>" + esc(t("manque")) + "</span><span>" + f(e.manque) + "</span></div>";
+  else if (e.ok) h += "<div class='l ok grand'><span>" + esc(t("rendu")) + "</span><span>" + f(e.rendu) + "</span></div>";
+  $("pySomme").innerHTML = h;
+  $("pyOk").disabled = !e.ok;
+}
+function dessinerPaiement() {
+  const e0 = etatPaiement();
+  const aEsp = PAY.some((p) => p.mode === "especes");
+  let html = "<h3>" + esc(t("paiementTitre")) + " — " + f(e0.brut) + "</h3>" + (credOn() ? htmlClientBloc() : "");
+  html += "<div class='modes' style='margin-top:10px;'>" + MODES.map((m) => "<button data-m='" + m + "'" + (m === "especes" && aEsp ? " disabled" : "") + ">" + esc(t(m)) + "</button>").join("") + "</div><div class='raison' style='margin-top:4px;'>" + esc(t("ajouterPaiement")) + "</div>";
+  PAY.forEach((p, i) => {
+    html += "<div class='lpay'><div class='tete'><span>" + esc(t(p.mode)) + "</span><button data-x='" + i + "' class='danger' style='min-height:32px;padding:2px 10px;'>" + esc(t("retirer")) + "</button></div><div class='grille'><div><label>" + esc(p.mode === "especes" ? t("montantRecu") : t("montant")) + "</label><input type='number' inputmode='numeric' min='0' step='1' data-pm='" + i + "' value='" + esc(p.montant) + "' /></div>" +
+      (p.mode !== "especes" ? "<div><label>" + esc(t("reference")) + "</label><input data-pr='" + i + "' value='" + esc(p.reference) + "' maxlength='80' /></div>" : "<div></div>") + "</div>";
+    if (p.mode === "especes") {
+      const dues = e0.especesDues;
+      const sug = [];
+      [1000, 5000, 10000].forEach((x) => { const v = Math.ceil(dues / x) * x; if (v > dues && sug.indexOf(v) === -1) sug.push(v); });
+      html += "<div class='rapides'><button data-sg='" + dues + "'>" + esc(t("exact")) + "</button>" + sug.map((v) => "<button data-sg='" + v + "'>" + nombre(v) + "</button>").join("") + "</div>";
+    }
+    html += "</div>";
+  });
+  html += "<div class='totaux' id='pySomme' style='margin-top:12px;'></div><div style='display:flex;gap:8px;margin-top:12px;'><button id='pyOk' class='vert' style='flex:1;font-size:1.1em;min-height:52px;'>" + esc(t("valider")) + "</button><button id='pyX'>" + esc(t("annuler")) + "</button></div>";
+  ouvrirFenetre(html);
+  if (credOn()) brancherClientBloc();
+  Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-m]"), (b) => { b.onclick = () => ajouterMode(b.dataset.m); });
+  Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-x]"), (b) => { b.onclick = () => { PAY.splice(Number(b.dataset.x), 1); recalcAuto(); dessinerPaiement(); }; });
+  // Saisie : mise a jour sur place (aucun re-dessin) pour ne jamais perdre le focus ni le clic sur « Valider ».
+  Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-pm]"), (inp) => { inp.oninput = () => {
+    const p = PAY[Number(inp.dataset.pm)]; p.montant = inp.value;
+    if (p.mode === "especes") p.manuel = true;
+    else { recalcAuto(); const esp = PAY.find((x) => x.mode === "especes"); const champ = esp && $("fenetre").querySelector("[data-pm='" + PAY.indexOf(esp) + "']"); if (champ && !esp.manuel) champ.value = esp.montant; }
+    resumePaiement();
+  }; });
+  Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-pr]"), (inp) => { inp.oninput = () => { PAY[Number(inp.dataset.pr)].reference = inp.value; resumePaiement(); }; });
+  Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-sg]"), (b) => { b.onclick = () => { const esp = PAY.find((p) => p.mode === "especes"); if (esp) { esp.montant = b.dataset.sg; esp.manuel = true; } dessinerPaiement(); }; });
+  $("pyX").onclick = () => { E.base = null; E.encaissement = null; E.remise = null; E.motifRemise = ""; fermerFenetre(); };
+  $("pyOk").onclick = validerVente;
+  resumePaiement();
+}
+let enCours = false;
+async function validerVente() {
+  if (enCours) return; const e = etatPaiement(); if (!e.ok) return;
+  enCours = true; $("pyOk").disabled = true;
+  try {
+    const corps = {
+      lignes: E.panier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite })),
+      paiements: PAY.filter((p) => p.mode !== "especes" || entier(p.montant) > 0).map((p) => ({ mode: p.mode, montant: entier(p.montant), reference: p.mode === "especes" ? undefined : (p.reference || "").trim() })),
+      remiseGlobale: E.remise || undefined, motifRemise: E.remise ? E.motifRemise : undefined
+    };
+    if (credOn() && CRED.client) { corps.clientId = CRED.client.id; if (e.credit > 0) { corps.credit = { montant: e.credit }; if (e.total === 0) delete corps.paiements; } }
+    let commande, resteAddition = null, soldee = true;
+    if (E.encaissement) {
+      const rep = await api("/api/" + ID() + "/pos/additions/" + E.encaissement.additionId + "/encaisser", { method: "POST", body: JSON.stringify(Object.assign({ selection: E.encaissement.selection }, { paiements: corps.paiements, remiseGlobale: corps.remiseGlobale, motifRemise: corps.motifRemise, clientId: corps.clientId, credit: corps.credit })) });
+      commande = rep.order; resteAddition = rep.addition; soldee = rep.soldee;
+      E.base = null; E.encaissement = null; E.addition = resteAddition; E.remise = null; E.motifRemise = "";
+      if (soldee) { E.mode = "tables"; }
+    } else {
+      // Etape 91 : cle unique par tentative de paiement (anti-doublon si la reponse se perd) ; hors ligne, seule une vente simple est mise en file.
+      corps.cle = E.cleVente || (E.cleVente = HL.nouvelleCle());
+      const simple = !corps.clientId && !corps.credit && !corps.remiseGlobale && E.mode === "direct";
+      if (HL.option() && HL.actif) {
+        if (!simple) throw new Error(t("hlNonDispo"));
+        commande = await HL.mettreEnFile(corps, E.panier, calcul().total);
+      } else {
+        try { commande = await api("/api/" + ID() + "/pos/vente", { method: "POST", body: JSON.stringify(corps) }); }
+        catch (err) { if (err.reseau && HL.option() && simple) commande = await HL.mettreEnFile(corps, E.panier, calcul().total); else throw err; }
+      }
+      E.cleVente = null;
+      E.panier = []; E.remise = null; E.motifRemise = "";
+    }
+    E.dernier = commande; CRED = { client: null, montant: "" };
+    fermerFenetre();
+    (commande.items || []).forEach((it) => { const l = E.lignes.find((x) => x.productId === it.productId && x.couleur === (it.couleur || "") && x.taille === (it.taille || "")); if (l && !l.illimite) l.stock = Math.max(0, Math.round((l.stock - it.quantite) * 1000) / 1000); });
+    dessinerArticles(); dessinerPanier();
+    fenetreTicket(commande, true, () => { if (E.marchand.optionRestauration && E.mode !== "direct") { afficherMode(); } });
+  } catch (err) { erreur(err.message); $("pyOk").disabled = false; }
+  finally { enCours = false; }
+}
+
+/* ============ Etape 90 : clients, credit (ardoise) et reglements ============ */
+let CRED = { client: null, montant: "" };
+const credOn = () => !!(E.marchand && E.marchand.optionClientsCredit) && !HL.actif;
+const estGest = () => !!E.moi && E.moi.role !== "employe";
+const peutAnnulerRegl = () => !!E.moi && (E.moi.role !== "employe" || (E.moi.roles || []).indexOf("remises") !== -1);
+function creditSaisi() { return CRED.client && CRED.montant !== "" ? Math.max(0, entier(CRED.montant)) : 0; }
+function dispoCredit(c) { return Math.max(0, (Number(c.plafond) || 0) - Math.max(0, Number(c.solde) || 0)); }
+function jourFr(iso) { return iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(LANG === "en" ? "en-GB" : "fr-FR") : ""; }
+function htmlClientBloc() {
+  const c = CRED.client;
+  let h = "<div class='lpay' id='blocClient'><div class='tete'><span>" + esc(t("cl_client")) + "</span>" + (c ? "<button data-clx='1' class='danger' style='min-height:32px;padding:2px 10px;'>" + esc(t("retirer")) + "</button>" : "") + "</div>";
+  if (!c) return h + "<button id='pyClient' style='width:100%;margin-top:6px;'>" + esc(t("cl_choisir")) + "</button></div>";
+  const dispo = dispoCredit(c);
+  h += "<div style='margin-top:4px;'><b>" + esc(c.nom) + "</b>" + (c.telephone ? " · " + esc(c.telephone) : "") + "</div><div class='raison'>" + esc(t("cl_dette")) + " : " + f(Math.max(0, c.solde)) + " · " + esc(t("cl_plafond")) + " : " + f(c.plafond) + " · " + esc(t("cl_dispo")) + " : " + f(dispo) + "</div>";
+  if (dispo > 0) {
+    h += "<div class='grille' style='margin-top:6px;'><div><label>" + esc(t("cl_montantCredit")) + "</label><input type='number' inputmode='numeric' min='0' step='1' data-cr='1' value='" + esc(CRED.montant) + "' /></div><div style='display:flex;gap:6px;align-items:flex-end;'><button data-crtout='1' style='min-height:44px;'>" + esc(t("cl_toutCredit")) + "</button><button data-crzero='1' style='min-height:44px;'>0</button></div></div>";
+  } else h += "<div class='raison' style='color:var(--rouge);margin-top:4px;'>" + esc(t(c.plafond > 0 ? "cl_plafondAtteint" : "cl_pasDePlafond")) + "</div>";
+  return h + "</div>";
+}
+function brancherClientBloc() {
+  const zone = $("fenetre");
+  const reaff = () => dessinerPaiement();
+  const b = $("pyClient"); if (b) b.onclick = () => fenetreListeClients({ choisir: (c) => { CRED.client = c; CRED.montant = ""; reaff(); }, retour: reaff });
+  const x = zone.querySelector("[data-clx]"); if (x) x.onclick = () => { CRED.client = null; CRED.montant = ""; recalcAuto(); reaff(); };
+  const tout = zone.querySelector("[data-crtout]"); if (tout) tout.onclick = () => { CRED.montant = String(Math.min(calcul().total, dispoCredit(CRED.client))); recalcAuto(); reaff(); };
+  const zero = zone.querySelector("[data-crzero]"); if (zero) zero.onclick = () => { CRED.montant = ""; recalcAuto(); reaff(); };
+  const inp = zone.querySelector("[data-cr]");
+  if (inp) inp.oninput = () => {
+    CRED.montant = inp.value; recalcAuto();
+    const esp = PAY.find((p) => p.mode === "especes"); const champ = esp && zone.querySelector("[data-pm='" + PAY.indexOf(esp) + "']"); if (champ && !esp.manuel) champ.value = esp.montant;
+    resumePaiement();
+  };
+}
+function fenetreListeClients(opts) {
+  opts = opts || {};
+  const choisir = opts.choisir, retour = opts.retour;
+  ouvrirFenetre("<h3>" + esc(t(choisir ? "cl_choisir" : "cl_titre")) + "</h3><input id='clQ' type='search' autocomplete='off' placeholder='" + esc(t("cl_rechercher")) + "' /><div id='clListe' style='margin-top:8px;'></div><div style='display:flex;gap:8px;margin-top:12px;'><button id='clNv' class='vert' style='flex:1;'>" + esc(t("cl_nouveau")) + "</button><button id='clX'>" + esc(t("fermer")) + "</button></div>");
+  const fermer = () => { if (retour) retour(); else fermerFenetre(); };
+  $("clX").onclick = fermer;
+  $("clNv").onclick = () => fenetreNouveauClient({ apres: (c) => { if (choisir) choisir(c); else fenetreListeClients(opts); }, retour: () => fenetreListeClients(opts) });
+  let minut = null;
+  const charger = async () => {
+    try {
+      const liste = await api("/api/" + ID() + "/pos/clients?q=" + encodeURIComponent($("clQ").value.trim()));
+      $("clListe").innerHTML = liste.length ? liste.map((c) => "<div class='sel-l' style='grid-template-columns:1fr auto;'><div><b>" + esc(c.nom) + "</b>" + (c.telephone ? " <span class='raison'>" + esc(c.telephone) + "</span>" : "") + "<div class='raison'>" + esc(t("cl_dette")) + " : <span style='color:" + (c.solde > 0 ? "var(--rouge)" : "inherit") + ";font-weight:600;'>" + f(c.solde) + "</span>" + (c.enRetard > 0 ? " · <span style='color:var(--rouge);'>" + esc(t("cl_enRetard")) + " " + f(c.enRetard) + "</span>" : "") + " · " + esc(t("cl_plafond")) + " " + f(c.plafond) + "</div></div><div style='display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;'>" +
+        (choisir ? "<button data-pick='" + c.id + "' class='vert' style='min-height:38px;'>" + esc(t("cl_selectionner")) + "</button>" : "<button data-rel='" + c.id + "' style='min-height:38px;'>" + esc(t("cl_releve")) + "</button>" + (c.solde > 0 ? "<button data-reg='" + c.id + "' class='vert' style='min-height:38px;'>" + esc(t("cl_reglement")) + "</button>" : "")) + "</div></div>").join("") : "<div class='raison'>" + esc(t("cl_aucun")) + "</div>";
+      const par = {}; liste.forEach((c) => { par[c.id] = c; });
+      Array.prototype.forEach.call($("clListe").querySelectorAll("[data-pick]"), (b) => { b.onclick = () => choisir(par[b.dataset.pick]); });
+      Array.prototype.forEach.call($("clListe").querySelectorAll("[data-rel]"), (b) => { b.onclick = () => fenetreReleve(par[b.dataset.rel].id); });
+      Array.prototype.forEach.call($("clListe").querySelectorAll("[data-reg]"), (b) => { b.onclick = () => fenetreReglement(par[b.dataset.reg], () => fenetreListeClients(opts)); });
+    } catch (e) { erreur(e.message); }
+  };
+  $("clQ").oninput = () => { clearTimeout(minut); minut = setTimeout(charger, 250); };
+  charger();
+}
+function fenetreNouveauClient(opts) {
+  ouvrirFenetre("<h3>" + esc(t("cl_nouveau")) + "</h3><label>" + esc(t("cl_nom")) + "</label><input id='ncNom' maxlength='60' /><label>" + esc(t("cl_tel")) + "</label><input id='ncTel' inputmode='tel' maxlength='20' /><label>" + esc(t("cl_note")) + "</label><input id='ncNote' maxlength='200' />" +
+    (estGest() ? "<label>" + esc(t("cl_plafond")) + " (FCFA)</label><input id='ncPlafond' type='number' inputmode='numeric' min='0' step='1' placeholder='0' />" : "<div class='raison' style='margin-top:8px;'>" + esc(t("cl_plafondProprio")) + "</div>") +
+    "<div style='display:flex;gap:8px;margin-top:12px;'><button id='ncOk' class='vert' style='flex:1;'>" + esc(t("enregistrer")) + "</button><button id='ncX'>" + esc(t("annuler")) + "</button></div>");
+  $("ncX").onclick = opts.retour;
+  $("ncOk").onclick = async () => {
+    try {
+      const corps = { nom: $("ncNom").value, telephone: $("ncTel").value, note: $("ncNote").value };
+      if ($("ncPlafond") && $("ncPlafond").value !== "") corps.plafond = Number($("ncPlafond").value);
+      const c = await api("/api/" + ID() + "/pos/clients", { method: "POST", body: JSON.stringify(corps) });
+      info(t("cl_cree")); opts.apres(c);
+    } catch (e) { erreur(e.message); }
+  };
+  setTimeout(() => $("ncNom").focus(), 50);
+}
+function fenetreReglement(c, retour) {
+  const MODES_R = ["especes", "om", "momo", "carte", "cheque"];
+  ouvrirFenetre("<h3>" + esc(t("cl_reglementTitre")) + " — " + esc(c.nom) + "</h3><div class='raison'>" + esc(t("cl_dette")) + " : <b>" + f(c.solde) + "</b></div><label>" + esc(t("montant")) + "</label><input id='rgMontant' type='number' inputmode='numeric' min='1' step='1' value='" + esc(Math.max(0, c.solde)) + "' /><label>" + esc(t("cl_mode")) + "</label><select id='rgMode'>" + MODES_R.map((m) => "<option value='" + m + "'>" + esc(t(m)) + "</option>").join("") + "</select><div id='rgRefZone' class='cache'><label>" + esc(t("reference")) + "</label><input id='rgRef' maxlength='80' /></div><div id='rgReste' class='raison' style='margin-top:8px;'></div><div style='display:flex;gap:8px;margin-top:12px;'><button id='rgOk' class='vert' style='flex:1;'>" + esc(t("cl_encaisser")) + "</button><button id='rgX'>" + esc(t("annuler")) + "</button></div>");
+  const maj = () => { const m = entier($("rgMontant").value); $("rgRefZone").classList.toggle("cache", $("rgMode").value === "especes"); $("rgReste").textContent = t("cl_resteApres") + " : " + f(Math.max(0, c.solde - m)); $("rgOk").disabled = !(m > 0 && m <= c.solde) || ($("rgMode").value !== "especes" && !$("rgRef").value.trim()); };
+  ["rgMontant", "rgRef"].forEach((id) => { $(id).oninput = maj; }); $("rgMode").onchange = maj; maj();
+  $("rgX").onclick = retour || fermerFenetre;
+  $("rgOk").onclick = async () => {
+    $("rgOk").disabled = true;
+    try {
+      const mode = $("rgMode").value;
+      await api("/api/" + ID() + "/pos/clients/" + c.id + "/reglements", { method: "POST", body: JSON.stringify({ montant: entier($("rgMontant").value), mode, reference: mode === "especes" ? undefined : $("rgRef").value.trim() }) });
+      info(t("cl_reglementOk")); (retour || fermerFenetre)();
+    } catch (e) { erreur(e.message); maj(); }
+  };
+}
+async function fenetreReleve(id) {
+  try {
+    const r = await api("/api/" + ID() + "/pos/clients/" + id);
+    const c = r.client;
+    let h = "<h3>" + esc(c.nom) + "</h3><div class='raison'>" + (c.telephone ? esc(c.telephone) + " · " : "") + esc(t("cl_dette")) + " : <b style='color:" + (c.solde > 0 ? "var(--rouge)" : "inherit") + ";'>" + f(c.solde) + "</b> · " + esc(t("cl_plafond")) + " " + f(c.plafond) + (c.enRetard > 0 ? " · <span style='color:var(--rouge);'>" + esc(t("cl_enRetard")) + " " + f(c.enRetard) + "</span>" : "") + "</div>" + (c.note ? "<div class='raison'>" + esc(c.note) + "</div>" : "");
+    h += "<h3 style='margin-top:12px;font-size:1em;'>" + esc(t("cl_ventes")) + "</h3>" + (r.ventes.length ? r.ventes.map((v) => "<div class='sel-l' style='grid-template-columns:1fr auto;" + (v.statut === "annulee" ? "opacity:.5;" : "") + "'><div>" + esc(v.piece) + " · " + esc(jourFr(v.dateISO)) + "<div class='raison'>" + esc(v.articles) + "</div>" + (v.aCredit ? "<div class='raison'>" + esc(t("credit")) + " " + f(v.aCredit) + " · " + esc(t("cl_reste")) + " " + f(v.reste) + (v.echeance && v.reste > 0 ? " · " + esc(t("cl_echeance")) + " " + esc(jourFr(v.echeance)) : "") + "</div>" : "") + "</div><div>" + f(v.montant) + "</div></div>").join("") : "<div class='raison'>—</div>");
+    h += "<h3 style='margin-top:12px;font-size:1em;'>" + esc(t("cl_reglements")) + "</h3>" + (r.reglements.length ? r.reglements.map((g) => "<div class='sel-l' style='grid-template-columns:1fr auto auto;" + (g.annule ? "opacity:.5;text-decoration:line-through;" : "") + "'><div>REG-" + String(g.id).padStart(4, "0") + " · " + esc(jourFr(g.dateISO)) + " · " + esc(t(g.mode)) + (g.annule ? "<div class='raison'>" + esc(t("cl_annule")) + " : " + esc(g.motifAnnulation || "") + "</div>" : "") + "</div><div>" + f(g.montant) + "</div>" + (!g.annule && peutAnnulerRegl() ? "<button data-ann='" + g.id + "' class='danger' style='min-height:32px;padding:2px 10px;'>" + esc(t("cl_annulerReglement")) + "</button>" : "<span></span>") + "</div>").join("") : "<div class='raison'>—</div>");
+    h += "<div style='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;'>" + (c.solde > 0 ? "<button id='rlReg' class='vert' style='flex:1;'>" + esc(t("cl_reglement")) + "</button>" : "") + (estGest() ? "<button id='rlMod'>" + esc(t("cl_modifier")) + "</button>" : "") + "<button id='rlX'>" + esc(t("fermer")) + "</button></div>";
+    ouvrirFenetre(h);
+    $("rlX").onclick = () => fenetreListeClients({});
+    if ($("rlReg")) $("rlReg").onclick = () => fenetreReglement(c, () => fenetreReleve(id));
+    if ($("rlMod")) $("rlMod").onclick = () => fenetreModifierClient(c);
+    Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-ann]"), (b) => { b.onclick = () => {
+      b.outerHTML = "<span><input data-motif='1' placeholder='" + esc(t("motif")) + "' style='min-height:32px;padding:2px 8px;width:140px;' /><button data-annok='" + b.dataset.ann + "' class='danger' style='min-height:32px;padding:2px 10px;'>OK</button></span>";
+      $("fenetre").querySelector("[data-annok]").onclick = async (ev) => { try { await api("/api/" + ID() + "/pos/reglements/" + ev.target.dataset.annok + "/annuler", { method: "POST", body: JSON.stringify({ motif: $("fenetre").querySelector("[data-motif]").value }) }); info(t("cl_reglementAnnule")); fenetreReleve(id); } catch (e) { erreur(e.message); } };
+    }; });
+  } catch (e) { erreur(e.message); }
+}
+function fenetreModifierClient(c) {
+  ouvrirFenetre("<h3>" + esc(t("cl_modifier")) + "</h3><label>" + esc(t("cl_nom")) + "</label><input id='mcNom' maxlength='60' value='" + esc(c.nom) + "' /><label>" + esc(t("cl_tel")) + "</label><input id='mcTel' maxlength='20' value='" + esc(c.telephone) + "' /><label>" + esc(t("cl_note")) + "</label><input id='mcNote' maxlength='200' value='" + esc(c.note) + "' /><label>" + esc(t("cl_plafond")) + " (FCFA)</label><input id='mcPlafond' type='number' inputmode='numeric' min='0' step='1' value='" + esc(c.plafond) + "' /><label style='display:flex;gap:8px;align-items:center;'><input id='mcActif' type='checkbox' style='width:auto;min-height:0;'" + (c.actif ? " checked" : "") + " /> " + esc(t("cl_actif")) + "</label><div style='display:flex;gap:8px;margin-top:12px;'><button id='mcOk' class='vert' style='flex:1;'>" + esc(t("enregistrer")) + "</button><button id='mcX'>" + esc(t("annuler")) + "</button></div>");
+  $("mcX").onclick = () => fenetreReleve(c.id);
+  $("mcOk").onclick = async () => { try { await api("/api/" + ID() + "/pos/clients/" + c.id, { method: "PUT", body: JSON.stringify({ nom: $("mcNom").value, telephone: $("mcTel").value, note: $("mcNote").value, plafond: Number($("mcPlafond").value), actif: $("mcActif").checked }) }); info(t("cl_modifie")); fenetreReleve(c.id); } catch (e) { erreur(e.message); } };
+}
+
+/* ---- Ticket 80 mm ---- */
+function htmlTicket(c) {
+  const ligne = (g, d, cls) => "<div class='r" + (cls ? " " + cls : "") + "'><span>" + g + "</span><span>" + (d == null ? "" : d) + "</span></div>";
+  const loc = LANG === "en" ? "en-GB" : "fr-FR";
+  let h = "";
+  if (E.marchand && E.marchand.logoUrl) h += "<img class='lg' src='" + esc(E.marchand.logoUrl) + "' alt='' />";
+  h += "<div class='c g'>" + esc(E.marchand ? E.marchand.nom : "") + "</div>";
+  if (c.id == null && c.numeroLocal) { h += "<div class='c'>" + esc(t("hlTicketNum", { n: c.numeroLocal })) + "</div><div class='c g'>" + esc(t("hlTicketMention")) + "</div>"; }
+  else h += "<div class='c'>" + esc(t("ticketNum", { n: "POS-" + String(c.id).padStart(4, "0") })) + "</div>";
+  h += "<div class='c'>" + esc(new Date(c.dateISO).toLocaleString(loc)) + "</div>";
+  if (c.table) h += "<div class='c g'>" + esc(c.table) + (c.couverts ? " (" + esc(c.couverts) + " " + esc(t("couverts").toLowerCase()) + ")" : "") + "</div>";
+  if (c.serveur) h += "<div class='c'>" + esc(t("serveurLib")) + " : " + esc(c.serveur) + "</div>";
+  if (c.caissier) h += "<div class='c'>" + esc(t("caissier")) + " : " + esc(c.caissier) + "</div>";
+  h += "<div class='tr'></div>";
+  (c.items || []).forEach((it) => {
+    const nom = it.produit + ((it.couleur || it.taille) ? " " + [it.couleur, it.taille].filter(Boolean).join(" ") : "");
+    h += "<div>" + esc(nom) + "</div>" + ligne(esc(nombre(it.quantite) + (it.unite ? " " + it.unite : "") + " x " + nombre(it.prixUnitaire)), esc(nombre(it.prixBrut != null ? it.prixBrut : it.prix)));
+    if (it.remiseLigne > 0) h += ligne("&nbsp;&nbsp;" + esc(t("remiseLib")), "-" + esc(nombre(it.remiseLigne)));
+  });
+  h += "<div class='tr'></div>";
+  if (c.remise && c.remise.montant > 0) { h += ligne(esc(t("sousTotal")), esc(nombre(c.prixBrut))); h += ligne(esc(t("remiseLib")), "-" + esc(nombre(c.remise.montant))); }
+  h += ligne(esc(t("total").toUpperCase()), esc(f(c.prix)), "g");
+  const parts = c.creance ? (c.paiements || []) : (Array.isArray(c.paiements) && c.paiements.length ? c.paiements : [{ mode: c.modePaiement, montant: c.prix, reference: c.referencePaiement }]);
+  if (c.clientNom) h += ligne(esc(t("cl_client")), esc(c.clientNom));
+  parts.forEach((p) => { h += ligne(esc(t(p.mode) || p.mode) + (p.reference ? " (" + esc(p.reference) + ")" : ""), esc(nombre(p.montant))); });
+  if (c.creance) { h += ligne(esc(t("credit")), esc(nombre(c.creance.montant)), "g"); if (c.creance.echeance) h += ligne(esc(t("cl_echeance")), esc(jourFr(c.creance.echeance))); }
+  const pe = c.paiements ? c.paiements.find((p) => p.mode === "especes") : null;
+  const recu = pe ? pe.recu : c.montantRecu, rendu = pe ? pe.rendu : c.rendu;
+  if (recu != null && rendu > 0) { h += ligne(esc(t("recu")), esc(nombre(recu))); h += ligne(esc(t("monnaie")), esc(nombre(rendu))); }
+  h += "<div class='tr'></div><div class='c'>" + esc(t("merci")) + "</div>";
+  return h;
+}
+function fenetreTicket(c, apresVente, quand) {
+  ouvrirFenetre("<h3>" + esc(apresVente ? t("venteOk") : t("dernierTicket")) + "</h3><div style='overflow:auto;'><div id='ticketApercu' style='margin:0 auto;'></div></div><div style='display:flex;gap:8px;margin-top:12px;'><button id='tkImp'>" + esc(t("imprimer")) + "</button><button id='tkNv' class='vert' style='flex:1;'>" + esc(apresVente ? t("nouvelleVente") : t("fermer")) + "</button></div>");
+  $("ticketApercu").innerHTML = "<div id='ticketCopie' style='background:#fff;border:1px dashed var(--bord);width:302px;padding:8px 10px;font-family:\"DejaVu Sans Mono\",\"Courier New\",monospace;font-size:12px;line-height:1.35;color:#000;'></div>";
+  $("ticketCopie").innerHTML = htmlTicket(c);
+  // Mise en forme identique a l'impression : on recopie les regles utiles en ligne dans l'apercu.
+  Array.prototype.forEach.call($("ticketCopie").querySelectorAll(".r"), (r) => { r.style.display = "flex"; r.style.justifyContent = "space-between"; r.style.gap = "6px"; });
+  Array.prototype.forEach.call($("ticketCopie").querySelectorAll(".c"), (r) => { r.style.textAlign = "center"; });
+  Array.prototype.forEach.call($("ticketCopie").querySelectorAll(".g"), (r) => { r.style.fontWeight = "700"; });
+  Array.prototype.forEach.call($("ticketCopie").querySelectorAll(".tr"), (r) => { r.style.borderTop = "1px dashed #000"; r.style.margin = "6px 0"; });
+  Array.prototype.forEach.call($("ticketCopie").querySelectorAll("img.lg"), (r) => { r.style.maxWidth = "120px"; r.style.maxHeight = "60px"; r.style.display = "block"; r.style.margin = "0 auto 4px"; });
+  $("tkImp").onclick = () => imprimerTicket(c);
+  $("tkNv").onclick = () => { fermerFenetre(); if (quand) quand(); };
+}
+// Les navigateurs n'acceptent pas « 80mm auto » : on mesure le ticket et on fixe la hauteur de page juste necessaire (rouleau de 80 mm, pas de gaspillage).
+function ajusterPagePapier() {
+  const zone = $("zoneImpression"), tk = $("ticket");
+  const pxVersMm = 25.4 / 96;
+  // Plusieurs bons : une page par bon, a la hauteur du plus long (la page est coupee entre deux bons par l'imprimante).
+  const bons = tk.querySelectorAll(".bon");
+  const hauteur = bons.length ? Math.max.apply(null, Array.prototype.map.call(bons, (b) => b.scrollHeight)) : tk.scrollHeight;
+  const mm = Math.ceil(hauteur * pxVersMm * (72 / 79.9)) + 8; // largeur imprimee 72 mm contre 302 px a l'ecran
+  let st = document.getElementById("stylePage");
+  if (!st) { st = document.createElement("style"); st.id = "stylePage"; document.head.appendChild(st); }
+  st.textContent = "@page { size: 80mm " + Math.max(60, mm) + "mm; margin: 0; }";
+}
+function imprimerTicket(c, htmlDirect) {
+  $("ticket").innerHTML = htmlDirect || htmlTicket(c);
+  $("zoneImpression").classList.remove("cache");
+  ajusterPagePapier();
+  const fin = () => { $("zoneImpression").classList.add("cache"); window.removeEventListener("afterprint", fin); };
+  window.addEventListener("afterprint", fin);
+  setTimeout(() => window.print(), 50);
+}
+
+
+/* ============ Restauration : tables, additions, bons ============ */
+function afficherMode() {
+  const resto = !!E.marchand.optionRestauration;
+  const direct = E.mode === "direct" || !resto;
+  $("vueTables").classList.toggle("cache", E.mode !== "tables");
+  $("corpsVente").classList.toggle("cache", E.mode === "tables");
+  $("droiteDirect").classList.toggle("cache", E.mode === "addition");
+  $("droiteResto").classList.toggle("cache", E.mode !== "addition");
+  majBarre();
+  if (E.mode === "tables") chargerTables(); else if (E.mode === "addition") dessinerAddition(); else { dessinerPanier(); $("recherche").focus(); }
+}
+function changerMode(mode) {
+  if (mode === E.mode) return;
+  if (HL.actif && mode !== "direct") { erreur(t("hlNonDispo")); return; }
+  if (mode === "direct" && E.mode === "addition" && E.panier.length) { erreur(t("panierNonVide")); return; }
+  if (E.mode === "direct" && E.panier.length && mode !== "direct") { erreur(t("panierNonVide")); return; }
+  E.mode = mode; E.addition = null; afficherMode();
+}
+let minuteurTables = null;
+async function chargerTables() {
+  try { E.tables = (await api("/api/" + ID() + "/pos/tables")).tables; } catch (e) { erreur(e.message); return; }
+  dessinerTables();
+  clearTimeout(minuteurTables);
+  minuteurTables = setTimeout(() => { if (E.mode === "tables" && $("voile").classList.contains("cache")) chargerTables(); }, 15000);
+}
+function minutesDepuis(iso) { return Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)); }
+function dessinerTables() {
+  const z = $("grilleTables");
+  if (!E.tables || !E.tables.length) { z.innerHTML = "<p class='raison'>" + esc(t("pasDeTables")) + " " + esc(t("configurerTables")) + "</p>"; return; }
+  z.innerHTML = E.tables.map((tb, i) => {
+    const a = tb.addition;
+    if (!a) return "<button class='table-t libre' data-t='" + i + "'><span class='nom'>" + esc(tb.nom) + "</span><span>" + esc(t("tableLibre")) + "</span></button>";
+    return "<button class='table-t " + (a.nbNonEnvoyes > 0 ? "attend" : "occupee") + "' data-t='" + i + "'><span class='nom'>" + esc(tb.nom) + "</span><span class='tot'>" + f(a.total) + "</span><span class='raison'>" + esc(t("tableOccupee", { n: nombre(a.nbArticles) })) + "</span><span class='raison'>" + esc(t("par", { nom: a.serveur || "—" })) + " · " + esc(t("depuis", { m: minutesDepuis(a.dateOuverture) })) + "</span>" + (a.nbNonEnvoyes > 0 ? "<span class='nouveau'>" + esc(t("nonEnvoye", { n: nombre(a.nbNonEnvoyes) })) + "</span>" : "") + "</button>";
+  }).join("");
+  Array.prototype.forEach.call(z.querySelectorAll("button[data-t]"), (b) => { b.onclick = () => ouvrirTable(E.tables[Number(b.dataset.t)]); });
+}
+function ouvrirTable(tb) {
+  if (tb.addition) return entrerAddition({ table: tb.nom });
+  ouvrirFenetre("<h3>" + esc(tb.nom) + "</h3><label>" + esc(t("couverts")) + "</label><input id='cvNb' type='number' inputmode='numeric' min='1' max='99' /><div style='display:flex;gap:8px;margin-top:14px;'><button class='vert' id='cvOk' style='flex:1;'>" + esc(t("ouvrirTable")) + "</button><button id='cvX'>" + esc(t("annuler")) + "</button></div>");
+  $("cvNb").focus();
+  const go = () => { const c = $("cvNb").value; fermerFenetre(); entrerAddition({ table: tb.nom, couverts: c ? Number(c) : undefined }); };
+  $("cvOk").onclick = go; $("cvNb").addEventListener("keydown", (ev) => { if (ev.key === "Enter") go(); }); $("cvX").onclick = fermerFenetre;
+}
+async function entrerAddition(corps) {
+  try {
+    const r = await api("/api/" + ID() + "/pos/additions", { method: "POST", body: JSON.stringify(corps) });
+    E.addition = r.addition; E.mode = "addition"; E.panier = []; E.remise = null; E.motifRemise = "";
+    afficherMode();
+    $("recherche").value = ""; dessinerArticles();
+  } catch (e) { erreur(e.message); }
+}
+async function rechargerAddition() {
+  try { E.addition = await api("/api/" + ID() + "/pos/additions/" + E.addition.id); } catch (e) { erreur(e.message); E.mode = "tables"; E.addition = null; afficherMode(); return; }
+  dessinerAddition();
+}
+function dessinerAddition() {
+  const a = E.addition; if (!a) return;
+  const z = $("droiteResto");
+  const pend = E.panier;
+  let h = "<div style='display:flex;align-items:center;gap:8px;'><button id='arRetour' style='min-height:36px;padding:4px 10px;'>" + esc(t("retourTables")) + "</button><h3 style='margin:0;'>" + esc(a.table) + "</h3><span class='raison' style='margin-left:auto;'>" + esc(t("par", { nom: a.serveur || "—" })) + (a.couverts ? " · " + esc(t("couverts")) + " " + a.couverts : "") + "</span></div>";
+  h += "<div class='titre-section'>" + esc(t("dejaCommande")) + "</div>";
+  h += a.lignes.length ? a.lignes.map((l) => "<div class='la'><div><strong>" + esc(l.produit) + "</strong> × " + nombre(l.quantite) + (l.unite ? " " + esc(l.unite) : "") + " " + (l.envoyee >= l.quantite ? "<span class='env'>✓ " + esc(t("envoye")) + "</span>" : "<span class='nouveau'>" + esc(t("nouveau")) + (l.envoyee > 0 ? " (" + nombre(l.quantite - l.envoyee) + ")" : "") + "</span>") + "</div><div style='font-weight:700;'>" + f(l.prix) + "</div><button class='danger' data-rl='" + l.index + "' style='min-height:34px;padding:2px 10px;'>✕</button>" + (l.note ? "<div class='nt'>" + esc(l.note) + "</div>" : "") + "</div>").join("") : "<p class='raison'>" + esc(t("additionVide")) + "</p>";
+  h += "<div class='totaux'><div class='l grand'><span>" + esc(t("total")) + "</span><span>" + f(a.total) + "</span></div></div>";
+  if (pend.length) {
+    h += "<div class='titre-section'>" + esc(t("aAjouter")) + "</div>";
+    h += pend.map((it, i) => { const l = ligneDe(it); return "<div class='lp'><div class='t'>" + esc(libelleLigne(l.produit ? l : { produit: it.productId, couleur: it.couleur, taille: it.taille })) + "</div><div class='m'>" + f(brut(it)) + "</div><div class='q'><button data-pa='moins' data-i='" + i + "'>−</button><input type='number' inputmode='decimal' data-pq='" + i + "' value='" + it.quantite + "' min='0' step='" + (it.decimal ? "0.001" : "1") + "'/><button data-pa='plus' data-i='" + i + "'>+</button></div><div style='text-align:right;'><button class='danger' data-pa='x' data-i='" + i + "' style='min-height:36px;padding:2px 10px;'>✕</button></div><input data-pn='" + i + "' placeholder='" + esc(t("noteArticle")) + "' value='" + esc(it.note || "") + "' maxlength='60' style='grid-column:1/-1;min-height:34px;padding:4px 8px;font-size:.9em;'/></div>"; }).join("");
+    h += "<button id='arAjouter' class='principal' style='width:100%;margin-top:8px;'>" + esc(t("ajouterTable")) + "</button>";
+  }
+  h += "<div class='actions' style='margin-top:12px;'><button id='arEnvoyer'" + (a.nbNonEnvoyes > 0 ? " class='vert'" : " disabled") + ">" + esc(t("envoyerPrepa")) + (a.nbNonEnvoyes > 0 ? " (" + nombre(a.nbNonEnvoyes) + ")" : "") + "</button><button id='arEncaisser' class='vert'" + (a.lignes.length ? "" : " disabled") + ">" + esc(t("encaisserAddition")) + "</button><button id='arTransferer'>" + esc(t("transferer")) + "</button><button id='arAnnuler' class='danger'>" + esc(t("annulerAddition")) + "</button></div>";
+  z.innerHTML = h;
+  $("arRetour").onclick = () => { if (E.panier.length) { erreur(t("panierNonVide")); return; } E.mode = "tables"; E.addition = null; afficherMode(); };
+  Array.prototype.forEach.call(z.querySelectorAll("[data-rl]"), (b) => { b.onclick = () => fenetreRetirer(a.lignes.find((x) => x.index === Number(b.dataset.rl))); });
+  Array.prototype.forEach.call(z.querySelectorAll("button[data-pa]"), (b) => { b.onclick = () => {
+    const i = Number(b.dataset.i), it = E.panier[i]; if (!it) return;
+    if (b.dataset.pa === "x") E.panier.splice(i, 1); else { const pas = it.decimal ? (it.quantite >= 1 ? 1 : 0.1) : 1; it.quantite = arrondi(it.quantite + (b.dataset.pa === "plus" ? pas : -pas), it.decimal); if (it.quantite <= 0) E.panier.splice(i, 1); }
+    dessinerAddition();
+  }; });
+  Array.prototype.forEach.call(z.querySelectorAll("input[data-pq]"), (inp) => { inp.onchange = () => { const it = E.panier[Number(inp.dataset.pq)]; if (!it) return; const q = Number(String(inp.value).replace(",", ".")); if (!Number.isFinite(q) || q <= 0) E.panier.splice(Number(inp.dataset.pq), 1); else { it.quantite = arrondi(q, it.decimal); if (!it.decimal && it.quantite < 1) it.quantite = 1; } dessinerAddition(); }; });
+  Array.prototype.forEach.call(z.querySelectorAll("input[data-pn]"), (inp) => { inp.oninput = () => { E.panier[Number(inp.dataset.pn)].note = inp.value; }; });
+  if ($("arAjouter")) $("arAjouter").onclick = ajouterALAddition;
+  $("arEnvoyer").onclick = envoyerAddition;
+  $("arEncaisser").onclick = fenetreEncaisserAddition;
+  $("arTransferer").onclick = fenetreTransfert;
+  $("arAnnuler").onclick = fenetreAnnulerAddition;
+}
+async function ajouterALAddition() {
+  if (!E.panier.length) return;
+  try {
+    E.addition = await api("/api/" + ID() + "/pos/additions/" + E.addition.id + "/lignes", { method: "POST", body: JSON.stringify({ ajouts: E.panier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite, note: (it.note || "").trim() || undefined })) }) });
+    E.panier = [];
+    dessinerAddition();
+  } catch (e) { erreur(e.message); }
+}
+async function envoyerAddition() {
+  if (E.panier.length) { try { await ajouterALAddition(); } catch (e) {} if (E.panier.length) return; }
+  try {
+    const r = await api("/api/" + ID() + "/pos/additions/" + E.addition.id + "/envoyer", { method: "POST" });
+    E.addition = r.addition; dessinerAddition();
+    fenetreBons(r.bons, r.sansPoste);
+  } catch (e) { erreur(e.message); }
+}
+function htmlBon(b) {
+  const loc = LANG === "en" ? "en-GB" : "fr-FR";
+  const lib = b.type === "annulation" ? t("bonAnnulation") + " — " + t(b.poste === "bar" ? "posteBar" : "posteCuisine") : t(b.poste === "bar" ? "posteBar" : "posteCuisine");
+  let h = "<div class='bon" + (b.type === "annulation" ? " annul" : "") + "'><div class='poste'>" + esc(lib) + "</div>";
+  h += "<div class='c big'>" + esc(b.table) + "</div>";
+  h += "<div class='c'>" + esc(new Date(b.dateISO).toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" })) + " · " + esc(b.serveur || "") + (b.couverts ? " · " + esc(t("couverts")) + " " + esc(b.couverts) : "") + "</div><div class='tr'></div>";
+  (b.lignes || []).forEach((l) => { h += "<div class='big'>" + esc(nombre(l.quantite)) + (l.unite ? " " + esc(l.unite) : "") + " × " + esc(l.produit) + "</div>" + (l.note ? "<div class='note'>» " + esc(l.note) + "</div>" : ""); });
+  h += "<div class='tr'></div><div class='c'>" + esc(b.numero) + "</div></div>";
+  return h;
+}
+function fenetreBons(bons, sansPoste) {
+  bons = bons || [];
+  ouvrirFenetre("<h3>" + esc(t("bonsTitre")) + "</h3>" + (bons.length ? bons.map(htmlBon).join("") : "") + (sansPoste && sansPoste.length ? "<p class='raison'>" + esc(t("sansPoste", { liste: sansPoste.map((l) => nombre(l.quantite) + " × " + l.produit).join(", ") })) + "</p>" : "") + "<div style='display:flex;gap:8px;margin-top:12px;'>" + (bons.length ? "<button id='bnImp'>" + esc(t("imprimerBons")) + "</button>" : "") + "<button id='bnOk' class='vert' style='flex:1;'>" + esc(t("fermer")) + "</button></div>");
+  if (bons.length) $("bnImp").onclick = () => imprimerTicket(null, bons.map(htmlBon).join(""));
+  $("bnOk").onclick = fermerFenetre;
+}
+function fenetreRetirer(l) {
+  if (!l) return;
+  const partEnv = l.envoyee || 0;
+  ouvrirFenetre("<h3>" + esc(t("retirerLigne")) + " — " + esc(l.produit) + "</h3><label>" + esc(t("quantiteARetirer")) + " (max " + nombre(l.quantite) + ")</label><input id='rtQ' type='number' inputmode='decimal' min='0' step='" + (l.decimal ? "0.001" : "1") + "' value='" + l.quantite + "' /><div id='rtM'></div><div style='display:flex;gap:8px;margin-top:14px;'><button class='principal' id='rtOk' style='flex:1;'>" + esc(t("confirmer")) + "</button><button id='rtX'>" + esc(t("annuler")) + "</button></div>");
+  const maj = () => { const q = Number($("rtQ").value) || 0; const touche = q > (l.quantite - partEnv); $("rtM").innerHTML = touche ? "<label>" + esc(t("motifAnnulation")) + "</label><input id='rtMotif' maxlength='120' />" : ""; };
+  $("rtQ").oninput = maj; maj();
+  $("rtX").onclick = fermerFenetre;
+  $("rtOk").onclick = async () => {
+    try {
+      const r = await api("/api/" + ID() + "/pos/additions/" + E.addition.id + "/lignes/" + l.index + "/retirer", { method: "POST", body: JSON.stringify({ quantite: Number($("rtQ").value), motif: $("rtMotif") ? $("rtMotif").value : undefined }) });
+      E.addition = r.addition; fermerFenetre(); dessinerAddition();
+      if (r.bonAnnulation) fenetreBons([r.bonAnnulation], []);
+    } catch (e) { erreur(e.message); }
+  };
+}
+function fenetreTransfert() {
+  const autres = (E.tables || []).filter((tb) => tb.nom !== E.addition.table);
+  ouvrirFenetre("<h3>" + esc(t("transfertTitre")) + "</h3>" + autres.map((tb, i) => "<button data-tt='" + i + "' style='width:100%;margin-bottom:6px;text-align:left;'>" + esc(tb.nom) + (tb.addition ? " <span class='raison'>" + esc(t("tableOccupeeFusion")) + "</span>" : "") + "</button>").join("") + "<button id='ttX'>" + esc(t("annuler")) + "</button>");
+  $("ttX").onclick = fermerFenetre;
+  Array.prototype.forEach.call($("fenetre").querySelectorAll("[data-tt]"), (b) => { b.onclick = async () => {
+    try { const r = await api("/api/" + ID() + "/pos/additions/" + E.addition.id + "/transferer", { method: "POST", body: JSON.stringify({ table: autres[Number(b.dataset.tt)].nom }) }); E.addition = r.addition; fermerFenetre(); dessinerAddition(); } catch (e) { erreur(e.message); }
+  }; });
+}
+function fenetreAnnulerAddition() {
+  ouvrirFenetre("<h3>" + esc(t("annulerAdditionTitre")) + " — " + esc(E.addition.table) + "</h3><label>" + esc(t("motifAnnulAddition")) + "</label><input id='anM' maxlength='120' /><div style='display:flex;gap:8px;margin-top:14px;'><button class='danger' id='anOk' style='flex:1;'>" + esc(t("annulerAddition")) + "</button><button id='anX'>" + esc(t("annuler")) + "</button></div>");
+  $("anX").onclick = fermerFenetre;
+  $("anOk").onclick = async () => { try { await api("/api/" + ID() + "/pos/additions/" + E.addition.id + "/annuler", { method: "POST", body: JSON.stringify({ motif: $("anM").value }) }); fermerFenetre(); E.mode = "tables"; E.addition = null; E.panier = []; afficherMode(); } catch (e) { erreur(e.message); } };
+}
+// Encaissement partage : on coche les articles (et la quantite) que CE client paie ; le reste demeure sur la table.
+function peutRemiseResto() { return !!E.moi && (E.moi.role !== "employe" || (E.moi.roles || []).indexOf("remises") !== -1); }
+function fenetreEncaisserAddition() {
+  const a = E.addition;
+  const sel = {}; a.lignes.forEach((l) => { sel[l.index] = l.quantite; });
+  const total = () => a.lignes.reduce((s, l) => s + Math.round(l.prixUnitaire * (Number(sel[l.index]) || 0)), 0);
+  ouvrirFenetre("<h3>" + esc(t("encaisserTitre")) + " — " + esc(a.table) + "</h3><div style='display:flex;gap:6px;margin-bottom:6px;'><button id='ecTout' style='min-height:34px;'>" + esc(t("toutSelectionner")) + "</button><button id='ecRien' style='min-height:34px;'>" + esc(t("aucun")) + "</button></div><div id='ecLignes'></div><div class='totaux'><div class='l grand'><span>" + esc(t("totalSelection")) + "</span><span id='ecTot'></span></div></div>" + (peutRemiseResto() ? "<div class='titre-section'>" + esc(t("remise")) + "</div><div style='display:grid;grid-template-columns:90px 1fr;gap:8px;'><select id='ecRType'><option value='pourcent'>%</option><option value='montant'>FCFA</option></select><input id='ecRVal' type='number' inputmode='decimal' min='0' placeholder='0'/></div><input id='ecRMotif' placeholder='" + esc(t("motif")) + "' maxlength='200' style='margin-top:6px;'/>" : "") + "<div style='display:flex;gap:8px;margin-top:12px;'><button id='ecOk' class='vert' style='flex:1;min-height:52px;'>" + esc(t("continuerPaiement")) + "</button><button id='ecX'>" + esc(t("annuler")) + "</button></div>");
+  const maj = () => { $("ecTot").textContent = f(total()); $("ecOk").disabled = total() <= 0; };
+  const dessiner = () => {
+    $("ecLignes").innerHTML = a.lignes.map((l) => "<div class='sel-l'><input type='checkbox' data-c='" + l.index + "'" + (Number(sel[l.index]) > 0 ? " checked" : "") + "/><div>" + esc(l.produit) + "<div class='raison'>" + f(l.prixUnitaire) + (l.unite ? " / " + esc(l.unite) : "") + "</div></div><input type='number' data-q='" + l.index + "' min='0' max='" + l.quantite + "' step='" + (l.decimal ? "0.001" : "1") + "' value='" + (Number(sel[l.index]) || 0) + "' inputmode='decimal'/><div style='font-weight:700;min-width:80px;text-align:right;'>" + f(Math.round(l.prixUnitaire * (Number(sel[l.index]) || 0))) + "</div></div>").join("");
+    Array.prototype.forEach.call($("ecLignes").querySelectorAll("input[data-c]"), (c) => { c.onchange = () => { const l = a.lignes.find((x) => x.index === Number(c.dataset.c)); sel[l.index] = c.checked ? l.quantite : 0; dessiner(); }; });
+    Array.prototype.forEach.call($("ecLignes").querySelectorAll("input[data-q]"), (q) => { q.onchange = () => { const l = a.lignes.find((x) => x.index === Number(q.dataset.q)); let v = Number(String(q.value).replace(",", ".")) || 0; v = Math.max(0, Math.min(l.quantite, l.decimal ? Math.round(v * 1000) / 1000 : Math.round(v))); sel[l.index] = v; dessiner(); }; });
+    maj();
+  };
+  dessiner();
+  $("ecTout").onclick = () => { a.lignes.forEach((l) => { sel[l.index] = l.quantite; }); dessiner(); };
+  $("ecRien").onclick = () => { a.lignes.forEach((l) => { sel[l.index] = 0; }); dessiner(); };
+  $("ecX").onclick = fermerFenetre;
+  $("ecOk").onclick = () => {
+    const selection = a.lignes.filter((l) => Number(sel[l.index]) > 0).map((l) => ({ index: l.index, quantite: Number(sel[l.index]) }));
+    if (!selection.length) return;
+    let remise = null, motif = "";
+    if ($("ecRVal") && Number($("ecRVal").value) > 0) { remise = { type: $("ecRType").value, valeur: Number($("ecRVal").value) }; motif = $("ecRMotif").value.trim(); if (!motif) { erreur(t("motif")); return; } }
+    E.encaissement = { additionId: a.id, selection }; E.base = total(); E.remise = remise; E.motifRemise = motif;
+    fenetrePaiement();
+  };
+}
+async function fenetreReglagesResto() {
+  let cfg; try { cfg = await api("/api/" + ID() + "/restauration/config"); } catch (e) { erreur(e.message); return; }
+  ouvrirFenetre("<h3>" + esc(t("reglagesTitre")) + "</h3><label>" + esc(t("listeTables")) + "</label><textarea id='rgTables' rows='8'>" + esc(cfg.tables.map((x) => x.nom).join("\n")) + "</textarea><div class='titre-section'>" + esc(t("postesParCategorie")) + "</div>" + (cfg.categories.length ? cfg.categories.map((c, i) => "<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center;margin-bottom:6px;'><span>" + esc(c) + "</span><select data-rc='" + i + "'><option value=''>" + esc(t("aucunPoste")) + "</option><option value='bar'" + (cfg.categoriesPoste[c] === "bar" ? " selected" : "") + ">" + esc(t("posteBar")) + "</option><option value='cuisine'" + (cfg.categoriesPoste[c] === "cuisine" ? " selected" : "") + ">" + esc(t("posteCuisine")) + "</option></select></div>").join("") : "<p class='raison'>—</p>") + "<div style='display:flex;gap:8px;margin-top:14px;'><button id='rgOk' class='principal' style='flex:1;'>" + esc(t("enregistrer2")) + "</button><button id='rgX'>" + esc(t("annuler")) + "</button></div>");
+  $("rgX").onclick = fermerFenetre;
+  $("rgOk").onclick = async () => {
+    const categoriesPoste = {}; Array.prototype.forEach.call($("fenetre").querySelectorAll("select[data-rc]"), (s2) => { if (s2.value) categoriesPoste[cfg.categories[Number(s2.dataset.rc)]] = s2.value; });
+    try { await api("/api/" + ID() + "/restauration/config", { method: "PUT", body: JSON.stringify({ tables: $("rgTables").value.split("\n").map((x) => x.trim()).filter(Boolean), categoriesPoste }) }); fermerFenetre(); info(t("rafraichi")); chargerTables(); } catch (e) { erreur(e.message); }
+  };
+}
+
+/* ============ Evenements ============ */
+$("cxBtn").onclick = connexion;
+$("cxMdp").addEventListener("keydown", (ev) => { if (ev.key === "Enter") connexion(); });
+$("cxId").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("cxMdp").focus(); });
+$("cxLang").onclick = basculerLangue; $("btnLang").onclick = basculerLangue;
+async function deconnexion() { try { await api("/api/deconnexion", { method: "POST" }); } catch (e) {} HL.effacerInstantane(); HL.actif = false; E.moi = null; E.marchand = null; E.session = null; E.panier = []; montrer("ecranConnexion"); }
+$("btnDeco").onclick = deconnexion; $("ouvDeco").onclick = deconnexion; $("choixDeco").onclick = deconnexion;
+$("btnOuvrir").onclick = ouvrirCaisse;
+$("btnCloture").onclick = ecranFermeture;
+$("btnAnnulerFermer").onclick = () => montrer("vente");
+$("btnFermer").onclick = fermerCaisse;
+$("recapOk").onclick = () => demarrerMarchand(E.marchand);
+$("btnRemise").onclick = fenetreRemise;
+$("btnMettreAttente").onclick = fenetreMettreAttente;
+$("btnClients").onclick = () => fenetreListeClients({});
+$("btnAttentes").onclick = async () => { if (HL.actif) { erreur(t("hlNonDispo")); return; } try { E.attentes = await api("/api/" + ID() + "/pos/attente"); majBarre(); } catch (e) {} fenetreAttentes(); };
+$("btnVider").onclick = () => { E.panier = []; E.remise = null; E.motifRemise = ""; dessinerPanier(); };
+$("btnPayer").onclick = () => { if (E.panier.length) fenetrePaiement(); };
+$("btnModeDirect").onclick = () => changerMode("direct");
+$("btnModeTables").onclick = () => changerMode("tables");
+$("btnActualiserTables").onclick = chargerTables;
+$("btnReglagesResto").onclick = fenetreReglagesResto;
+$("btnDernierTicket").onclick = () => { if (E.dernier) fenetreTicket(E.dernier, false); };
+$("recherche").addEventListener("input", dessinerArticles);
+$("recherche").addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter") return;
+  ev.preventDefault();
+  const v = $("recherche").value.trim(); if (!v) return;
+  if (scanner(v)) { $("recherche").value = ""; dessinerArticles(); return; }
+  const visibles = document.querySelectorAll("#listeArticles button:not([disabled])");
+  if (visibles.length === 1) { visibles[0].click(); $("recherche").value = ""; dessinerArticles(); }
+  else if (!visibles.length) erreur(t("codeInconnu", { code: v }));
+});
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("voile").classList.contains("cache")) fermerFenetre(); });
+
+/* ============ Mode hors ligne (Etape 91) ============
+   Option reservee au super-administrateur (E.marchand.optionHorsLigne). Principe : une vente SIMPLE (articles + paiement, sans remise, client, credit, table ni
+   prix de gros) est mise en file sur l'appareil quand le reseau manque, avec une cle unique (anti-doublon) ; des que la connexion revient elle est envoyee au serveur,
+   qui la rejoue avec la date de saisie et SIGNALE tout ecart de stock ou de prix au proprietaire au lieu de la refuser. Rien d'autre n'est conserve hors ligne :
+   ni mot de passe, ni prix d'achat, ni donnee d'un autre commerce. La deconnexion efface l'instantane (catalogue) mais jamais la file des ventes non envoyees. */
+const HL = (function () {
+  const NOM_BD = "izy_caisse_hl", AGE_MAX_MS = 72 * 3600 * 1000;
+  let dbp = null, file = [], enCours = false, minuteur = null, minuteurRafraichir = null, dernierMessage = "";
+  const H = { actif: false, dispo: typeof indexedDB !== "undefined" };
+  function ouvrir() {
+    if (dbp) return dbp;
+    dbp = new Promise((ok, ko) => {
+      if (!H.dispo) return ko(new Error("indisponible"));
+      let r; try { r = indexedDB.open(NOM_BD, 1); } catch (e) { return ko(e); }
+      r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains("file")) d.createObjectStore("file", { keyPath: "cle" }); if (!d.objectStoreNames.contains("snap")) d.createObjectStore("snap", { keyPath: "id" }); };
+      r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error);
+    });
+    dbp.catch(() => { H.dispo = false; });
+    return dbp;
+  }
+  function tx(magasin, mode, fn) {
+    return ouvrir().then((d) => new Promise((ok, ko) => {
+      let t, res; try { t = d.transaction(magasin, mode); res = fn(t.objectStore(magasin)); } catch (e) { ko(e); return; }
+      t.oncomplete = () => ok(res && "result" in res ? res.result : undefined); t.onerror = () => ko(t.error); t.onabort = () => ko(t.error);
+    }));
+  }
+  const uuid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ("k" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 8));
+  function appareil() { try { let a = localStorage.getItem("izy_caisse_appareil"); if (!a) { a = "A" + Math.random().toString(36).slice(2, 7).toUpperCase(); localStorage.setItem("izy_caisse_appareil", a); } return a; } catch (e) { return "A?"; } }
+  H.nouvelleCle = uuid;
+  H.option = () => !!(H.dispo && E.marchand && E.marchand.optionHorsLigne);
+  H.fileDuMarchand = () => file.filter((x) => E.marchand && x.marchandId === E.marchand.id).sort((a, b) => a.seq - b.seq);
+  H.charger = async function () { try { file = (await tx("file", "readonly", (s) => s.getAll())) || []; } catch (e) { file = []; } majStatut(); };
+  // ---- Instantane (catalogue + session + profil), rafraichi a chaque chargement et toutes les 5 minutes ----
+  H.sauverInstantane = async function () {
+    if (!H.option() || !E.moi) return;
+    try {
+      await tx("snap", "readwrite", (s) => s.put({ id: "instantane", t: Date.now(), marchand: JSON.parse(JSON.stringify(E.marchand)), moi: { adminUser: E.moi.adminUser, role: E.moi.role, roles: E.moi.roles || [] }, config: E.config, session: E.session, lignes: E.lignes }));
+    } catch (e) { /* conservation locale impossible (navigation privee, quota) : la caisse reste utilisable en ligne */ }
+  };
+  H.effacerInstantane = async function () { try { await tx("snap", "readwrite", (s) => s.delete("instantane")); } catch (e) {} };
+  H.demarrerHorsLigne = async function () {
+    let snap = null; try { snap = await tx("snap", "readonly", (s) => s.get("instantane")); } catch (e) { return false; }
+    if (!snap || !snap.marchand || !snap.marchand.optionHorsLigne) return false;
+    if (Date.now() - snap.t > AGE_MAX_MS) { erreur(t("hlAncien")); return false; }
+    if (!snap.session) { erreur(t("hlPasDeSession")); return false; }
+    await H.charger();
+    E.moi = snap.moi; E.marchand = snap.marchand; E.config = snap.config; E.session = snap.session; E.lignes = snap.lignes || [];
+    E.panier = []; E.remise = null; E.motifRemise = ""; E.dernier = null; E.attentes = []; E.grosActif = false; E.mode = "direct";
+    H.actif = true;
+    majBarre(); dessinerArticles(); dessinerPanier(); $("recherche").value = ""; montrer("vente"); afficherMode(); majStatut();
+    lancerMinuteur();
+    return true;
+  };
+  // ---- Etat reseau ----
+  H.signalerCoupure = function () { if (H.option() && !H.actif) { H.actif = true; majStatut(); lancerMinuteur(); if (E.mode !== "direct" && E.vue === "vente" && E.marchand.optionRestauration) { E.mode = "direct"; E.addition = null; afficherMode(); } } };
+  async function ping() {
+    try {
+      const c = typeof AbortController !== "undefined" ? new AbortController() : null; const tm = c ? setTimeout(() => c.abort(), 6000) : null;
+      await fetch("/api/moi", { credentials: "same-origin", cache: "no-store", signal: c ? c.signal : undefined }); if (tm) clearTimeout(tm); return true;
+    } catch (e) { return false; }
+  }
+  async function verifier() {
+    if (!H.option()) return;
+    if (!(H.actif || H.fileDuMarchand().length)) return;
+    if (await ping()) { if (H.actif) { H.actif = false; majStatut(); } H.synchroniser(); }
+    else if (!H.actif) { H.actif = true; majStatut(); }
+  }
+  function lancerMinuteur() {
+    if (!minuteur) minuteur = setInterval(verifier, 15000);
+    if (!minuteurRafraichir) minuteurRafraichir = setInterval(async () => { if (!H.option() || H.actif || E.vue !== "vente" || enCours) return; try { await actualiserLignes(); majStatut(); H.sauverInstantane(); } catch (e) {} }, 300000);
+  }
+  H.demarrerSurveillance = function () { lancerMinuteur(); verifier(); };
+  window.addEventListener("online", () => { verifier(); });
+  window.addEventListener("offline", () => { if (H.option()) H.signalerCoupure(); });
+  // ---- File d'attente ----
+  async function numeroLocal() { let n = 0; await tx("snap", "readwrite", (s) => { const r = s.get("compteur"); r.onsuccess = () => { n = (r.result ? r.result.n : 0) + 1; s.put({ id: "compteur", n }); }; return r; }); return "H-" + appareil().slice(1, 3) + String(n).padStart(4, "0"); }
+  // Construit la vente locale (ticket provisoire) et l'ajoute a la file. corps = meme corps que POST /pos/vente, avec les prix affiches au client.
+  H.mettreEnFile = async function (corps, panier, total) {
+    const saisieLe = new Date().toISOString(), num = await numeroLocal();
+    const payes = (corps.paiements || []).map((p) => ({ mode: p.mode, montant: p.montant, reference: p.reference || null }));
+    const somme = payes.reduce((x, p) => x + p.montant, 0), rendu = Math.max(0, somme - total);
+    let aRendre = rendu;
+    const parts = payes.map((p) => { if (p.mode === "especes" && aRendre > 0) { const r = Math.min(aRendre, p.montant); aRendre -= r; return { mode: p.mode, montant: p.montant - r, recu: p.montant, rendu: r }; } return { mode: p.mode, montant: p.montant, reference: p.reference }; });
+    const items = panier.map((it) => { const l = ligneDe(it); return { productId: it.productId, produit: l.produit || it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite, unite: l.unite || undefined, prixUnitaire: it.prixUnitaire, prixBrut: Math.round(it.prixUnitaire * it.quantite), remiseLigne: 0, prix: Math.round(it.prixUnitaire * it.quantite) }; });
+    const commande = { id: null, numeroLocal: num, dateISO: saisieLe, items, prix: total, prixBrut: total, remise: null, modePaiement: parts.length === 1 ? parts[0].mode : "mixte", paiements: parts, caissier: E.moi ? E.moi.adminUser : null, horsLigne: true };
+    const entree = { cle: corps.cle, seq: Date.now(), marchandId: E.marchand.id, statut: "attente", numeroLocal: num, saisieLe, total, saisiPar: E.moi ? E.moi.adminUser : null, appareil: appareil(),
+      lignes: panier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite, prixUnitaire: it.prixUnitaire })), paiements: corps.paiements, commande };
+    await tx("file", "readwrite", (s) => s.put(entree));
+    file.push(entree); majStatut(); H.sauverInstantane();
+    return commande;
+  };
+  H.synchroniser = async function () {
+    if (enCours || !H.option() || !E.marchand) return;
+    const aEnvoyer = H.fileDuMarchand().filter((x) => x.statut === "attente");
+    if (!aEnvoyer.length) { majStatut(); return; }
+    enCours = true; majStatut();
+    let nbOk = 0, nbEcarts = 0, arret = "";
+    try {
+      for (const it of aEnvoyer) {
+        let rep;
+        try {
+          rep = await api("/api/" + encodeURIComponent(E.marchand.id) + "/pos/vente", { method: "POST", body: JSON.stringify({ lignes: it.lignes, paiements: it.paiements, cle: it.cle, horsLigne: { saisieLe: it.saisieLe, saisiPar: it.saisiPar, appareil: it.appareil, numeroLocal: it.numeroLocal } }) });
+        } catch (err) {
+          if (err.reseau) { H.actif = true; arret = "reseau"; break; }
+          if (err.statut === 401) { arret = "session"; break; }
+          if (err.code === "session_fermee") { arret = "caisse"; erreur(t("hlSessionFermee")); break; }
+          if (!err.statut || err.statut >= 500) { arret = "serveur"; break; }
+          it.statut = "erreur"; it.erreur = err.message || "?"; try { await tx("file", "readwrite", (s) => s.put(it)); } catch (e) {}
+          continue;
+        }
+        nbOk++; if (rep && rep.horsLigne && ((rep.horsLigne.stockInsuffisant || []).length || (rep.horsLigne.ecartsPrix || []).length)) nbEcarts++;
+        if (E.dernier && E.dernier.numeroLocal === it.numeroLocal) E.dernier = rep;
+        file = file.filter((x) => x.cle !== it.cle); try { await tx("file", "readwrite", (s) => s.delete(it.cle)); } catch (e) {}
+      }
+    } finally { enCours = false; }
+    if (nbOk) { info(t("hlSyncOk", { n: nbOk }) + (nbEcarts ? " " + t("hlSyncEcart", { n: nbEcarts }) : "")); try { await actualiserLignes(); H.sauverInstantane(); } catch (e) {} }
+    majStatut();
+  };
+  H.fenetreFile = function () {
+    const liste = H.fileDuMarchand();
+    const loc = LANG === "en" ? "en-GB" : "fr-FR";
+    const lignes = liste.map((x, i) => "<tr><td style='white-space:nowrap;'>" + esc(x.numeroLocal) + "</td><td style='white-space:nowrap;'>" + esc(new Date(x.saisieLe).toLocaleString(loc, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })) + "</td><td style='text-align:right;'>" + esc(nombre(x.total)) + "</td><td>" + (x.statut === "erreur" ? "<span style='color:var(--rouge);'>" + esc(t("hlErreur")) + " : " + esc(x.erreur) + "</span>" : esc(t("hlAttente"))) + "</td><td>" + (x.statut === "erreur" ? "<button data-r='" + i + "'>" + esc(t("hlRetry")) + "</button> <button data-a='" + i + "'>" + esc(t("hlAbandon")) + "</button>" : "") + "</td></tr>").join("");
+    ouvrirFenetre("<h3>" + esc(t("hlTitre")) + "</h3>" + (H.actif ? "<p class='raison'>" + esc(t("hlBandeau")) + "</p>" : "") + (liste.length ? "<div style='overflow:auto;max-height:50vh;'><table class='billetage' style='width:100%;'><tbody>" + lignes + "</tbody></table></div>" : "<p class='raison'>" + esc(t("hlAucune")) + "</p>") +
+      "<div style='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;'><button id='hlSync' class='principal' " + (!liste.some((x) => x.statut === "attente") || H.actif ? "disabled" : "") + ">" + esc(t("hlSync")) + "</button><button id='hlExp' " + (liste.length ? "" : "disabled") + ">" + esc(t("hlExport")) + "</button><button id='hlX'>" + esc(t("fermer")) + "</button></div>");
+    $("hlX").onclick = fermerFenetre;
+    $("hlSync").onclick = async () => { fermerFenetre(); await H.synchroniser(); };
+    $("hlExp").onclick = () => {
+      const csv = ["numero;date;total;statut;erreur;articles;paiements"].concat(liste.map((x) => [x.numeroLocal, x.saisieLe, x.total, x.statut, (x.erreur || "").replace(/;/g, ","), x.lignes.map((l) => l.quantite + " x " + l.productId + " @" + l.prixUnitaire).join(" | "), x.paiements.map((p) => p.mode + ":" + p.montant).join(" | ")].join(";"))).join("\n");
+      const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" })); a.download = "ventes-hors-ligne.csv"; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    };
+    Array.prototype.forEach.call($("fenetre").querySelectorAll("button[data-r]"), (b) => { b.onclick = async () => { const x = liste[Number(b.dataset.r)]; x.statut = "attente"; delete x.erreur; try { await tx("file", "readwrite", (s) => s.put(x)); } catch (e) {} fermerFenetre(); H.synchroniser(); }; });
+    Array.prototype.forEach.call($("fenetre").querySelectorAll("button[data-a]"), (b) => { b.onclick = async () => {
+      if (b.dataset.sur !== "1") { b.dataset.sur = "1"; b.textContent = t("hlConfirmAbandon"); return; }
+      const x = liste[Number(b.dataset.a)]; file = file.filter((y) => y.cle !== x.cle); try { await tx("file", "readwrite", (s) => s.delete(x.cle)); } catch (e) {} majStatut(); H.fenetreFile();
+    }; });
+  };
+  function majStatut() {
+    const b = $("btnHL"), bandeau = $("bandeauHL"); if (!b) return;
+    const n = H.option() ? H.fileDuMarchand().length : 0, nErr = H.option() ? H.fileDuMarchand().filter((x) => x.statut === "erreur").length : 0;
+    const visible = H.option() && (H.actif || n > 0);
+    b.classList.toggle("cache", !visible); bandeau.classList.toggle("cache", !(H.option() && H.actif));
+    b.classList.toggle("hors", H.actif || nErr > 0);
+    b.textContent = H.actif ? t("hlHorsLigne") + (n ? " · " + n : "") : (enCours ? t("hlSynchro") : t("hlAEnvoyer", { n }));
+    majBarreDepuisHL();
+  }
+  H.majStatut = majStatut;
+  return H;
+})();
+function majBarreDepuisHL() { const peutRemise = E.moi && (E.moi.role !== "employe" || (E.moi.roles || []).indexOf("remises") !== -1); $("btnRemise").classList.toggle("cache", !peutRemise || HL.actif); $("btnClients").classList.toggle("cache", !credOn() || HL.actif); }
+$("btnHL").onclick = () => HL.fenetreFile();
+
+/* ============ Demarrage ============ */
+(async function demarrer() {
+  appliquerLangue();
+  if ("serviceWorker" in navigator) { navigator.serviceWorker.register("/caisse-sw.js", { scope: "/caisse" }).catch(() => {}); }
+  try {
+    E.moi = await api("/api/moi");
+    await choisirMarchand();
+  } catch (e) { if (e && e.reseau && await HL.demarrerHorsLigne()) return; montrer("ecranConnexion"); }
+})();
+</script>
+</body>
+</html>
