@@ -3563,6 +3563,10 @@ app.get("/api/:id/caisse/rapport", protegerAcces, (req, res) => {
   const gest = estGestionnaireDuMarchand(req, req.params.id);
   // Etape 93 : un employe qui n'a QUE le role « caisse » (sans « rapports ») ne voit que SES propres ventes et encaissements, jamais ceux des autres.
   const voitToutesLesVentes = gest || (req.auth.roles || []).indexOf("rapports") !== -1;
+  if (!voitToutesLesVentes && /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.du || ""))) {
+    const lim = transferts.jourCameroun(new Date(Date.now() - 31 * 86400000).toISOString());
+    if (String(req.query.du) < lim) return res.status(400).json({ erreur: "Vous pouvez consulter vos 31 derniers jours (à partir du " + lim + ").", code: "historique_limite", limite: lim });
+  }
   const vueDemandee = String(req.query.vue || "synthese");
   if (String(req.query.format || "").toLowerCase() === "csv" && ((vueDemandee === "marge" && !(optionCredit && gest)) || (vueDemandee === "reglements" && !optionCredit))) return res.status(403).json({ erreur: "Vue non disponible." });
   const r = rapportCaisse.genererRapportCaisse({
@@ -3573,7 +3577,16 @@ app.get("/api/:id/caisse/rapport", protegerAcces, (req, res) => {
     couts: optionCredit && gest ? entry.engine.getCoutsVentes() : undefined
   });
   if (r.erreur) return res.status(400).json({ erreur: r.erreur });
-  if (!voitToutesLesVentes) r.caissiers = [req.auth.adminUser];
+  if (!voitToutesLesVentes) {
+    r.caissiers = [req.auth.adminUser];
+    // Etape 96 : un employe consulte son rapport sans ouvrir de session, sur 31 jours au plus, et SANS les ecarts de caisse ni les montants comptes
+    // (reserves au proprietaire / aux employes « rapports ») : ses ventes et ses encaissements seulement.
+    const limite = transferts.jourCameroun(new Date(Date.now() - 31 * 86400000).toISOString());
+    if (r.du < limite) return res.status(400).json({ erreur: "Vous pouvez consulter vos 31 derniers jours (à partir du " + limite + ").", code: "historique_limite", limite });
+    r.restreint = true;
+    r.sessions = (r.sessions || []).map((s) => { const c = Object.assign({}, s); ["montantTheorique", "montantCompte", "ecart", "raisonEcart"].forEach((k) => { c[k] = null; }); return c; });
+    r.ecarts = { nbSessions: r.ecarts.nbSessions, nbFermees: r.ecarts.nbFermees, nbOuvertes: r.ecarts.nbOuvertes, nbAvecEcart: 0, totalEcart: 0, totalFond: r.ecarts.totalFond, masque: true };
+  }
   if (String(req.query.format || "").toLowerCase() === "csv") {
     const vue = rapportCaisse.VUES_CSV.indexOf(String(req.query.vue || "synthese")) !== -1 ? String(req.query.vue || "synthese") : "synthese";
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
