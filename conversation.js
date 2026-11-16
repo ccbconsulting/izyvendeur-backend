@@ -12,6 +12,7 @@
 const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, DEFAULT_AUTO_CONFIRM_MESSAGE_EN, SEED_CATALOG } = require("./catalog");
 const remisesLib = require("./remises");
 const venteGros = require("./venteGros");
+const transferts = require("./transferts"); // Etape 95
 const enseigne = require("./enseigne");
 const db = require("./db");
 const sessionsPersistantes = require("./sessionsPersistantes");
@@ -233,6 +234,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.listeAttenteReassort) state.listeAttenteReassort = [];
     state.gros = venteGros.assurer(state.gros); // Etape 78
     state.enseigne = enseigne.assurer(state.enseigne); // Etape 84
+    state.transferts = transferts.assurer(state.transferts); // Etape 95 (bons de transfert : stockes dans l'etat du compte principal du groupe)
     // Retro-compatibilite (29 sept 2026) pour un marchand deja existant avant l'ajout des sessions de
     // caisse : jamais de migration forcee de son etat, juste des valeurs de depart s'il ne les a pas encore.
     if (!state.settings.caisse) state.settings.caisse = Object.assign({}, CONFIG_CAISSE_PAR_DEFAUT, { coupures: COUPURES_CAISSE_PAR_DEFAUT.slice() });
@@ -3301,6 +3303,15 @@ function createCatalogEngine(merchantKey, options) {
     return state.caisseSessions.find((s) => s.statut === "ouverte" && (cfg.sessionUnique || s.caissier === caissier)) || null;
   }
 
+  // Etape 93 : session de ce caissier qui couvrait un instant donne (ouverte, ou fermee apres cet instant) ; null si aucune.
+  function sessionPourDate(caissier, dateISO) {
+    if (!state) return null;
+    const t = new Date(dateISO).getTime();
+    if (isNaN(t)) return null;
+    const candidates = state.caisseSessions.filter((s) => s.caissier === (caissier || null) && new Date(s.dateOuverture).getTime() <= t + 60000 && (s.statut === "ouverte" || (s.dateFermeture && t <= new Date(s.dateFermeture).getTime() + 60000)));
+    return candidates.sort((a, b) => new Date(b.dateOuverture) - new Date(a.dateOuverture))[0] || null;
+  }
+
   function ouvrirSessionCaisse({ caissier, billetage }) {
     if (!state) return { erreur: "Marchand introuvable." };
     const fondInitial = totalBilletage(billetage);
@@ -3389,7 +3400,7 @@ function createCatalogEngine(merchantKey, options) {
 
   // Validation de TOUTES les lignes AVANT de toucher au moindre stock, pour que la vente reste atomique :
   // jamais un article decompte puis un autre refuse en cours de route.
-  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros, paiements, montantRecu, clientId, credit, cle, horsLigne }) {
+  function creerVentePos({ lignes, modePaiement, referencePaiement, caissier, remiseGlobale, motifRemise, verifierRemise, grossisteId, methodeGros, paiements, montantRecu, clientId, credit, cle, horsLigne, regularisation }) {
     if (!state) return { erreur: "Marchand introuvable." };
     // Etape 91 : cle d'idempotence (UUID genere par la caisse). Une vente deja enregistree avec la meme cle est RENVOYEE telle quelle, sans second
     // decompte de stock : couvre la double validation, la reponse perdue (coupure reseau) et la synchronisation d'une vente hors ligne deja passee.
@@ -3408,7 +3419,8 @@ function createCatalogEngine(merchantKey, options) {
       if (remiseGlobale || credit || (clientId !== undefined && clientId !== null && clientId !== "") || grossisteId) return { erreur: "Une vente hors ligne ne peut comporter ni remise, ni crédit, ni client, ni prix de gros." };
       let saisie = new Date(horsLigne.saisieLe), corrigee = false;
       const maintenant = Date.now();
-      if (isNaN(saisie.getTime()) || saisie.getTime() < maintenant - 14 * 86400000 || saisie.getTime() > maintenant + 10 * 60000) { saisie = new Date(maintenant); corrigee = true; }
+      const fenetreJours = regularisation ? 60 : 14; // Etape 93 : une regularisation (vente perdue) peut remonter plus loin qu'une synchronisation normale
+      if (isNaN(saisie.getTime()) || saisie.getTime() < maintenant - fenetreJours * 86400000 || saisie.getTime() > maintenant + 10 * 60000) { saisie = new Date(maintenant); corrigee = true; }
       hl = { saisieLe: saisie.toISOString(), synchroLe: new Date(maintenant).toISOString(), saisiPar: typeof horsLigne.saisiPar === "string" ? horsLigne.saisiPar.slice(0, 80) : null,
         appareil: typeof horsLigne.appareil === "string" ? horsLigne.appareil.slice(0, 40) : null, numeroLocal: typeof horsLigne.numeroLocal === "string" ? horsLigne.numeroLocal.slice(0, 20) : null,
         dateCorrigee: corrigee || undefined, stockInsuffisant: [], ecartsPrix: [] };
@@ -3430,8 +3442,10 @@ function createCatalogEngine(merchantKey, options) {
     // voir ouvrirSessionCaisse ci-dessus. La commande cree ci-dessous est rattachee a CETTE session precise
     // (sessionCaisseId), pour que la fermeture puisse calculer un total theorique juste meme si plusieurs
     // sessions se chevauchent (mode multi-tiroirs).
-    const sessionActive = sessionCaisseOuverte(caissier);
-    if (!sessionActive) {
+    // Etape 93 : une REGULARISATION (vente perdue, saisie apres coup par le proprietaire) se rattache a la session de ce caissier qui couvrait la date de la vente
+    // (ouverte ou deja fermee) ; sans session correspondante, elle n'entre dans aucun tiroir (sessionCaisseId = null) mais reste dans les ventes et le stock.
+    const sessionActive = regularisation ? sessionPourDate(caissier, hl ? hl.saisieLe : new Date().toISOString()) : sessionCaisseOuverte(caissier);
+    if (!sessionActive && !regularisation) {
       return { erreur: "Aucune session de caisse ouverte. Merci d'ouvrir la caisse (billetage) avant d'encaisser.", statut: hl ? 409 : undefined, code: hl ? "session_fermee" : undefined };
     }
     // La reference de paiement (ex. code de confirmation Orange Money/MTN MoMo reçu par le MARCHAND sur son
@@ -3552,7 +3566,7 @@ function createCatalogEngine(merchantKey, options) {
       statut: "Livrée",
       raisonAnnulation: null,
       source: "pos",
-      sessionCaisseId: sessionActive.id,
+      sessionCaisseId: sessionActive ? sessionActive.id : null,
       fromWhatsapp: null,
       langue: "fr",
       modePaiement: paiementFinal.mode,
@@ -3569,6 +3583,7 @@ function createCatalogEngine(merchantKey, options) {
       izyfactureRecuNumero: null,
       izyfacturePaiements: []
     };
+    if (regularisation) order.regularisation = { motif: regularisation.motif, par: regularisation.par || null, creeLe: new Date().toISOString(), caissier: caissier || null };
     if (hl) { if (!hl.stockInsuffisant.length) delete hl.stockInsuffisant; if (!hl.ecartsPrix.length) delete hl.ecartsPrix; order.horsLigne = hl; }
     if (paiementFinal.paiements) order.paiements = paiementFinal.paiements;
     if (paiementFinal.recu !== undefined) { order.montantRecu = paiementFinal.recu; order.rendu = paiementFinal.rendu; }
@@ -4174,6 +4189,79 @@ function createCatalogEngine(merchantKey, options) {
   function getReglementsClients() { return state ? (state.reglementsClients || []) : []; }
   function getCoutsVentes() { return state ? (state.coutsVentes || {}) : {}; }
 
+  // ---------------- Etape 95 : transferts de stock entre points de vente - API pour server.js ----------------
+  function getTransferts() { return state ? (state.transferts = transferts.assurer(state.transferts)) : null; }
+  function enregistrerTransferts() { saveState(); }
+  // Stock de ce point, pour composer un bon (articles a stock illimite exclus : ils n'ont pas de quantite a transferer).
+  function stockPourTransfert() {
+    const l = [];
+    (state ? state.catalog : []).forEach((p) => {
+      if (p.stockIllimite) return;
+      (p.variantes || []).forEach((v) => l.push({ productId: p.id, nom: p.nom, reference: p.reference || "", categorie: p.cat || "", couleur: v.couleur || "", taille: v.taille || "", codeBarres: v.codeBarres || "", unite: p.unite || "", stock: virtualStock(p.id, v), stockReel: v.stockReel }));
+    });
+    return l;
+  }
+  // Retire du stock de CE point les quantites d'un bon (verifie TOUT avant de toucher a quoi que ce soit). Renvoie { details } (snapshot des lignes, cout d'origine compris) ou { erreur }.
+  function retirerStockTransfert(lignes) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const trouves = [];
+    for (const l of lignes) {
+      const p = state.catalog.filter((x) => x.id === l.productId)[0];
+      const v = p && (p.variantes || []).filter((x) => (x.couleur || "") === l.couleur && (x.taille || "") === l.taille)[0];
+      if (!p || !v) return { erreur: "Article introuvable dans ce point de vente : " + l.productId + (l.couleur || l.taille ? " (" + [l.couleur, l.taille].filter(Boolean).join(" / ") + ")" : "") + ".", code: "article_introuvable" };
+      if (p.stockIllimite) return { erreur: "« " + p.nom + " » est à stock illimité : il n'a pas de quantité à transférer.", code: "stock_illimite" };
+      const dispo = virtualStock(p.id, v);
+      if (l.quantite > dispo + 1e-9) return { erreur: "Stock insuffisant pour « " + p.nom + " » : " + dispo + " disponible(s) (les commandes en cours sont déjà réservées), " + l.quantite + " demandé(s).", code: "stock_insuffisant" };
+      if (p.venteDecimale !== true && Math.abs(l.quantite - Math.round(l.quantite)) > 1e-9) return { erreur: "« " + p.nom + " » se transfère par quantités entières.", code: "quantite_entiere" };
+      trouves.push([p, v, l]);
+    }
+    const details = trouves.map(([p, v, l]) => {
+      v.stockReel = Math.max(0, arrondi3(v.stockReel - l.quantite));
+      const c = v.prixAchat;
+      return { productId: p.id, nom: p.nom, reference: p.reference || "", categorie: p.cat || "", couleur: v.couleur || "", taille: v.taille || "", codeBarres: v.codeBarres || "", unite: p.unite || "", venteDecimale: p.venteDecimale === true, quantite: l.quantite, cout: c !== undefined && c !== null && c !== "" && Number.isFinite(Number(c)) && Number(c) >= 0 ? Number(c) : null, prixVenteOrigine: Number.isFinite(Number(v.prix)) ? Number(v.prix) : null };
+    });
+    saveState();
+    return { details };
+  }
+  // Ajoute au stock de CE point des quantites recues (ou restituees). entrees : [{ index, nom, reference, categorie, couleur, taille, codeBarres, unite, venteDecimale, productId, quantite, cout, prix }].
+  // Appariement par reference interne (sinon par nom) puis couleur / taille. Un article absent n'est cree que si `prix` (prix de vente de CE point) est fourni ; sinon { erreur, code:"article_manquant", manquants:[index] }.
+  function appliquerReceptionTransfert(entrees, avecCouts) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const manquants = [];
+    entrees.forEach((e) => {
+      const t = transferts.trouverArticle(state.catalog, e);
+      if (t && t.variante) return;
+      const prix = Number(e.prix);
+      if (e.prix === undefined || e.prix === null || e.prix === "" || !Number.isFinite(prix) || prix < 0) manquants.push(e.index);
+    });
+    if (manquants.length) return { erreur: "Certains articles n'existent pas encore dans ce point de vente : indiquez leur prix de vente pour les créer.", code: "article_manquant", manquants };
+    const crees = [];
+    entrees.forEach((e) => {
+      const q = e.quantite;
+      let t = transferts.trouverArticle(state.catalog, e);
+      if (t && t.variante) {
+        const v = t.variante;
+        if (avecCouts) { const nc = transferts.coutMoyen(v.stockReel, v.prixAchat, q, e.cout); if (nc !== null) v.prixAchat = nc; }
+        v.stockReel = arrondi3(v.stockReel + q);
+        return;
+      }
+      const variante = { couleur: e.couleur || "", taille: e.taille || "", prix: Math.round(Number(e.prix)), stockReel: q, seuilAlerte: 1 };
+      if (avecCouts && e.cout != null) variante.prixAchat = e.cout;
+      const codePris = e.codeBarres && state.catalog.some((p) => (p.variantes || []).some((v) => v.codeBarres === e.codeBarres));
+      if (e.codeBarres && !codePris) variante.codeBarres = e.codeBarres;
+      if (t && t.produit) t.produit.variantes.push(variante);
+      else {
+        let id = e.productId || ("art-" + Date.now()); if (state.catalog.some((p) => p.id === id)) { let n = 2; while (state.catalog.some((p) => p.id === id + "-" + n)) n++; id = id + "-" + n; }
+        const np = { id, nom: e.nom, cat: e.categorie || "", photos: [], variantes: [variante] };
+        if (e.reference) np.reference = e.reference; if (e.unite) np.unite = e.unite; if (e.venteDecimale === true) np.venteDecimale = true;
+        state.catalog.push(np);
+      }
+      crees.push(e.index);
+    });
+    saveState();
+    return { crees };
+  }
+
   // ---------------- Etape 78 : vente en gros - API pour server.js ----------------
   function getGros() { return state ? venteGros.assurer(state.gros) : null; }
   function enregistrerGros() { saveState(); }
@@ -4249,6 +4337,7 @@ function createCatalogEngine(merchantKey, options) {
   return {
     type: "catalogue",
     init,
+    getTransferts, enregistrerTransferts, stockPourTransfert, retirerStockTransfert, appliquerReceptionTransfert,
     getGros, enregistrerGros, definirReglesGros, importerReglesGros, definirConfigGros, definirCaisseGros, ajouterGrossiste, modifierGrossiste, retirerGrossiste, regenererCodeGrossiste,
     importerGrossistes, rechercherGrossisteCaisse, grossistePourVente, apercuPrixGros,
     balayerSessions: () => persistance.balayer(),

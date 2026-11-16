@@ -28,6 +28,7 @@ const alertes = require("./alertes"); // Etape 85 : compteurs « a traiter » + 
 const consoMeta = require("./consoMeta"); // Etape 80 : estimation de la consommation de messagerie Meta (super-administrateur seul)
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
+const transferts = require("./transferts"); // Etape 95
 const remisesLib = require("./remises");
 const { creerMoteurFacturation, METHODES: METHODES_PAIEMENT, CATEGORIES_DEPENSE } = require("./facturation");
 const cryptoUtil = require("./crypto-util");
@@ -655,7 +656,7 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 // /api/:id/pos/vente plus bas) - marchand catalogue uniquement, et l'onglet lui-meme reste invisible tant
 // que le super-administrateur n'a pas debloque l'option payante "optionCaissePos" pour ce marchand (voir
 // PUT /api/marchands/:id/options-payantes), meme si l'employe a deja ce role.
-const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable", "remises", "preparation"]; // Etape 84 : « preparation » = espace de preparation d'un magasin (volet enseigne)
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable", "remises", "preparation", "magasinier"]; // Etape 84 : « preparation » = espace de preparation d'un magasin (volet enseigne) ; Etape 95 : « magasinier » = envoie et recoit les transferts de stock de SON point
 
 // ---------------- Session de connexion /admin (29 septembre 2026) ----------------
 // Remplace l'authentification HTTP Basic (popup native du navigateur - aucune notion de "session" ni de
@@ -690,6 +691,17 @@ function ecrireCookieSession(res, payload) {
   res.set("Set-Cookie", attributs.join("; "));
 }
 
+// ---------------- Connexion unique par identifiant (Etape 93) ----------------
+// Un meme identifiant (proprietaire ou employe) ne peut etre actif que sur UN appareil par application (/admin ou /caisse) : une nouvelle
+// connexion remplace la precedente, et l'ancien appareil est refuse (401, code "session_remplacee") a sa prochaine action. Le super-administrateur
+// est exempte (depannage sans deconnecter personne). La table est en MEMOIRE : apres un redemarrage du serveur, la premiere requete d'un jeton
+// encore valide « reprend » la session (adoption), la suivante d'un autre appareil est refusee.
+const sessionsActives = new Map();
+function cleSessionUnique(role, merchantId, adminUser, application) { return role + "|" + (merchantId || "") + "|" + adminUser + "|" + (application === "caisse" ? "caisse" : "admin"); }
+function nouvelIdSession() { return crypto.randomBytes(12).toString("hex"); }
+// Seule route qu'un appareil REMPLACE peut encore appeler : l'envoi des ventes saisies hors ligne en attente (deja authentifiees par leur cle unique).
+function estEnvoiVenteHorsLigne(req) { return req.method === "POST" && /^\/api\/[^/]+\/pos\/vente\/?$/.test(req.path) && !!(req.body && req.body.horsLigne && req.body.cle); }
+
 function effacerCookieSession(res) {
   const attributs = [NOM_COOKIE_SESSION + "=", "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
   if (process.env.NODE_ENV === "production") attributs.push("Secure");
@@ -712,7 +724,7 @@ function identifierCompte(utilisateur, motDePasse) {
       return { role: "marchand", merchantId: id, adminUser: utilisateur };
     }
     for (const emp of (m.employes || [])) {
-      if (emp.identifiant && utilisateur === emp.identifiant && motDePasseCorrespond(motDePasse, emp.motDePasseHash)) {
+      if (emp.identifiant && utilisateur === emp.identifiant && motDePasseCorrespond(motDePasse, emp.motDePasseHash) && !(m.pointDe && m.actif === false)) {
         return { role: "employe", merchantId: id, adminUser: utilisateur, employeId: emp.id, roles: emp.roles || [], plafondRemise: emp.plafondRemise, magasinId: emp.magasinId || null };
       }
     }
@@ -752,7 +764,8 @@ function protegerAcces(req, res, next) {
   } else if (payload.role === "employe") {
     const entry = engines[payload.merchantId];
     const emp = entry && (entry.merchant.employes || []).find((e) => e.id === payload.employeId);
-    if (emp && emp.identifiant === payload.adminUser) {
+    // Etape 94 : les employes d'un point de vente DESACTIVE par son proprietaire perdent l'acces aussitot (l'historique est conserve).
+    if (emp && emp.identifiant === payload.adminUser && !(entry.merchant.pointDe && entry.merchant.actif === false)) {
       auth = { role: "employe", merchantId: payload.merchantId, adminUser: payload.adminUser, employeId: emp.id, roles: emp.roles || [], plafondRemise: emp.plafondRemise, magasinId: emp.magasinId || null };
     }
   }
@@ -763,10 +776,26 @@ function protegerAcces(req, res, next) {
     return;
   }
 
+  // Etape 93 : connexion unique (voir sessionsActives). Le super-administrateur est exempte.
+  let sidJeton = null, applicationJeton = "admin", remplacee = false;
+  if (auth.role !== "superadmin") {
+    applicationJeton = payload.app === "caisse" ? "caisse" : "admin";
+    const k = cleSessionUnique(auth.role, auth.merchantId, auth.adminUser, applicationJeton);
+    const actuel = sessionsActives.get(k);
+    if (!actuel) { sidJeton = payload.sid || nouvelIdSession(); sessionsActives.set(k, sidJeton); }
+    else if (payload.sid === actuel) sidJeton = actuel;
+    else remplacee = true;
+  }
+  if (remplacee) {
+    if (estEnvoiVenteHorsLigne(req)) { auth.remplacee = true; req.auth = auth; return next(); }
+    res.status(401).json({ erreur: "Vous avez été connecté sur un autre appareil : cette session est fermée.", code: "session_remplacee" });
+    return;
+  }
+
   req.auth = auth;
   // Session glissante : chaque requete authentifiee reussie reemet un cookie avec une nouvelle expiration a
   // 24h, pour qu'une utilisation active ne se fasse jamais deconnecter en plein travail.
-  ecrireCookieSession(res, { role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, employeId: auth.employeId || null });
+  ecrireCookieSession(res, { role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, employeId: auth.employeId || null, sid: sidJeton || undefined, app: sidJeton ? applicationJeton : undefined });
   next();
 }
 
@@ -774,8 +803,25 @@ function protegerAcces(req, res, next) {
 // super-administrateur peut toujours, un marchand OU UN EMPLOYE uniquement sur le marchand auquel il
 // appartient (la restriction plus fine par role d'un employe est verifiee separement, voir
 // getMarchandAutorise ci-dessous). Repond 403 sinon.
+// ---------------- Points de vente multiples (Etape 94) ----------------
+// Un propriétaire peut avoir PLUSIEURS points de vente (succursales). Chaque point est un commerce COMPLET et INDEPENDANT en interne (catalogue, prix, stock, caisse,
+// employes, rapports) : un point secondaire porte `pointDe` = id du compte principal (celui qui a les identifiants du proprietaire). Le proprietaire (role « marchand »
+// du compte principal) acces a tous les points de SON groupe ; un employe reste enferme dans son point. Le nombre de points (quota, principal compris) est fixe par le
+// SEUL super-administrateur (`nbPointsVente`, 1 par defaut).
+// Etape 95 : un ENTREPOT (point sans caisse ni vente) ne recoit du compte principal que l'option des couts (marge) : jamais la caisse.
+const OPTIONS_ENTREPOT = ["optionClientsCredit"];
+const OPTIONS_POINTS = ["optionCaissePos", "optionCaisseSeule", "optionRestauration", "optionClientsCredit", "optionHorsLigne", "optionVenteGros", "optionStockIllimite"];
+const PLAFOND_POINTS_VENTE = 50;
+function principalDe(m) { return (m && m.pointDe) || (m && m.id); }
+function pointsDe(principalId) { return Object.values(engines).filter((e) => e.merchant.pointDe === principalId); }
+function quotaPointsVente(m) { const n = m && m.nbPointsVente; return Number.isInteger(n) && n >= 1 ? Math.min(n, PLAFOND_POINTS_VENTE) : 1; }
+function nbPointsUtilises(principalId) { return 1 + pointsDe(principalId).filter((e) => e.merchant.actif !== false).length; }
+// Un point est utilisable s'il est actif LUI-MEME et si son compte principal n'est pas suspendu par le super-administrateur.
+function pointActifEffectif(m) { const p = m && m.pointDe ? engines[m.pointDe] : null; return !!m && m.actif !== false && (!p || p.merchant.actif !== false); }
+function estPointDuGroupe(principalId, id) { const e = engines[id]; return !!e && e.merchant.pointDe === principalId; }
+
 function verifierPortee(req, res, id) {
-  if (req.auth.role === "superadmin" || req.auth.merchantId === id) return true;
+  if (req.auth.role === "superadmin" || req.auth.merchantId === id || (req.auth.role === "marchand" && estPointDuGroupe(req.auth.merchantId, id))) return true;
   res.status(403).json({ erreur: "Accès non autorisé à ce marchand." });
   return false;
 }
@@ -822,7 +868,7 @@ function getMarchandAutorise(req, res, permission) {
 // super-administrateur - utilise pour les actions reservees au proprietaire (gestion des employes,
 // suspension, etc.) qu'un employe ne doit jamais pouvoir faire, quels que soient ses roles.
 function estGestionnaireDuMarchand(req, id) {
-  return req.auth.role === "superadmin" || (req.auth.role === "marchand" && req.auth.merchantId === id);
+  return req.auth.role === "superadmin" || (req.auth.role === "marchand" && (req.auth.merchantId === id || estPointDuGroupe(req.auth.merchantId, id)));
 }
 
 // true si cet identifiant est deja utilise par un compte existant (super-administrateur, marchand, ou
@@ -1002,6 +1048,12 @@ const LIBELLES_ACTIONS_AUDIT = {
   "DELETE /api/marchands/:id": "marchand_supprime",
   "PUT /api/:id/catalogue": "catalogue_modifie",
   "POST /api/:id/pos/vente": "vente_caisse",
+  "POST /api/:id/pos/regularisation": "vente_caisse_regularisation_creee", // Etape 93
+  "POST /api/:id/points": "point_vente_cree", // Etape 94
+  "PUT /api/:id/point": "point_vente_modifie", // Etape 94
+  "POST /api/:id/transferts": "transfert_envoye", // Etape 95
+  "POST /api/:id/transferts/:bonId/reception": "transfert_recu",
+  "POST /api/:id/transferts/:bonId/annulation": "transfert_annule",
   "POST /api/:id/pos/vente/:orderId/facture": "facture_caisse_creee",
   "POST /api/:id/pos/vente/:orderId/retour": "retour_caisse_cree", // Etape 87
   "PUT /api/:id/restauration/config": "restauration_config_modifiee", // Etape 89
@@ -1388,7 +1440,19 @@ app.post("/api/connexion", (req, res) => {
   }
   db.journalAjouter(Object.assign({ type: "connexion", action: "connexion_ok", statut: "ok", ip: ipAudit(req), userAgent: uaAudit(req) },
     descriptionActeurConnexion(auth)));
-  ecrireCookieSession(res, { role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, employeId: auth.employeId || null });
+  // Etape 93 : connexion unique par identifiant et par application (le client indique « caisse » depuis /caisse, sinon « admin »).
+  let sid = null; let application = (req.body && req.body.application) === "caisse" ? "caisse" : "admin";
+  // Un employe qui n'a que « caisse » (et eventuellement « remises ») n'a qu'UNE session, quelle que soit la page par laquelle il se connecte
+  // (/admin le renvoie sur /caisse) : sinon deux telephones, l'un connecte via /admin et l'autre via /caisse, resteraient actifs ensemble.
+  if (auth.role === "employe" && Array.isArray(auth.roles) && auth.roles.indexOf("caisse") !== -1 && auth.roles.every((x) => x === "caisse" || x === "remises")) application = "caisse";
+  if (auth.role !== "superadmin") {
+    const k = cleSessionUnique(auth.role, auth.merchantId, auth.adminUser, application);
+    const avant = sessionsActives.get(k), remplace = !!avant && avant !== "-";
+    sid = nouvelIdSession(); sessionsActives.set(k, sid);
+    if (remplace) db.journalAjouter(Object.assign({ type: "connexion", action: "session_precedente_fermee", statut: "ok", detail: JSON.stringify({ application }), ip: ipAudit(req), userAgent: uaAudit(req) },
+      descriptionActeurConnexion(auth)));
+  }
+  ecrireCookieSession(res, { role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, employeId: auth.employeId || null, sid: sid || undefined, app: sid ? application : undefined });
   res.json({ role: auth.role, merchantId: auth.merchantId, adminUser: auth.adminUser, roles: auth.roles || null, plafondRemise: auth.role === "employe" ? remisesLib.plafondEmploye(auth.plafondRemise) : null });
 });
 
@@ -1396,6 +1460,10 @@ app.post("/api/connexion", (req, res) => {
 // du point de vue du client, se deconnecter ne doit jamais echouer.
 app.post("/api/deconnexion", (req, res) => {
   const payload = cryptoUtil.verifierJetonSession(lireCookie(req, NOM_COOKIE_SESSION));
+  if (payload && payload.sid && payload.role !== "superadmin") {
+    const k = cleSessionUnique(payload.role, payload.merchantId, payload.adminUser, payload.app);
+    if (sessionsActives.get(k) === payload.sid) sessionsActives.set(k, "-"); // « - » : plus aucun appareil actif (un jeton plus ancien ne ressuscite pas)
+  }
   if (payload) {
     db.journalAjouter(Object.assign({ type: "connexion", action: "deconnexion", statut: "ok", ip: ipAudit(req), userAgent: uaAudit(req) },
       descriptionActeurConnexion({ role: payload.role, merchantId: payload.merchantId || null, adminUser: payload.adminUser, employeId: payload.employeId || null })));
@@ -1413,7 +1481,7 @@ function filtrerJournalPourDemandeur(req, lignes) {
   return lignes
     .filter((l) => !ACTIONS_SUPERADMIN_SEULEMENT.has(l.action) && l.acteurRole !== "superadmin")
     .map((l) => ({ id: l.id, type: l.type, action: l.action, statut: l.statut, acteurRole: l.acteurRole, acteurNom: l.acteurNom,
-      detail: l.detail, ip: l.ip, userAgent: l.userAgent, horodatageISO: l.horodatageISO }));
+      detail: l.detail, ip: l.ip, userAgent: l.userAgent, horodatageISO: l.horodatageISO, pointNom: l.pointNom }));
 }
 
 async function repondreJournal(req, res, type) {
@@ -1423,8 +1491,11 @@ async function repondreJournal(req, res, type) {
   if (!engines[id]) return res.status(404).json({ erreur: "Marchand inconnu : " + id });
   try {
     const limite = Math.max(1, Math.min(200, parseInt(req.query.limite, 10) || 100));
-    const brutes = await db.journalLister({ type, merchantKey: id, limite, avantId: req.query.avant });
-    const lignes = filtrerJournalPourDemandeur(req, brutes);
+    // Etape 95 : le journal du COMPTE PRINCIPAL regroupe aussi les evenements de ses points (transferts, creation de points...) ; chaque ligne porte le nom du point concerne.
+    const groupeIds = engines[id].merchant.pointDe ? null : [id].concat(pointsDe(id).map((e) => e.merchant.id));
+    const brutes = await db.journalLister({ type, merchantKey: groupeIds && groupeIds.length > 1 ? groupeIds : id, limite, avantId: req.query.avant });
+    const avecPoint = brutes.map((l) => (groupeIds && groupeIds.length > 1 && l.merchantKey && l.merchantKey !== id && engines[l.merchantKey] ? Object.assign({}, l, { pointNom: engines[l.merchantKey].merchant.nom }) : l));
+    const lignes = filtrerJournalPourDemandeur(req, avecPoint);
     res.json({ lignes, suivant: brutes.length === limite ? brutes[brutes.length - 1].id : null });
   } catch (erreur) {
     console.error("Journal (lecture) :", erreur);
@@ -1456,7 +1527,7 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
   const tous = Object.values(engines).map((e) => ({
     id: e.merchant.id, nom: e.merchant.nom, type: e.merchant.type, adminUser: e.merchant.adminUser || null,
     moduleSecondaire: modulesDuMarchand(e.merchant)[1] || null, modulesSecondaires: modulesDuMarchand(e.merchant).slice(1), modules: modulesDuMarchand(e.merchant),
-    phoneNotification: e.merchant.phoneNotification || null, actif: e.merchant.actif !== false,
+    phoneNotification: e.merchant.phoneNotification || null, actif: pointActifEffectif(e.merchant), actifPropre: e.merchant.actif !== false,
     // Etape 76 : quota (fixe par le seul super-administrateur ; 0 = option fermee) et liste des numeros d'alerte supplementaires.
     nbNumerosNotificationSupp: quotaNumerosSupp(e.merchant),
     numerosNotificationSupp: quotaNumerosSupp(e.merchant) > 0 || req.auth.role === "superadmin" ? (Array.isArray(e.merchant.numerosNotificationSupp) ? e.merchant.numerosNotificationSupp : []) : [],
@@ -1507,11 +1578,19 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
     optionClientsCredit: e.merchant.optionClientsCredit === true,
     // Etape 91 : mode hors ligne de la Caisse (superadmin seul) - le marchand n'en voit que l'effet (file d'attente et synchronisation).
     optionHorsLigne: e.merchant.optionHorsLigne === true,
+    // Etape 94 : points de vente multiples. `pointDe` = id du compte principal (null pour le principal) ; `nbPointsVente` = quota fixe par le seul super-administrateur
+    // (le proprietaire le voit en lecture seule), `nbPointsUtilises` = points actifs deja crees.
+    pointDe: e.merchant.pointDe || null,
+    typePoint: e.merchant.typePoint === "entrepot" ? "entrepot" : "point",
+    nbPointsVente: e.merchant.pointDe ? undefined : quotaPointsVente(e.merchant),
+    nbPointsUtilises: e.merchant.pointDe ? undefined : nbPointsUtilises(e.merchant.id),
     // Etape 85 : reglages de notification. Super-administrateur : options + regroupement ; marchand : SEULEMENT le bloc de
     // regroupement, et uniquement si le super-administrateur a ouvert l'option des alertes WhatsApp (sinon null).
     notif: vueReglagesNotif(e, req.auth.role)
   }));
   if (req.auth.role === "superadmin") return res.json(tous);
+  // Etape 94 : le proprietaire voit son compte ET ses points de vente (jamais ceux d'un autre proprietaire) ; un employe ne voit que son point.
+  if (req.auth.role === "marchand") return res.json(tous.filter((m) => m.id === req.auth.merchantId || m.pointDe === req.auth.merchantId).sort((a, b) => (a.pointDe ? 1 : 0) - (b.pointDe ? 1 : 0)));
   res.json(tous.filter((m) => m.id === req.auth.merchantId));
 });
 
@@ -1522,7 +1601,8 @@ app.get("/api/marchands", protegerAcces, (req, res) => {
 // ensuite depuis l'onglet "Mon compte").
 app.post("/api/marchands", protegerAcces, async (req, res) => {
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
-  const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification, moduleSecondaire, profil, options } = req.body || {};
+  const { id, nom, type, phoneNumberId, adminUser, adminPassword, phoneNotification, moduleSecondaire, profil, options, nbPointsVente } = req.body || {};
+  if (nbPointsVente !== undefined && (!Number.isInteger(nbPointsVente) || nbPointsVente < 1 || nbPointsVente > PLAFOND_POINTS_VENTE)) return res.status(400).json({ erreur: "Le nombre de points de vente doit être un entier de 1 à " + PLAFOND_POINTS_VENTE + "." });
   if (!id || !nom || !type) return res.status(400).json({ erreur: "id, nom et type sont requis." });
   if (type !== "catalogue" && type !== "service" && type !== "hebergement" && type !== "transport") return res.status(400).json({ erreur: "type doit être 'catalogue', 'service', 'hebergement' ou 'transport'." });
   // Marchand HYBRIDE (Etape 48, generalise a trois volets a l'Etape 66) : volets secondaires accordes des la
@@ -1563,12 +1643,251 @@ app.post("/api/marchands", protegerAcces, async (req, res) => {
     merchant.optionHorsLigne = o.optionHorsLigne === true;
     merchant.phoneNumberId = null; // pas de WhatsApp dans un point de vente seul
   }
+  if (nbPointsVente !== undefined && type === "catalogue") merchant.nbPointsVente = nbPointsVente;
   await db.addMerchant(merchant);
+  if (merchant.nbPointsVente) await db.setMerchantGroupe(id, { nbPointsVente: merchant.nbPointsVente });
   engines[id] = await construireEntree(merchant, { sansDonneesDemo: profilPos });
   if (merchant.phoneNumberId) phoneNumberIndex[merchant.phoneNumberId] = id;
   console.log("Nouveau marchand ajoute via l'API : " + id + " (" + type + ")");
   if (profilPos) res.locals.audit = { detail: { id: merchant.id, type: merchant.type, profil: "pos", options: ["optionCaissePos", "optionCaisseSeule", "optionRestauration", "optionClientsCredit", "optionHorsLigne"].filter((k) => merchant[k] === true).join(",") } };
   res.status(201).json({ id: merchant.id, nom: merchant.nom, type: merchant.type, adminUser: merchant.adminUser, moduleSecondaire: merchant.moduleSecondaire, profil: profilPos ? "pos" : "standard" });
+});
+
+// ---- Points de vente multiples (Etape 94) ----
+function slugPoint(x) { return String(x || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
+function gardePoints(req, res) {
+  if (!verifierPortee(req, res, req.params.id)) return null;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) { res.status(403).json({ erreur: "Réservé au propriétaire du marchand." }); return null; }
+  const entry = engines[req.params.id];
+  if (!entry) { res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id }); return null; }
+  const principal = engines[principalDe(entry.merchant)];
+  if (!principal) { res.status(404).json({ erreur: "Compte principal introuvable." }); return null; }
+  return { entry, principal };
+}
+function vuePoint(e) { return { id: e.merchant.id, typePoint: e.merchant.typePoint === "entrepot" ? "entrepot" : "point", nom: e.merchant.nom, actif: e.merchant.actif !== false, actifEffectif: pointActifEffectif(e.merchant), principal: !e.merchant.pointDe, nbArticles: e.engine && e.engine.getCatalog ? e.engine.getCatalog().length : 0, nbEmployes: (e.merchant.employes || []).length }; }
+
+// Liste des points du groupe + quota (lecture seule pour le proprietaire).
+app.get("/api/:id/points", protegerAcces, (req, res) => {
+  const g = gardePoints(req, res); if (!g) return;
+  const pid = g.principal.merchant.id;
+  res.json({ principal: pid, quota: quotaPointsVente(g.principal.merchant), utilises: nbPointsUtilises(pid), points: [vuePoint(g.principal)].concat(pointsDe(pid).map(vuePoint)) });
+});
+
+// Cree un point de vente : commerce independant (catalogue vide, ou copie du catalogue d'un autre point du groupe, avec ou sans les stocks).
+app.post("/api/:id/points", protegerAcces, async (req, res) => {
+  const g = gardePoints(req, res); if (!g) return;
+  const principal = g.principal, pm = principal.merchant, pid = pm.id;
+  if (pm.type !== "catalogue" || pm.optionCaissePos !== true) return res.status(409).json({ erreur: "Les points de vente multiples exigent un commerce de type catalogue avec la Caisse POS activée." });
+  const { nom, copierDe, copierStocks, typePoint } = req.body || {};
+  if (typePoint !== undefined && typePoint !== "point" && typePoint !== "entrepot") return res.status(400).json({ erreur: "typePoint : « point » ou « entrepot »." });
+  const entrepot = typePoint === "entrepot";
+  const nomNet = String(nom || "").trim().slice(0, 80);
+  if (nomNet.length < 2) return res.status(400).json({ erreur: "Indiquez le nom du point de vente (2 caractères minimum)." });
+  if (nbPointsUtilises(pid) >= quotaPointsVente(pm)) return res.status(409).json({ erreur: "Le nombre de points de vente autorisés est atteint (" + quotaPointsVente(pm) + "). Contactez l'administrateur IzyVendeur pour en ajouter.", code: "quota_points" });
+  let source = null;
+  if (copierDe !== undefined && copierDe !== null && copierDe !== "") {
+    source = engines[String(copierDe)];
+    if (!source || principalDe(source.merchant) !== pid) return res.status(400).json({ erreur: "Le catalogue à copier doit venir d'un point de votre groupe." });
+  }
+  let id = (slugPoint(pid + "-" + nomNet) || (pid + "-point")).slice(0, 40).replace(/-+$/g, "");
+  if (engines[id]) { let n = 2; while (engines[(id.slice(0, 36) + "-" + n)]) n++; id = id.slice(0, 36) + "-" + n; }
+  const point = {
+    id, nom: nomNet, type: "catalogue", phoneNumberId: null, adminUser: null, adminPassword: null, phoneNotification: null, moduleSecondaire: null,
+    rolesMigres: db.CLES_MIGRATIONS_ROLES_CONNUES, reglagesNotif: Object.assign({}, db.REGLAGES_NOTIF_NOUVEAU),
+    pointDe: pid
+  };
+  if (entrepot) { point.typePoint = "entrepot"; OPTIONS_POINTS.forEach((k) => { point[k] = OPTIONS_ENTREPOT.indexOf(k) !== -1 && pm[k] === true; }); }
+  else OPTIONS_POINTS.forEach((k) => { point[k] = pm[k] === true; });
+  await db.addMerchant(point);
+  await db.setMerchantGroupe(id, entrepot ? { pointDe: pid, typePoint: "entrepot" } : { pointDe: pid });
+  engines[id] = await construireEntree(point, { sansDonneesDemo: true });
+  if (source) {
+    const copie = JSON.parse(JSON.stringify(source.engine.getCatalog())).map((p) => { (p.variantes || []).forEach((v) => { delete v.stockVirtuel; if (copierStocks !== true) v.stockReel = 0; }); return p; });
+    engines[id].engine.updateCatalog(copie);
+  }
+  res.locals.audit = { detail: { point: id, nom: nomNet, typePoint: entrepot ? "entrepot" : "point", copieDe: source ? source.merchant.id : null, stocks: !!source && copierStocks === true } };
+  res.status(201).json(vuePoint(engines[id]));
+});
+
+// Renommer / desactiver / reactiver un point (jamais le compte principal, jamais de suppression : l'historique reste).
+app.put("/api/:id/point", protegerAcces, async (req, res) => {
+  const g = gardePoints(req, res); if (!g) return;
+  const e = g.entry;
+  if (!e.merchant.pointDe) return res.status(400).json({ erreur: "Le compte principal ne peut ni être renommé ici ni désactivé : seul un point de vente secondaire le peut." });
+  const { nom, actif } = req.body || {};
+  const patch = {};
+  if (nom !== undefined) { const n = String(nom).trim().slice(0, 80); if (n.length < 2) return res.status(400).json({ erreur: "Nom invalide (2 caractères minimum)." }); patch.nom = n; }
+  if (actif !== undefined) {
+    if (typeof actif !== "boolean") return res.status(400).json({ erreur: "actif doit être vrai ou faux." });
+    if (actif === true && e.merchant.actif === false && nbPointsUtilises(g.principal.merchant.id) >= quotaPointsVente(g.principal.merchant)) return res.status(409).json({ erreur: "Réactivation impossible : le nombre de points de vente autorisés est atteint.", code: "quota_points" });
+    patch.actif = actif;
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
+  const maj = await db.updateMerchantFields(e.merchant.id, patch);
+  if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  if (patch.nom !== undefined) e.merchant.nom = maj.nom;
+  if (patch.actif !== undefined) e.merchant.actif = maj.actif !== false;
+  res.locals.audit = { detail: { point: e.merchant.id, nom: patch.nom, actif: patch.actif } };
+  res.json(vuePoint(e));
+});
+
+// Rapport CONSOLIDE du groupe : ventes, encaissements, retours (et marge si l'option est active) par point et au total. Proprietaire / super-administrateur.
+app.get("/api/:id/groupe/rapport", protegerAcces, (req, res) => {
+  const g = gardePoints(req, res); if (!g) return;
+  const pid = g.principal.merchant.id, lignes = [], total = { nbVentes: 0, net: 0, nbAnnulees: 0, montantAnnule: 0, retours: 0, netApresRetours: 0, nbArticles: 0, marge: 0, avecMarge: false };
+  const parMode = { especes: 0, om: 0, momo: 0, carte: 0, cheque: 0 };
+  let du = null, au = null;
+  for (const e of [g.principal].concat(pointsDe(pid))) {
+    if (!e.engine || !e.engine.getOrders || e.merchant.optionCaissePos !== true) continue;
+    const credit = e.merchant.optionClientsCredit === true;
+    const r = rapportCaisse.genererRapportCaisse({ marchand: e.merchant.id, commandes: e.engine.getOrders(), sessions: e.engine.getSessionsCaisse(), du: req.query.du, au: req.query.au, couts: credit ? e.engine.getCoutsVentes() : undefined });
+    if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+    du = r.du; au = r.au;
+    const T = r.totaux, ligne = { id: e.merchant.id, nom: e.merchant.nom, actif: e.merchant.actif !== false, principal: !e.merchant.pointDe, nbVentes: T.nbVentes, net: T.net, nbAnnulees: T.nbAnnulees, montantAnnule: T.montantAnnule, retours: T.retours, netApresRetours: T.netApresRetours, panierMoyen: T.panierMoyen, nbArticles: T.nbArticles, marge: r.marge ? r.marge.marge : null, ecart: r.ecarts ? r.ecarts.totalEcart : 0 };
+    lignes.push(ligne);
+    total.nbVentes += T.nbVentes; total.net += T.net; total.nbAnnulees += T.nbAnnulees; total.montantAnnule += T.montantAnnule; total.retours += T.retours; total.netApresRetours += T.netApresRetours; total.nbArticles += T.nbArticles;
+    if (r.marge) { total.marge += r.marge.marge; total.avecMarge = true; }
+    (r.parMode || []).forEach((m) => { if (parMode[m.mode] !== undefined) parMode[m.mode] += m.montant; });
+  }
+  total.panierMoyen = total.nbVentes ? Math.round(total.net / total.nbVentes) : 0;
+  res.json({ principal: pid, du, au, points: lignes, total, parMode });
+});
+
+// ---- Transferts de stock entre points de vente (Etape 95) ----
+// Un transfert = un BON en deux temps : l'envoi retire aussitot la quantite du stock de l'origine (bon « en transit ») ; la reception, confirmee par le point de
+// destination avec les quantites REELLEMENT recues, ajoute au stock de la destination et enregistre les ecarts. Un bon n'est jamais modifie ni supprime : on le corrige
+// par un bon inverse. Les bons vivent dans l'etat du compte principal ; le magasinier d'un point ne voit que les bons de SON point, et jamais les couts.
+function gardeTransferts(req, res) {
+  if (!verifierPortee(req, res, req.params.id)) return null;
+  const entry = engines[req.params.id];
+  if (!entry) { res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id }); return null; }
+  const principal = engines[principalDe(entry.merchant)];
+  if (!principal || !principal.engine || !principal.engine.getTransferts) { res.status(404).json({ erreur: "Compte principal introuvable." }); return null; }
+  if (entry.merchant.type !== "catalogue" || !entry.engine || !entry.engine.stockPourTransfert) { res.status(409).json({ erreur: "Les transferts de stock concernent les commerces de type catalogue." }); return null; }
+  const gest = estGestionnaireDuMarchand(req, req.params.id);
+  const mag = req.auth.role === "employe" && (req.auth.roles || []).indexOf("magasinier") !== -1 && req.auth.merchantId === req.params.id;
+  if (!gest && !mag) { res.status(403).json({ erreur: "Réservé au propriétaire ou au magasinier de ce point de vente." }); return null; }
+  const pid = principal.merchant.id;
+  const groupe = [principal].concat(pointsDe(pid));
+  if (groupe.length < 2) { res.status(409).json({ erreur: "Il faut au moins deux points de vente (ou un entrepôt) pour faire un transfert." }); return null; }
+  return { entry, principal, gest, mag, groupe, store: principal.engine.getTransferts(), pid };
+}
+const nomPoint = (g, id) => { const e = g.groupe.find((x) => x.merchant.id === id); return e ? e.merchant.nom : id; };
+function vueBonPour(g, bon) { const v = transferts.vueBon(bon, g.gest); v.deNom = nomPoint(g, bon.de); v.versNom = nomPoint(g, bon.vers); return v; }
+const peutVoirBon = (g, bon) => g.gest || bon.de === g.entry.merchant.id || bon.vers === g.entry.merchant.id;
+
+app.get("/api/:id/transferts/destinations", protegerAcces, (req, res) => {
+  const g = gardeTransferts(req, res); if (!g) return;
+  res.json(g.groupe.filter((e) => e.merchant.id !== req.params.id && e.merchant.actif !== false).map((e) => ({ id: e.merchant.id, nom: e.merchant.nom, typePoint: e.merchant.typePoint === "entrepot" ? "entrepot" : "point" })));
+});
+
+app.get("/api/:id/transferts/articles", protegerAcces, (req, res) => {
+  const g = gardeTransferts(req, res); if (!g) return;
+  res.json(g.entry.engine.stockPourTransfert());
+});
+
+// Liste des bons : ceux de CE point (envoyes ou a recevoir) ; le proprietaire peut demander tout le groupe (?groupe=1).
+app.get("/api/:id/transferts", protegerAcces, (req, res) => {
+  const g = gardeTransferts(req, res); if (!g) return;
+  const tous = g.gest && req.query.groupe === "1";
+  let bons = g.store.bons.filter((b) => tous || peutVoirBon(g, b));
+  if (req.query.statut) bons = bons.filter((b) => b.statut === req.query.statut);
+  if (req.query.du || req.query.au) {
+    const per = transferts.periode(req.query.du, req.query.au); if (per.erreur) return res.status(400).json({ erreur: per.erreur });
+    bons = bons.filter((b) => { const j = transferts.jourCameroun(b.creeLe); return j >= per.du && j <= per.au; });
+  }
+  bons = bons.slice().sort((a, b) => b.numero - a.numero).slice(0, 500);
+  res.json({ point: req.params.id, aRecevoir: g.store.bons.filter((b) => b.statut === "en_transit" && b.vers === req.params.id).length, bons: bons.map((b) => vueBonPour(g, b)) });
+});
+
+app.get("/api/:id/transferts/rapport", protegerAcces, (req, res) => {
+  const g = gardeTransferts(req, res); if (!g) return;
+  if (!g.gest) return res.status(403).json({ erreur: "Réservé au propriétaire." });
+  const per = transferts.periode(req.query.du, req.query.au); if (per.erreur) return res.status(400).json({ erreur: per.erreur });
+  const r = transferts.rapportMouvements(g.store.bons, g.groupe.map((e) => ({ id: e.merchant.id, nom: e.merchant.nom })), per.du, per.au);
+  res.json(Object.assign({ du: per.du, au: per.au }, r));
+});
+
+app.post("/api/:id/transferts", protegerAcces, (req, res) => {
+  const g = gardeTransferts(req, res); if (!g) return;
+  const { vers, lignes, note, corrige } = req.body || {};
+  const dest = g.groupe.find((e) => e.merchant.id === vers);
+  if (!dest) return res.status(400).json({ erreur: "Destination inconnue : choisissez un point de vente (ou l'entrepôt) de votre groupe." });
+  if (vers === req.params.id) return res.status(400).json({ erreur: "Le point d'origine et la destination doivent être différents." });
+  if (dest.merchant.actif === false || g.entry.merchant.actif === false) return res.status(409).json({ erreur: "Un point de vente désactivé ne peut ni envoyer ni recevoir de stock." });
+  const v = transferts.validerLignesDemande(lignes); if (v.erreur) return res.status(400).json({ erreur: v.erreur });
+  if (corrige !== undefined && corrige !== null && !g.store.bons.some((b) => b.id === corrige)) return res.status(400).json({ erreur: "Le bon à corriger est introuvable." });
+  const r = g.entry.engine.retirerStockTransfert(v.lignes);
+  if (r.erreur) return res.status(409).json({ erreur: r.erreur, code: r.code });
+  const bon = transferts.creerBon(g.store, { de: req.params.id, vers, par: req.auth.adminUser, lignes: r.details, note, corrige: corrige || null });
+  g.principal.engine.enregistrerTransferts();
+  res.locals.audit = { detail: { bon: bon.id, de: bon.de, vers: bon.vers, lignes: bon.lignes.length, quantite: transferts.arrondi3(bon.lignes.reduce((s, l) => s + l.quantiteEnvoyee, 0)), corrige: bon.corrige } };
+  res.status(201).json(vueBonPour(g, bon));
+});
+
+app.post("/api/:id/transferts/:bonId/reception", protegerAcces, (req, res) => {
+  const g = gardeTransferts(req, res); if (!g) return;
+  const bon = g.store.bons.find((b) => b.id === req.params.bonId);
+  if (!bon || !peutVoirBon(g, bon)) return res.status(404).json({ erreur: "Bon introuvable." });
+  if (bon.vers !== req.params.id) return res.status(403).json({ erreur: "Ce bon n'est pas destiné à ce point de vente : seul le point de destination le réceptionne." });
+  if (bon.statut !== "en_transit") return res.status(409).json({ erreur: "Ce bon est déjà " + (bon.statut === "recu" ? "réceptionné" : "annulé") + "." });
+  if (g.entry.merchant.actif === false) return res.status(409).json({ erreur: "Ce point de vente est désactivé." });
+  const { lignes, motifEcart } = req.body || {};
+  const parIndex = new Map(); (Array.isArray(lignes) ? lignes : []).forEach((l) => { if (l && Number.isInteger(l.index)) parIndex.set(l.index, l); });
+  const entrees = [], recues = [];
+  for (const l of bon.lignes) {
+    const d = parIndex.get(l.index) || {};
+    const q = d.quantiteRecue === undefined || d.quantiteRecue === null || d.quantiteRecue === "" ? l.quantiteEnvoyee : transferts.arrondi3(d.quantiteRecue);
+    if (!Number.isFinite(q) || q < 0) return res.status(400).json({ erreur: "Quantité reçue invalide pour « " + l.nom + " »." });
+    if (q > l.quantiteEnvoyee + 1e-9) return res.status(400).json({ erreur: "Vous ne pouvez pas recevoir plus que ce qui a été envoyé (« " + l.nom + " » : " + l.quantiteEnvoyee + "). Pour une erreur d'envoi, faites un bon inverse." });
+    recues.push(q);
+    if (q > 0) entrees.push({ index: l.index, productId: l.productId, nom: l.nom, reference: l.reference, categorie: l.categorie, couleur: l.couleur, taille: l.taille, codeBarres: l.codeBarres, unite: l.unite, venteDecimale: l.venteDecimale, quantite: q, cout: l.cout, prix: d.prix });
+  }
+  const ecartTotal = transferts.arrondi3(bon.lignes.reduce((s, l, i) => s + (l.quantiteEnvoyee - recues[i]), 0));
+  const motif = String(motifEcart || "").trim().slice(0, 300);
+  if (ecartTotal > 0 && motif.length < 3) return res.status(400).json({ erreur: "Des quantités manquent : indiquez le motif de l'écart (3 caractères minimum).", code: "motif_ecart_requis" });
+  const r = g.entry.engine.appliquerReceptionTransfert(entrees, g.entry.merchant.optionClientsCredit === true);
+  if (r.erreur) {
+    const manquants = (r.manquants || []).map((i) => { const l = bon.lignes[i]; return { index: i, nom: l.nom, reference: l.reference, couleur: l.couleur, taille: l.taille, prixVenteOrigine: g.gest ? l.prixVenteOrigine : undefined }; });
+    return res.status(409).json({ erreur: r.erreur, code: r.code, manquants });
+  }
+  bon.lignes.forEach((l, i) => { l.quantiteRecue = recues[i]; l.ecart = transferts.arrondi3(l.quantiteEnvoyee - recues[i]); if ((r.crees || []).indexOf(l.index) !== -1) l.articleCree = true; });
+  bon.statut = "recu"; bon.recuLe = new Date().toISOString(); bon.recuPar = req.auth.adminUser; bon.motifEcart = motif; bon.ecartTotal = ecartTotal;
+  g.principal.engine.enregistrerTransferts();
+  res.locals.audit = { detail: { bon: bon.id, de: bon.de, vers: bon.vers, ecart: ecartTotal, articlesCrees: (r.crees || []).length } };
+  res.json(vueBonPour(g, bon));
+});
+
+app.post("/api/:id/transferts/:bonId/annulation", protegerAcces, (req, res) => {
+  const g = gardeTransferts(req, res); if (!g) return;
+  const bon = g.store.bons.find((b) => b.id === req.params.bonId);
+  if (!bon || !peutVoirBon(g, bon)) return res.status(404).json({ erreur: "Bon introuvable." });
+  if (bon.de !== req.params.id) return res.status(403).json({ erreur: "Seul le point d'origine (ou le propriétaire) peut annuler un bon encore en transit." });
+  if (bon.statut !== "en_transit") return res.status(409).json({ erreur: "Ce bon est déjà " + (bon.statut === "recu" ? "réceptionné : faites un bon inverse pour le corriger" : "annulé") + "." });
+  const motif = String((req.body || {}).motif || "").trim().slice(0, 300);
+  if (motif.length < 3) return res.status(400).json({ erreur: "Indiquez le motif de l'annulation (3 caractères minimum)." });
+  const entrees = bon.lignes.map((l) => ({ index: l.index, productId: l.productId, nom: l.nom, reference: l.reference, categorie: l.categorie, couleur: l.couleur, taille: l.taille, codeBarres: l.codeBarres, unite: l.unite, venteDecimale: l.venteDecimale, quantite: l.quantiteEnvoyee, cout: l.cout, prix: l.prixVenteOrigine == null ? 0 : l.prixVenteOrigine }));
+  const r = g.entry.engine.appliquerReceptionTransfert(entrees, false);
+  if (r.erreur) return res.status(409).json({ erreur: r.erreur, code: r.code });
+  bon.statut = "annule"; bon.annuleLe = new Date().toISOString(); bon.annulePar = req.auth.adminUser; bon.motifAnnulation = motif;
+  g.principal.engine.enregistrerTransferts();
+  res.locals.audit = { detail: { bon: bon.id, de: bon.de, vers: bon.vers, motif } };
+  res.json(vueBonPour(g, bon));
+});
+
+// Stocks de TOUS les points du groupe, article par article (appariement par reference interne, sinon par nom) - proprietaire / super-administrateur.
+app.get("/api/:id/groupe/stocks", protegerAcces, (req, res) => {
+  const g = gardePoints(req, res); if (!g) return;
+  const pid = g.principal.merchant.id;
+  const points = [g.principal].concat(pointsDe(pid)).filter((e) => e.engine && e.engine.stockPourTransfert);
+  const lignes = new Map();
+  points.forEach((e) => e.engine.stockPourTransfert().forEach((a) => {
+    const cle = (transferts.normaliser(a.reference) || "n:" + transferts.normaliser(a.nom)) + "|" + transferts.normaliser(a.couleur) + "|" + transferts.normaliser(a.taille);
+    if (!lignes.has(cle)) lignes.set(cle, { nom: a.nom, reference: a.reference, couleur: a.couleur, taille: a.taille, parPoint: {}, total: 0 });
+    const l = lignes.get(cle); l.parPoint[e.merchant.id] = transferts.arrondi3((l.parPoint[e.merchant.id] || 0) + a.stockReel); l.total = transferts.arrondi3(l.total + a.stockReel);
+  }));
+  const enTransit = {}; g.principal.engine.getTransferts().bons.filter((b) => b.statut === "en_transit").forEach((b) => { enTransit[b.vers] = (enTransit[b.vers] || 0) + 1; });
+  res.json({ points: points.map((e) => ({ id: e.merchant.id, nom: e.merchant.nom, typePoint: e.merchant.typePoint === "entrepot" ? "entrepot" : "point", actif: e.merchant.actif !== false, bonsEnTransit: enTransit[e.merchant.id] || 0 })), lignes: Array.from(lignes.values()).sort((a, b) => a.nom.localeCompare(b.nom, "fr")) });
 });
 
 // Qui suis-je ? Utilise par l'interface d'administration pour savoir si l'utilisateur connecte est le
@@ -1592,6 +1911,7 @@ app.put("/api/:id/identifiants", protegerAcces, async (req, res) => {
   if (req.auth.role === "employe") return res.status(403).json({ erreur: "Utilisez la gestion de votre compte employé pour changer votre mot de passe." });
   const entry = engines[id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + id });
+  if (entry.merchant.pointDe) return res.status(409).json({ erreur: "Un point de vente n'a pas d'identifiants propres : le propriétaire se connecte avec ceux de son compte principal, et chaque employé a le sien." });
 
   const { adminUser, newPassword, genererMotDePasse } = req.body || {};
 
@@ -1670,7 +1990,7 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
   if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
   const rolesIncompatibles = rolesDemandes.filter((r) =>
-    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue))
+    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue)) || (r === "magasinier" && !entry.moteurs.catalogue)
   );
   if (rolesIncompatibles.length) {
     return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -1745,7 +2065,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
       const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
       if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
       const rolesIncompatibles = rolesDemandes.filter((r) =>
-        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue))
+        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue)) || (r === "magasinier" && !entry.moteurs.catalogue)
       );
       if (rolesIncompatibles.length) {
         return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -1820,7 +2140,9 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (req.auth.role !== "superadmin") return res.status(403).json({ erreur: "Réservé au super-administrateur." });
   const entry = engines[req.params.id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id });
-  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, optionRestauration, optionClientsCredit, optionHorsLigne, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes } = req.body || {};
+  const { optionStockIllimite, optionLienCommande, optionNotificationsStatut, optionFacturationIzyfacture, optionCaissePos, optionVenteGros, optionEnseigne, optionCaisseSeule, optionRestauration, optionClientsCredit, optionHorsLigne, nbNumerosNotification, nbPhotosAuto, optionAlertesWhatsapp, optionRappelsRdv, regroupementMinimumMinutes, nbPointsVente } = req.body || {};
+  // Etape 94 : un point de vente secondaire n'a pas d'options propres : elles se reglent sur le compte principal et sont recopiees sur ses points.
+  if (entry.merchant.pointDe) return res.status(409).json({ erreur: "Les options d'un point de vente se règlent sur son compte principal (" + entry.merchant.pointDe + "), puis sont appliquées à tous ses points." });
   const patch = {};
   // Etape 85 : alertes WhatsApp commande/RDV (option payante), rappels de RDV hors fenetre de 24 h (option payante) et plancher du
   // regroupement des alertes. Reserve au super-administrateur (toute la route l'est) ; le marchand ne peut ni les voir ni les changer.
@@ -1908,9 +2230,18 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   if (patch.optionCaissePos === false && entry.merchant.optionHorsLigne === true && patch.optionHorsLigne === undefined) patch.optionHorsLigne = false;
   // Retirer l'option Caisse POS referme aussi le mode caisse seule (qui n'a plus de sens sans caisse).
   if (patch.optionCaissePos === false && entry.merchant.optionCaisseSeule === true && patch.optionCaisseSeule === undefined) patch.optionCaisseSeule = false;
-  if (!Object.keys(patch).length) return res.status(400).json({ erreur: "Rien à modifier." });
-  const maj = await db.updateMerchantFields(req.params.id, patch);
+  // Etape 94 : quota de points de vente (principal compris) - le SEUL super-administrateur le fixe (toute la route lui est reservee).
+  let quotaDemande = null;
+  if (nbPointsVente !== undefined) {
+    if (!Number.isInteger(nbPointsVente) || nbPointsVente < 1 || nbPointsVente > PLAFOND_POINTS_VENTE) return res.status(400).json({ erreur: "Le nombre de points de vente doit être un entier de 1 à " + PLAFOND_POINTS_VENTE + "." });
+    if (entry.merchant.type !== "catalogue") return res.status(409).json({ erreur: "Les points de vente multiples exigent un commerce de type catalogue." });
+    if (nbPointsVente < nbPointsUtilises(entry.merchant.id)) return res.status(409).json({ erreur: "Ce commerce a déjà " + nbPointsUtilises(entry.merchant.id) + " point(s) de vente actif(s) : désactivez-en d'abord pour descendre à " + nbPointsVente + "." });
+    quotaDemande = nbPointsVente;
+  }
+  if (!Object.keys(patch).length && quotaDemande === null) return res.status(400).json({ erreur: "Rien à modifier." });
+  const maj = Object.keys(patch).length ? await db.updateMerchantFields(req.params.id, patch) : entry.merchant;
   if (!maj) return res.status(404).json({ erreur: "Marchand introuvable." });
+  if (quotaDemande !== null) { await db.setMerchantGroupe(req.params.id, { nbPointsVente: quotaDemande }); entry.merchant.nbPointsVente = quotaDemande; }
   entry.merchant.optionStockIllimite = maj.optionStockIllimite;
   entry.merchant.optionLienCommande = maj.optionLienCommande;
   entry.merchant.optionNotificationsStatut = maj.optionNotificationsStatut;
@@ -1925,8 +2256,14 @@ app.put("/api/marchands/:id/options-payantes", protegerAcces, async (req, res) =
   entry.merchant.nbNumerosNotificationSupp = maj.nbNumerosNotificationSupp;
   entry.merchant.nbPhotosAuto = maj.nbPhotosAuto === 3 ? 3 : 1;
   entry.merchant.reglagesNotif = maj.reglagesNotif || null;
+  // Etape 94 : les options caisse du compte principal sont recopiees sur tous ses points de vente.
+  for (const pt of pointsDe(req.params.id)) {
+    const copie = {}; (pt.merchant.typePoint === "entrepot" ? OPTIONS_ENTREPOT : OPTIONS_POINTS).forEach((k) => { copie[k] = entry.merchant[k] === true; });
+    const mp = await db.updateMerchantFields(pt.merchant.id, copie);
+    if (mp) Object.assign(pt.merchant, copie);
+  }
   console.log(`[${req.params.id}] Options payantes mises à jour par ${req.auth.adminUser} : stock illimité=${maj.optionStockIllimite}, lien de commande=${maj.optionLienCommande}, notifications de statut=${maj.optionNotificationsStatut}, facturation IzyFacture=${maj.optionFacturationIzyfacture}, caisse POS=${maj.optionCaissePos}, vente en gros=${maj.optionVenteGros === true}, enseigne=${maj.optionEnseigne === true}, caisse seule=${maj.optionCaisseSeule === true}, numéros d'alerte supplémentaires=${quotaNumerosSupp(maj)}.`);
-  res.json({ id: req.params.id, nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, optionRestauration: maj.optionRestauration === true, optionClientsCredit: maj.optionClientsCredit === true, optionHorsLigne: maj.optionHorsLigne === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
+  res.json({ id: req.params.id, nbPointsVente: quotaPointsVente(entry.merchant), nbNumerosNotification: quotaNumerosSupp(maj), optionStockIllimite: maj.optionStockIllimite, optionLienCommande: maj.optionLienCommande, optionNotificationsStatut: maj.optionNotificationsStatut, optionFacturationIzyfacture: maj.optionFacturationIzyfacture, optionCaissePos: maj.optionCaissePos, optionVenteGros: maj.optionVenteGros === true, optionEnseigne: maj.optionEnseigne === true, optionCaisseSeule: maj.optionCaisseSeule === true, optionRestauration: maj.optionRestauration === true, optionClientsCredit: maj.optionClientsCredit === true, optionHorsLigne: maj.optionHorsLigne === true, nbPhotosAuto: maj.nbPhotosAuto === 3 ? 3 : 1, notif: vueReglagesNotif(entry, "superadmin") });
 });
 
 // -- Second volet d'un marchand HYBRIDE (Etape 48) : accorde, change ou retire le module secondaire.
@@ -2743,6 +3080,7 @@ app.delete("/api/marchands/:id", protegerAcces, async (req, res) => {
   const entry = engines[id];
   if (!entry) return res.status(404).json({ erreur: "Marchand inconnu : " + id });
 
+  if (!entry.merchant.pointDe && pointsDe(id).length) return res.status(409).json({ erreur: "Ce commerce a des points de vente (" + pointsDe(id).map((e) => e.merchant.id).join(", ") + ") : supprimez-les d'abord." });
   const supprime = await db.deleteMerchant(id);
   if (!supprime) return res.status(404).json({ erreur: "Marchand introuvable." });
 
@@ -2930,10 +3268,41 @@ app.post("/api/:id/pos/vente", protegerAcces, (req, res) => {
     extraGros.push({ action: "vente_caisse_remise", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), brut: resultat.order.prixBrut, remise: rm.montant, pourcent: rm.pourcentEffectif, motif: rm.motif } });
   }
   const hlo = resultat.order.horsLigne;
+  if (hlo && req.auth.remplacee) extraGros.push({ action: "vente_caisse_envoi_appareil_remplace", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), saisiPar: hlo.saisiPar, numeroLocal: hlo.numeroLocal || null } });
   if (hlo) extraGros.push({ action: "vente_caisse_hors_ligne", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), saisieLe: hlo.saisieLe, saisiPar: hlo.saisiPar, numeroLocal: hlo.numeroLocal || null, stockInsuffisant: hlo.stockInsuffisant ? hlo.stockInsuffisant.length : 0, ecartsPrix: hlo.ecartsPrix ? hlo.ecartsPrix.length : 0, dateCorrigee: hlo.dateCorrigee === true } });
   if (resultat.order.creance) extraGros.push({ action: "vente_caisse_credit", statut: "ok", detail: { vente: "POS-" + String(resultat.order.id).padStart(4, "0"), client: resultat.order.clientNom, aCredit: resultat.order.creance.montant, echeance: resultat.order.creance.echeance } });
   if (extraGros.length) res.locals.auditExtra = extraGros;
   res.status(201).json(resultat.order);
+});
+
+// Etape 93 : REGULARISATION d'une vente perdue (appareil detruit, vole ou eteint avant l'envoi d'une vente hors ligne). Reservee au PROPRIETAIRE du marchand
+// et au super-administrateur (jamais un employe, meme avec tous les roles) : elle modifie les chiffres apres coup. La vente est enregistree au nom du
+// caissier indique, avec sa date et son heure reelles, un motif obligatoire et la mention « regularisation » dans les rapports et le journal.
+app.post("/api/:id/pos/regularisation", protegerAcces, (req, res) => {
+  if (!verifierPortee(req, res, req.params.id)) return;
+  if (!estGestionnaireDuMarchand(req, req.params.id)) return res.status(403).json({ erreur: "Réservé au propriétaire du marchand." });
+  const entry = getMarchandOu404(req, res); if (!entry) return;
+  if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
+  if (!entry.merchant.optionCaissePos) return res.status(403).json({ erreur: "Cette option n'est pas activée pour ce marchand." });
+  const { caissier, saisieLe, lignes, paiements, motif, cle } = req.body || {};
+  const motifNet = String(motif || "").trim().slice(0, 300);
+  if (motifNet.length < 3) return res.status(400).json({ erreur: "Indiquez le motif de la régularisation (par exemple : téléphone détruit avant l'envoi)." });
+  const identifiants = [entry.merchant.adminUser].concat((entry.merchant.employes || []).map((e) => e.identifiant)).filter(Boolean);
+  if (!caissier || identifiants.indexOf(String(caissier)) === -1) return res.status(400).json({ erreur: "Caissier inconnu pour ce marchand." });
+  if (!saisieLe || isNaN(new Date(saisieLe).getTime())) return res.status(400).json({ erreur: "Date et heure de la vente invalides." });
+  const t = new Date(saisieLe).getTime(), maintenant = Date.now();
+  if (t > maintenant + 10 * 60000) return res.status(400).json({ erreur: "La date de la vente ne peut pas être dans le futur." });
+  if (t < maintenant - 60 * 86400000) return res.status(400).json({ erreur: "La régularisation est limitée aux 60 derniers jours." });
+  const resultat = entry.engine.creerVentePos({
+    lignes, paiements, caissier: String(caissier), cle,
+    horsLigne: { saisieLe: new Date(saisieLe).toISOString(), saisiPar: String(caissier), appareil: "regularisation", numeroLocal: null },
+    regularisation: { motif: motifNet, par: req.auth.adminUser }
+  });
+  if (resultat.erreur) return res.status(resultat.statut === 409 ? 400 : (resultat.statut || 400)).json({ erreur: resultat.erreur });
+  if (resultat.deja) { res.locals.audit = { ignorer: true }; return res.status(200).json(resultat.order); }
+  const o = resultat.order;
+  res.locals.audit = { detail: { vente: "POS-" + String(o.id).padStart(4, "0"), caissier: String(caissier), saisieLe: o.dateISO, total: o.prix, motif: motifNet, sessionId: o.sessionCaisseId } };
+  res.status(201).json(o);
 });
 
 // Etape 87 : lecture d'UNE vente de la Caisse (ecran de retour) - meme garde que les autres routes de caisse.
@@ -3192,16 +3561,19 @@ app.get("/api/:id/caisse/rapport", protegerAcces, (req, res) => {
   // Etape 90 : sections credit (option « Clients, credit et marge ») ; la MARGE (prix d'achat) n'est jamais donnee qu'au proprietaire / super-administrateur.
   const optionCredit = entry.merchant.optionClientsCredit === true;
   const gest = estGestionnaireDuMarchand(req, req.params.id);
+  // Etape 93 : un employe qui n'a QUE le role « caisse » (sans « rapports ») ne voit que SES propres ventes et encaissements, jamais ceux des autres.
+  const voitToutesLesVentes = gest || (req.auth.roles || []).indexOf("rapports") !== -1;
   const vueDemandee = String(req.query.vue || "synthese");
   if (String(req.query.format || "").toLowerCase() === "csv" && ((vueDemandee === "marge" && !(optionCredit && gest)) || (vueDemandee === "reglements" && !optionCredit))) return res.status(403).json({ erreur: "Vue non disponible." });
   const r = rapportCaisse.genererRapportCaisse({
     marchand: req.params.id, commandes: entry.engine.getOrders(), sessions: entry.engine.getSessionsCaisse(),
-    du: req.query.du, au: req.query.au, caissier: req.query.caissier,
+    du: req.query.du, au: req.query.au, caissier: voitToutesLesVentes ? req.query.caissier : req.auth.adminUser,
     reglements: optionCredit ? entry.engine.getReglementsClients() : undefined,
     creances: optionCredit && (gest || aDroitRemises(req)) ? entry.engine.listerCreances() : undefined,
     couts: optionCredit && gest ? entry.engine.getCoutsVentes() : undefined
   });
   if (r.erreur) return res.status(400).json({ erreur: r.erreur });
+  if (!voitToutesLesVentes) r.caissiers = [req.auth.adminUser];
   if (String(req.query.format || "").toLowerCase() === "csv") {
     const vue = rapportCaisse.VUES_CSV.indexOf(String(req.query.vue || "synthese")) !== -1 ? String(req.query.vue || "synthese") : "synthese";
     res.setHeader("Content-Type", "text/csv; charset=utf-8");

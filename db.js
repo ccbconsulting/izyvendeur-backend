@@ -169,6 +169,43 @@ async function ensureMerchantsTable() {
   // Etape 85 : reglages de notification et de reduction des couts Meta (alertes WhatsApp commande/RDV en option payante,
   // regroupement, rappels, modeles hors fenetre). NULL = marchand HISTORIQUE : comportement inchange (voir reglagesNotifDe).
   await pool.query("ALTER TABLE merchants ADD COLUMN IF NOT EXISTS reglages_notif JSONB");
+  // Etape 94 : points de vente multiples. Table a part (une ligne par marchand concerne) : `principal` = compte principal d'un point secondaire (NULL pour le compte
+  // principal lui-meme) ; `nb_points` = quota de points (principal compris), fixe par le SEUL super-administrateur. Aucune colonne ajoutee a « merchants ».
+  await pool.query("CREATE TABLE IF NOT EXISTS merchant_groupe (merchant_id TEXT PRIMARY KEY, principal TEXT, nb_points INTEGER NOT NULL DEFAULT 1)");
+  await pool.query("ALTER TABLE merchant_groupe ADD COLUMN IF NOT EXISTS type_point TEXT"); // Etape 95 : « entrepot » pour un point sans caisse ni vente
+}
+
+// Etape 94 : lit les liens de groupe (points de vente) et les applique aux fiches marchands (pointDe, nbPointsVente). En mode fichier, ces champs sont deja dans merchants.json.
+async function appliquerGroupes(marchands) {
+  if (!pool || !Array.isArray(marchands)) return marchands;
+  try {
+    await ensureMerchantsTable();
+    const res = await pool.query("SELECT merchant_id, principal, nb_points, type_point FROM merchant_groupe");
+    const parId = {}; res.rows.forEach((r) => { parId[r.merchant_id] = r; });
+    marchands.forEach((m) => { const g = parId[m.id]; if (g) { m.pointDe = g.principal || null; if (g.type_point === "entrepot") m.typePoint = "entrepot"; if (!g.principal) m.nbPointsVente = Number.isInteger(g.nb_points) && g.nb_points >= 1 ? g.nb_points : 1; } });
+  } catch (erreur) { console.error("Lecture des groupes de points de vente :", erreur); }
+  return marchands;
+}
+
+// Etape 94 : enregistre le lien de groupe d'un marchand. champs = { pointDe?: id du principal | null, nbPointsVente?: entier }.
+async function setMerchantGroupe(id, champs) {
+  const c = champs || {};
+  if (pool) {
+    await ensureMerchantsTable();
+    const actuel = await pool.query("SELECT principal, nb_points, type_point FROM merchant_groupe WHERE merchant_id = $1", [id]);
+    const principal = c.pointDe !== undefined ? (c.pointDe || null) : (actuel.rows[0] ? actuel.rows[0].principal : null);
+    const nb = c.nbPointsVente !== undefined ? c.nbPointsVente : (actuel.rows[0] ? actuel.rows[0].nb_points : 1);
+    const typePoint = c.typePoint !== undefined ? (c.typePoint || null) : (actuel.rows[0] ? actuel.rows[0].type_point : null);
+    await pool.query("INSERT INTO merchant_groupe (merchant_id, principal, nb_points, type_point) VALUES ($1,$2,$3,$4) ON CONFLICT (merchant_id) DO UPDATE SET principal=$2, nb_points=$3, type_point=$4", [id, principal, nb, typePoint]);
+    return;
+  }
+  const liste = fs.existsSync(MERCHANTS_FILE) ? JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8")) : [];
+  const idx = liste.findIndex((x) => x.id === id);
+  if (idx === -1) return;
+  if (c.pointDe !== undefined) liste[idx].pointDe = c.pointDe || null;
+  if (c.nbPointsVente !== undefined) liste[idx].nbPointsVente = c.nbPointsVente;
+  if (c.typePoint !== undefined) liste[idx].typePoint = c.typePoint || null;
+  fs.writeFileSync(MERCHANTS_FILE, JSON.stringify(liste, null, 2));
 }
 
 // Cles de migration connues pour les roles employe (voir migrerRolesEmployes ci-dessous). Un marchand cree
@@ -358,7 +395,7 @@ async function initRegistry() {
     await ensureMerchantsTable();
     const res = await pool.query("SELECT id, nom, type, phone_number_id, admin_user, admin_password, phone_notification, actif, employes, logo_url, image_accueil_whatsapp_url, numero_whatsapp_public, option_stock_illimite, option_lien_commande, option_notifications_statut, roles_migres, izyfacture_api_key, izyfacture_auto_facturation, option_facturation_izyfacture, derniere_erreur_alerte, filigrane_logo_actif, option_caisse_pos, option_vente_gros, module_secondaire, nb_numeros_notification_supp, numeros_notification_supp, nb_photos_auto, option_enseigne, option_caisse_seule, option_restauration, option_clients_credit, option_hors_ligne, reglages_notif FROM merchants ORDER BY created_at ASC");
     if (res.rows.length) {
-      return migrerRolesEmployes(res.rows.map(rowToMerchant));
+      return migrerRolesEmployes(await appliquerGroupes(res.rows.map(rowToMerchant)));
     }
     const initial = defaultMerchantFromEnv();
     await insertMerchant(initial);
@@ -577,6 +614,7 @@ async function deleteMerchant(id) {
   if (pool) {
     await ensureMerchantsTable();
     const res = await pool.query("DELETE FROM merchants WHERE id = $1", [id]);
+    await pool.query("DELETE FROM merchant_groupe WHERE merchant_id = $1", [id]).catch(() => {});
     return res.rowCount > 0;
   }
   const liste = fs.existsSync(MERCHANTS_FILE) ? JSON.parse(fs.readFileSync(MERCHANTS_FILE, "utf8")) : [];
@@ -1038,7 +1076,8 @@ async function journalLister(filtre) {
     await ensureAuditTable();
     const params = [type];
     let where = "type = $1";
-    if (mk !== undefined) { params.push(mk); where += " AND merchant_key = $" + params.length; }
+    if (Array.isArray(mk)) { params.push(mk); where += " AND merchant_key = ANY($" + params.length + ")"; } // Etape 95 : journal d'un groupe (compte principal + points)
+    else if (mk !== undefined) { params.push(mk); where += " AND merchant_key = $" + params.length; }
     if (filtre.avantId) { params.push(parseInt(filtre.avantId, 10) || 0); where += " AND id < $" + params.length; }
     params.push(limite);
     const res = await pool.query(
@@ -1055,7 +1094,7 @@ async function journalLister(filtre) {
   const toutes = lireAuditLocal();
   const avecId = toutes.map((e, i) => ({ ...e, id: i + 1 }));
   return avecId
-    .filter(e => e.type === type && (mk === undefined || e.merchantKey === mk) && (!filtre.avantId || e.id < parseInt(filtre.avantId, 10)))
+    .filter(e => e.type === type && (mk === undefined || (Array.isArray(mk) ? mk.indexOf(e.merchantKey) !== -1 : e.merchantKey === mk)) && (!filtre.avantId || e.id < parseInt(filtre.avantId, 10)))
     .reverse()
     .slice(0, limite);
 }
@@ -1216,6 +1255,7 @@ module.exports = {
   getConversationSummaries,
   getConversationHistory,
   journalAjouter,
+  setMerchantGroupe,
   journalLister,
   usingDatabase: !!pool,
   CLES_MIGRATIONS_ROLES_CONNUES
