@@ -212,6 +212,9 @@ const I18N = {
     connexionErreurGenerique: "Impossible de se connecter. Vérifiez votre connexion et réessayez.",
     btnDeconnexion: "Se déconnecter",
     sessionExpiree: "Votre session a expiré. Veuillez vous reconnecter.",
+    sessionRemplacee: "Vous avez été connecté sur un autre appareil : cette session est fermée. Reconnectez-vous ici pour reprendre la main.",
+    rgBtn: "Régulariser une vente perdue", rgTitre: "Régulariser une vente perdue", rgNote: "Pour une vente encaissée mais jamais envoyée (appareil détruit, volé ou éteint). Elle est enregistrée au nom du caissier, à la date et l'heure réelles, avec la mention « régularisation » dans les rapports et le journal. Le stock est décompté.", rgCaissier: "Caissier", rgDate: "Date et heure de la vente", rgArticle: "Article", rgQte: "Quantité", rgPrix: "Prix unitaire", rgAjouter: "Ajouter un article", rgMode: "Mode de paiement", rgRef: "Référence du paiement", rgMotif: "Motif (obligatoire)", rgMotifEx: "Téléphone détruit avant l'envoi", rgTotal: "Total :", rgValider: "Enregistrer la régularisation", rgOk: "Vente régularisée : {piece}.", rgAucun: "Ajoutez au moins un article.", rgFermer: "Fermer", rgAvertissement: "Opération sensible : elle modifie les chiffres après coup.",
+    act_session_precedente_fermee: "Connexion sur un nouvel appareil (ancien appareil déconnecté)", act_vente_caisse_regularisation_creee: "Vente de caisse régularisée (vente perdue)", act_vente_caisse_envoi_appareil_remplace: "Vente hors ligne envoyée par un appareil remplacé",
 
     btnModifier: "Modifier",
     btnNouveauMarchand: "+ Nouveau marchand",
@@ -465,6 +468,8 @@ const I18N = {
     ongletEmployes: "Employés",
     ongletCompte: "Mon compte",
     ongletJournal: "Journal",
+    ongletTransferts: "Transferts", roleMagasinier: "Magasinier (envoie et reçoit les transferts de stock de son point, sans voir les coûts)", trTitre: "Transferts de stock", trNote: "Un transfert se fait en deux temps : le point d'origine envoie (son stock baisse aussitôt, le bon est « en transit »), puis le point de destination confirme les quantités réellement reçues (son stock augmente ; tout écart est enregistré). Un bon n'est jamais modifié : une erreur se corrige par un bon inverse.", trARecevoir: "Bons à réceptionner", trAucunARecevoir: "Aucun bon en attente de réception.", trDe: "de", trEnvoye: "Envoyé", trRecu: "Reçu", trMotifEcart: "Motif de l'écart (obligatoire si des quantités manquent)", trConfirmer: "Confirmer la réception", trPrixCreer: "Cet article n'existe pas ici : indiquez son prix de vente dans ce point pour le créer.", trRecuOk: "Réception enregistrée.", trNouveau: "Nouveau transfert", trDestination: "Destination", trChoisir: "Choisir...", trFiltrer: "Filtrer les articles", trColArticle: "Article", trColRef: "Référence", trColStock: "Stock", trColQte: "Quantité", trNoteLabel: "Note (facultatif)", trEnvoyer: "Envoyer le transfert", trEnvoyeOk: "Bon {n} envoyé : le stock a été retiré de ce point, le bon est en transit.", trChoisirDest: "Choisissez une destination.", trAucuneQte: "Saisissez au moins une quantité.", trAucuneDest: "Aucune destination disponible (il faut un autre point de vente ou un entrepôt actif).", trHistorique: "Bons de ce point", trTousGroupe: "Afficher tous les bons du groupe", trColNum: "N°", trColDate: "Date", trColTrajet: "Trajet", trColStatut: "Statut", trColEcart: "Écart", trColValeur: "Valeur (coût)", trStatut_en_transit: "En transit", trStatut_recu: "Reçu", trStatut_annule: "Annulé", trAnnuler: "Annuler", trMotifAnnulation: "Motif de l'annulation :", trAnnuleOk: "Bon annulé : le stock est revenu au point d'origine.", trVoir: "Détail", trStocksGroupe: "Stocks de tous les points", trStocksNote: "Les articles sont rapprochés entre les points par leur référence interne (à défaut, par leur nom).", trTotal: "Total", trMouvements: "Mouvements de stock", trColEnvoye: "Envoyé", trColRecu: "Reçu", trColEcartQte: "Écarts", trColEnTransit: "En transit", ptType: "Type", ptTypePoint: "Point de vente (avec caisse)", ptTypeEntrepot: "Entrepôt", ptTypeNote: "Un entrepôt a un catalogue et un stock, mais ni caisse ni vente : il alimente vos points de vente par des transferts. Il compte dans le nombre de points autorisés.", act_transfert_envoye: "Transfert de stock envoyé", act_transfert_recu: "Transfert de stock reçu", act_transfert_annule: "Transfert de stock annulé",
+    ongletPoints: "Points de vente", ptTitre: "Points de vente", ptNote: "Chaque point de vente est un commerce indépendant : son propre catalogue, ses prix, son stock, sa caisse, ses employés et ses rapports. Vous les gérez tous avec le même compte, et vous choisissez le point à consulter dans le sélecteur en haut de la page.", ptQuota: "Points de vente utilisés : {n} sur {q} (compte principal compris)", ptQuotaAtteint: "Le nombre de points de vente autorisés est atteint. Contactez l'administrateur IzyVendeur pour en ajouter.", ptColNom: "Point de vente", ptColStatut: "Statut", ptColArticles: "Articles", ptColEmployes: "Employés", ptColActions: "Actions", ptPrincipal: "Compte principal", ptActif: "Actif", ptInactif: "Désactivé", ptOuvrir: "Ouvrir", ptRenommer: "Renommer", ptDesactiver: "Désactiver", ptReactiver: "Réactiver", ptPromptNom: "Nouveau nom du point de vente :", ptConfirmDesactiver: "Désactiver ce point de vente ? Ses employés ne pourront plus se connecter ; l'historique est conservé et vous pourrez le réactiver.", ptNouveau: "Créer un point de vente", ptNomLabel: "Nom du nouveau point de vente", ptCopierDe: "Catalogue de départ", ptCatalogueVide: "Catalogue vide", ptCopierStocks: "Copier aussi les quantités en stock (sinon elles démarrent à 0)", ptCreer: "Créer ce point de vente", ptCree: "Point de vente créé : {nom}. Ajoutez ses employés et ses prix depuis le sélecteur en haut.", ptNomRequis: "Indiquez le nom du point de vente.", ptRapportTitre: "Rapport consolidé", ptRapportNote: "Ventes de tous vos points de vente sur la période choisie, avec le total général.", ptDu: "Du", ptAu: "Au", ptAfficher: "Afficher", ptColVentes: "Ventes", ptColNet: "Net encaissé", ptColAnnule: "Annulé", ptColRetours: "Retours", ptColNetRetours: "Net après retours", ptTotal: "Total", ptParMode: "Par mode de paiement", ptMarge: "Marge", ptQuotaLabel: "Nombre de points de vente autorisés (compte principal compris)", ptQuotaNote: "Réservé au super-administrateur : le propriétaire voit ce nombre mais ne peut pas le modifier. 1 = un seul point de vente.", ptQuotaOk: "Quota de points de vente enregistré.", ptComptePoint: "Ce point de vente dépend du compte principal « {p} » : ses options, son quota et ses identifiants se règlent sur ce compte principal.", nmNbPoints: "Nombre de points de vente autorisés (principal compris)", act_point_vente_cree: "Point de vente créé", act_point_vente_modifie: "Point de vente modifié",
     titreJournal: "Journal d'activité",
     noteJournal: "Visible uniquement par le propriétaire du compte (et l'administrateur IzyVendeur) — jamais par les employés. Ce journal ne peut ni être modifié ni être effacé.",
     jSousModifications: "Modifications",
@@ -1704,6 +1709,9 @@ const I18N = {
     connexionErreurGenerique: "Couldn't log in. Check your connection and try again.",
     btnDeconnexion: "Log out",
     sessionExpiree: "Your session has expired. Please log in again.",
+    sessionRemplacee: "You were signed in on another device: this session is closed. Sign in here to take over again.",
+    rgBtn: "Adjust a lost sale", rgTitre: "Adjust a lost sale", rgNote: "For a sale that was collected but never sent (device destroyed, stolen or switched off). It is saved under the cashier's name, with the real date and time and the word \"adjustment\" in reports and the log. Stock is deducted.", rgCaissier: "Cashier", rgDate: "Date and time of the sale", rgArticle: "Item", rgQte: "Quantity", rgPrix: "Unit price", rgAjouter: "Add an item", rgMode: "Payment method", rgRef: "Payment reference", rgMotif: "Reason (required)", rgMotifEx: "Phone destroyed before sending", rgTotal: "Total:", rgValider: "Save the adjustment", rgOk: "Sale adjusted: {piece}.", rgAucun: "Add at least one item.", rgFermer: "Close", rgAvertissement: "Sensitive operation: it changes the figures after the fact.",
+    act_session_precedente_fermee: "Signed in on a new device (previous device signed out)", act_vente_caisse_regularisation_creee: "Till sale adjusted (lost sale)", act_vente_caisse_envoi_appareil_remplace: "Offline sale sent by a replaced device",
 
     btnModifier: "Edit",
     btnNouveauMarchand: "+ New merchant",
@@ -1957,6 +1965,8 @@ const I18N = {
     ongletEmployes: "Employees",
     ongletCompte: "My account",
     ongletJournal: "Log",
+    ongletTransferts: "Transfers", roleMagasinier: "Storekeeper (sends and receives stock transfers for their point, without seeing costs)", trTitre: "Stock transfers", trNote: "A transfer takes two steps: the origin point sends (its stock drops right away, the slip is \"in transit\"), then the destination point confirms the quantities actually received (its stock goes up; any difference is recorded). A slip is never edited: a mistake is corrected with a reverse slip.", trARecevoir: "Slips to receive", trAucunARecevoir: "No slip waiting to be received.", trDe: "from", trEnvoye: "Sent", trRecu: "Received", trMotifEcart: "Reason for the difference (required if quantities are missing)", trConfirmer: "Confirm reception", trPrixCreer: "This item does not exist here: enter its selling price in this point to create it.", trRecuOk: "Reception recorded.", trNouveau: "New transfer", trDestination: "Destination", trChoisir: "Choose...", trFiltrer: "Filter items", trColArticle: "Item", trColRef: "Reference", trColStock: "Stock", trColQte: "Quantity", trNoteLabel: "Note (optional)", trEnvoyer: "Send the transfer", trEnvoyeOk: "Slip {n} sent: the stock was removed from this point, the slip is in transit.", trChoisirDest: "Choose a destination.", trAucuneQte: "Enter at least one quantity.", trAucuneDest: "No destination available (you need another active point of sale or warehouse).", trHistorique: "Slips of this point", trTousGroupe: "Show all slips of the group", trColNum: "No.", trColDate: "Date", trColTrajet: "Route", trColStatut: "Status", trColEcart: "Difference", trColValeur: "Value (cost)", trStatut_en_transit: "In transit", trStatut_recu: "Received", trStatut_annule: "Cancelled", trAnnuler: "Cancel", trMotifAnnulation: "Reason for cancelling:", trAnnuleOk: "Slip cancelled: the stock went back to the origin point.", trVoir: "Details", trStocksGroupe: "Stock of all points", trStocksNote: "Items are matched across points by their internal reference (otherwise by name).", trTotal: "Total", trMouvements: "Stock movements", trColEnvoye: "Sent", trColRecu: "Received", trColEcartQte: "Differences", trColEnTransit: "In transit", ptType: "Type", ptTypePoint: "Point of sale (with till)", ptTypeEntrepot: "Warehouse", ptTypeNote: "A warehouse has a catalogue and stock, but no till and no sales: it supplies your points of sale through transfers. It counts in the number of allowed points.", act_transfert_envoye: "Stock transfer sent", act_transfert_recu: "Stock transfer received", act_transfert_annule: "Stock transfer cancelled",
+    ongletPoints: "Points of sale", ptTitre: "Points of sale", ptNote: "Each point of sale is an independent business: its own catalogue, prices, stock, till, employees and reports. You manage them all with the same account, and you pick the point to view in the selector at the top of the page.", ptQuota: "Points of sale used: {n} of {q} (main account included)", ptQuotaAtteint: "The number of allowed points of sale has been reached. Contact the IzyVendeur administrator to add more.", ptColNom: "Point of sale", ptColStatut: "Status", ptColArticles: "Items", ptColEmployes: "Employees", ptColActions: "Actions", ptPrincipal: "Main account", ptActif: "Active", ptInactif: "Deactivated", ptOuvrir: "Open", ptRenommer: "Rename", ptDesactiver: "Deactivate", ptReactiver: "Reactivate", ptPromptNom: "New name of the point of sale:", ptConfirmDesactiver: "Deactivate this point of sale? Its employees will no longer be able to sign in; the history is kept and you can reactivate it.", ptNouveau: "Create a point of sale", ptNomLabel: "Name of the new point of sale", ptCopierDe: "Starting catalogue", ptCatalogueVide: "Empty catalogue", ptCopierStocks: "Also copy the stock quantities (otherwise they start at 0)", ptCreer: "Create this point of sale", ptCree: "Point of sale created: {nom}. Add its employees and prices from the selector at the top.", ptNomRequis: "Enter the name of the point of sale.", ptRapportTitre: "Consolidated report", ptRapportNote: "Sales of all your points of sale over the chosen period, with the grand total.", ptDu: "From", ptAu: "To", ptAfficher: "Show", ptColVentes: "Sales", ptColNet: "Net collected", ptColAnnule: "Cancelled", ptColRetours: "Returns", ptColNetRetours: "Net after returns", ptTotal: "Total", ptParMode: "By payment method", ptMarge: "Margin", ptQuotaLabel: "Number of allowed points of sale (main account included)", ptQuotaNote: "Super-administrator only: the owner sees this number but cannot change it. 1 = a single point of sale.", ptQuotaOk: "Points-of-sale quota saved.", ptComptePoint: "This point of sale depends on the main account \"{p}\": its options, quota and credentials are set on that main account.", nmNbPoints: "Number of allowed points of sale (main included)", act_point_vente_cree: "Point of sale created", act_point_vente_modifie: "Point of sale modified",
     titreJournal: "Activity log",
     noteJournal: "Visible only to the account owner (and the IzyVendeur administrator) — never to employees. This log cannot be edited or erased.",
     jSousModifications: "Changes",
@@ -3258,13 +3268,17 @@ async function api(chemin, opts) {
   // on affiche directement l'ecran de connexion ici, une bonne fois pour toutes (voir demarrer() et les
   // dizaines de renderXxx() qui appellent api() sans savoir que ce cas existe).
   if (res.status === 401) {
+    let remplacee = false;
+    try { const j401 = await res.json(); remplacee = !!(j401 && j401.code === "session_remplacee"); } catch (e) {}
     afficherEcranConnexion();
-    throw new Error(t("sessionExpiree"));
+    if (remplacee) document.getElementById("connexionErreur").textContent = t("sessionRemplacee");
+    throw new Error(t(remplacee ? "sessionRemplacee" : "sessionExpiree"));
   }
   if (!res.ok) {
-    let message = res.statusText;
-    try { const j = await res.json(); if (j && j.erreur) message = j.erreur; } catch (e) {}
-    throw new Error(message);
+    let message = res.statusText, donnees = null;
+    try { const j = await res.json(); donnees = j; if (j && j.erreur) message = j.erreur; } catch (e) {}
+    const er = new Error(message); er.statut = res.status; if (donnees && donnees.code) er.code = donnees.code; er.data = donnees; // Etape 95 : code et donnees de la reponse d'erreur (ex: articles manquants a la reception)
+    throw er;
   }
   return res.json();
 }
@@ -3301,7 +3315,7 @@ async function soumettreConnexion(ev) {
     const res = await fetch("/api/connexion", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifiant, motDePasse })
+      body: JSON.stringify({ identifiant, motDePasse, application: "admin" })
     });
     if (!res.ok) {
       erreurEl.textContent = t("connexionErreurIdentifiants");
@@ -3330,6 +3344,8 @@ document.getElementById("btnDeconnexion").onclick = async () => {
 
 let marchands = [];
 let marchandActif = null;
+// Etape 94 : etat PROPRE d'un commerce (un point dont le compte principal est suspendu apparait inactif sans que son propre etat change).
+function actifPropreDe(m) { return m && m.actifPropre !== undefined ? m.actifPropre : (m ? m.actif : undefined); }
 let moi = null; // { role: "superadmin" | "marchand", merchantId, adminUser }
 // Periode choisie dans le selecteur du Tableau de bord (jour/semaine/mois/trimestre/annee) - gardee en
 // memoire pour rester stable si on quitte l'onglet puis qu'on y revient.
@@ -3377,6 +3393,8 @@ async function demarrer(idASelectionner) {
   document.getElementById("contenuOnglet").innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
   try {
     moi = await api("/api/moi");
+    // Etape 93 : un employe qui n'a que « caisse » (et eventuellement « remises ») n'a rien a faire dans /admin : il est envoye directement sur la caisse.
+    if (moi.role === "employe" && Array.isArray(moi.roles) && moi.roles.indexOf("caisse") !== -1 && moi.roles.every((x) => x === "caisse" || x === "remises")) { location.replace("/caisse"); return; }
     marchands = await api("/api/marchands");
   } catch (e) {
     document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("erreurChargerMarchands") + esc(e.message) + "</div>";
@@ -3389,10 +3407,10 @@ async function demarrer(idASelectionner) {
     btnModifier.style.display = "";
     btnSuspendre.style.display = "";
     btnSupprimer.style.display = "";
-    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(libelleMarchandType(m)) + ") — id: " + esc(m.id) + (m.actif === false ? t("suspendu") : "") + "</option>").join("");
+    sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + " (" + esc(libelleMarchandType(m)) + ") — id: " + esc(m.id) + (m.pointDe ? " ↳ " + esc(m.pointDe) : "") + (actifPropreDe(m) === false ? t("suspendu") : "") + "</option>").join("");
     sel.onchange = () => choisirMarchand(sel.value);
     btnSuspendre.onclick = async () => {
-      const nouveauEtat = !(marchandActif.actif !== false);
+      const nouveauEtat = !(actifPropreDe(marchandActif) !== false);
       if (!confirm((nouveauEtat ? t("reactiverCeMarchand") : t("suspendreCeMarchand")) + " \"" + marchandActif.nom + "\" ?" + (nouveauEtat ? "" : t("confirmSuspendreSuite")))) return;
       try {
         await api("/api/" + marchandActif.id + "/actif", { method: "PUT", body: JSON.stringify({ actif: nouveauEtat }) });
@@ -3441,6 +3459,13 @@ async function demarrer(idASelectionner) {
     btnSupprimer.style.display = "none";
     nomSeul.style.display = "";
     nomSeul.textContent = marchands.length ? marchands[0].nom + " (id: " + marchands[0].id + ")" : "";
+    // Etape 94 : un proprietaire qui a plusieurs points de vente choisit celui qu'il consulte (comme le super-administrateur choisit un marchand).
+    if (moi.role === "marchand" && marchands.length > 1) {
+      nomSeul.style.display = "none";
+      sel.style.display = "";
+      sel.innerHTML = marchands.map((m) => "<option value='" + esc(m.id) + "'>" + esc(m.nom) + (m.pointDe ? (m.typePoint === "entrepot" ? " (" + esc(t("ptTypeEntrepot")) + ")" : "") : " — " + esc(t("ptPrincipal"))) + (m.actifPropre === false ? t("suspendu") : "") + "</option>").join("");
+      sel.onchange = () => choisirMarchand(sel.value);
+    }
   }
   if (marchands.length) choisirMarchand(typeof idASelectionner === "string" && marchands.some((m) => m.id === idASelectionner) ? idASelectionner : marchands[0].id);
   else document.getElementById("contenuOnglet").innerHTML = "<div class='erreur'>" + t("aucunMarchandConfigure") + "</div>";
@@ -3471,7 +3496,8 @@ function ouvrirFormulaireNouveauMarchand() {
     "<div id='nmBlocPos' style='display:none;margin-top:12px;padding:10px;background:#f4f6f8;border-radius:8px;'><div style='font-weight:600;margin-bottom:4px;'>" + esc(t("nmOptions")) + "</div>" +
       "<label style='display:block;'><input type='checkbox' id='nmOptResto' /> " + esc(t("nmOptResto")) + "</label>" +
       "<label style='display:block;'><input type='checkbox' id='nmOptCredit' /> " + esc(t("nmOptCredit")) + "</label>" +
-      "<label style='display:block;'><input type='checkbox' id='nmOptHL' /> " + esc(t("nmOptHL")) + "</label></div>" +
+      "<label style='display:block;'><input type='checkbox' id='nmOptHL' /> " + esc(t("nmOptHL")) + "</label>" +
+      "<label style='display:block;margin-top:8px;'>" + esc(t("nmNbPoints")) + " <input type='number' id='nmNbPoints' min='1' max='50' step='1' value='1' style='width:70px;' /></label></div>" +
     champ("nmUser", t("nmUser"), "maxlength='60' autocomplete='off'") +
     "<label style='display:block;margin-top:10px;font-weight:600;'>" + esc(t("nmMdp")) + "</label><div style='display:flex;gap:8px;'><input id='nmMdp' autocomplete='off' style='flex:1;box-sizing:border-box;' /><button type='button' id='nmGen'>" + esc(t("nmGenerer")) + "</button></div>" +
     "<div id='nmErr' style='color:#b42318;margin-top:10px;display:none;'></div>" +
@@ -3500,7 +3526,7 @@ function ouvrirFormulaireNouveauMarchand() {
     const moduleSecondaire = pos ? "" : $n("nmVolets").value.trim();
     if (moduleSecondaire && moduleSecondaire.split(",").map((x) => x.trim()).indexOf(type) !== -1) return erreurForm(t("alertModuleSecondaireIdentique"));
     const corps = { id, nom, type, adminUser, adminPassword };
-    if (pos) { corps.profil = "pos"; corps.options = { optionRestauration: $n("nmOptResto").checked, optionClientsCredit: $n("nmOptCredit").checked, optionHorsLigne: $n("nmOptHL").checked }; }
+    if (pos) { corps.profil = "pos"; corps.options = { optionRestauration: $n("nmOptResto").checked, optionClientsCredit: $n("nmOptCredit").checked, optionHorsLigne: $n("nmOptHL").checked }; const nbp = Number($n("nmNbPoints").value); if (Number.isInteger(nbp) && nbp >= 1) corps.nbPointsVente = nbp; }
     else { corps.phoneNumberId = $n("nmPhone").value.trim() || null; if (moduleSecondaire) corps.moduleSecondaire = moduleSecondaire; }
     $n("nmCreer").disabled = true;
     try { await api("/api/marchands", { method: "POST", body: JSON.stringify(corps) }); }
@@ -3562,7 +3588,7 @@ function choisirMarchand(id) {
   appliquerFiligraneLogo();
   if (moi.role === "superadmin") {
     const btnSuspendre = document.getElementById("btnSuspendreMarchand");
-    const estActif = marchandActif.actif !== false;
+    const estActif = actifPropreDe(marchandActif) !== false;
     btnSuspendre.textContent = estActif ? t("suspendreCeMarchand") : t("reactiverCeMarchand");
     btnSuspendre.style.borderColor = estActif ? "rgba(255,255,255,0.4)" : "#ffb703";
     btnSuspendre.style.color = estActif ? "#fff" : "#ffb703";
@@ -3580,6 +3606,14 @@ function sourceFacturationAdmin() {
 }
 // Etape 87 : mode « Caisse seule » (point de vente sans WhatsApp), debloque par le seul super-administrateur : masque les volets WhatsApp.
 function caisseSeuleAdmin() { return !!marchandActif && marchandActif.optionCaisseSeule === true; }
+// Etape 94 : l'onglet « Points de vente » n'apparait que pour un commerce catalogue a Caisse POS dont le quota depasse 1 ou qui a deja plusieurs points.
+function pointsVisibles() {
+  if (!marchandActif || !moi || moi.role === "employe") return false;
+  return (marchandActif.optionCaissePos === true || !!marchandActif.pointDe) && groupeActif();
+}
+// Etape 95 : ce commerce fait partie d'un groupe (plusieurs points de vente, ou un quota qui le permet) ; un entrepot n'a ni caisse ni vente.
+function groupeActif() { return !!marchandActif && marchandActif.type === "catalogue" && (!!marchandActif.pointDe || (Number(marchandActif.nbPointsVente) || 1) > 1 || (Number(marchandActif.nbPointsUtilises) || 1) > 1); }
+function entrepotAdmin() { return !!marchandActif && marchandActif.typePoint === "entrepot"; }
 function colonneFactureActive() { return sourceFacturationAdmin() !== "aucune"; }
 // Roles "facturation" (ecriture) et "comptable" (lecture + export) : n'ont de sens que si le module
 // integre est (ou a ete) utilise par ce marchand, sinon on ne les propose meme pas.
@@ -3656,7 +3690,7 @@ function rolesDisponiblesBase() {
     ["rapports", t("roleRapports")],
     ["inventaire", t("roleInventaire")],
     ["parametres", t("roleParametres")]
-  ].concat(marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : [], marchandActif.optionEnseigne ? [["preparation", t("rolePreparation")]] : []).filter((r) => !(caisseSeuleAdmin() && r[0] === "conversations"));
+  ].concat(marchandActif.optionCaissePos ? [["caisse", t("roleCaisse")]] : [], marchandActif.optionEnseigne ? [["preparation", t("rolePreparation")]] : [], groupeActif() ? [["magasinier", t("roleMagasinier")]] : []).filter((r) => !(caisseSeuleAdmin() && r[0] === "conversations"));
 }
 
 function construireOnglets() {
@@ -3767,7 +3801,7 @@ function construireOnglets() {
     : [
         ["dashboard", t("ongletTableauDeBord"), renderTableauDeBord, "tableaudebord"],
         ["catalogue", t("ongletCatalogue"), renderCatalogue, "catalogue"],
-        ["commandes", t(caisseSeuleAdmin() ? "ongletVentes" : "ongletCommandes"), renderCommandes, "commandes"],
+        entrepotAdmin() ? null : ["commandes", t(caisseSeuleAdmin() ? "ongletVentes" : "ongletCommandes"), renderCommandes, "commandes"],
         // "Caisse" (29 septembre 2026, option payante superadmin "optionCaissePos") : cet onglet entier
         // n'existe meme pas dans le tableau (pas seulement filtre par role) tant que l'option n'est pas
         // debloquee - invisible pour TOUT LE MONDE, y compris le proprietaire du marchand, contrairement
@@ -3782,12 +3816,14 @@ function construireOnglets() {
         marchandActif.optionEnseigne ? ["preparation", t("ongletPreparation"), renderEnsPreparation, "preparation"] : null,
         marchandActif.optionEnseigne ? ["fidelite", t("ongletFidelite"), renderEnsFidelite, "gestion"] : null,
         marchandActif.optionEnseigne ? ["direction", t("ongletDirection"), renderEnsDirection, "rapports"] : null,
-        caisseSeuleAdmin() ? null : ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
+        caisseSeuleAdmin() || entrepotAdmin() ? null : ["simulateur", t("ongletSimulateur"), renderSimulateur, ["catalogue", "conversations"]],
         ["rapports", t("ongletRapports"), renderRapports, "rapports"],
         ["inventaire", t("ongletInventaire"), renderInventaire, "inventaire"],
-        caisseSeuleAdmin() ? null : ["conversations", t("ongletConversations"), renderConversations, "conversations"],
+        caisseSeuleAdmin() || entrepotAdmin() ? null : ["conversations", t("ongletConversations"), renderConversations, "conversations"],
         ["parametres", t("ongletParametres"), renderParametresCatalogue, "parametres"],
         marchandActif.facturationInterneVisible ? ["facturation", t("ongletFacturation"), renderFacturation, ["facturation", "comptable"]] : null,
+        groupeActif() ? ["transferts", t("ongletTransferts"), renderTransferts, ["magasinier"]] : null,
+        pointsVisibles() ? ["points", t("ongletPoints"), renderPoints, "gestion"] : null,
         ["employes", t("ongletEmployes"), renderEmployes, "gestion"],
         ["journal", t("ongletJournal"), renderJournal, "gestion"],
         ["compte", t("ongletCompte"), renderCompte, null]
@@ -8650,6 +8686,63 @@ async function renderClients() {
   }
 }
 
+
+// Etape 93 : REGULARISATION d'une vente perdue (proprietaire / super-administrateur uniquement ; le serveur verifie). La vente est enregistree au nom
+// du caissier choisi, a la date et l'heure reelles, avec un motif obligatoire ; le stock est decompte.
+async function ouvrirRegularisation(rapport, apres) {
+  const zone = document.getElementById("rcsRegulZone");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  let cat = [], emps = [];
+  try { cat = await api("/api/" + marchandActif.id + "/catalogue"); } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+  try { emps = await api("/api/" + marchandActif.id + "/employes"); } catch (e) { emps = []; }
+  const caissiers = Array.from(new Set([marchandActif.adminUser].concat(emps.map((x) => x.identifiant)).concat(rapport.caissiers || []).filter(Boolean)));
+  const lignesCat = [];
+  cat.forEach((p) => (p.variantes || []).forEach((v) => lignesCat.push({ productId: p.id, couleur: v.couleur || "", taille: v.taille || "", prix: Number(v.prix) || 0, lib: p.nom + (v.couleur || v.taille ? " (" + [v.couleur, v.taille].filter((x) => x && x !== "-").join("/") + ")" : "") })));
+  const maintenant = new Date(); maintenant.setMinutes(maintenant.getMinutes() - maintenant.getTimezoneOffset());
+  let lignes = [{ i: 0, qte: 1, prix: lignesCat[0] ? lignesCat[0].prix : 0 }];
+  function dessiner() {
+    const total = lignes.reduce((x, l) => x + Math.round((Number(l.prix) || 0) * (Number(String(l.qte).replace(",", ".")) || 0)), 0);
+    zone.innerHTML = "<div class='tuile' style='padding:14px;border-radius:8px;margin:12px 0;'><h3 style='margin-top:0;'>" + t("rgTitre") + "</h3><p class='raison'>" + t("rgNote") + "</p><p class='raison'><strong>" + t("rgAvertissement") + "</strong></p>" +
+      "<div class='controles-rapport'><div><label>" + t("rgCaissier") + "</label><select id='rgCaissier'>" + caissiers.map((c) => "<option value=\"" + esc(c) + "\">" + esc(c) + "</option>").join("") + "</select></div><div><label>" + t("rgDate") + "</label><input type='datetime-local' id='rgDate' value='" + maintenant.toISOString().slice(0, 16) + "' /></div></div>" +
+      "<table class='table-donnees' id='rgLignes'><tr><th>" + t("rgArticle") + "</th><th>" + t("rgQte") + "</th><th>" + t("rgPrix") + "</th><th></th></tr>" +
+      lignes.map((l, k) => "<tr><td><select data-rg='i' data-k='" + k + "'>" + lignesCat.map((c, ci) => "<option value='" + ci + "'" + (ci === l.i ? " selected" : "") + ">" + esc(c.lib) + "</option>").join("") + "</select></td><td><input type='number' min='0' step='any' data-rg='qte' data-k='" + k + "' value='" + esc(l.qte) + "' style='width:80px;' /></td><td><input type='number' min='0' step='1' data-rg='prix' data-k='" + k + "' value='" + esc(l.prix) + "' style='width:110px;' /></td><td>" + (lignes.length > 1 ? "<button data-rg='sup' data-k='" + k + "'>×</button>" : "") + "</td></tr>").join("") + "</table>" +
+      "<p><button id='rgAjout'>" + t("rgAjouter") + "</button> <strong id='rgTotal'>" + t("rgTotal") + " " + formaterNb(total) + " FCFA</strong></p>" +
+      "<div class='controles-rapport'><div><label>" + t("rgMode") + "</label><select id='rgMode'>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => "<option value='" + m + "'>" + esc(t("caisseMode_" + m)) + "</option>").join("") + "</select></div><div id='rgRefBloc' style='display:none;'><label>" + t("rgRef") + "</label><input id='rgRef' /></div></div>" +
+      "<label>" + t("rgMotif") + "</label><input id='rgMotif' maxlength='300' placeholder=\"" + esc(t("rgMotifEx")) + "\" style='width:100%;box-sizing:border-box;' />" +
+      "<p id='rgMsg' class='erreur'></p><div style='margin-top:10px;display:flex;gap:8px;'><button id='rgValider' class='principal'>" + t("rgValider") + "</button><button id='rgFermer'>" + t("rgFermer") + "</button></div></div>";
+    Array.prototype.forEach.call(zone.querySelectorAll("[data-rg]"), (el) => {
+      const k = Number(el.dataset.k), q = el.dataset.rg;
+      if (q === "sup") el.onclick = () => { lignes.splice(k, 1); dessiner(); };
+      else el.addEventListener(q === "i" ? "change" : "input", () => {
+        if (q === "i") { lignes[k].i = Number(el.value); lignes[k].prix = lignesCat[lignes[k].i].prix; dessiner(); return; }
+        lignes[k][q] = el.value;
+        const t2 = lignes.reduce((x, l) => x + Math.round((Number(l.prix) || 0) * (Number(String(l.qte).replace(",", ".")) || 0)), 0);
+        document.getElementById("rgTotal").textContent = t("rgTotal") + " " + formaterNb(t2) + " FCFA";
+      });
+    });
+    document.getElementById("rgAjout").onclick = () => { lignes.push({ i: 0, qte: 1, prix: lignesCat[0] ? lignesCat[0].prix : 0 }); dessiner(); };
+    document.getElementById("rgMode").onchange = () => { document.getElementById("rgRefBloc").style.display = document.getElementById("rgMode").value === "especes" ? "none" : ""; };
+    document.getElementById("rgFermer").onclick = () => { zone.innerHTML = ""; };
+    document.getElementById("rgValider").onclick = async () => {
+      const msg = document.getElementById("rgMsg"); msg.textContent = "";
+      if (!lignes.length || !lignesCat.length) { msg.textContent = t("rgAucun"); return; }
+      const totalActuel = lignes.reduce((x, l) => x + Math.round((Number(l.prix) || 0) * (Number(String(l.qte).replace(",", ".")) || 0)), 0); // recalcule au moment de valider (les champs ne redessinent pas le formulaire)
+      const corps = {
+        caissier: document.getElementById("rgCaissier").value, saisieLe: new Date(document.getElementById("rgDate").value).toISOString(), motif: document.getElementById("rgMotif").value,
+        lignes: lignes.map((l) => ({ productId: lignesCat[l.i].productId, couleur: lignesCat[l.i].couleur, taille: lignesCat[l.i].taille, quantite: Number(String(l.qte).replace(",", ".")), prixUnitaire: Number(l.prix) })),
+        paiements: [{ mode: document.getElementById("rgMode").value, montant: totalActuel, reference: document.getElementById("rgRef") ? document.getElementById("rgRef").value.trim() || undefined : undefined }]
+      };
+      document.getElementById("rgValider").disabled = true;
+      try {
+        const o = await api("/api/" + marchandActif.id + "/pos/regularisation", { method: "POST", body: JSON.stringify(corps) });
+        zone.innerHTML = "<div class='tuile' style='padding:14px;border-radius:8px;margin:12px 0;'><p>" + esc(t("rgOk", { piece: "POS-" + String(o.id).padStart(4, "0") })) + "</p></div>";
+        if (typeof apres === "function") apres();
+      } catch (e) { msg.textContent = e.message; document.getElementById("rgValider").disabled = false; }
+    };
+  }
+  dessiner();
+}
+
 async function renderRapportCaisse() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -8670,9 +8763,10 @@ async function renderRapportCaisse() {
     "</div>" +
     "<div class='controles-rapport' style='margin-top:6px;'>" +
       "<div><button id='rcsPdf'>" + t("rcsPdf") + "</button></div>" +
+      (moi && moi.role !== "employe" ? "<div><button id='rcsRegul'>" + t("rgBtn") + "</button></div>" : "") +
       "<div><select id='rcsVueCsv'><option value='synthese'>" + t("rcsVueSynthese") + "</option><option value='ventes'>" + t("rcsVueVentes") + "</option><option value='sessions'>" + t("rcsVueSessions") + "</option><option value='retours'>" + t("rcsVueRetours") + "</option>" + (r.credit ? "<option value='reglements'>" + t("rcsVueReglements") + "</option>" : "") + (r.marge ? "<option value='marge'>" + t("rcsVueMarge") + "</option>" : "") + "</select> <button id='rcsCsv'>" + t("rcsCsv") + "</button></div>" +
     "</div>" +
-    "<div id='rcsResultat'></div>";
+    "<div id='rcsRegulZone'></div><div id='rcsResultat'></div>";
 
   const tuile = (lib, val) => "<div class='tuile' style='flex:1;min-width:150px;padding:10px;'><div class='raison'>" + esc(lib) + "</div><strong>" + esc(val) + "</strong></div>";
   function dessiner(rap) {
@@ -8764,6 +8858,8 @@ async function renderRapportCaisse() {
   ["rcsDu", "rcsAu"].forEach((id) => { document.getElementById(id).onchange = () => { document.getElementById("rcsPreset").value = "perso"; }; });
   document.getElementById("rcsCaissier").onchange = charger;
   document.getElementById("rcsGenerer").onclick = charger;
+  const btnRegul = document.getElementById("rcsRegul");
+  if (btnRegul) btnRegul.onclick = () => ouvrirRegularisation(r, charger);
   document.getElementById("rcsCsv").onclick = () => {
     const q = lire();
     window.open(requeteRapportCaisse(q.du, q.au, q.caissier, "format=csv&vue=" + document.getElementById("rcsVueCsv").value + (estHybrideAdmin() ? "&volet=catalogue" : "")), "_blank");
@@ -9364,8 +9460,27 @@ function blocOptionsPayantesHtml() {
     (marchandActif.type === "catalogue" ? "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionClientsCredit'" + (marchandActif.optionClientsCredit ? " checked" : "") + " /> " + t("labelOptionClientsCredit") + "</label>" : "") +
     ((marchandActif.type === "catalogue" && modulesAdmin().length === 1) ? "<label style='display:block;margin-bottom:10px;'><input type='checkbox' id='champOptionCaisseSeule'" + (marchandActif.optionCaisseSeule ? " checked" : "") + " /> " + t("labelOptionCaisseSeule") + "</label>" : "") +
     "<button id='btnSauverOptionsPayantes' class='principal'>" + t("enregistrer") + "</button>" +
-    (principalHeb ? "" : blocSourceFacturationHtml() + blocCleComptableHtml()) +
+    (principalHeb ? "" : blocQuotaPointsHtml() + blocSourceFacturationHtml() + blocCleComptableHtml()) +
     blocModuleSecondaireHtml() + blocPhotosAutoHtml();
+}
+// Etape 94 : quota de points de vente - SUPER-ADMINISTRATEUR UNIQUEMENT (le serveur refuse la route a tout autre role ; le proprietaire n'a ni ce champ ni la route).
+function blocQuotaPointsHtml() {
+  if (!moi || moi.role !== "superadmin" || marchandActif.type !== "catalogue" || marchandActif.pointDe) return "";
+  return "<h3>" + t("ptTitre") + "</h3><p class='raison'>" + t("ptQuotaNote") + "</p>" +
+    "<label>" + t("ptQuotaLabel") + "</label> <input id='champNbPoints' type='number' min='1' max='50' step='1' style='width:90px;' value='" + (Number(marchandActif.nbPointsVente) || 1) + "' /> " +
+    "<button id='btnSauverNbPoints' class='principal'>" + t("enregistrer") + "</button>";
+}
+function brancherBlocQuotaPoints() {
+  const b = document.getElementById("btnSauverNbPoints");
+  if (!b) return;
+  b.onclick = async () => {
+    try {
+      await api("/api/marchands/" + marchandActif.id + "/options-payantes", { method: "PUT", body: JSON.stringify({ nbPointsVente: Number(document.getElementById("champNbPoints").value) }) });
+      alert(t("ptQuotaOk"));
+      const idMarchand = marchandActif.id;
+      await demarrer(idMarchand);
+    } catch (e) { alert(t("erreurPrefixe") + e.message); }
+  };
 }
 
 // ---------------- Source de facturation (Etape 54) : SUPER-ADMINISTRATEUR UNIQUEMENT ----------------
@@ -9514,6 +9629,7 @@ function brancherBlocOptionsPayantes() {
   if ((marchandActif.type === "hebergement" || marchandActif.type === "transport") && modulesAdmin().indexOf("catalogue") === -1) { brancherBlocModuleSecondaire(); brancherBlocPhotosAuto(); return; }
   brancherBlocModuleSecondaire();
   brancherBlocPhotosAuto();
+  brancherBlocQuotaPoints();
   brancherBlocSourceFacturation();
   brancherBlocCleComptable();
   document.getElementById("btnSauverOptionsPayantes").onclick = async () => {
@@ -9748,6 +9864,13 @@ function brancherBlocNumerosSupp() {
 async function renderCompte() {
   const zone = document.getElementById("contenuOnglet");
 
+  // Etape 94 : un point de vente secondaire n'a ni options, ni quota, ni identifiants propres (tout se regle sur le compte principal).
+  if (marchandActif.pointDe && moi.role !== "employe") {
+    zone.innerHTML = "<h2>" + t("compteTitreAvecNom", { nom: esc(marchandActif.nom) }) + "</h2><p class='raison' id='ptComptePoint'>" + esc(t("ptComptePoint", { p: marchandActif.pointDe })) + "</p>" + blocLogoHtml();
+    brancherBlocLogo();
+    return;
+  }
+
   if (moi.role === "superadmin") {
     zone.innerHTML =
       "<h2>" + t("compteTitreAvecNom", { nom: esc(marchandActif.nom) }) + "</h2>" +
@@ -9904,6 +10027,207 @@ async function renderCompte() {
   };
 }
 
+
+// ---------------- Points de vente multiples (Etape 94) ----------------
+// Propriétaire et super-administrateur UNIQUEMENT (onglet "gestion"). Le quota est fixé par le seul super-administrateur ; ici on le lit, on ne le change jamais.
+async function renderPoints() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  let g;
+  try { g = await api("/api/" + marchandActif.id + "/points"); }
+  catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+  const atteint = g.utilises >= g.quota;
+  const lignes = g.points.map((p) => {
+    const statut = p.principal ? t("ptPrincipal") : (p.actif ? t("ptActif") : t("ptInactif"));
+    const dansListe = marchands.some((m) => m.id === p.id);
+    const actions = (dansListe && p.id !== marchandActif.id ? "<button data-pt-ouvrir='" + esc(p.id) + "'>" + t("ptOuvrir") + "</button> " : "") +
+      (!p.principal ? "<button data-pt-renommer='" + esc(p.id) + "' data-nom='" + esc(p.nom) + "'>" + t("ptRenommer") + "</button> <button data-pt-etat='" + esc(p.id) + "' data-actif='" + (p.actif ? "1" : "0") + "'>" + (p.actif ? t("ptDesactiver") : t("ptReactiver")) + "</button>" : "");
+    return "<tr data-pt-ligne='" + esc(p.id) + "'><td>" + esc(p.nom) + (p.typePoint === "entrepot" ? " <span class='raison'>(" + esc(t("ptTypeEntrepot")) + ")</span>" : "") + "<div class='raison'>" + esc(p.id) + "</div></td><td>" + esc(statut) + "</td><td>" + p.nbArticles + "</td><td>" + p.nbEmployes + "</td><td>" + actions + "</td></tr>";
+  }).join("");
+  const optionsCopie = "<option value=''>" + esc(t("ptCatalogueVide")) + "</option>" + g.points.map((p) => "<option value='" + esc(p.id) + "'>" + esc(p.nom) + "</option>").join("");
+  zone.innerHTML =
+    "<h2>" + t("ptTitre") + "</h2><p class='raison'>" + t("ptNote") + "</p>" +
+    "<p id='ptQuotaLigne'><strong>" + esc(t("ptQuota", { n: g.utilises, q: g.quota })) + "</strong></p>" +
+    "<table class='table-donnees' id='ptTable'><tr><th>" + t("ptColNom") + "</th><th>" + t("ptColStatut") + "</th><th>" + t("ptColArticles") + "</th><th>" + t("ptColEmployes") + "</th><th>" + t("ptColActions") + "</th></tr>" + lignes + "</table>" +
+    "<h3>" + t("ptNouveau") + "</h3>" +
+    (atteint
+      ? "<p class='raison' id='ptQuotaAtteint' style='color:#b42318;'>" + t("ptQuotaAtteint") + "</p>"
+      : "<div id='ptFormCreation'><label>" + t("ptNomLabel") + "</label><input id='ptNom' maxlength='80' style='width:100%;box-sizing:border-box;' />" +
+        "<label style='display:block;margin-top:8px;'>" + t("ptType") + "</label><select id='ptType'><option value='point'>" + esc(t("ptTypePoint")) + "</option><option value='entrepot'>" + esc(t("ptTypeEntrepot")) + "</option></select><div class='raison'>" + esc(t("ptTypeNote")) + "</div>" +
+        "<label style='display:block;margin-top:8px;'>" + t("ptCopierDe") + "</label><select id='ptCopierDe'>" + optionsCopie + "</select>" +
+        "<label style='display:block;margin-top:8px;'><input type='checkbox' id='ptCopierStocks' /> " + t("ptCopierStocks") + "</label>" +
+        "<div id='ptMsg' style='color:#b42318;margin-top:8px;display:none;'></div>" +
+        "<div style='margin-top:10px;'><button id='ptCreer' class='principal'>" + t("ptCreer") + "</button></div></div>") +
+    "<h3>" + t("ptRapportTitre") + "</h3><p class='raison'>" + t("ptRapportNote") + "</p>" +
+    "<div class='controles-rapport'><div><label>" + t("ptDu") + "</label><input type='date' id='ptDu' /></div><div><label>" + t("ptAu") + "</label><input type='date' id='ptAu' /></div><div><button id='ptAfficher' class='principal'>" + t("ptAfficher") + "</button></div></div>" +
+    "<div id='ptRapport'></div>";
+
+  // Apres une modification, on recharge la liste des commerces puis on revient sur cet onglet (une fois le premier rendu termine, pour ne pas etre ecrase par lui).
+  const reste = async () => {
+    const id = marchandActif.id; await demarrer(id);
+    for (let i = 0; i < 30 && document.querySelector("#contenuOnglet .chargement"); i++) await new Promise((r) => setTimeout(r, 100));
+    allerVersOnglet("points");
+  };
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-pt-ouvrir]"), (b) => { b.onclick = () => choisirMarchand(b.dataset.ptOuvrir); });
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-pt-renommer]"), (b) => {
+    b.onclick = async () => {
+      const nom = prompt(t("ptPromptNom"), b.dataset.nom);
+      if (nom === null) return;
+      try { await api("/api/" + b.dataset.ptRenommer + "/point", { method: "PUT", body: JSON.stringify({ nom: nom.trim() }) }); await reste(); } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  });
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-pt-etat]"), (b) => {
+    b.onclick = async () => {
+      const veutActif = b.dataset.actif !== "1";
+      if (!veutActif && !confirm(t("ptConfirmDesactiver"))) return;
+      try { await api("/api/" + b.dataset.ptEtat + "/point", { method: "PUT", body: JSON.stringify({ actif: veutActif }) }); await reste(); } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  });
+  const bc = document.getElementById("ptCreer");
+  if (bc) bc.onclick = async () => {
+    const msg = document.getElementById("ptMsg"); msg.style.display = "none";
+    const nom = document.getElementById("ptNom").value.trim();
+    if (nom.length < 2) { msg.textContent = t("ptNomRequis"); msg.style.display = ""; return; }
+    bc.disabled = true;
+    try {
+      const cree = await api("/api/" + marchandActif.id + "/points", { method: "POST", body: JSON.stringify({ nom, typePoint: document.getElementById("ptType").value, copierDe: document.getElementById("ptCopierDe").value || null, copierStocks: document.getElementById("ptCopierStocks").checked }) });
+      alert(t("ptCree", { nom: cree.nom }));
+      await reste();
+    } catch (e) { bc.disabled = false; msg.textContent = e.message; msg.style.display = ""; }
+  };
+  async function afficherRapport(avecDates) {
+    const cible = document.getElementById("ptRapport");
+    if (!cible) return;
+    cible.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+    let r;
+    try {
+      const qs = avecDates ? "?du=" + encodeURIComponent(document.getElementById("ptDu").value) + "&au=" + encodeURIComponent(document.getElementById("ptAu").value) : "";
+      r = await api("/api/" + marchandActif.id + "/groupe/rapport" + qs);
+    } catch (e) { cible.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+    if (!document.getElementById("ptDu") || !document.getElementById("ptRapport")) return; // l'utilisateur a quitte l'onglet pendant le chargement
+    document.getElementById("ptDu").value = r.du; document.getElementById("ptAu").value = r.au;
+    const T = r.total;
+    const ligne = (p) => "<tr><td>" + esc(p.nom) + "</td><td>" + p.nbVentes + "</td><td>" + formaterNb(p.net) + " FCFA</td><td>" + p.nbAnnulees + " / " + formaterNb(p.montantAnnule) + " FCFA</td><td>" + formaterNb(p.retours) + " FCFA</td><td><strong>" + formaterNb(p.netApresRetours) + " FCFA</strong></td>" + (T.avecMarge ? "<td>" + (p.marge === undefined || p.marge === null ? "—" : formaterNb(p.marge) + " FCFA") + "</td>" : "") + "</tr>";
+    cible.innerHTML = "<table class='table-donnees' id='ptTabRapport'><tr><th>" + t("ptColNom") + "</th><th>" + t("ptColVentes") + "</th><th>" + t("ptColNet") + "</th><th>" + t("ptColAnnule") + "</th><th>" + t("ptColRetours") + "</th><th>" + t("ptColNetRetours") + "</th>" + (T.avecMarge ? "<th>" + t("ptMarge") + "</th>" : "") + "</tr>" +
+      r.points.map(ligne).join("") +
+      "<tr style='font-weight:700;'><td>" + t("ptTotal") + "</td><td>" + T.nbVentes + "</td><td>" + formaterNb(T.net) + " FCFA</td><td>" + T.nbAnnulees + " / " + formaterNb(T.montantAnnule) + " FCFA</td><td>" + formaterNb(T.retours) + " FCFA</td><td>" + formaterNb(T.netApresRetours) + " FCFA</td>" + (T.avecMarge ? "<td>" + formaterNb(T.marge) + " FCFA</td>" : "") + "</tr></table>" +
+      "<h4>" + t("ptParMode") + "</h4><p id='ptParMode'>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => esc(t("rcsMode_" + m)) + " : " + formaterNb(r.parMode[m] || 0) + " FCFA").join(" · ") + "</p>";
+  }
+  document.getElementById("ptAfficher").onclick = () => afficherRapport(true);
+  afficherRapport(false);
+}
+
+// ---------------- Transferts de stock (Etape 95) ----------------
+// Proprietaire / super-administrateur, et employe « magasinier » (SON point uniquement ; jamais de couts). Un bon se fait en deux temps : envoi (stock retire, « en transit »)
+// puis reception avec les quantites reellement recues (les ecarts sont enregistres). Un bon n'est jamais modifie : on le corrige par un bon inverse.
+async function renderTransferts() {
+  const zone = document.getElementById("contenuOnglet");
+  zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
+  const id = marchandActif.id, estGest = moi.role !== "employe";
+  let bons, dests, articles;
+  const tousGroupe = !!window.__trTous;
+  try {
+    [bons, dests, articles] = await Promise.all([
+      api("/api/" + id + "/transferts" + (estGest && tousGroupe ? "?groupe=1" : "")),
+      api("/api/" + id + "/transferts/destinations"),
+      api("/api/" + id + "/transferts/articles")
+    ]);
+  } catch (e) { zone.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+  const dt = (iso) => new Date(iso).toLocaleString(localeCourante(), { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const aRecevoir = bons.bons.filter((b) => b.statut === "en_transit" && b.vers === id);
+  const blocRecevoir = aRecevoir.length ? aRecevoir.map((b) =>
+    "<div class='carte-tr' data-tr-recevoir='" + esc(b.id) + "' style='border:1px solid #d0d7e2;border-radius:8px;padding:10px;margin-bottom:10px;'>" +
+      "<strong>" + esc(b.id) + "</strong> — " + esc(t("trDe")) + " " + esc(b.deNom) + " · " + esc(dt(b.creeLe)) + (b.note ? " · " + esc(b.note) : "") +
+      "<table class='table-donnees' style='margin-top:6px;'><tr><th>" + t("trColArticle") + "</th><th>" + t("trEnvoye") + "</th><th>" + t("trRecu") + "</th></tr>" +
+      b.lignes.map((l) => "<tr><td>" + esc(l.nom) + (l.couleur || l.taille ? " <span class='raison'>" + esc([l.couleur, l.taille].filter(Boolean).join(" / ")) + "</span>" : "") + (l.reference ? " <span class='raison'>" + esc(l.reference) + "</span>" : "") + "</td><td>" + formaterNb(l.quantiteEnvoyee) + "</td><td><input type='number' min='0' step='any' class='trRecu' data-index='" + l.index + "' value='" + l.quantiteEnvoyee + "' style='width:90px;' /><span class='trPrixBloc' data-index='" + l.index + "'></span></td></tr>").join("") + "</table>" +
+      "<label class='raison'>" + t("trMotifEcart") + "</label><input class='trMotif' style='width:100%;box-sizing:border-box;' maxlength='300' />" +
+      "<div class='trMsgRecu' style='color:#b42318;margin-top:6px;display:none;'></div>" +
+      "<div style='margin-top:8px;'><button class='principal trConfirmer' data-bon='" + esc(b.id) + "'>" + t("trConfirmer") + "</button>" + (estGest || b.de === id ? "" : "") + "</div></div>").join("")
+    : "<p class='raison' id='trAucunARecevoir'>" + t("trAucunARecevoir") + "</p>";
+  const optionsDest = "<option value=''>" + esc(t("trChoisir")) + "</option>" + dests.map((d) => "<option value='" + esc(d.id) + "'>" + esc(d.nom) + (d.typePoint === "entrepot" ? " (" + esc(t("ptTypeEntrepot")) + ")" : "") + "</option>").join("");
+  const lignesArt = articles.map((a, i) => "<tr data-tr-art='" + i + "'><td>" + esc(a.nom) + (a.couleur || a.taille ? " <span class='raison'>" + esc([a.couleur, a.taille].filter(Boolean).join(" / ")) + "</span>" : "") + "</td><td>" + esc(a.reference) + "</td><td>" + formaterNb(a.stock) + "</td><td><input type='number' min='0' step='any' class='trQte' data-i='" + i + "' style='width:90px;' /></td></tr>").join("");
+  const statutTxt = (s) => t("trStatut_" + s);
+  const hist = bons.bons.map((b) =>
+    "<tr data-tr-ligne='" + esc(b.id) + "'><td>" + esc(b.id) + "</td><td>" + esc(dt(b.creeLe)) + "</td><td>" + esc(b.deNom) + " → " + esc(b.versNom) + "</td><td>" + esc(statutTxt(b.statut)) + "</td><td>" + formaterNb(b.quantiteEnvoyee) + "</td><td>" + (b.statut === "recu" ? formaterNb(b.ecartTotal) : "—") + "</td>" +
+    (estGest ? "<td>" + (b.valeur == null ? "—" : formaterNb(b.valeur) + " FCFA") + "</td>" : "") +
+    "<td><button data-tr-voir='" + esc(b.id) + "'>" + t("trVoir") + "</button> " + (b.statut === "en_transit" && b.de === id ? "<button data-tr-annuler='" + esc(b.id) + "'>" + t("trAnnuler") + "</button>" : "") + "</td></tr>" +
+    "<tr class='trDetail' data-tr-detail='" + esc(b.id) + "' style='display:none;'><td colspan='" + (estGest ? 8 : 7) + "'>" + b.lignes.map((l) => esc(l.nom) + (l.couleur || l.taille ? " (" + esc([l.couleur, l.taille].filter(Boolean).join(" / ")) + ")" : "") + " : " + formaterNb(l.quantiteEnvoyee) + (l.quantiteRecue != null ? " → " + formaterNb(l.quantiteRecue) : "") + (l.articleCree ? " [+]" : "")).join("<br>") + (b.motifEcart ? "<br><em>" + esc(b.motifEcart) + "</em>" : "") + (b.motifAnnulation ? "<br><em>" + esc(b.motifAnnulation) + "</em>" : "") + (b.corrige ? "<br>" + esc(b.corrige) : "") + "</td></tr>").join("");
+  zone.innerHTML =
+    "<h2>" + t("trTitre") + "</h2><p class='raison'>" + t("trNote") + "</p>" +
+    "<h3>" + t("trARecevoir") + "</h3><div id='trARecevoir'>" + blocRecevoir + "</div>" +
+    "<h3>" + t("trNouveau") + "</h3>" +
+    (dests.length
+      ? "<div id='trForm'><label>" + t("trDestination") + "</label> <select id='trDest'>" + optionsDest + "</select> <input id='trFiltre' placeholder=\"" + esc(t("trFiltrer")) + "\" style='margin-left:8px;' />" +
+        "<div style='max-height:340px;overflow:auto;margin-top:8px;'><table class='table-donnees' id='trTable'><tr><th>" + t("trColArticle") + "</th><th>" + t("trColRef") + "</th><th>" + t("trColStock") + "</th><th>" + t("trColQte") + "</th></tr>" + lignesArt + "</table></div>" +
+        "<label style='display:block;margin-top:8px;'>" + t("trNoteLabel") + "</label><input id='trNote' maxlength='300' style='width:100%;box-sizing:border-box;' />" +
+        "<div id='trMsg' style='color:#b42318;margin-top:6px;display:none;'></div><div style='margin-top:8px;'><button id='trEnvoyer' class='principal'>" + t("trEnvoyer") + "</button></div></div>"
+      : "<p class='raison' id='trAucuneDest'>" + t("trAucuneDest") + "</p>") +
+    "<h3>" + t("trHistorique") + "</h3>" +
+    (estGest ? "<label style='display:block;margin-bottom:6px;'><input type='checkbox' id='trTousGroupe'" + (tousGroupe ? " checked" : "") + " /> " + t("trTousGroupe") + "</label>" : "") +
+    "<table class='table-donnees' id='trHistorique'><tr><th>" + t("trColNum") + "</th><th>" + t("trColDate") + "</th><th>" + t("trColTrajet") + "</th><th>" + t("trColStatut") + "</th><th>" + t("trColQte") + "</th><th>" + t("trColEcart") + "</th>" + (estGest ? "<th>" + t("trColValeur") + "</th>" : "") + "<th></th></tr>" + hist + "</table>" +
+    (estGest ? "<h3>" + t("trStocksGroupe") + "</h3><p class='raison'>" + t("trStocksNote") + "</p><div id='trStocks'></div><h3>" + t("trMouvements") + "</h3><div class='controles-rapport'><div><label>" + t("ptDu") + "</label><input type='date' id='trDu' /></div><div><label>" + t("ptAu") + "</label><input type='date' id='trAu' /></div><div><button id='trAfficher' class='principal'>" + t("ptAfficher") + "</button></div></div><div id='trRapport'></div>" : "");
+
+  const recharger = () => renderTransferts();
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-tr-voir]"), (b) => { b.onclick = () => { const r = zone.querySelector("[data-tr-detail='" + b.dataset.trVoir + "']"); r.style.display = r.style.display === "none" ? "" : "none"; }; });
+  Array.prototype.forEach.call(zone.querySelectorAll("[data-tr-annuler]"), (b) => {
+    b.onclick = async () => {
+      const motif = prompt(t("trMotifAnnulation")); if (motif === null) return;
+      try { await api("/api/" + id + "/transferts/" + b.dataset.trAnnuler + "/annulation", { method: "POST", body: JSON.stringify({ motif: motif.trim() }) }); alert(t("trAnnuleOk")); recharger(); } catch (e) { alert(t("erreurPrefixe") + e.message); }
+    };
+  });
+  Array.prototype.forEach.call(zone.querySelectorAll(".trConfirmer"), (b) => {
+    b.onclick = async () => {
+      const carte = b.closest("[data-tr-recevoir]"), msg = carte.querySelector(".trMsgRecu"); msg.style.display = "none";
+      const lignes = Array.prototype.map.call(carte.querySelectorAll(".trRecu"), (inp) => { const idx = Number(inp.dataset.index), p = carte.querySelector(".trPrix[data-index='" + idx + "']"); return Object.assign({ index: idx, quantiteRecue: Number(inp.value) }, p ? { prix: Number(p.value) } : {}); });
+      b.disabled = true;
+      try {
+        await api("/api/" + id + "/transferts/" + b.dataset.bon + "/reception", { method: "POST", body: JSON.stringify({ lignes, motifEcart: carte.querySelector(".trMotif").value }) });
+        alert(t("trRecuOk")); recharger();
+      } catch (e) {
+        b.disabled = false;
+        if (e.code === "article_manquant" || (e.data && e.data.manquants)) {
+          (e.data.manquants || []).forEach((m) => { const sp = carte.querySelector(".trPrixBloc[data-index='" + m.index + "']"); if (sp && !sp.querySelector("input")) sp.innerHTML = " <span class='raison'>" + esc(t("trPrixCreer")) + "</span> <input type='number' min='0' step='1' class='trPrix' data-index='" + m.index + "' value='" + (m.prixVenteOrigine != null ? m.prixVenteOrigine : "") + "' style='width:90px;' />"; });
+        }
+        msg.textContent = e.message; msg.style.display = "";
+      }
+    };
+  });
+  if (dests.length) {
+    const filtre = document.getElementById("trFiltre");
+    filtre.oninput = () => { const q = filtre.value.trim().toLowerCase(); Array.prototype.forEach.call(zone.querySelectorAll("tr[data-tr-art]"), (r) => { r.style.display = !q || r.textContent.toLowerCase().indexOf(q) !== -1 ? "" : "none"; }); };
+    document.getElementById("trEnvoyer").onclick = async () => {
+      const msg = document.getElementById("trMsg"); msg.style.display = "none";
+      const vers = document.getElementById("trDest").value;
+      if (!vers) { msg.textContent = t("trChoisirDest"); msg.style.display = ""; return; }
+      const lignes = [];
+      Array.prototype.forEach.call(zone.querySelectorAll(".trQte"), (inp) => { const q = Number(inp.value); if (q > 0) { const a = articles[Number(inp.dataset.i)]; lignes.push({ productId: a.productId, couleur: a.couleur, taille: a.taille, quantite: q }); } });
+      if (!lignes.length) { msg.textContent = t("trAucuneQte"); msg.style.display = ""; return; }
+      const btn = document.getElementById("trEnvoyer"); btn.disabled = true;
+      try { const b = await api("/api/" + id + "/transferts", { method: "POST", body: JSON.stringify({ vers, lignes, note: document.getElementById("trNote").value }) }); alert(t("trEnvoyeOk", { n: b.id })); recharger(); }
+      catch (e) { btn.disabled = false; msg.textContent = e.message; msg.style.display = ""; }
+    };
+  }
+  if (estGest) {
+    document.getElementById("trTousGroupe").onchange = (ev) => { window.__trTous = ev.target.checked; recharger(); };
+    api("/api/" + id + "/groupe/stocks").then((g) => {
+      const cible = document.getElementById("trStocks"); if (!cible) return;
+      cible.innerHTML = "<div style='max-height:360px;overflow:auto;'><table class='table-donnees' id='trStocksTable'><tr><th>" + t("trColArticle") + "</th><th>" + t("trColRef") + "</th>" + g.points.map((p) => "<th>" + esc(p.nom) + (p.bonsEnTransit ? " <span class='raison'>(" + p.bonsEnTransit + " " + esc(t("trStatut_en_transit").toLowerCase()) + ")</span>" : "") + "</th>").join("") + "<th>" + t("trTotal") + "</th></tr>" +
+        g.lignes.map((l) => "<tr><td>" + esc(l.nom) + (l.couleur || l.taille ? " <span class='raison'>" + esc([l.couleur, l.taille].filter(Boolean).join(" / ")) + "</span>" : "") + "</td><td>" + esc(l.reference) + "</td>" + g.points.map((p) => "<td>" + (l.parPoint[p.id] === undefined ? "—" : formaterNb(l.parPoint[p.id])) + "</td>").join("") + "<td><strong>" + formaterNb(l.total) + "</strong></td></tr>").join("") + "</table></div>";
+    }).catch(() => {});
+    const afficherMvt = async (avecDates) => {
+      const cible = document.getElementById("trRapport"); if (!cible) return;
+      let r;
+      try { r = await api("/api/" + id + "/transferts/rapport" + (avecDates ? "?du=" + encodeURIComponent(document.getElementById("trDu").value) + "&au=" + encodeURIComponent(document.getElementById("trAu").value) : "")); } catch (e) { cible.innerHTML = "<p class='erreur'>" + esc(e.message) + "</p>"; return; }
+      if (!document.getElementById("trDu")) return;
+      document.getElementById("trDu").value = r.du; document.getElementById("trAu").value = r.au;
+      cible.innerHTML = "<table class='table-donnees' id='trTabMvt'><tr><th>" + t("ptColNom") + "</th><th>" + t("trColEnvoye") + "</th><th>" + t("trColRecu") + "</th><th>" + t("trColEcartQte") + "</th><th>" + t("trColEnTransit") + "</th></tr>" +
+        r.points.map((p) => "<tr><td>" + esc(p.nom) + "</td><td>" + formaterNb(p.envoye.quantite) + " <span class='raison'>(" + p.envoye.nbBons + ")</span>" + (p.envoye.valeur ? " <span class='raison'>" + formaterNb(p.envoye.valeur) + " FCFA</span>" : "") + "</td><td>" + formaterNb(p.recu.quantite) + " <span class='raison'>(" + p.recu.nbBons + ")</span></td><td>" + formaterNb(p.ecart.quantite) + (p.ecart.valeur ? " <span class='raison'>" + formaterNb(p.ecart.valeur) + " FCFA</span>" : "") + "</td><td>" + formaterNb(p.enTransit.quantite) + " <span class='raison'>(" + p.enTransit.nbBons + ")</span></td></tr>").join("") + "</table>";
+    };
+    document.getElementById("trAfficher").onclick = () => afficherMvt(true);
+    afficherMvt(false);
+  }
+}
+
 // ---------------- Employés (comptes à accès restreint) ----------------
 // Reservé au propriétaire du marchand et au super-administrateur (voir construireOnglets, permission
 // "gestion") — un employé ne voit jamais cet onglet, quels que soient ses accès.
@@ -9959,7 +10283,10 @@ function detailJournalHtml(ligne) {
   // Etape 84 : volet enseigne
   if (typeof d.magasin === "string" && d.magasin) out.push(t("jdMagasin", { m: esc(d.magasin) }));
   if (d.nbRuptures != null) out.push(t("jdNbRuptures", { n: d.nbRuptures }));
-  if (d.bon) out.push(t("jdBon", { b: esc(d.bon) }));
+  if (d.bon && !/^transfert_/.test(ligne.action)) out.push(t("jdBon", { b: esc(d.bon) }));
+  // Etape 95 : transferts de stock et points de vente
+  if (/^transfert_/.test(ligne.action)) out.push(esc([d.bon, d.de && d.vers ? d.de + " → " + d.vers : "", d.quantite != null ? d.quantite + " u." : "", d.ecart ? t("trColEcart") + " : " + d.ecart : "", d.corrige ? "(" + d.corrige + ")" : "", d.motif || ""].filter(Boolean).join(" · ")));
+  if (typeof d.point === "string" && d.point) out.push(esc(d.point + (d.nom ? " — " + d.nom : "") + (d.typePoint === "entrepot" ? " (" + t("ptTypeEntrepot") + ")" : "")));
   if (ligne.action === "fidelite_modifiee") {
     const bits = [];
     if (d.actif != null) bits.push(t(d.actif ? "jdFidActive" : "jdFidInactive"));
@@ -10046,7 +10373,7 @@ async function renderJournal() {
             "<tr data-journal-ligne='" + esc(l.action) + "'><td>" + esc(new Date(l.horodatageISO).toLocaleString(localeCourante())) + "</td>" +
             (global ? "<td>" + esc(l.marchandNom || l.merchantKey || t("jInconnu")) + "</td>" : "") +
             "<td>" + esc(l.acteurNom || t("jInconnu")) + (l.acteurRole ? "<br><span class='raison'>" + esc(libelleRoleJournal(l.acteurRole)) + "</span>" : "") + "</td>" +
-            "<td>" + esc(t("act_" + l.action)) + "<br>" + statutHtml(l.statut) + "</td>" +
+            "<td>" + esc(t("act_" + l.action)) + (l.pointNom ? "<br><span class='raison'>" + esc(l.pointNom) + "</span>" : "") + "<br>" + statutHtml(l.statut) + "</td>" +
             "<td class='j-detail'>" + detailJournalHtml(l) + "</td>" +
             "<td>" + esc(l.ip || "") + "</td><td class='j-ua'>" + esc(l.userAgent || "") + "</td></tr>"
           ).join("") + "</tbody></table>"

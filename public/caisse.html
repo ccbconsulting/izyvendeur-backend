@@ -205,6 +205,9 @@
     <button id="btnClients" class="cache" data-i="cl_titre"></button>
     <button id="btnAttentes"></button>
     <button id="btnDernierTicket" data-i="dernierTicket"></button>
+    <button id="btnChangerPoint" class="cache" data-i="chgPoint"></button>
+    <button id="btnRapport" data-i="mrBtn"></button>
+    <button id="btnRetour" class="cache" data-i="rtBtn"></button>
     <button id="btnCloture" data-i="cloturer"></button>
     <a href="/admin" data-i="backOffice"></a>
     <button id="btnLang"></button>
@@ -253,6 +256,7 @@
 const TXT = {
   fr: {
     titreApp: "IzyVendeur Caisse", sousTitreApp: "Point de vente", identifiant: "Identifiant", motDePasse: "Mot de passe", seConnecter: "Se connecter", deconnexion: "Déconnexion",
+    chgPoint: "Changer de point", choisirPoint: "Choisissez le point de vente", chgPointPanier: "Le panier en cours sera abandonné. Changer de point de vente ?",
     choisirMarchand: "Choisissez le commerce", aucunMarchandCaisse: "Aucun commerce n'a la caisse activée.", droitCaisseManquant: "Ce compte n'a pas le droit d'utiliser la caisse.",
     ouvertureTitre: "Ouverture de caisse", ouvertureDesc: "Comptez le fond de caisse, coupure par coupure, avant de commencer à vendre.", totalBilletage: "Total compté :", ouvrirCaisse: "Ouvrir la caisse",
     fermetureTitre: "Clôture de caisse", fermetureDesc: "Recomptez le tiroir, coupure par coupure.", raisonEcart: "Raison de l'écart (si besoin)", aideEcart: "Au-delà de {seuil} FCFA d'écart, une raison est obligatoire.", confirmerFermeture: "Clôturer la caisse", annuler: "Annuler",
@@ -265,6 +269,9 @@ const TXT = {
     paiementsElec: "Paiements hors espèces", especesDues: "Espèces à encaisser",
     remiseTitre: "Remise sur la vente", remisePourcent: "Pourcentage (%)", remiseMontant: "Montant (FCFA)", valeur: "Valeur", motif: "Motif de la remise", appliquer: "Appliquer", retirerRemise: "Retirer la remise", remiseLib: "Remise",
     venteOk: "Vente enregistrée", nouvelleVente: "Nouvelle vente", imprimer: "Imprimer le ticket", ticketNum: "Ticket {n}", date: "Date", caissier: "Caissier", merci: "Merci de votre visite", recu: "Reçu", monnaie: "Monnaie", paye: "Payé", qte: "Qté",
+    mrBtn: "Mon rapport", mrTitre: "Mon rapport du jour", mrVentes: "Ventes", mrTotal: "Total encaissé", mrParMode: "Par mode de paiement", mrAnnulees: "Annulées", mrRetours: "Retours", mrSessions: "Ma caisse", mrFond: "Fond", mrEcart: "Écart", mrOuverte: "ouverte", mrFermee: "clôturée", mrAucune: "Aucune vente aujourd'hui.", mrMesVentes: "Mes ventes du jour", mrRegul: "régularisation",
+    rtBtn: "Retour", rtTitre: "Retour / remboursement", rtNote: "Choisissez la vente, indiquez les quantités rendues, le mode de remboursement et le motif. Les articles reviennent en stock.", rtNum: "N° de la vente (chiffres)", rtChercher: "Chercher", rtInvalide: "Indiquez le numéro de la vente (chiffres).", rtAnnulee: "Cette vente est annulée : aucun retour possible.", rtVendue: "Vendue", rtDeja: "Déjà rendue", rtARendre: "À rendre", rtMontant: "Montant", rtTotal: "À rembourser :", rtMode: "Mode de remboursement", rtRef: "Référence du remboursement", rtMotif: "Motif du retour", rtConfirmer: "Confirmer le retour", rtAucuneLigne: "Indiquez au moins une quantité à rendre.", rtMotifObl: "Indiquez le motif.", rtRefObl: "Indiquez la référence du remboursement.", rtFait: "Retour enregistré : {montant} à rembourser en {mode}. Les articles sont remis en stock.", rtCredit: "à crédit",
+    sessionRemplacee: "Vous avez été connecté sur un autre appareil : cette session est fermée. Reconnectez-vous ici pour reprendre la main.",
     hlHorsLigne: "Hors ligne", hlAEnvoyer: "{n} à envoyer", hlSynchro: "Envoi…", hlTitre: "Ventes hors ligne", hlAttente: "En attente d'envoi", hlErreur: "Refusée", hlRetry: "Réessayer", hlAbandon: "Abandonner", hlConfirmAbandon: "Confirmer l'abandon", hlSync: "Envoyer maintenant", hlExport: "Exporter (CSV)", hlAucune: "Aucune vente en attente.", hlBandeau: "Mode hors ligne : les ventes sont enregistrées sur cet appareil et envoyées dès le retour de la connexion. Remises, clients, tables et paiements à crédit ne sont pas disponibles.", hlNonDispo: "Hors ligne : cette action exige la connexion (remise, client, crédit, table).", hlFermerBloque: "Des ventes hors ligne n'ont pas encore été envoyées : synchronisez-les avant de clôturer la caisse.", hlSessionFermee: "La caisse est fermée : ouvrez-la (avec la connexion) pour envoyer les ventes hors ligne.", hlSyncOk: "{n} vente(s) hors ligne envoyée(s).", hlSyncEcart: "{n} avec écart de stock ou de prix (signalé au propriétaire).", hlAncien: "Données hors ligne trop anciennes : connectez-vous une fois avec Internet.", hlPasDeSession: "Aucune caisse ouverte sur cet appareil : ouvrez-la avec Internet avant de vendre hors ligne.", hlTicketNum: "N° local {n}", hlTicketMention: "VENTE HORS LIGNE - à confirmer",
     sessionOuverteLe: "Caisse ouverte {h}", chargement: "Chargement…", erreurReseau: "Connexion impossible. Vérifiez le réseau.", sessionExpiree: "Session expirée : reconnectez-vous.", pasDeSession: "Aucune session de caisse ouverte.",
     venteDirecte: "Vente directe", tables: "Tables", actualiser: "Actualiser", reglagesTables: "Tables et postes", tableLibre: "Libre", tableOccupee: "{n} article(s)", nonEnvoye: "{n} à envoyer", depuis: "depuis {m} min", par: "par {nom}", couverts: "Couverts", ouvrirTable: "Ouvrir la table", additionTitre: "Addition", retourTables: "← Tables", dejaCommande: "Déjà commandé", aAjouter: "À ajouter", ajouterTable: "Ajouter à la table", envoyerPrepa: "Envoyer en préparation", encaisserAddition: "Encaisser…", transferer: "Changer de table", annulerAddition: "Annuler l'addition", additionVide: "Aucun article sur cette table.", envoye: "envoyé", nouveau: "à envoyer", noteArticle: "Note (cuisson, sans glace…)", retirerLigne: "Retirer", quantiteARetirer: "Quantité à retirer", motifAnnulation: "Motif (article déjà envoyé)", confirmer: "Confirmer", bonsTitre: "Bons de préparation", imprimerBons: "Imprimer les bons", sansPoste: "Servis directement (sans bon) : {liste}", posteBar: "BAR", posteCuisine: "CUISINE", bonAnnulation: "ANNULATION", encaisserTitre: "Encaisser — sélection", toutSelectionner: "Tout", aucun: "Aucun", totalSelection: "Total de la sélection", continuerPaiement: "Passer au paiement", transfertTitre: "Transférer vers…", tableOccupeeFusion: "(occupée : fusion)", annulerAdditionTitre: "Annuler l'addition", motifAnnulAddition: "Motif de l'annulation", reglagesTitre: "Tables et postes", listeTables: "Tables (une par ligne)", postesParCategorie: "Poste de préparation par catégorie", aucunPoste: "Aucun (servi directement)", enregistrer2: "Enregistrer", additionSoldee: "Addition soldée", restePayer: "Reste sur la table : {n} article(s)", pasDeTables: "Aucune table configurée.", configurerTables: "Ajoutez vos tables dans « Tables et postes ».", rafraichi: "Mis à jour", tableNom: "Table", serveurLib: "Serveur",
@@ -274,6 +281,7 @@ const TXT = {
   },
   en: {
     titreApp: "IzyVendeur Till", sousTitreApp: "Point of sale", identifiant: "Username", motDePasse: "Password", seConnecter: "Sign in", deconnexion: "Sign out",
+    chgPoint: "Switch point", choisirPoint: "Choose the point of sale", chgPointPanier: "The current basket will be dropped. Switch point of sale?",
     choisirMarchand: "Choose the business", aucunMarchandCaisse: "No business has the till enabled.", droitCaisseManquant: "This account is not allowed to use the till.",
     ouvertureTitre: "Open the till", ouvertureDesc: "Count the opening float, denomination by denomination, before selling.", totalBilletage: "Counted total:", ouvrirCaisse: "Open the till",
     fermetureTitre: "Close the till", fermetureDesc: "Recount the drawer, denomination by denomination.", raisonEcart: "Reason for the gap (if any)", aideEcart: "Beyond {seuil} FCFA of gap, a reason is required.", confirmerFermeture: "Close the till", annuler: "Cancel",
@@ -286,6 +294,9 @@ const TXT = {
     paiementsElec: "Non-cash payments", especesDues: "Cash to collect",
     remiseTitre: "Discount on the sale", remisePourcent: "Percentage (%)", remiseMontant: "Amount (FCFA)", valeur: "Value", motif: "Reason for the discount", appliquer: "Apply", retirerRemise: "Remove the discount", remiseLib: "Discount",
     venteOk: "Sale recorded", nouvelleVente: "New sale", imprimer: "Print the receipt", ticketNum: "Receipt {n}", date: "Date", caissier: "Cashier", merci: "Thank you for your visit", recu: "Received", monnaie: "Change", paye: "Paid", qte: "Qty",
+    mrBtn: "My report", mrTitre: "My report for today", mrVentes: "Sales", mrTotal: "Total collected", mrParMode: "By payment method", mrAnnulees: "Cancelled", mrRetours: "Returns", mrSessions: "My till", mrFond: "Float", mrEcart: "Difference", mrOuverte: "open", mrFermee: "closed", mrAucune: "No sale today.", mrMesVentes: "My sales today", mrRegul: "adjustment",
+    rtBtn: "Return", rtTitre: "Return / refund", rtNote: "Pick the sale, enter the quantities returned, the refund method and the reason. Items go back into stock.", rtNum: "Sale no. (digits)", rtChercher: "Search", rtInvalide: "Enter the sale number (digits).", rtAnnulee: "This sale is cancelled: no return possible.", rtVendue: "Sold", rtDeja: "Already returned", rtARendre: "To return", rtMontant: "Amount", rtTotal: "To refund:", rtMode: "Refund method", rtRef: "Refund reference", rtMotif: "Reason for the return", rtConfirmer: "Confirm the return", rtAucuneLigne: "Enter at least one quantity to return.", rtMotifObl: "Enter the reason.", rtRefObl: "Enter the refund reference.", rtFait: "Return saved: {montant} to refund by {mode}. The items are back in stock.", rtCredit: "on credit",
+    sessionRemplacee: "You were signed in on another device: this session is closed. Sign in here to take over again.",
     hlHorsLigne: "Offline", hlAEnvoyer: "{n} to send", hlSynchro: "Sending…", hlTitre: "Offline sales", hlAttente: "Waiting to be sent", hlErreur: "Rejected", hlRetry: "Retry", hlAbandon: "Discard", hlConfirmAbandon: "Confirm discard", hlSync: "Send now", hlExport: "Export (CSV)", hlAucune: "No pending sales.", hlBandeau: "Offline mode: sales are saved on this device and sent as soon as the connection is back. Discounts, customers, tables and credit payments are not available.", hlNonDispo: "Offline: this action needs a connection (discount, customer, credit, table).", hlFermerBloque: "Some offline sales have not been sent yet: sync them before closing the till.", hlSessionFermee: "The till is closed: open it (with a connection) to send the offline sales.", hlSyncOk: "{n} offline sale(s) sent.", hlSyncEcart: "{n} with a stock or price difference (reported to the owner).", hlAncien: "Offline data is too old: sign in once with Internet.", hlPasDeSession: "No till open on this device: open it with Internet before selling offline.", hlTicketNum: "Local no. {n}", hlTicketMention: "OFFLINE SALE - to be confirmed",
     sessionOuverteLe: "Till opened {h}", chargement: "Loading…", erreurReseau: "Cannot connect. Check the network.", sessionExpiree: "Session expired: please sign in again.", pasDeSession: "No till session is open.",
     venteDirecte: "Direct sale", tables: "Tables", actualiser: "Refresh", reglagesTables: "Tables and stations", tableLibre: "Free", tableOccupee: "{n} item(s)", nonEnvoye: "{n} to send", depuis: "{m} min ago", par: "by {nom}", couverts: "Covers", ouvrirTable: "Open the table", additionTitre: "Tab", retourTables: "← Tables", dejaCommande: "Already ordered", aAjouter: "To add", ajouterTable: "Add to the table", envoyerPrepa: "Send to kitchen/bar", encaisserAddition: "Pay…", transferer: "Move table", annulerAddition: "Cancel the tab", additionVide: "Nothing on this table.", envoye: "sent", nouveau: "to send", noteArticle: "Note (cooking, no ice…)", retirerLigne: "Remove", quantiteARetirer: "Quantity to remove", motifAnnulation: "Reason (item already sent)", confirmer: "Confirm", bonsTitre: "Preparation tickets", imprimerBons: "Print the tickets", sansPoste: "Served directly (no ticket): {liste}", posteBar: "BAR", posteCuisine: "KITCHEN", bonAnnulation: "CANCELLATION", encaisserTitre: "Pay — selection", toutSelectionner: "All", aucun: "None", totalSelection: "Selection total", continuerPaiement: "Go to payment", transfertTitre: "Move to…", tableOccupeeFusion: "(occupied: merge)", annulerAdditionTitre: "Cancel the tab", motifAnnulAddition: "Reason for cancelling", reglagesTitre: "Tables and stations", listeTables: "Tables (one per line)", postesParCategorie: "Preparation station per category", aucunPoste: "None (served directly)", enregistrer2: "Save", additionSoldee: "Tab settled", restePayer: "Left on the table: {n} item(s)", pasDeTables: "No table configured.", configurerTables: "Add your tables under “Tables and stations”.", rafraichi: "Updated", tableNom: "Table", serveurLib: "Server",
@@ -328,13 +339,18 @@ async function api(chemin, opts) {
   if (typeof AbortController !== "undefined") { const c = new AbortController(); options.signal = c.signal; minuteurAbandon = setTimeout(() => c.abort(), 20000); }
   try { res = await fetch(chemin, options); } catch (e) { const er = new Error(t("erreurReseau")); er.reseau = true; try { HL.signalerCoupure(); } catch (x) {} throw er; }
   finally { if (minuteurAbandon) clearTimeout(minuteurAbandon); }
-  if (res.status === 401 && chemin.indexOf("/api/connexion") === -1) { montrer("ecranConnexion"); const er = new Error(t("sessionExpiree")); er.statut = 401; throw er; }
+  if (res.status === 401 && chemin.indexOf("/api/connexion") === -1) {
+    let j401 = null; try { j401 = await res.json(); } catch (e) {}
+    const remplacee = !!(j401 && j401.code === "session_remplacee");
+    montrer("ecranConnexion");
+    const er = new Error(remplacee ? t("sessionRemplacee") : t("sessionExpiree")); er.statut = 401; if (remplacee) { er.code = "session_remplacee"; erreur(er.message); } throw er;
+  }
   let j = null; try { j = await res.json(); } catch (e) {}
   if (!res.ok) { const er = new Error((j && j.erreur) || res.statusText); er.statut = res.status; if (j && j.code) er.code = j.code; throw er; }
   return j;
 }
 const ECRANS = ["ecranConnexion", "ecranChoix", "ecranOuverture", "ecranFermeture", "ecranRecap", "vente"];
-function montrer(id) { E.vue = id === "vente" ? "vente" : id; ECRANS.forEach((x) => $(x).classList.toggle("cache", x !== id)); if (id === "vente") setTimeout(() => $("recherche").focus(), 50); }
+function montrer(id) { E.vue = id === "vente" ? "vente" : id; ECRANS.forEach((x) => $(x).classList.toggle("cache", x !== id)); if (id === "vente") setTimeout(() => ($("recherche") || { focus() {} }).focus(), 50); }
 const ID = () => encodeURIComponent(E.marchand.id);
 
 /* ============ Connexion ============ */
@@ -343,7 +359,7 @@ async function connexion() {
   if (!identifiant || !motDePasse) return;
   $("cxBtn").disabled = true;
   try {
-    E.moi = await api("/api/connexion", { method: "POST", body: JSON.stringify({ identifiant, motDePasse }) });
+    E.moi = await api("/api/connexion", { method: "POST", body: JSON.stringify({ identifiant, motDePasse, application: "caisse" }) });
     $("cxMdp").value = "";
     await choisirMarchand();
   } catch (e) { erreur(e.message); } finally { $("cxBtn").disabled = false; }
@@ -354,7 +370,9 @@ async function choisirMarchand() {
   if (E.moi.role === "employe" && (E.moi.roles || []).indexOf("caisse") === -1) { erreur(t("droitCaisseManquant")); await api("/api/deconnexion", { method: "POST" }).catch(() => {}); montrer("ecranConnexion"); return; }
   const dispo = liste.filter((m) => m.optionCaissePos && m.type === "catalogue" && m.actif !== false);
   if (!dispo.length) { erreur(t("aucunMarchandCaisse")); if (E.moi.role !== "superadmin") { await api("/api/deconnexion", { method: "POST" }).catch(() => {}); montrer("ecranConnexion"); return; } }
+  E.dispo = dispo;
   if (dispo.length === 1 && E.moi.role !== "superadmin") return demarrerMarchand(dispo[0]);
+  const titreChoix = $("ecranChoix").querySelector("h2"); if (titreChoix) titreChoix.textContent = t(E.moi.role === "marchand" ? "choisirPoint" : "choisirMarchand");
   $("listeMarchands").innerHTML = dispo.map((m, i) => "<button data-i='" + i + "' style='width:100%;margin-bottom:8px;text-align:left;'>" + esc(m.nom) + "</button>").join("") || "<div class='raison'>" + esc(t("aucunMarchandCaisse")) + "</div>";
   Array.prototype.forEach.call($("listeMarchands").querySelectorAll("button"), (b) => { b.onclick = () => demarrerMarchand(dispo[Number(b.dataset.i)]); });
   montrer("ecranChoix");
@@ -386,6 +404,7 @@ function lireBilletage(prefixe) {
   return b;
 }
 function ecranOuverture() {
+  appliquerRestriction();
   $("tabOuv").innerHTML = tableBilletage("ouv", E.config.coupures);
   brancherBilletage("ouv", "totOuv");
   montrer("ecranOuverture");
@@ -433,8 +452,19 @@ async function chargerVente() {
   montrer("vente");
   afficherMode();
 }
+// Etape 93 : un employe qui n'a que « caisse » (et eventuellement « remises ») reste UNIQUEMENT sur la caisse : aucun lien vers /admin.
+function restreint() { const r = E.moi && E.moi.role === "employe" ? (E.moi.roles || []) : null; return !!(r && r.length && r.every((x) => x === "caisse" || x === "remises")); }
+function peutRetour() { return !!(E.moi && (E.moi.role !== "employe" || (E.moi.roles || []).indexOf("remises") !== -1)); }
+function appliquerRestriction() {
+  Array.prototype.forEach.call(document.querySelectorAll("a[href='/admin']"), (a) => a.classList.toggle("cache", restreint()));
+  const b = $("btnRetour"); if (b) b.classList.toggle("cache", !peutRetour() || HL.actif);
+  const r = $("btnRapport"); if (r) r.classList.toggle("cache", HL.actif);
+  // Etape 94 : un proprietaire (ou le super-administrateur) qui a plusieurs points peut en changer sans se deconnecter.
+  const bp = $("btnChangerPoint"); if (bp) bp.classList.toggle("cache", !(E.dispo && E.dispo.length > 1) || HL.actif || (E.moi && E.moi.role === "employe"));
+}
 function majBarre() {
   if (!E.marchand) return;
+  appliquerRestriction();
   $("nomMarchand").textContent = E.marchand.nom;
   $("sousBarre").textContent = (E.moi && E.moi.adminUser ? E.moi.adminUser + " · " : "") + (E.session ? t("sessionOuverteLe", { h: new Date(E.session.dateOuverture).toLocaleTimeString(LANG === "en" ? "en-GB" : "fr-FR", { hour: "2-digit", minute: "2-digit" }) }) : "");
   $("btnAttentes").textContent = t("attentes", { n: (E.attentes || []).length });
@@ -524,7 +554,7 @@ function scanner(valeur) {
 
 /* ============ Fenetres ============ */
 function ouvrirFenetre(html) { $("fenetre").innerHTML = html; $("voile").classList.remove("cache"); }
-function fermerFenetre() { $("voile").classList.add("cache"); $("fenetre").innerHTML = ""; if (E.vue === "vente") $("recherche").focus(); }
+function fermerFenetre() { $("voile").classList.add("cache"); $("fenetre").innerHTML = ""; if (E.vue === "vente") ($("recherche") || { focus() {} }).focus(); }
 $("voile").addEventListener("mousedown", (ev) => { if (ev.target === $("voile")) fermerFenetre(); });
 
 /* ---- Remise ---- */
@@ -540,7 +570,7 @@ function fenetreRemise() {
 /* ---- Ventes en attente ---- */
 function fenetreMettreAttente() {
   ouvrirFenetre("<h3>" + esc(t("mettreAttente")) + "</h3><label>" + esc(t("libelleAttente")) + "</label><input id='atLib' maxlength='40' /><div style='display:flex;gap:8px;margin-top:14px;'><button class='principal' id='atOk' style='flex:1;'>" + esc(t("enregistrer")) + "</button><button id='atX'>" + esc(t("annuler")) + "</button></div>");
-  $("atLib").focus();
+  ($("atLib") || { focus() {} }).focus();
   const go = async () => {
     try {
       const lignes = E.panier.map((it) => ({ productId: it.productId, couleur: it.couleur, taille: it.taille, quantite: it.quantite }));
@@ -776,7 +806,7 @@ function fenetreNouveauClient(opts) {
       info(t("cl_cree")); opts.apres(c);
     } catch (e) { erreur(e.message); }
   };
-  setTimeout(() => $("ncNom").focus(), 50);
+  setTimeout(() => ($("ncNom") || { focus() {} }).focus(), 50);
 }
 function fenetreReglement(c, retour) {
   const MODES_R = ["especes", "om", "momo", "carte", "cheque"];
@@ -893,7 +923,7 @@ function afficherMode() {
   $("droiteDirect").classList.toggle("cache", E.mode === "addition");
   $("droiteResto").classList.toggle("cache", E.mode !== "addition");
   majBarre();
-  if (E.mode === "tables") chargerTables(); else if (E.mode === "addition") dessinerAddition(); else { dessinerPanier(); $("recherche").focus(); }
+  if (E.mode === "tables") chargerTables(); else if (E.mode === "addition") dessinerAddition(); else { dessinerPanier(); ($("recherche") || { focus() {} }).focus(); }
 }
 function changerMode(mode) {
   if (mode === E.mode) return;
@@ -923,7 +953,7 @@ function dessinerTables() {
 function ouvrirTable(tb) {
   if (tb.addition) return entrerAddition({ table: tb.nom });
   ouvrirFenetre("<h3>" + esc(tb.nom) + "</h3><label>" + esc(t("couverts")) + "</label><input id='cvNb' type='number' inputmode='numeric' min='1' max='99' /><div style='display:flex;gap:8px;margin-top:14px;'><button class='vert' id='cvOk' style='flex:1;'>" + esc(t("ouvrirTable")) + "</button><button id='cvX'>" + esc(t("annuler")) + "</button></div>");
-  $("cvNb").focus();
+  ($("cvNb") || { focus() {} }).focus();
   const go = () => { const c = $("cvNb").value; fermerFenetre(); entrerAddition({ table: tb.nom, couverts: c ? Number(c) : undefined }); };
   $("cvOk").onclick = go; $("cvNb").addEventListener("keydown", (ev) => { if (ev.key === "Enter") go(); }); $("cvX").onclick = fermerFenetre;
 }
@@ -1069,7 +1099,7 @@ async function fenetreReglagesResto() {
 /* ============ Evenements ============ */
 $("cxBtn").onclick = connexion;
 $("cxMdp").addEventListener("keydown", (ev) => { if (ev.key === "Enter") connexion(); });
-$("cxId").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("cxMdp").focus(); });
+$("cxId").addEventListener("keydown", (ev) => { if (ev.key === "Enter") ($("cxMdp") || { focus() {} }).focus(); });
 $("cxLang").onclick = basculerLangue; $("btnLang").onclick = basculerLangue;
 async function deconnexion() { try { await api("/api/deconnexion", { method: "POST" }); } catch (e) {} HL.effacerInstantane(); HL.actif = false; E.moi = null; E.marchand = null; E.session = null; E.panier = []; montrer("ecranConnexion"); }
 $("btnDeco").onclick = deconnexion; $("ouvDeco").onclick = deconnexion; $("choixDeco").onclick = deconnexion;
@@ -1106,6 +1136,66 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("vo
    prix de gros) est mise en file sur l'appareil quand le reseau manque, avec une cle unique (anti-doublon) ; des que la connexion revient elle est envoyee au serveur,
    qui la rejoue avec la date de saisie et SIGNALE tout ecart de stock ou de prix au proprietaire au lieu de la refuser. Rien d'autre n'est conserve hors ligne :
    ni mot de passe, ni prix d'achat, ni donnee d'un autre commerce. La deconnexion efface l'instantane (catalogue) mais jamais la file des ventes non envoyees. */
+
+/* ============ Etape 93 : mon rapport du jour et retours, sans quitter la caisse ============ */
+function libMode(m) { return m === "credit" ? t("rtCredit") : t(m); }
+async function fenetreMonRapport() {
+  ouvrirFenetre("<h3>" + esc(t("mrTitre")) + "</h3><p class='raison'>" + esc(t("chargement")) + "</p>");
+  let r; try { r = await api("/api/" + ID() + "/caisse/rapport"); } catch (e) { fermerFenetre(); if (e.statut !== 401) erreur(e.message); return; }
+  const T = r.totaux, loc = LANG === "en" ? "en-GB" : "fr-FR";
+  const ventes = (r.ventes || []).filter((v) => v.statut === "valide");
+  const modes = (r.parMode || []).filter((m) => m.nb || m.nbAnnulees);
+  const sess = (r.sessions || []).map((s) => "<tr><td>" + esc(new Date(s.dateOuverture).toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" })) + "</td><td>" + esc(s.statut === "fermee" ? t("mrFermee") : t("mrOuverte")) + "</td><td style='text-align:right;'>" + esc(nombre(s.fondInitial)) + "</td><td style='text-align:right;'>" + (s.statut === "fermee" ? esc(nombre(s.ecart)) : "—") + "</td></tr>").join("");
+  ouvrirFenetre("<h3>" + esc(t("mrTitre")) + "</h3>" +
+    "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;'><div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(t("mrVentes")) + "</div><strong id='mrNb'>" + T.nbVentes + "</strong></div><div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(t("mrTotal")) + "</div><strong id='mrNet'>" + esc(f(T.net)) + "</strong></div>" +
+    (T.nbAnnulees ? "<div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(t("mrAnnulees")) + "</div><strong>" + T.nbAnnulees + " / " + esc(f(T.montantAnnule)) + "</strong></div>" : "") +
+    (T.nbRetours ? "<div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(t("mrRetours")) + "</div><strong>" + T.nbRetours + " / " + esc(f(T.retours)) + "</strong></div>" : "") + "</div>" +
+    (modes.length ? "<h4>" + esc(t("mrParMode")) + "</h4><table class='billetage' style='width:100%;' id='mrModes'>" + modes.map((m) => "<tr><td>" + esc(t(m.mode)) + "</td><td style='text-align:right;'>" + m.nb + "</td><td style='text-align:right;'>" + esc(f(m.montant)) + "</td></tr>").join("") + "</table>" : "<p class='raison'>" + esc(t("mrAucune")) + "</p>") +
+    (sess ? "<h4>" + esc(t("mrSessions")) + "</h4><table class='billetage' style='width:100%;'><tr><td></td><td></td><td style='text-align:right;'>" + esc(t("mrFond")) + "</td><td style='text-align:right;'>" + esc(t("mrEcart")) + "</td></tr>" + sess + "</table>" : "") +
+    (ventes.length ? "<h4>" + esc(t("mrMesVentes")) + "</h4><div style='max-height:30vh;overflow:auto;'><table class='billetage' style='width:100%;' id='mrVentes'>" + ventes.slice().reverse().map((v) => "<tr><td>" + esc(v.piece) + (v.regularisation ? " <span class='raison'>(" + esc(t("mrRegul")) + ")</span>" : "") + "</td><td>" + esc(v.heure) + "</td><td style='text-align:right;'>" + esc(f(v.montant)) + "</td></tr>").join("") + "</table></div>" : "") +
+    "<div style='margin-top:12px;'><button id='mrX' class='principal'>" + esc(t("fermer")) + "</button></div>");
+  $("mrX").onclick = fermerFenetre;
+}
+function fenetreRetour() {
+  const deja = (o, idx) => { let q = 0; (o.retours || []).forEach((r) => (r.lignes || []).forEach((l) => { if (l.index === idx) q += Number(l.quantite) || 0; })); return Math.round(q * 1000) / 1000; };
+  ouvrirFenetre("<h3>" + esc(t("rtTitre")) + "</h3><p class='raison'>" + esc(t("rtNote")) + "</p><div style='display:flex;gap:8px;flex-wrap:wrap;'><input id='rtNum' inputmode='numeric' placeholder='" + esc(t("rtNum")) + "' style='flex:1;min-width:140px;' /><button id='rtGo' class='principal'>" + esc(t("rtChercher")) + "</button><button id='rtX'>" + esc(t("fermer")) + "</button></div><div id='rtZone' style='margin-top:12px;'></div>");
+  $("rtX").onclick = fermerFenetre;
+  async function chercher() {
+    const num = parseInt(String($("rtNum").value).replace(/[^0-9]/g, ""), 10), z = $("rtZone");
+    if (!num) { z.innerHTML = "<p class='raison' style='color:var(--rouge);'>" + esc(t("rtInvalide")) + "</p>"; return; }
+    let o; try { o = await api("/api/" + ID() + "/pos/vente/" + num); } catch (e) { z.innerHTML = "<p class='raison' style='color:var(--rouge);'>" + esc(e.message) + "</p>"; return; }
+    if (o.statut === "Annulée") { z.innerHTML = "<p class='raison' style='color:var(--rouge);'>" + esc(t("rtAnnulee")) + "</p>"; return; }
+    let mode = "especes";
+    const dessiner = () => {
+      z.innerHTML = "<p><strong>POS-" + String(o.id).padStart(4, "0") + "</strong> · " + esc(f(o.prix)) + "</p><div style='overflow:auto;max-height:34vh;'><table class='billetage' style='width:100%;' id='rtTab'><tr><td></td><td>" + esc(t("rtVendue")) + "</td><td>" + esc(t("rtDeja")) + "</td><td>" + esc(t("rtARendre")) + "</td><td>" + esc(t("rtMontant")) + "</td></tr>" +
+        (o.items || []).map((it, i) => { const rest = Math.round(((Number(it.quantite) || 0) - deja(o, i)) * 1000) / 1000; const u = it.unite ? " " + esc(it.unite) : "";
+          return "<tr><td>" + esc(it.produit) + (it.couleur || it.taille ? " (" + esc([it.couleur, it.taille].filter((x) => x && x !== "-").join("/")) + ")" : "") + "</td><td>" + it.quantite + u + "</td><td>" + deja(o, i) + u + "</td><td>" + (rest > 0 ? "<input type='number' min='0' max='" + rest + "' step='" + (Number.isInteger(Number(it.quantite)) ? "1" : "any") + "' data-rq='" + i + "' value='0' style='width:76px;' />" : "—") + "</td><td data-rm='" + i + "'>0</td></tr>"; }).join("") + "</table></div>" +
+        "<p><strong id='rtTotal'>" + esc(t("rtTotal")) + " " + esc(f(0)) + "</strong></p><label>" + esc(t("rtMode")) + "</label><select id='rtMode'>" + ["especes", "om", "momo", "carte", "cheque"].map((m) => "<option value='" + m + "'" + (mode === m ? " selected" : "") + ">" + esc(t(m)) + "</option>").join("") + "</select>" +
+        (mode !== "especes" ? "<label>" + esc(t("rtRef")) + "</label><input id='rtRef' />" : "") + "<label>" + esc(t("rtMotif")) + "</label><input id='rtMotif' maxlength='200' /><div style='margin-top:12px;'><button id='rtOk' class='principal' style='width:100%;'>" + esc(t("rtConfirmer")) + "</button></div>";
+      const maj = () => { let total = 0; Array.prototype.forEach.call(z.querySelectorAll("[data-rq]"), (inp) => { const i = Number(inp.dataset.rq), it = o.items[i], q = Math.max(0, Number(String(inp.value).replace(",", ".")) || 0), rest = Math.round(((Number(it.quantite) || 0) - deja(o, i)) * 1000) / 1000;
+          const m = q > 0 && q <= rest ? (Math.round((q + deja(o, i)) * 1000) / 1000 >= Number(it.quantite) ? Math.max(0, (it.prix || 0) - (o.retours || []).reduce((x, r) => x + (r.lignes || []).filter((l) => l.index === i).reduce((y, l) => y + (l.montant || 0), 0), 0)) : Math.round((it.prix || 0) * q / it.quantite)) : 0;
+          total += m; z.querySelector("[data-rm='" + i + "']").textContent = nombre(m); }); $("rtTotal").textContent = t("rtTotal") + " " + f(total); };
+      Array.prototype.forEach.call(z.querySelectorAll("[data-rq]"), (inp) => inp.addEventListener("input", maj));
+      $("rtMode").onchange = () => { mode = $("rtMode").value; dessiner(); };
+      $("rtOk").onclick = async () => {
+        const lignes = []; Array.prototype.forEach.call(z.querySelectorAll("[data-rq]"), (inp) => { const q = Number(String(inp.value).replace(",", ".")); if (q > 0) lignes.push({ index: Number(inp.dataset.rq), quantite: q }); });
+        if (!lignes.length) { erreur(t("rtAucuneLigne")); return; }
+        const motif = $("rtMotif").value.trim(); if (!motif) { erreur(t("rtMotifObl")); return; }
+        const ref = $("rtRef") ? $("rtRef").value.trim() : ""; if (mode !== "especes" && !ref) { erreur(t("rtRefObl")); return; }
+        $("rtOk").disabled = true;
+        try { const rep = await api("/api/" + ID() + "/pos/vente/" + o.id + "/retour", { method: "POST", body: JSON.stringify({ lignes, modeRemboursement: mode, referenceRemboursement: ref || undefined, motif }) });
+          z.innerHTML = "<p>" + esc(t("rtFait", { montant: f(rep.retour.montant), mode: libMode(rep.retour.modeRemboursement) })) + "</p><button id='rtFin' class='principal'>" + esc(t("fermer")) + "</button>"; $("rtFin").onclick = fermerFenetre; try { await actualiserLignes(); } catch (e) {}
+        } catch (e) { erreur(e.message); $("rtOk").disabled = false; }
+      };
+    };
+    dessiner();
+  }
+  $("rtGo").onclick = chercher; $("rtNum").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); chercher(); } });
+}
+$("btnRapport").onclick = fenetreMonRapport;
+$("btnChangerPoint").onclick = () => { if (E.panier && E.panier.length && !confirm(t("chgPointPanier"))) return; E.panier = []; choisirMarchand().catch((e) => erreur(e.message)); };
+$("btnRetour").onclick = fenetreRetour;
+
 const HL = (function () {
   const NOM_BD = "izy_caisse_hl", AGE_MAX_MS = 72 * 3600 * 1000;
   let dbp = null, file = [], enCours = false, minuteur = null, minuteurRafraichir = null, dernierMessage = "";
@@ -1249,7 +1339,7 @@ const HL = (function () {
   H.majStatut = majStatut;
   return H;
 })();
-function majBarreDepuisHL() { const peutRemise = E.moi && (E.moi.role !== "employe" || (E.moi.roles || []).indexOf("remises") !== -1); $("btnRemise").classList.toggle("cache", !peutRemise || HL.actif); $("btnClients").classList.toggle("cache", !credOn() || HL.actif); }
+function majBarreDepuisHL() { const peutRemise = E.moi && (E.moi.role !== "employe" || (E.moi.roles || []).indexOf("remises") !== -1); $("btnRemise").classList.toggle("cache", !peutRemise || HL.actif); $("btnClients").classList.toggle("cache", !credOn() || HL.actif); appliquerRestriction(); }
 $("btnHL").onclick = () => HL.fenetreFile();
 
 /* ============ Demarrage ============ */
