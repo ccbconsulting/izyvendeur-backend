@@ -173,7 +173,7 @@
     <h3 style="margin-top:12px;"><span data-i="totalBilletage"></span> <span id="totOuv">0</span> FCFA</h3>
     <button id="btnOuvrir" class="vert" style="width:100%;" data-i="ouvrirCaisse"></button>
   </div>
-  <div style="margin-top:12px;display:flex;gap:8px;"><button id="ouvDeco" data-i="deconnexion"></button><a href="/admin" style="align-self:center;" data-i="backOffice"></a></div>
+  <div style="margin-top:12px;display:flex;gap:8px;"><button id="ouvDeco" data-i="deconnexion"></button><button id="ouvRapport" data-i="mrBtn"></button><a href="/admin" style="align-self:center;" data-i="backOffice"></a></div>
 </div>
 
 <!-- Fermeture de caisse -->
@@ -269,7 +269,7 @@ const TXT = {
     paiementsElec: "Paiements hors espèces", especesDues: "Espèces à encaisser",
     remiseTitre: "Remise sur la vente", remisePourcent: "Pourcentage (%)", remiseMontant: "Montant (FCFA)", valeur: "Valeur", motif: "Motif de la remise", appliquer: "Appliquer", retirerRemise: "Retirer la remise", remiseLib: "Remise",
     venteOk: "Vente enregistrée", nouvelleVente: "Nouvelle vente", imprimer: "Imprimer le ticket", ticketNum: "Ticket {n}", date: "Date", caissier: "Caissier", merci: "Merci de votre visite", recu: "Reçu", monnaie: "Monnaie", paye: "Payé", qte: "Qté",
-    mrBtn: "Mon rapport", mrTitre: "Mon rapport du jour", mrVentes: "Ventes", mrTotal: "Total encaissé", mrParMode: "Par mode de paiement", mrAnnulees: "Annulées", mrRetours: "Retours", mrSessions: "Ma caisse", mrFond: "Fond", mrEcart: "Écart", mrOuverte: "ouverte", mrFermee: "clôturée", mrAucune: "Aucune vente aujourd'hui.", mrMesVentes: "Mes ventes du jour", mrRegul: "régularisation",
+    mrBtn: "Mon rapport", mrTitre: "Mon rapport", mrPeriode: "Période", mrAujourdhui: "Aujourd'hui", mrHier: "Hier", mr7: "7 derniers jours", mr31: "31 derniers jours", mrPerso: "Dates au choix", mrDu: "Du", mrAu: "Au", mrAfficher: "Afficher", mrImprimer: "Imprimer / PDF", mrDuAu: "du {du} au {au}", mrLimite: "Vos ventes et encaissements seulement, sur 31 jours au maximum.", mrDetailAstuce: "Touchez une vente pour voir ses articles.", mrVentes: "Ventes", mrTotal: "Total encaissé", mrParMode: "Par mode de paiement", mrAnnulees: "Annulées", mrRetours: "Retours", mrSessions: "Ma caisse", mrFond: "Fond", mrEcart: "Écart", mrOuverte: "ouverte", mrFermee: "clôturée", mrAucune: "Aucune vente sur cette période.", mrMesVentes: "Mes ventes", mrRegul: "régularisation",
     rtBtn: "Retour", rtTitre: "Retour / remboursement", rtNote: "Choisissez la vente, indiquez les quantités rendues, le mode de remboursement et le motif. Les articles reviennent en stock.", rtNum: "N° de la vente (chiffres)", rtChercher: "Chercher", rtInvalide: "Indiquez le numéro de la vente (chiffres).", rtAnnulee: "Cette vente est annulée : aucun retour possible.", rtVendue: "Vendue", rtDeja: "Déjà rendue", rtARendre: "À rendre", rtMontant: "Montant", rtTotal: "À rembourser :", rtMode: "Mode de remboursement", rtRef: "Référence du remboursement", rtMotif: "Motif du retour", rtConfirmer: "Confirmer le retour", rtAucuneLigne: "Indiquez au moins une quantité à rendre.", rtMotifObl: "Indiquez le motif.", rtRefObl: "Indiquez la référence du remboursement.", rtFait: "Retour enregistré : {montant} à rembourser en {mode}. Les articles sont remis en stock.", rtCredit: "à crédit",
     sessionRemplacee: "Vous avez été connecté sur un autre appareil : cette session est fermée. Reconnectez-vous ici pour reprendre la main.",
     hlHorsLigne: "Hors ligne", hlAEnvoyer: "{n} à envoyer", hlSynchro: "Envoi…", hlTitre: "Ventes hors ligne", hlAttente: "En attente d'envoi", hlErreur: "Refusée", hlRetry: "Réessayer", hlAbandon: "Abandonner", hlConfirmAbandon: "Confirmer l'abandon", hlSync: "Envoyer maintenant", hlExport: "Exporter (CSV)", hlAucune: "Aucune vente en attente.", hlBandeau: "Mode hors ligne : les ventes sont enregistrées sur cet appareil et envoyées dès le retour de la connexion. Remises, clients, tables et paiements à crédit ne sont pas disponibles.", hlNonDispo: "Hors ligne : cette action exige la connexion (remise, client, crédit, table).", hlFermerBloque: "Des ventes hors ligne n'ont pas encore été envoyées : synchronisez-les avant de clôturer la caisse.", hlSessionFermee: "La caisse est fermée : ouvrez-la (avec la connexion) pour envoyer les ventes hors ligne.", hlSyncOk: "{n} vente(s) hors ligne envoyée(s).", hlSyncEcart: "{n} avec écart de stock ou de prix (signalé au propriétaire).", hlAncien: "Données hors ligne trop anciennes : connectez-vous une fois avec Internet.", hlPasDeSession: "Aucune caisse ouverte sur cet appareil : ouvrez-la avec Internet avant de vendre hors ligne.", hlTicketNum: "N° local {n}", hlTicketMention: "VENTE HORS LIGNE - à confirmer",
@@ -294,7 +294,7 @@ const TXT = {
     paiementsElec: "Non-cash payments", especesDues: "Cash to collect",
     remiseTitre: "Discount on the sale", remisePourcent: "Percentage (%)", remiseMontant: "Amount (FCFA)", valeur: "Value", motif: "Reason for the discount", appliquer: "Apply", retirerRemise: "Remove the discount", remiseLib: "Discount",
     venteOk: "Sale recorded", nouvelleVente: "New sale", imprimer: "Print the receipt", ticketNum: "Receipt {n}", date: "Date", caissier: "Cashier", merci: "Thank you for your visit", recu: "Received", monnaie: "Change", paye: "Paid", qte: "Qty",
-    mrBtn: "My report", mrTitre: "My report for today", mrVentes: "Sales", mrTotal: "Total collected", mrParMode: "By payment method", mrAnnulees: "Cancelled", mrRetours: "Returns", mrSessions: "My till", mrFond: "Float", mrEcart: "Difference", mrOuverte: "open", mrFermee: "closed", mrAucune: "No sale today.", mrMesVentes: "My sales today", mrRegul: "adjustment",
+    mrBtn: "My report", mrTitre: "My report", mrPeriode: "Period", mrAujourdhui: "Today", mrHier: "Yesterday", mr7: "Last 7 days", mr31: "Last 31 days", mrPerso: "Custom dates", mrDu: "From", mrAu: "To", mrAfficher: "Show", mrImprimer: "Print / PDF", mrDuAu: "from {du} to {au}", mrLimite: "Your own sales and collections only, up to 31 days back.", mrDetailAstuce: "Tap a sale to see its items.", mrVentes: "Sales", mrTotal: "Total collected", mrParMode: "By payment method", mrAnnulees: "Cancelled", mrRetours: "Returns", mrSessions: "My till", mrFond: "Float", mrEcart: "Difference", mrOuverte: "open", mrFermee: "closed", mrAucune: "No sale today.", mrMesVentes: "My sales today", mrRegul: "adjustment",
     rtBtn: "Return", rtTitre: "Return / refund", rtNote: "Pick the sale, enter the quantities returned, the refund method and the reason. Items go back into stock.", rtNum: "Sale no. (digits)", rtChercher: "Search", rtInvalide: "Enter the sale number (digits).", rtAnnulee: "This sale is cancelled: no return possible.", rtVendue: "Sold", rtDeja: "Already returned", rtARendre: "To return", rtMontant: "Amount", rtTotal: "To refund:", rtMode: "Refund method", rtRef: "Refund reference", rtMotif: "Reason for the return", rtConfirmer: "Confirm the return", rtAucuneLigne: "Enter at least one quantity to return.", rtMotifObl: "Enter the reason.", rtRefObl: "Enter the refund reference.", rtFait: "Return saved: {montant} to refund by {mode}. The items are back in stock.", rtCredit: "on credit",
     sessionRemplacee: "You were signed in on another device: this session is closed. Sign in here to take over again.",
     hlHorsLigne: "Offline", hlAEnvoyer: "{n} to send", hlSynchro: "Sending…", hlTitre: "Offline sales", hlAttente: "Waiting to be sent", hlErreur: "Rejected", hlRetry: "Retry", hlAbandon: "Discard", hlConfirmAbandon: "Confirm discard", hlSync: "Send now", hlExport: "Export (CSV)", hlAucune: "No pending sales.", hlBandeau: "Offline mode: sales are saved on this device and sent as soon as the connection is back. Discounts, customers, tables and credit payments are not available.", hlNonDispo: "Offline: this action needs a connection (discount, customer, credit, table).", hlFermerBloque: "Some offline sales have not been sent yet: sync them before closing the till.", hlSessionFermee: "The till is closed: open it (with a connection) to send the offline sales.", hlSyncOk: "{n} offline sale(s) sent.", hlSyncEcart: "{n} with a stock or price difference (reported to the owner).", hlAncien: "Offline data is too old: sign in once with Internet.", hlPasDeSession: "No till open on this device: open it with Internet before selling offline.", hlTicketNum: "Local no. {n}", hlTicketMention: "OFFLINE SALE - to be confirmed",
@@ -459,6 +459,7 @@ function appliquerRestriction() {
   Array.prototype.forEach.call(document.querySelectorAll("a[href='/admin']"), (a) => a.classList.toggle("cache", restreint()));
   const b = $("btnRetour"); if (b) b.classList.toggle("cache", !peutRetour() || HL.actif);
   const r = $("btnRapport"); if (r) r.classList.toggle("cache", HL.actif);
+  const r2 = $("ouvRapport"); if (r2) r2.classList.toggle("cache", HL.actif);
   // Etape 94 : un proprietaire (ou le super-administrateur) qui a plusieurs points peut en changer sans se deconnecter.
   const bp = $("btnChangerPoint"); if (bp) bp.classList.toggle("cache", !(E.dispo && E.dispo.length > 1) || HL.actif || (E.moi && E.moi.role === "employe"));
 }
@@ -1139,22 +1140,58 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("vo
 
 /* ============ Etape 93 : mon rapport du jour et retours, sans quitter la caisse ============ */
 function libMode(m) { return m === "credit" ? t("rtCredit") : t(m); }
-async function fenetreMonRapport() {
+// Etape 96 : « Mon rapport » - accessible aussi SANS ouvrir de session (depuis l'ecran d'ouverture), sur une periode au choix (31 derniers jours au maximum),
+// uniquement mes propres ventes et encaissements : jamais d'ecart de caisse, de cout ni de marge. Le serveur impose ces limites.
+function jourCm(decalage) { return new Date(Date.now() + 3600000 - (decalage || 0) * 86400000).toISOString().slice(0, 10); }
+function imprimerRapportHtml(titre, corps) {
+  const ifr = document.createElement("iframe"); ifr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+  document.body.appendChild(ifr);
+  const d = ifr.contentWindow.document; d.open();
+  d.write("<!doctype html><html><head><meta charset='utf-8'><title>" + esc(titre) + "</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:18px;} h2{margin:0 0 4px;} h4{margin:14px 0 4px;} table{border-collapse:collapse;width:100%;} td{border-bottom:1px solid #ccc;padding:3px 6px;} .r{text-align:right;} .g{color:#555;}</style></head><body>" + corps + "</body></html>");
+  d.close();
+  setTimeout(() => { try { ifr.contentWindow.focus(); ifr.contentWindow.print(); } catch (e) {} setTimeout(() => { try { document.body.removeChild(ifr); } catch (e) {} }, 2000); }, 250);
+}
+async function fenetreMonRapport(sel) {
+  const p = sel || { preset: "aujourdhui" };
+  const plage = p.preset === "aujourdhui" ? [jourCm(0), jourCm(0)] : p.preset === "hier" ? [jourCm(1), jourCm(1)] : p.preset === "7" ? [jourCm(6), jourCm(0)] : p.preset === "31" ? [jourCm(30), jourCm(0)] : [p.du || jourCm(0), p.au || jourCm(0)];
+  const du = plage[0], au = plage[1];
   ouvrirFenetre("<h3>" + esc(t("mrTitre")) + "</h3><p class='raison'>" + esc(t("chargement")) + "</p>");
-  let r; try { r = await api("/api/" + ID() + "/caisse/rapport"); } catch (e) { fermerFenetre(); if (e.statut !== 401) erreur(e.message); return; }
-  const T = r.totaux, loc = LANG === "en" ? "en-GB" : "fr-FR";
-  const ventes = (r.ventes || []).filter((v) => v.statut === "valide");
-  const modes = (r.parMode || []).filter((m) => m.nb || m.nbAnnulees);
-  const sess = (r.sessions || []).map((s) => "<tr><td>" + esc(new Date(s.dateOuverture).toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" })) + "</td><td>" + esc(s.statut === "fermee" ? t("mrFermee") : t("mrOuverte")) + "</td><td style='text-align:right;'>" + esc(nombre(s.fondInitial)) + "</td><td style='text-align:right;'>" + (s.statut === "fermee" ? esc(nombre(s.ecart)) : "—") + "</td></tr>").join("");
-  ouvrirFenetre("<h3>" + esc(t("mrTitre")) + "</h3>" +
-    "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;'><div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(t("mrVentes")) + "</div><strong id='mrNb'>" + T.nbVentes + "</strong></div><div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(t("mrTotal")) + "</div><strong id='mrNet'>" + esc(f(T.net)) + "</strong></div>" +
-    (T.nbAnnulees ? "<div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(t("mrAnnulees")) + "</div><strong>" + T.nbAnnulees + " / " + esc(f(T.montantAnnule)) + "</strong></div>" : "") +
-    (T.nbRetours ? "<div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(t("mrRetours")) + "</div><strong>" + T.nbRetours + " / " + esc(f(T.retours)) + "</strong></div>" : "") + "</div>" +
+  let r, echec = null;
+  try { r = await api("/api/" + ID() + "/caisse/rapport?du=" + encodeURIComponent(du) + "&au=" + encodeURIComponent(au)); } catch (e) { if (e.statut === 401) { fermerFenetre(); return; } echec = e.message; }
+  const T = r ? r.totaux : null, loc = LANG === "en" ? "en-GB" : "fr-FR";
+  const lm = (m) => { const x = libMode(m); return x || m; };
+  const ventes = r ? (r.ventes || []).filter((v) => v.statut === "valide") : [];
+  const modes = r ? (r.parMode || []).filter((m) => m.nb || m.nbAnnulees) : [];
+  const plusieursJours = du !== au;
+  const heureSess = (s) => new Date(s.dateOuverture).toLocaleString(loc, plusieursJours ? { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
+  const sess = r ? (r.sessions || []).map((s) => "<tr><td>" + esc(heureSess(s)) + "</td><td>" + esc(s.statut === "fermee" ? t("mrFermee") : t("mrOuverte")) + "</td><td style='text-align:right;'>" + esc(nombre(s.fondInitial)) + "</td></tr>").join("") : "";
+  const tuile = (lib, val, id) => "<div class='carte' style='flex:1;min-width:130px;'><div class='raison'>" + esc(lib) + "</div><strong" + (id ? " id='" + id + "'" : "") + ">" + esc(val) + "</strong></div>";
+  const options = [["aujourdhui", "mrAujourdhui"], ["hier", "mrHier"], ["7", "mr7"], ["31", "mr31"], ["perso", "mrPerso"]].map((o) => "<option value='" + o[0] + "'" + (p.preset === o[0] ? " selected" : "") + ">" + esc(t(o[1])) + "</option>").join("");
+  const resultat = echec ? "<p class='raison' id='mrErreur' style='color:var(--rouge);'>" + esc(echec) + "</p>" : (
+    "<div style='display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;'>" + tuile(t("mrVentes"), String(T.nbVentes), "mrNb") + tuile(t("mrTotal"), f(T.net), "mrNet") +
+    (T.nbAnnulees ? tuile(t("mrAnnulees"), T.nbAnnulees + " / " + f(T.montantAnnule)) : "") + (T.nbRetours ? tuile(t("mrRetours"), T.nbRetours + " / " + f(T.retours)) : "") + "</div>" +
     (modes.length ? "<h4>" + esc(t("mrParMode")) + "</h4><table class='billetage' style='width:100%;' id='mrModes'>" + modes.map((m) => "<tr><td>" + esc(t(m.mode)) + "</td><td style='text-align:right;'>" + m.nb + "</td><td style='text-align:right;'>" + esc(f(m.montant)) + "</td></tr>").join("") + "</table>" : "<p class='raison'>" + esc(t("mrAucune")) + "</p>") +
-    (sess ? "<h4>" + esc(t("mrSessions")) + "</h4><table class='billetage' style='width:100%;'><tr><td></td><td></td><td style='text-align:right;'>" + esc(t("mrFond")) + "</td><td style='text-align:right;'>" + esc(t("mrEcart")) + "</td></tr>" + sess + "</table>" : "") +
-    (ventes.length ? "<h4>" + esc(t("mrMesVentes")) + "</h4><div style='max-height:30vh;overflow:auto;'><table class='billetage' style='width:100%;' id='mrVentes'>" + ventes.slice().reverse().map((v) => "<tr><td>" + esc(v.piece) + (v.regularisation ? " <span class='raison'>(" + esc(t("mrRegul")) + ")</span>" : "") + "</td><td>" + esc(v.heure) + "</td><td style='text-align:right;'>" + esc(f(v.montant)) + "</td></tr>").join("") + "</table></div>" : "") +
-    "<div style='margin-top:12px;'><button id='mrX' class='principal'>" + esc(t("fermer")) + "</button></div>");
+    (sess ? "<h4>" + esc(t("mrSessions")) + "</h4><table class='billetage' style='width:100%;' id='mrSess'><tr><td></td><td></td><td style='text-align:right;'>" + esc(t("mrFond")) + "</td></tr>" + sess + "</table>" : "") +
+    (ventes.length ? "<h4>" + esc(t("mrMesVentes")) + "</h4><div style='max-height:30vh;overflow:auto;'><table class='billetage' style='width:100%;' id='mrVentes'>" + ventes.slice().reverse().map((v, i) => "<tr data-v='" + i + "' style='cursor:pointer;'><td>" + esc(v.piece) + (v.regularisation ? " <span class='raison'>(" + esc(t("mrRegul")) + ")</span>" : "") + "<div class='raison cache' data-d='" + i + "'>" + esc(v.articles || "") + (v.client ? " · " + esc(v.client) : "") + "</div></td><td>" + esc((plusieursJours ? v.date + " " : "") + v.heure) + "</td><td>" + esc(lm(v.mode)) + "</td><td style='text-align:right;'>" + esc(f(v.montant)) + "</td></tr>").join("") + "</table></div><p class='raison'>" + esc(t("mrDetailAstuce")) + "</p>" : ""));
+  ouvrirFenetre("<h3>" + esc(t("mrTitre")) + "</h3>" +
+    "<div style='display:flex;gap:8px;flex-wrap:wrap;align-items:end;'><div><label>" + esc(t("mrPeriode")) + "</label><select id='mrPreset'>" + options + "</select></div>" +
+    "<div id='mrPerso' class='" + (p.preset === "perso" ? "" : "cache") + "' style='display:flex;gap:8px;'><div><label>" + esc(t("mrDu")) + "</label><input type='date' id='mrDu' value='" + esc(du) + "' max='" + jourCm(0) + "' min='" + jourCm(31) + "' /></div><div><label>" + esc(t("mrAu")) + "</label><input type='date' id='mrAu' value='" + esc(au) + "' max='" + jourCm(0) + "' min='" + jourCm(31) + "' /></div><div><button id='mrGo'>" + esc(t("mrAfficher")) + "</button></div></div></div>" +
+    "<p class='raison'>" + esc(plusieursJours ? t("mrDuAu", { du, au }) : du) + " · " + esc(t("mrLimite")) + "</p>" +
+    "<div id='mrCorps'>" + resultat + "</div>" +
+    "<div style='margin-top:12px;display:flex;gap:8px;'><button id='mrImp'" + (echec ? " disabled" : "") + ">" + esc(t("mrImprimer")) + "</button><button id='mrX' class='principal'>" + esc(t("fermer")) + "</button></div>");
   $("mrX").onclick = fermerFenetre;
+  $("mrPreset").onchange = () => { const v = $("mrPreset").value; if (v === "perso") { $("mrPerso").classList.remove("cache"); } else fenetreMonRapport({ preset: v }); };
+  $("mrGo").onclick = () => fenetreMonRapport({ preset: "perso", du: $("mrDu").value, au: $("mrAu").value });
+  Array.prototype.forEach.call(document.querySelectorAll("#mrVentes tr[data-v]"), (tr) => { tr.onclick = () => { const d = tr.querySelector("[data-d]"); if (d) d.classList.toggle("cache"); }; });
+  $("mrImp").onclick = () => {
+    if (!r) return;
+    const nom = (E.marchand && E.marchand.nom) || "", qui = (E.moi && (E.moi.adminUser || E.moi.identifiant)) || "";
+    let h = "<h2>" + esc(t("mrTitre")) + "</h2><div class='g'>" + esc(nom) + " · " + esc(qui) + " · " + esc(plusieursJours ? t("mrDuAu", { du, au }) : du) + "</div>" +
+      "<h4>" + esc(t("mrVentes")) + " : " + T.nbVentes + " · " + esc(t("mrTotal")) + " : " + esc(f(T.net)) + "</h4>" +
+      (modes.length ? "<table>" + modes.map((m) => "<tr><td>" + esc(t(m.mode)) + "</td><td class='r'>" + m.nb + "</td><td class='r'>" + esc(f(m.montant)) + "</td></tr>").join("") + "</table>" : "") +
+      (ventes.length ? "<h4>" + esc(t("mrMesVentes")) + "</h4><table>" + ventes.map((v) => "<tr><td>" + esc(v.piece) + "</td><td>" + esc(v.date + " " + v.heure) + "</td><td>" + esc(lm(v.mode)) + "</td><td>" + esc(v.articles || "") + "</td><td class='r'>" + esc(f(v.montant)) + "</td></tr>").join("") + "</table>" : "");
+    imprimerRapportHtml(t("mrTitre"), h);
+  };
 }
 function fenetreRetour() {
   const deja = (o, idx) => { let q = 0; (o.retours || []).forEach((r) => (r.lignes || []).forEach((l) => { if (l.index === idx) q += Number(l.quantite) || 0; })); return Math.round(q * 1000) / 1000; };
@@ -1192,7 +1229,8 @@ function fenetreRetour() {
   }
   $("rtGo").onclick = chercher; $("rtNum").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); chercher(); } });
 }
-$("btnRapport").onclick = fenetreMonRapport;
+$("btnRapport").onclick = () => fenetreMonRapport();
+$("ouvRapport").onclick = () => fenetreMonRapport();
 $("btnChangerPoint").onclick = () => { if (E.panier && E.panier.length && !confirm(t("chgPointPanier"))) return; E.panier = []; choisirMarchand().catch((e) => erreur(e.message)); };
 $("btnRetour").onclick = fenetreRetour;
 
