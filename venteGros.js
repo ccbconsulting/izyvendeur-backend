@@ -56,6 +56,9 @@ function sansAccents(s) {
   return String(s == null ? "" : s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+// Etape 98 : taille comparee sans espaces ni accents ni casse (« 10 ml » = « 10ml » = « 10 ML »).
+function cleTaille(s) { return sansAccents(s).replace(/\s+/g, ""); }
+
 // Chiffres seuls ; « 00237... » / « +237... » / « 237... » / « 6... » designent le meme abonne : on compare les 9 derniers chiffres.
 function chiffresTelephone(t) {
   let d = String(t == null ? "" : t).replace(/\D/g, "");
@@ -103,7 +106,7 @@ function validerRegles(entree, produitsConnus) {
     const produitId = r.produitId ? String(r.produitId) : null;
     if (produitId && produitsConnus && produitsConnus.indexOf(produitId) === -1) return { erreur: "Tarif " + (i + 1) + " : article inconnu." };
     const taille = String(r.taille == null ? "" : r.taille).trim().slice(0, 40);
-    const cle = (produitId || "") + "|" + sansAccents(taille) + "|" + seuil;
+    const cle = (produitId || "") + "|" + cleTaille(taille) + "|" + seuil;
     if (vus[cle]) return { erreur: "Tarif " + (i + 1) + " : doublon (même article, même taille, même minimum)." };
     vus[cle] = true;
     out.push({ id: "r" + (i + 1), produitId, taille, seuil, prix });
@@ -113,7 +116,7 @@ function validerRegles(entree, produitsConnus) {
 
 function specificite(r, item) {
   if (r.produitId && r.produitId !== item.productId) return -1;
-  if (r.taille && sansAccents(r.taille) !== sansAccents(item.taille)) return -1;
+  if (r.taille && cleTaille(r.taille) !== cleTaille(item.taille)) return -1;
   return (r.produitId ? 2 : 0) + (r.taille ? 1 : 0);
 }
 
@@ -153,10 +156,10 @@ function lignesTarifs(gros, catalogue, fr, formatFcfa, sansSeuil) {
   let source = g.regles;
   if (sansSeuil) { // une seule ligne par cible : le prix le plus bas
     const m = {};
-    source.forEach((r) => { const k = (r.produitId || "") + "|" + sansAccents(r.taille); if (!m[k] || r.prix < m[k].prix) m[k] = r; });
+    source.forEach((r) => { const k = (r.produitId || "") + "|" + cleTaille(r.taille); if (!m[k] || r.prix < m[k].prix) m[k] = r; });
     source = Object.keys(m).map((k) => m[k]);
   }
-  const tri = source.slice().sort((a, b) => a.seuil - b.seuil || sansAccents(a.taille).localeCompare(sansAccents(b.taille)) || a.prix - b.prix);
+  const tri = source.slice().sort((a, b) => a.seuil - b.seuil || cleTaille(a.taille).localeCompare(cleTaille(b.taille)) || a.prix - b.prix);
   return tri.map((r) => {
     const cible = [r.produitId ? (noms[r.produitId] || "") : "", r.taille || ""].filter(Boolean).join(" ") || (fr ? "tous articles" : "all items");
     if (sansSeuil) return "• " + cible + " : " + formatFcfa(r.prix);
@@ -195,7 +198,7 @@ function importerRegles(gros, lignes, catalogue) {
       if (connue) taille = connue;
       else avertissements.push(ref + " : la taille « " + taille + " » n'existe dans aucun article du catalogue (ce tarif ne s'appliquera à rien tant qu'elle n'existe pas).");
     }
-    const cle = (r) => (r.produitId || "") + "|" + sansAccents(r.taille) + "|" + r.seuil;
+    const cle = (r) => (r.produitId || "") + "|" + cleTaille(r.taille) + "|" + r.seuil;
     const nouv = { produitId, taille, seuil, prix };
     const ex = regles.filter((r) => cle(r) === cle(nouv))[0];
     if (ex) { ex.prix = prix; misAJour++; } else { regles.push(nouv); ajoutes++; }
