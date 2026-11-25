@@ -703,6 +703,7 @@ function createCatalogEngine(merchantKey, options) {
 
   // Etape 87 : le robot WhatsApp ne vend que des quantites ENTIERES - pour un article « vente decimale » (stock 2.5), il ne voit que la partie entiere.
   function virtualStockBot(productId, variant) {
+    if (variant && variant.prixADefinir === true) return 0; // Etape 102 : jamais propose par le bot tant que le prix n'est pas defini
     const v = virtualStock(productId, variant);
     const p = state.catalog.filter((x) => x.id === productId)[0];
     return p && p.venteDecimale === true && !p.stockIllimite ? Math.floor(v) : v;
@@ -2958,11 +2959,12 @@ function createCatalogEngine(merchantKey, options) {
   // qu'au proprietaire par la route (jamais a un magasinier ni a un employe).
   function getSyntheseStock() {
     if (!state) return null;
-    let nbArticles = 0, nbVariantes = 0, pieces = 0, valeurCout = 0, sansPrixAchat = 0;
+    let nbArticles = 0, nbVariantes = 0, pieces = 0, valeurCout = 0, sansPrixAchat = 0, sansPrixVente = 0;
     state.catalog.forEach((p) => {
       nbArticles++;
       (p.variantes || []).forEach((v) => {
         nbVariantes++;
+        if (v.prixADefinir === true) sansPrixVente++;
         const q = Number(v.stockReel) || 0;
         pieces = arrondi3(pieces + q);
         if (q <= 0) return;
@@ -2971,7 +2973,7 @@ function createCatalogEngine(merchantKey, options) {
         else sansPrixAchat++;
       });
     });
-    return { nbArticles, nbVariantes, pieces, valeurCout: Math.round(valeurCout), sansPrixAchat };
+    return { nbArticles, nbVariantes, pieces, valeurCout: Math.round(valeurCout), sansPrixAchat, sansPrixVente };
   }
 
   // ---------------- Rapports (periode) ----------------
@@ -3496,6 +3498,8 @@ function createCatalogEngine(merchantKey, options) {
       const p = state.catalog.filter((x) => x.id === (ligne && ligne.productId))[0];
       const v = p ? p.variantes.filter((vv) => vv.couleur === ligne.couleur && vv.taille === ligne.taille)[0] : null;
       if (!p || !v) return { erreur: "Article introuvable (" + ((ligne && ligne.productId) || "?") + ")." };
+      // Etape 102 : un article cree par synchronisation sans prix de vente reste invendable tant que le prix n'est pas saisi dans CE point.
+      if (v.prixADefinir === true) return { erreur: "Le prix de vente de \"" + p.nom + "\" (" + joindreVariante(" ", v.couleur, v.taille) + ") n'est pas encore défini dans ce point de vente.", code: "prix_a_definir" };
       // Etape 87 : un article marque « vente decimale » (au kilo, au metre...) accepte une quantite au millieme (0.250) ; tout autre
       // article exige un nombre ENTIER (comportement historique, desormais strict). Le montant d'une ligne est arrondi au FCFA.
       const decimal = p.venteDecimale === true;
@@ -4352,6 +4356,68 @@ function createCatalogEngine(merchantKey, options) {
     return { crees };
   }
 
+  // ---------------- Etape 102 : synchronisation du catalogue (point source -> autres points) ----------------
+  // Lecture cote SOURCE : articles (tous, ou ceux dont l'id est dans `ids`) sous une forme neutre ; les photos ne sont jamais copiees (une URL partagee
+  // serait supprimee dans tous les points des qu'un point la retire).
+  function exporterPourSynchro(ids) {
+    if (!state) return [];
+    return state.catalog.filter((p) => !ids || ids.indexOf(p.id) !== -1).map((p) => ({
+      id: p.id, nom: p.nom, cat: p.cat || "", reference: p.reference || "", unite: p.unite || "", venteDecimale: p.venteDecimale === true,
+      variantes: (p.variantes || []).map((v) => ({ couleur: v.couleur || "", taille: v.taille || "", codeBarres: v.codeBarres || "", prix: v.prix, prixAchat: v.prixAchat, seuilAlerte: v.seuilAlerte }))
+    }));
+  }
+  // Cote CIBLE. Un article absent est CREE (stock 0) ; un article present (meme reference, sinon meme nom) n'est jamais cree en double : avec `aligner`, son nom,
+  // sa categorie, son unite et ses variantes manquantes sont alignes sur la source. Le stock et les prix d'un article ou d'une variante EXISTANTS ne sont
+  // jamais touches. `avecPrix` : le prix de vente de la source est copie une fois ; sinon la variante est creee « prix a definir » (invendable tant que le
+  // proprietaire de ce point n'a pas saisi son prix). `avecCouts` : le prix d'achat est copie (jamais le stock). `simuler` : compte sans rien modifier.
+  function appliquerSynchro(articles, opts) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const o = opts || {};
+    const r = { crees: 0, variantesAjoutees: 0, alignes: 0, ignores: 0, sansPrix: 0 };
+    const codes = new Set();
+    state.catalog.forEach((p) => (p.variantes || []).forEach((v) => { if (v.codeBarres) codes.add(String(v.codeBarres).toLowerCase()); }));
+    const nouvelleVariante = (sv) => {
+      const v = { couleur: sv.couleur || "", taille: sv.taille || "", prix: 0, stockReel: 0, seuilAlerte: Number.isFinite(Number(sv.seuilAlerte)) ? Number(sv.seuilAlerte) : 1 };
+      const prix = Number(sv.prix);
+      if (o.avecPrix && Number.isFinite(prix) && prix > 0) v.prix = Math.round(prix); else { v.prixADefinir = true; r.sansPrix++; }
+      if (o.avecCouts && sv.prixAchat !== undefined && sv.prixAchat !== null && sv.prixAchat !== "" && Number.isFinite(Number(sv.prixAchat))) v.prixAchat = Number(sv.prixAchat);
+      const code = sv.codeBarres ? String(sv.codeBarres) : "";
+      if (code && !codes.has(code.toLowerCase())) { v.codeBarres = code; codes.add(code.toLowerCase()); }
+      return v;
+    };
+    (articles || []).forEach((sp) => {
+      const t = transferts.trouverArticle(state.catalog, { reference: sp.reference, nom: sp.nom, couleur: "\u0000", taille: "\u0000" });
+      if (!t || !t.produit) {
+        r.crees++; r.variantesAjoutees += (sp.variantes || []).length;
+        if (o.simuler) { (sp.variantes || []).forEach((sv) => { const prix = Number(sv.prix); if (!(o.avecPrix && Number.isFinite(prix) && prix > 0)) r.sansPrix++; }); return; }
+        let id = sp.id || ("art-" + Date.now());
+        if (state.catalog.some((x) => x.id === id)) { let n = 2; while (state.catalog.some((x) => x.id === id + "-" + n)) n++; id = id + "-" + n; }
+        const np = { id, nom: sp.nom, cat: sp.cat || "", photos: [], variantes: (sp.variantes || []).map(nouvelleVariante) };
+        if (sp.reference) np.reference = sp.reference;
+        if (sp.unite) np.unite = sp.unite;
+        if (sp.venteDecimale === true && o.caisseActive === true) np.venteDecimale = true;
+        state.catalog.push(np);
+        return;
+      }
+      if (!o.aligner) { r.ignores++; return; }
+      const prod = t.produit; let change = false;
+      if (sp.nom && prod.nom !== sp.nom) { change = true; if (!o.simuler) prod.nom = sp.nom; }
+      if ((sp.cat || "") !== (prod.cat || "")) { change = true; if (!o.simuler) prod.cat = sp.cat || ""; }
+      if (sp.reference && !prod.reference) { change = true; if (!o.simuler) prod.reference = sp.reference; }
+      if ((sp.unite || "") !== (prod.unite || "")) { change = true; if (!o.simuler) { if (sp.unite) prod.unite = sp.unite; else delete prod.unite; } }
+      (sp.variantes || []).forEach((sv) => {
+        const tv = transferts.trouverArticle([prod], { reference: prod.reference, nom: prod.nom, couleur: sv.couleur, taille: sv.taille });
+        if (tv && tv.variante) return;
+        change = true; r.variantesAjoutees++;
+        if (o.simuler) { const prix = Number(sv.prix); if (!(o.avecPrix && Number.isFinite(prix) && prix > 0)) r.sansPrix++; return; }
+        prod.variantes.push(nouvelleVariante(sv));
+      });
+      if (change) r.alignes++; else r.ignores++;
+    });
+    if (!o.simuler && (r.crees || r.alignes)) saveState();
+    return r;
+  }
+
   // ---------------- Etape 78 : vente en gros - API pour server.js ----------------
   function getGros() { return state ? venteGros.assurer(state.gros) : null; }
   function enregistrerGros() { saveState(); }
@@ -4469,7 +4535,7 @@ function createCatalogEngine(merchantKey, options) {
     handleMessageSimulateur,
     resetSimulateur,
     getTableauDeBord,
-    getSyntheseStock,
+    getSyntheseStock, exporterPourSynchro, appliquerSynchro,
     getRapportCommandes,
     listerInstantanesInventaire,
     enregistrerInstantaneInventaire,

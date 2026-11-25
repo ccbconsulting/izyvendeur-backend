@@ -1053,6 +1053,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/points": "point_vente_cree", // Etape 94
   "PUT /api/:id/point": "point_vente_modifie", // Etape 94
   "POST /api/:id/entrees": "entree_fournisseur", // Etape 100
+  "POST /api/:id/synchro": "synchro_catalogue", // Etape 102
   "POST /api/:id/transferts": "transfert_envoye", // Etape 95
   "POST /api/:id/transferts/:bonId/reception": "transfert_recu",
   "POST /api/:id/transferts/:bonId/annulation": "transfert_annule",
@@ -1803,6 +1804,68 @@ app.get("/api/:id/transferts", protegerAcces, (req, res) => {
   }
   bons = bons.slice().sort((a, b) => b.numero - a.numero).slice(0, 500);
   res.json({ point: req.params.id, aRecevoir: g.store.bons.filter((b) => b.statut === "en_transit" && b.vers === req.params.id).length, bons: bons.map((b) => vueBonPour(g, b)) });
+});
+
+// ---------------- Synchronisation du catalogue (Etape 102) ----------------
+// Le catalogue « maitre » d'un groupe se tient dans UN SEUL point : l'entrepot s'il y en a un (le premier cree), sinon le compte principal. Depuis ce point,
+// le PROPRIETAIRE (ou le super-administrateur) peut creer dans les autres points les articles manquants, sans les retaper : nom, reference, categorie, unite,
+// variantes, stock a 0. Les prix restent libres dans chaque point : le prix de vente n'est copie qu'UNE fois si le proprietaire le choisit, le prix d'achat
+// suit (jamais montre a un employe). Rien n'est supprime ni ecrase dans un point : le stock et les prix des articles existants ne sont jamais touches.
+function pointSourceDuGroupe(pid) {
+  const principal = engines[pid]; if (!principal) return null;
+  const ent = pointsDe(pid).filter((e) => e.merchant.typePoint === "entrepot" && e.merchant.actif !== false && e.merchant.type === "catalogue");
+  ent.sort((a, b) => String(a.merchant.creeLe || "").localeCompare(String(b.merchant.creeLe || "")));
+  return ent[0] || principal;
+}
+function nbPointsActifsGroupe(pid) { return 1 + pointsDe(pid).filter((e) => e.merchant.actif !== false && e.merchant.type === "catalogue").length; }
+function genererReferences(catalogue) {
+  const prises = new Set(catalogue.filter((p) => p && p.reference).map((p) => String(p.reference).trim().toLowerCase()));
+  return catalogue.map((p) => {
+    if (!p || typeof p !== "object" || (p.reference && String(p.reference).trim())) return p;
+    const base = String(p.nom || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "ART";
+    let n = 1, ref; do { ref = base + "-" + String(n++).padStart(3, "0"); } while (prises.has(ref.toLowerCase()));
+    prises.add(ref.toLowerCase());
+    return Object.assign({}, p, { reference: ref });
+  });
+}
+function gardeSynchro(req, res) {
+  if (!verifierPortee(req, res, req.params.id)) return null;
+  const entry = engines[req.params.id];
+  if (!entry) { res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id }); return null; }
+  if (entry.merchant.type !== "catalogue" || !entry.engine || !entry.engine.exporterPourSynchro) { res.status(409).json({ erreur: "La synchronisation concerne les commerces de type catalogue." }); return null; }
+  if (!estGestionnaireDuMarchand(req, req.params.id)) { res.status(403).json({ erreur: "Réservé au propriétaire." }); return null; }
+  const pid = principalDe(entry.merchant);
+  const source = pointSourceDuGroupe(pid);
+  const cibles = [engines[pid]].concat(pointsDe(pid)).filter((e) => e && e.merchant.id !== source.merchant.id && e.merchant.actif !== false && e.merchant.type === "catalogue" && e.engine && e.engine.appliquerSynchro);
+  return { entry, source, estSource: source.merchant.id === entry.merchant.id, cibles, pid };
+}
+const vueCible = (e) => ({ id: e.merchant.id, nom: e.merchant.nom, typePoint: e.merchant.typePoint === "entrepot" ? "entrepot" : "point" });
+app.get("/api/:id/synchro", protegerAcces, (req, res) => {
+  if (!verifierPortee(req, res, req.params.id)) return;
+  const entry = engines[req.params.id];
+  if (!entry || entry.merchant.type !== "catalogue" || !estGestionnaireDuMarchand(req, req.params.id)) return res.json({ estSource: false, cibles: [] });
+  const g = gardeSynchro(req, res); if (!g) return;
+  res.json({ estSource: g.estSource, source: vueCible(g.source), cibles: g.estSource ? g.cibles.map(vueCible) : [] });
+});
+app.post("/api/:id/synchro", protegerAcces, (req, res) => {
+  const g = gardeSynchro(req, res); if (!g) return;
+  if (!g.estSource) return res.status(409).json({ erreur: "Le catalogue se synchronise depuis « " + g.source.merchant.nom + " », point source du groupe." });
+  const b = req.body || {};
+  const ids = Array.isArray(b.productIds) ? b.productIds.map(String) : null;
+  if (ids && !ids.length) return res.status(400).json({ erreur: "Aucun article à synchroniser." });
+  let cibles = g.cibles;
+  if (Array.isArray(b.cibles)) { cibles = g.cibles.filter((e) => b.cibles.indexOf(e.merchant.id) !== -1); if (cibles.length !== new Set(b.cibles).size) return res.status(400).json({ erreur: "Point de destination inconnu : choisissez des points de votre groupe." }); }
+  if (!cibles.length) return res.status(400).json({ erreur: "Aucun point de destination." });
+  const articles = g.entry.engine.exporterPourSynchro(ids);
+  if (ids && articles.length !== ids.length) return res.status(400).json({ erreur: "Article introuvable dans le point source." });
+  const simuler = b.simuler === true;
+  const resultat = cibles.map((e) => {
+    const r = e.engine.appliquerSynchro(articles, { avecPrix: b.avecPrix === true, avecCouts: e.merchant.optionClientsCredit === true, aligner: b.aligner === true, caisseActive: e.merchant.optionCaissePos === true, simuler });
+    return Object.assign({ id: e.merchant.id, nom: e.merchant.nom }, r);
+  });
+  if (simuler) res.locals.audit = { ignorer: true };
+  else res.locals.audit = { detail: { cibles: resultat.map((r) => ({ point: r.nom, crees: r.crees, alignes: r.alignes, variantes: r.variantesAjoutees })), avecPrix: b.avecPrix === true, aligner: b.aligner === true, articles: articles.length } };
+  res.json({ simule: simuler, articles: articles.length, cibles: resultat });
 });
 
 // ---------------- Entrees fournisseur et journal des mouvements (Etape 100) ----------------
@@ -3195,6 +3258,8 @@ function nettoyerChampsCaisseCatalogue(catalogue, caisseActive) {
       q.variantes = q.variantes.map((v) => {
         if (!v || typeof v !== "object") return v;
         const w = Object.assign({}, v);
+        if (w.prixADefinir === true && Number(w.prix) > 0) delete w.prixADefinir; // Etape 102 : le prix est saisi, l'article devient vendable
+        else if (w.prixADefinir !== true) delete w.prixADefinir;
         const code = w.codeBarres == null ? "" : String(w.codeBarres).trim();
         if (!code) { delete w.codeBarres; return w; }
         if (!RE_CODE_BARRES.test(code)) throw new Error("Code-barres invalide pour \"" + nom + "\" : lettres, chiffres, . _ - / uniquement (48 caractères maximum).");
@@ -3278,6 +3343,7 @@ app.put("/api/:id/catalogue", protegerAcces, (req, res) => {
     corps = filet.catalogue;
     suppressionsBloquees = suppressionsBloquees.concat(filet.restaures);
   }
+  if (Array.isArray(corps) && estGestionnaireDuMarchand(req, req.params.id)) { const src = pointSourceDuGroupe(principalDe(entry.merchant)); if (src && src.merchant.id === entry.merchant.id && nbPointsActifsGroupe(principalDe(entry.merchant)) >= 2) corps = genererReferences(corps); }
   if (Array.isArray(corps)) {
     try { corps = nettoyerChampsCaisseCatalogue(corps, entry.merchant.optionCaissePos === true); corps = fusionnerPrixAchat(corps, catalogueAvant, peutGererCouts(req, entry)); }
     catch (e) { return res.status(400).json({ erreur: e.message }); }
@@ -3727,6 +3793,13 @@ function parserPrixFcfa(texte) {
 // articles existants, contrairement a PUT /api/:id/catalogue ci-dessus) et ignore silencieusement toute
 // ligne dont le nom existe deja (comparaison insensible a la casse/aux espaces) pour proteger contre un
 // double-import accidentel si le meme fichier est renvoye deux fois.
+// Etape 102 : modele de fichier (CSV, separateur « ; », ouvrable dans Excel) pour preparer un catalogue avec variantes avant l'import. Entetes seulement : aucune ligne d'exemple
+// (elle serait importee). Une ligne par VARIANTE ; les lignes de meme « Nom » forment un seul article.
+app.get("/modele-catalogue.csv", (req, res) => {
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=\"modele_catalogue.csv\"");
+  res.send("\uFEFFCatégorie;Nom;Référence;Couleur;Taille;Unité;Prix d'achat;Prix;Stock;Seuil;Code-barres\r\n");
+});
 app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.single("fichier"), (req, res) => {
   const entry = getMarchandAutorise(req, res, "catalogue"); if (!entry) return;
   if (entry.engine.type !== "catalogue") return res.status(400).json({ erreur: "Ce marchand n'est pas de type catalogue." });
@@ -3739,7 +3812,7 @@ app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.si
   const separateur = lignes[0].indexOf(";") !== -1 ? ";" : ",";
   const entetes = parserLigneCsv(lignes[0], separateur).map((h) => h.toLowerCase());
   const idx = (motCle) => entetes.findIndex((h) => h.indexOf(motCle) !== -1);
-  const iCat = idx("categorie");
+  const iCat = entetes.findIndex((h) => h.indexOf("categorie") !== -1 || h.indexOf("catégorie") !== -1);
   const iNom = idx("nom");
   const iPrix = entetes.findIndex((h) => h.indexOf("prix") !== -1 && h.indexOf("achat") === -1 && h.indexOf("revient") === -1); // Etape 90 : « Prix d'achat » n'est pas le prix de vente
   const iAchat = entetes.findIndex((h) => h.indexOf("prix d'achat") !== -1 || h.indexOf("prix achat") !== -1 || h.indexOf("cout") !== -1 || h.indexOf("coût") !== -1 || h.indexOf("revient") !== -1);
@@ -3761,11 +3834,29 @@ app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.si
   const groupes = new Map(); // "categorie||nom" -> { cat, nom, variantes: [] }
   const doublons = [];
   const erreurs = [];
+  // Etape 102 : option « mettre a jour le stock des articles existants » (stock de depart d'un point apres la synchronisation) : une ligne dont l'article existe deja
+  // (meme reference, sinon meme nom) fixe le stock de sa variante ; prix, nom et le reste ne sont jamais touches. Les lignes d'articles inconnus sont creees comme avant.
+  const majStock = !!req.body && (req.body.majStock === "1" || req.body.majStock === "true" || req.body.majStock === true);
+  const majs = [];
 
   for (let i = 1; i < lignes.length; i++) {
     const champs = parserLigneCsv(lignes[i], separateur);
     const nom = (champs[iNom] || "").trim();
     if (!nom) continue;
+    if (majStock && iStock !== -1) {
+      const ref = iRef !== -1 ? (champs[iRef] || "").trim() : "", cc = iCouleur !== -1 ? (champs[iCouleur] || "").trim() : "", tt = iTaille !== -1 ? (champs[iTaille] || "").trim() : "";
+      let t = transferts.trouverArticle(catalogueActuel, { reference: ref, nom, couleur: cc, taille: tt });
+      if (t && !t.variante) t = transferts.trouverArticle(catalogueActuel, { reference: ref, nom, couleur: cc || "-", taille: tt || "Unique" });
+      if (t && t.produit) {
+        let v = t.variante;
+        if (!v && !cc && !tt && t.produit.variantes.length === 1) v = t.produit.variantes[0];
+        const q = Number(String(champs[iStock]).trim().replace(",", "."));
+        if (!v) erreurs.push("ligne " + (i + 1) + " (" + nom + ") : variante inconnue (" + (cc || "-") + " / " + (tt || "-") + "), stock non modifié");
+        else if (!Number.isFinite(q) || q < 0 || (t.produit.venteDecimale !== true && !Number.isInteger(q))) erreurs.push("ligne " + (i + 1) + " (" + nom + ") : stock invalide");
+        else { v.stockReel = q; majs.push(nom); }
+        continue;
+      }
+    }
     const cat = iCat !== -1 ? (champs[iCat] || "").trim() : "";
     const prix = parserPrixFcfa(champs[iPrix]);
     if (prix == null) { erreurs.push("ligne " + (i + 1) + " (" + nom + ") : prix invalide"); continue; }
@@ -3796,15 +3887,15 @@ app.post("/api/:id/catalogue/importer", protegerAcces, uploadFichierCatalogue.si
     return a;
   });
 
-  if (!nouveauxArticles.length) {
-    return res.json({ ajoutes: 0, doublonsIgnores: doublons, erreurs });
+  if (!nouveauxArticles.length && !majs.length) {
+    return res.json({ ajoutes: 0, stockMisAJour: 0, doublonsIgnores: doublons, erreurs });
   }
 
   let catalogueFinal;
   try { catalogueFinal = fusionnerPrixAchat(nettoyerChampsCaisseCatalogue(catalogueActuel.concat(nouveauxArticles), entry.merchant.optionCaissePos === true), catalogueActuel, peutGererCouts(req, entry)); }
   catch (e) { return res.status(400).json({ erreur: "Import refusé, rien n'a été ajouté : " + e.message }); }
   const nouveau = entry.engine.updateCatalog(catalogueFinal);
-  res.json({ ajoutes: nouveauxArticles.length, doublonsIgnores: doublons, erreurs, catalogue: peutGererCouts(req, entry) ? nouveau : sansCouts(nouveau) });
+  res.json({ ajoutes: nouveauxArticles.length, stockMisAJour: majs.length, doublonsIgnores: doublons, erreurs, catalogue: peutGererCouts(req, entry) ? nouveau : sansCouts(nouveau) });
 });
 
 // Photo d'un article : uploadee vers Cloudflare R2 (voir storage.js), puis son URL publique est ajoutee
@@ -5108,6 +5199,7 @@ function syntheseStockTransferts(req, entry, debutISO, finISO) {
   if (!st) return null;
   const out = { typePoint: entry.merchant.typePoint === "entrepot" ? "entrepot" : "point", nbArticles: st.nbArticles, pieces: st.pieces };
   if (gest) { out.valeurCout = st.valeurCout; out.sansPrixAchat = st.sansPrixAchat; }
+  out.sansPrixVente = st.sansPrixVente || 0; // Etape 102 : articles crees par synchronisation et encore sans prix de vente dans ce point
   const principal = engines[principalDe(entry.merchant)];
   const store = principal && principal.engine && principal.engine.getTransferts ? principal.engine.getTransferts() : null;
   const groupe = store ? [principal].concat(pointsDe(principal.merchant.id)) : [];
