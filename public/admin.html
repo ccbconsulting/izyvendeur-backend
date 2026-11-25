@@ -36,6 +36,11 @@
   button.principal { background: #14213d; color: #fff; border: none; padding: 9px 18px; border-radius: 6px; margin-top: 10px; font-size: 0.95em; }
   button.danger { background: #fdecec; color: #b3261e; border: 1px solid #f3c8c6; border-radius: 6px; padding: 4px 9px; }
   .alerte-stock { border-color: #e3a008 !important; background: #fff8e6; }
+  .prix-a-definir { display:inline-block; margin-top:2px; padding:1px 6px; border-radius:10px; background:#fde8e8; color:#9b1c1c; font-size:0.78em; font-weight:600; }
+  .sy-fond { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px; }
+  .sy-boite { background:#fff; color:#111; max-width:580px; width:100%; max-height:90vh; overflow:auto; border-radius:10px; padding:20px; }
+  .sy-boite label.sy-ligne { display:block; margin:6px 0; font-weight:400; }
+  .sy-boite .sy-apercu { background:#f3f4f6; border-radius:6px; padding:8px 10px; margin:10px 0; font-size:0.92em; }
   .raison { font-size: 0.85em; color: #6b7685; margin-top: 4px; }
   .rappel-ok { color: #1e7e4a; }
   .rappel-echec { color: #c0392b; font-weight: 600; }
@@ -473,7 +478,7 @@ const I18N = {
     ongletCompte: "Mon compte",
     ongletJournal: "Journal",
     ongletEntrees: "Entrées", roleEntrees: "Réception des entrées (valide les transferts reçus de son point ; ne voit jamais les coûts)", enTitre: "Entrées de stock", enNote: "Une entrée, c'est de la marchandise qui arrive dans ce point : soit livrée par un fournisseur (le stock augmente aussitôt), soit envoyée par un autre point (le stock n'augmente qu'après votre validation des quantités réellement reçues). Une entrée n'est jamais modifiée : une erreur se corrige par un ajustement ou un transfert inverse.", enAValider: "À valider (transferts envoyés vers ce point)", enNouvelle: "Nouvelle entrée fournisseur", enFournisseur: "Fournisseur", enBonLivraison: "N° du bon de livraison (facultatif)", enColPrixAchat: "Prix d'achat unitaire (FCFA)", enEnregistrer: "Enregistrer l'entrée", enPrixObligatoire: "Le prix d'achat est obligatoire pour chaque article reçu.", enFournisseurRequis: "Indiquez le fournisseur.", enAucuneQte: "Saisissez au moins une quantité.", enOk: "Entrée {n} enregistrée : le stock a augmenté.", enHistorique: "Historique des entrées", enColOrigine: "Origine", enTypeFournisseur: "Fournisseur", enTypeTransfert: "Transfert", enStatutAValider: "À valider", enStatutValidee: "Validée", enStatutEcart: "Validée avec écart", enNoteCouts: "Les prix d'achat saisis sont conservés sur l'entrée. Ils servent aux marges et à la valeur du stock lorsque l'option « Clients, crédit et marge » est active ; le prix d'achat de l'article devient alors le coût moyen pondéré.", enAucuneEntree: "Aucune entrée pour le moment.", enColQte: "Quantité", enColDate: "Date", enColNum: "N°", enColValeur: "Valeur (coût)", enSaisieReservee: "La saisie des entrées fournisseur est réservée au propriétaire et au magasinier.", enPasArticle: "Aucun article en stock suivi : créez d'abord vos articles dans « Catalogue & stock ».", act_entree_fournisseur: "Entrée de stock fournisseur",
-    rsVueVentes: "Liste des ventes", rsVueStock: "Rapport de stock", rsTitre: "Rapport de stock", rsPeriode: "Période", rsAujourdhui: "Aujourd'hui", rsHier: "Hier", rs7: "7 derniers jours", rsMois: "Ce mois", rsPerso: "Dates au choix", rsDu: "Du", rsAu: "Au", rsPoint: "Point", rsCePoint: "Ce point", rsTousPoints: "Tous les points (consolidé)", rsAfficher: "Afficher", rsExporter: "Exporter en CSV", rsColArticle: "Article", rsColInitial: "Stock initial", rsColEntrees: "Entrées fournisseur", rsColRecus: "Transferts reçus", rsColRetours: "Retours clients", rsColEnvoyes: "Transferts envoyés", rsColVendus: "Vendus", rsColCorrections: "Corrections", rsColRestant: "Stock restant", rsColEcart: "Autres écarts", rsColValeur: "Valeur restante (coût)", rsTotal: "Total", rsAvantJournal: "Le journal des mouvements commence le {d} : avant cette date, le stock initial et les mouvements ne sont pas connus.", rsAucun: "Aucun mouvement ni stock sur cette période.", rsNoteEcart: "« Autres écarts » : variation du stock qu'aucun mouvement enregistré n'explique. Elle doit rester à zéro.", rsSansPrix: "{n} article(s) en stock sans prix d'achat : la valeur est incomplète.", rsFormule: "Stock initial + entrées fournisseur + transferts reçus + retours clients − transferts envoyés − vendus + corrections = stock restant.", rsColParPoint: "Restant : {p}", rsSansJournal: "(pas de journal avant cette date)", rsErreurPeriode: "Choisissez deux dates valides.",
+    rsVueVentes: "Liste des ventes", rsVueStock: "Rapport de stock", rsTitre: "Rapport de stock", rsPeriode: "Période", rsAujourdhui: "Aujourd'hui", rsHier: "Hier", rs7: "7 derniers jours", rsMois: "Ce mois", rsPerso: "Dates au choix", rsDu: "Du", rsAu: "Au", rsPoint: "Point", rsCePoint: "Ce point", rsTousPoints: "Tous les points (consolidé)", rsAfficher: "Afficher", rsExporter: "Exporter en CSV", rsColArticle: "Article", rsColInitial: "Stock initial", rsColEntrees: "Entrées fournisseur", rsColRecus: "Transferts reçus", rsColRetours: "Retours clients", rsColEnvoyes: "Transferts envoyés", rsColVendus: "Vendus", rsColCorrections: "Corrections", rsColRestant: "Stock restant", rsColEcart: "Autres écarts", rsColValeur: "Valeur restante (coût)", rsTotal: "Total", rsAvantJournal: "Le journal des mouvements commence le {d} : avant cette date, le stock initial et les mouvements ne sont pas connus.", rsAucun: "Aucun mouvement ni stock sur cette période.", rsNoteEcart: "« Autres écarts » : variation du stock qu'aucun mouvement enregistré n'explique. Elle doit rester à zéro.", rsSansPrix: "{n} article(s) en stock sans prix d'achat : la valeur est incomplète.", rsFormule: "Stock initial + entrées fournisseur + transferts reçus + retours clients − transferts envoyés − vendus + corrections = stock restant.", rsColParPoint: "Restant : {p}", rsSansJournal: "(pas de journal avant cette date)", rsErreurPeriode: "Choisissez deux dates valides.", sySynchroBouton: "Synchroniser les articles vers les autres points", syTitreCreation: "Synchroniser les nouveaux articles avec les autres points ?", syTitreTout: "Synchroniser le catalogue vers les autres points", syArticles: "Articles concernés", syCibles: "Points de destination", syPrixOui: "Même prix de vente dans ces points (copié une seule fois ; chaque point pourra ensuite le modifier librement)", syPrixNon: "Prix de vente à fixer par chaque point", syNotePrixNon: "Pensez à saisir le prix de vente dans chaque point : tant qu'il manque, l'article ne se vend pas (caisse et WhatsApp).", syAligner: "Aligner aussi les noms, catégories et variantes des articles déjà présents (reconnus par la référence, sinon par le nom). Le stock et les prix ne sont jamais modifiés.", syNoteCopie: "Sont copiés : nom, référence, catégorie, unité, variantes et prix d'achat (visible de vous seul). Le stock démarre à 0 : il se remplit par les entrées et les transferts.", syApercuLigne: "{p} : {c} article(s) à créer, {a} à aligner, {v} variante(s) ajoutée(s)", syApercuRien: "{p} : déjà identique, rien à faire", syOk: "Synchroniser", syPlusTard: "Plus tard", syAnnuler: "Annuler", syFait: "Synchronisation terminée.", syFaitLigne: "{p} : {c} créé(s), {a} aligné(s)", syPrixADefinir: "Prix à définir", syNoteSansPrix: "{n} variante(s) sans prix de vente : elles ne se vendent pas tant que le prix n'est pas saisi dans ce point.", syAucuneCible: "Choisissez au moins un point de destination.", syNoteSource: "Ce point est le catalogue maître du groupe : créez et corrigez vos articles ici, puis synchronisez-les vers les autres points.", syModele: "Télécharger le modèle de fichier (CSV)", syMajStock: "Mettre à jour le stock des articles déjà présents (stock de départ) : le stock des lignes reconnues est remplacé, les prix ne sont pas modifiés.", syStockMaj: " {n} stock(s) mis à jour.", syEntrepotCible: "(entrepôt)",
     ongletTransferts: "Transferts", roleMagasinier: "Magasinier (envoie et reçoit les transferts de stock de son point, sans voir les coûts)", trTitre: "Transferts de stock", trNote: "Un transfert se fait en deux temps : le point d'origine envoie (son stock baisse aussitôt, le bon est « en transit »), puis le point de destination confirme les quantités réellement reçues (son stock augmente ; tout écart est enregistré). Un bon n'est jamais modifié : une erreur se corrige par un bon inverse.", trARecevoir: "Bons à réceptionner", trAucunARecevoir: "Aucun bon en attente de réception.", trDe: "de", trEnvoye: "Envoyé", trRecu: "Reçu", trMotifEcart: "Motif de l'écart (obligatoire si des quantités manquent)", trConfirmer: "Confirmer la réception", trPrixCreer: "Cet article n'existe pas ici : indiquez son prix de vente dans ce point pour le créer.", trRecuOk: "Réception enregistrée.", trNouveau: "Nouveau transfert", trDestination: "Destination", trChoisir: "Choisir...", trFiltrer: "Filtrer les articles", trColArticle: "Article", trColRef: "Référence", trColStock: "Stock", trColQte: "Quantité", trNoteLabel: "Note (facultatif)", trEnvoyer: "Envoyer le transfert", trEnvoyeOk: "Bon {n} envoyé : le stock a été retiré de ce point, le bon est en transit.", trChoisirDest: "Choisissez une destination.", trAucuneQte: "Saisissez au moins une quantité.", trAucuneDest: "Aucune destination disponible (il faut un autre point de vente ou un entrepôt actif).", trHistorique: "Bons de ce point", trTousGroupe: "Afficher tous les bons du groupe", trColNum: "N°", trColDate: "Date", trColTrajet: "Trajet", trColStatut: "Statut", trColEcart: "Écart", trColValeur: "Valeur (coût)", trStatut_en_transit: "En transit", trStatut_recu: "Reçu", trStatut_annule: "Annulé", trAnnuler: "Annuler", trMotifAnnulation: "Motif de l'annulation :", trAnnuleOk: "Bon annulé : le stock est revenu au point d'origine.", trVoir: "Détail", trStocksGroupe: "Stocks de tous les points", trStocksNote: "Les articles sont rapprochés entre les points par leur référence interne (à défaut, par leur nom).", trTotal: "Total", trMouvements: "Mouvements de stock", trColEnvoye: "Envoyé", trColRecu: "Reçu", trColEcartQte: "Écarts", trColEnTransit: "En transit", ptType: "Type", ptTypePoint: "Point de vente (avec caisse)", ptTypeEntrepot: "Entrepôt", ptTypeNote: "Un entrepôt a un catalogue et un stock, mais ni caisse ni vente : il alimente vos points de vente par des transferts. Il compte dans le nombre de points autorisés.", act_transfert_envoye: "Transfert de stock envoyé", act_transfert_recu: "Transfert de stock reçu", act_transfert_annule: "Transfert de stock annulé",
     ongletPoints: "Points de vente", ptTitre: "Points de vente", ptNote: "Chaque point de vente est un commerce indépendant : son propre catalogue, ses prix, son stock, sa caisse, ses employés et ses rapports. Vous les gérez tous avec le même compte, et vous choisissez le point à consulter dans le sélecteur en haut de la page.", ptQuota: "Points de vente utilisés : {n} sur {q} (compte principal compris)", ptQuotaAtteint: "Le nombre de points de vente autorisés est atteint. Contactez l'administrateur IzyVendeur pour en ajouter.", ptColNom: "Point de vente", ptColStatut: "Statut", ptColArticles: "Articles", ptColEmployes: "Employés", ptColActions: "Actions", ptPrincipal: "Compte principal", ptActif: "Actif", ptInactif: "Désactivé", ptOuvrir: "Ouvrir", ptRenommer: "Renommer", ptDesactiver: "Désactiver", ptReactiver: "Réactiver", ptPromptNom: "Nouveau nom du point de vente :", ptConfirmDesactiver: "Désactiver ce point de vente ? Ses employés ne pourront plus se connecter ; l'historique est conservé et vous pourrez le réactiver.", ptNouveau: "Créer un point de vente", ptNomLabel: "Nom du nouveau point de vente", ptCopierDe: "Catalogue de départ", ptCatalogueVide: "Catalogue vide", ptCopierStocks: "Copier aussi les quantités en stock (sinon elles démarrent à 0)", ptCreer: "Créer ce point de vente", ptCree: "Point de vente créé : {nom}. Ajoutez ses employés et ses prix depuis le sélecteur en haut.", ptNomRequis: "Indiquez le nom du point de vente.", ptRapportTitre: "Rapport consolidé", ptRapportNote: "Ventes de tous vos points de vente sur la période choisie, avec le total général.", ptDu: "Du", ptAu: "Au", ptAfficher: "Afficher", ptColVentes: "Ventes", ptColNet: "Net encaissé", ptColAnnule: "Annulé", ptColRetours: "Retours", ptColNetRetours: "Net après retours", ptTotal: "Total", ptParMode: "Par mode de paiement", ptMarge: "Marge", ptQuotaLabel: "Nombre de points de vente autorisés (compte principal compris)", ptQuotaNote: "Réservé au super-administrateur : le propriétaire voit ce nombre mais ne peut pas le modifier. 1 = un seul point de vente.", ptQuotaOk: "Quota de points de vente enregistré.", ptComptePoint: "Ce point de vente dépend du compte principal « {p} » : ses options, son quota et ses identifiants se règlent sur ce compte principal.", nmNbPoints: "Nombre de points de vente autorisés (principal compris)", act_point_vente_cree: "Point de vente créé", act_point_vente_modifie: "Point de vente modifié",
     titreJournal: "Journal d'activité",
@@ -644,6 +649,7 @@ const I18N = {
     act_infos_marchand_modifiees: "Infos du marchand modifiées",
     act_catalogue_modifie: "Catalogue modifié",
     act_catalogue_importe: "Catalogue importé (fichier)",
+    act_synchro_catalogue: "Catalogue synchronisé vers d'autres points",
     act_vente_caisse: "Vente en caisse",
     act_caisse_ouverte: "Caisse ouverte",
     act_caisse_fermee: "Caisse fermée",
@@ -1973,7 +1979,7 @@ const I18N = {
     ongletCompte: "My account",
     ongletJournal: "Log",
     ongletEntrees: "Receipts", roleEntrees: "Receiving goods (validates transfers received at their point; never sees costs)", enTitre: "Stock receipts", enNote: "A receipt is stock arriving at this point: either delivered by a supplier (stock goes up immediately) or sent by another point (stock only goes up after you validate the quantities actually received). A receipt is never edited: a mistake is corrected with an adjustment or a reverse transfer.", enAValider: "To validate (transfers sent to this point)", enNouvelle: "New supplier receipt", enFournisseur: "Supplier", enBonLivraison: "Delivery note no. (optional)", enColPrixAchat: "Unit purchase price (FCFA)", enEnregistrer: "Save the receipt", enPrixObligatoire: "The purchase price is required for every item received.", enFournisseurRequis: "Enter the supplier.", enAucuneQte: "Enter at least one quantity.", enOk: "Receipt {n} saved: stock has increased.", enHistorique: "Receipt history", enColOrigine: "Origin", enTypeFournisseur: "Supplier", enTypeTransfert: "Transfer", enStatutAValider: "To validate", enStatutValidee: "Validated", enStatutEcart: "Validated with discrepancy", enNoteCouts: "Purchase prices entered are kept on the receipt. They feed margins and stock value when the \"Customers, credit and margin\" option is on; the item's purchase price then becomes the weighted average cost.", enAucuneEntree: "No receipt yet.", enColQte: "Quantity", enColDate: "Date", enColNum: "No.", enColValeur: "Value (cost)", enSaisieReservee: "Supplier receipts can only be entered by the owner and the storekeeper.", enPasArticle: "No tracked stock item: create your items first in \"Catalogue & stock\".", act_entree_fournisseur: "Supplier stock receipt",
-    rsVueVentes: "Sales list", rsVueStock: "Stock report", rsTitre: "Stock report", rsPeriode: "Period", rsAujourdhui: "Today", rsHier: "Yesterday", rs7: "Last 7 days", rsMois: "This month", rsPerso: "Custom dates", rsDu: "From", rsAu: "To", rsPoint: "Point", rsCePoint: "This point", rsTousPoints: "All points (consolidated)", rsAfficher: "Show", rsExporter: "Export as CSV", rsColArticle: "Item", rsColInitial: "Opening stock", rsColEntrees: "Supplier receipts", rsColRecus: "Transfers in", rsColRetours: "Customer returns", rsColEnvoyes: "Transfers out", rsColVendus: "Sold", rsColCorrections: "Adjustments", rsColRestant: "Closing stock", rsColEcart: "Other differences", rsColValeur: "Closing value (cost)", rsTotal: "Total", rsAvantJournal: "The stock movement log starts on {d}: before that date, opening stock and movements are unknown.", rsAucun: "No movement or stock in this period.", rsNoteEcart: "\"Other differences\": stock change that no recorded movement explains. It should stay at zero.", rsSansPrix: "{n} item(s) in stock without a purchase price: the value is incomplete.", rsFormule: "Opening stock + supplier receipts + transfers in + customer returns - transfers out - sold + adjustments = closing stock.", rsColParPoint: "Closing: {p}", rsSansJournal: "(no log before this date)", rsErreurPeriode: "Choose two valid dates.",
+    rsVueVentes: "Sales list", rsVueStock: "Stock report", rsTitre: "Stock report", rsPeriode: "Period", rsAujourdhui: "Today", rsHier: "Yesterday", rs7: "Last 7 days", rsMois: "This month", rsPerso: "Custom dates", rsDu: "From", rsAu: "To", rsPoint: "Point", rsCePoint: "This point", rsTousPoints: "All points (consolidated)", rsAfficher: "Show", rsExporter: "Export as CSV", rsColArticle: "Item", rsColInitial: "Opening stock", rsColEntrees: "Supplier receipts", rsColRecus: "Transfers in", rsColRetours: "Customer returns", rsColEnvoyes: "Transfers out", rsColVendus: "Sold", rsColCorrections: "Adjustments", rsColRestant: "Closing stock", rsColEcart: "Other differences", rsColValeur: "Closing value (cost)", rsTotal: "Total", rsAvantJournal: "The stock movement log starts on {d}: before that date, opening stock and movements are unknown.", rsAucun: "No movement or stock in this period.", rsNoteEcart: "\"Other differences\": stock change that no recorded movement explains. It should stay at zero.", rsSansPrix: "{n} item(s) in stock without a purchase price: the value is incomplete.", rsFormule: "Opening stock + supplier receipts + transfers in + customer returns - transfers out - sold + adjustments = closing stock.", rsColParPoint: "Closing: {p}", rsSansJournal: "(no log before this date)", rsErreurPeriode: "Choose two valid dates.", sySynchroBouton: "Sync items to the other points", syTitreCreation: "Sync the new items with the other points?", syTitreTout: "Sync the catalog to the other points", syArticles: "Items concerned", syCibles: "Destination points", syPrixOui: "Same selling price in these points (copied once; each point can then change it freely)", syPrixNon: "Selling price to be set by each point", syNotePrixNon: "Remember to enter the selling price in each point: until it is set, the item cannot be sold (till and WhatsApp).", syAligner: "Also align names, categories and variants of items already present (matched by reference, otherwise by name). Stock and prices are never changed.", syNoteCopie: "Copied: name, reference, category, unit, variants and purchase price (visible to you only). Stock starts at 0: it is filled by receipts and transfers.", syApercuLigne: "{p}: {c} item(s) to create, {a} to align, {v} variant(s) added", syApercuRien: "{p}: already identical, nothing to do", syOk: "Sync", syPlusTard: "Later", syAnnuler: "Cancel", syFait: "Sync complete.", syFaitLigne: "{p}: {c} created, {a} aligned", syPrixADefinir: "Price to set", syNoteSansPrix: "{n} variant(s) without a selling price: they cannot be sold until the price is entered in this point.", syAucuneCible: "Choose at least one destination point.", syNoteSource: "This point is the group's master catalog: create and fix your items here, then sync them to the other points.", syModele: "Download the file template (CSV)", syMajStock: "Update the stock of items already present (opening stock): the stock of matched lines is replaced, prices are not changed.", syStockMaj: " {n} stock(s) updated.", syEntrepotCible: "(warehouse)",
     ongletTransferts: "Transfers", roleMagasinier: "Storekeeper (sends and receives stock transfers for their point, without seeing costs)", trTitre: "Stock transfers", trNote: "A transfer takes two steps: the origin point sends (its stock drops right away, the slip is \"in transit\"), then the destination point confirms the quantities actually received (its stock goes up; any difference is recorded). A slip is never edited: a mistake is corrected with a reverse slip.", trARecevoir: "Slips to receive", trAucunARecevoir: "No slip waiting to be received.", trDe: "from", trEnvoye: "Sent", trRecu: "Received", trMotifEcart: "Reason for the difference (required if quantities are missing)", trConfirmer: "Confirm reception", trPrixCreer: "This item does not exist here: enter its selling price in this point to create it.", trRecuOk: "Reception recorded.", trNouveau: "New transfer", trDestination: "Destination", trChoisir: "Choose...", trFiltrer: "Filter items", trColArticle: "Item", trColRef: "Reference", trColStock: "Stock", trColQte: "Quantity", trNoteLabel: "Note (optional)", trEnvoyer: "Send the transfer", trEnvoyeOk: "Slip {n} sent: the stock was removed from this point, the slip is in transit.", trChoisirDest: "Choose a destination.", trAucuneQte: "Enter at least one quantity.", trAucuneDest: "No destination available (you need another active point of sale or warehouse).", trHistorique: "Slips of this point", trTousGroupe: "Show all slips of the group", trColNum: "No.", trColDate: "Date", trColTrajet: "Route", trColStatut: "Status", trColEcart: "Difference", trColValeur: "Value (cost)", trStatut_en_transit: "In transit", trStatut_recu: "Received", trStatut_annule: "Cancelled", trAnnuler: "Cancel", trMotifAnnulation: "Reason for cancelling:", trAnnuleOk: "Slip cancelled: the stock went back to the origin point.", trVoir: "Details", trStocksGroupe: "Stock of all points", trStocksNote: "Items are matched across points by their internal reference (otherwise by name).", trTotal: "Total", trMouvements: "Stock movements", trColEnvoye: "Sent", trColRecu: "Received", trColEcartQte: "Differences", trColEnTransit: "In transit", ptType: "Type", ptTypePoint: "Point of sale (with till)", ptTypeEntrepot: "Warehouse", ptTypeNote: "A warehouse has a catalogue and stock, but no till and no sales: it supplies your points of sale through transfers. It counts in the number of allowed points.", act_transfert_envoye: "Stock transfer sent", act_transfert_recu: "Stock transfer received", act_transfert_annule: "Stock transfer cancelled",
     ongletPoints: "Points of sale", ptTitre: "Points of sale", ptNote: "Each point of sale is an independent business: its own catalogue, prices, stock, till, employees and reports. You manage them all with the same account, and you pick the point to view in the selector at the top of the page.", ptQuota: "Points of sale used: {n} of {q} (main account included)", ptQuotaAtteint: "The number of allowed points of sale has been reached. Contact the IzyVendeur administrator to add more.", ptColNom: "Point of sale", ptColStatut: "Status", ptColArticles: "Items", ptColEmployes: "Employees", ptColActions: "Actions", ptPrincipal: "Main account", ptActif: "Active", ptInactif: "Deactivated", ptOuvrir: "Open", ptRenommer: "Rename", ptDesactiver: "Deactivate", ptReactiver: "Reactivate", ptPromptNom: "New name of the point of sale:", ptConfirmDesactiver: "Deactivate this point of sale? Its employees will no longer be able to sign in; the history is kept and you can reactivate it.", ptNouveau: "Create a point of sale", ptNomLabel: "Name of the new point of sale", ptCopierDe: "Starting catalogue", ptCatalogueVide: "Empty catalogue", ptCopierStocks: "Also copy the stock quantities (otherwise they start at 0)", ptCreer: "Create this point of sale", ptCree: "Point of sale created: {nom}. Add its employees and prices from the selector at the top.", ptNomRequis: "Enter the name of the point of sale.", ptRapportTitre: "Consolidated report", ptRapportNote: "Sales of all your points of sale over the chosen period, with the grand total.", ptDu: "From", ptAu: "To", ptAfficher: "Show", ptColVentes: "Sales", ptColNet: "Net collected", ptColAnnule: "Cancelled", ptColRetours: "Returns", ptColNetRetours: "Net after returns", ptTotal: "Total", ptParMode: "By payment method", ptMarge: "Margin", ptQuotaLabel: "Number of allowed points of sale (main account included)", ptQuotaNote: "Super-administrator only: the owner sees this number but cannot change it. 1 = a single point of sale.", ptQuotaOk: "Points-of-sale quota saved.", ptComptePoint: "This point of sale depends on the main account \"{p}\": its options, quota and credentials are set on that main account.", nmNbPoints: "Number of allowed points of sale (main included)", act_point_vente_cree: "Point of sale created", act_point_vente_modifie: "Point of sale modified",
     titreJournal: "Activity log",
@@ -2144,6 +2150,7 @@ const I18N = {
     act_infos_marchand_modifiees: "Merchant info changed",
     act_catalogue_modifie: "Catalog changed",
     act_catalogue_importe: "Catalog imported (file)",
+    act_synchro_catalogue: "Catalog synced to other points",
     act_vente_caisse: "Register sale",
     act_caisse_ouverte: "Register opened",
     act_caisse_fermee: "Register closed",
@@ -4209,6 +4216,60 @@ function monterImportPhotos(catalogueServeur, inputEl, zoneEl, onTermine, genre)
   });
 }
 
+// Etape 102 : fenetre de synchronisation du catalogue (point source -> autres points). opts : { source, cibles, productIds (ou null = tout), titre, noms, aligner (case a cocher proposee) }.
+// Le prix de vente n'est copie que si le proprietaire choisit « meme prix » ; un apercu (sans rien modifier) montre ce qui sera cree / aligne dans chaque point.
+function synchroDialogue(opts) {
+  return new Promise((resolve) => {
+    const fond = document.createElement("div"); fond.className = "sy-fond"; fond.id = "syFond";
+    const noms = (opts.noms || []).map((n) => "<li>" + esc(n) + "</li>").join("");
+    fond.innerHTML = "<div class='sy-boite' id='syBoite'><h3 style='margin-top:0;'>" + esc(opts.titre) + "</h3>" +
+      (noms ? "<p><strong>" + esc(t("syArticles")) + "</strong></p><ul style='margin:4px 0 10px 18px;'>" + noms + "</ul>" : "") +
+      "<p><strong>" + esc(t("syCibles")) + "</strong></p>" +
+      opts.cibles.map((c) => "<label class='sy-ligne'><input type='checkbox' class='syCible' value=\"" + esc(c.id) + "\" checked /> " + esc(c.nom) + (c.typePoint === "entrepot" ? " " + esc(t("syEntrepotCible")) : "") + "</label>").join("") +
+      "<p style='margin-top:12px;'><strong>" + esc(t("theadPrixFcfa")) + "</strong></p>" +
+      "<label class='sy-ligne'><input type='radio' name='syPrix' value='oui' checked /> " + esc(t("syPrixOui")) + "</label>" +
+      "<label class='sy-ligne'><input type='radio' name='syPrix' value='non' /> " + esc(t("syPrixNon")) + "</label>" +
+      "<p class='raison' id='syNotePrix' style='display:none;'>" + esc(t("syNotePrixNon")) + "</p>" +
+      (opts.aligner ? "<label class='sy-ligne' style='margin-top:10px;'><input type='checkbox' id='syAligner' checked /> " + esc(t("syAligner")) + "</label>" : "") +
+      "<p class='raison'>" + esc(t("syNoteCopie")) + "</p>" +
+      "<div class='sy-apercu' id='syApercu'>…</div><p class='erreur' id='syErreur' style='display:none;'></p>" +
+      "<div style='display:flex;gap:8px;justify-content:flex-end;margin-top:12px;'><button id='syNon'>" + esc(t(opts.productIds ? "syPlusTard" : "syAnnuler")) + "</button><button id='syOk' class='principal'>" + esc(t("syOk")) + "</button></div></div>";
+    document.body.appendChild(fond);
+    const q = (s) => fond.querySelector(s);
+    const choix = () => ({
+      cibles: Array.prototype.map.call(fond.querySelectorAll(".syCible:checked"), (x) => x.value),
+      avecPrix: q("input[name='syPrix']:checked").value === "oui",
+      aligner: !!opts.aligner && q("#syAligner").checked
+    });
+    const corps = (c, simuler) => JSON.stringify({ productIds: opts.productIds || undefined, cibles: c.cibles, avecPrix: c.avecPrix, aligner: opts.productIds ? false : c.aligner, simuler: simuler || undefined });
+    let jeton = 0;
+    async function apercu() {
+      const c = choix(), mon = ++jeton, zone = q("#syApercu");
+      q("#syNotePrix").style.display = c.avecPrix ? "none" : "";
+      if (!c.cibles.length) { zone.textContent = t("syAucuneCible"); return; }
+      try {
+        const r = await api("/api/" + opts.source + "/synchro", { method: "POST", body: corps(c, true) });
+        if (mon !== jeton) return;
+        zone.innerHTML = r.cibles.map((x) => (x.crees || x.alignes) ? esc(t("syApercuLigne", { p: x.nom, c: x.crees, a: x.alignes, v: x.variantesAjoutees })) : esc(t("syApercuRien", { p: x.nom }))).join("<br />");
+      } catch (e) { zone.textContent = e.message; }
+    }
+    fond.addEventListener("change", apercu);
+    q("#syNon").onclick = () => { fond.remove(); resolve(false); };
+    q("#syOk").onclick = async () => {
+      const c = choix(); const err = q("#syErreur"); err.style.display = "none";
+      if (!c.cibles.length) { err.textContent = t("syAucuneCible"); err.style.display = ""; return; }
+      q("#syOk").disabled = true;
+      try {
+        const r = await api("/api/" + opts.source + "/synchro", { method: "POST", body: corps(c, false) });
+        fond.remove();
+        alert(t("syFait") + "\n" + r.cibles.map((x) => t("syFaitLigne", { p: x.nom, c: x.crees, a: x.alignes })).join("\n"));
+        resolve(true);
+      } catch (e) { err.textContent = e.message; err.style.display = ""; q("#syOk").disabled = false; }
+    };
+    apercu();
+  });
+}
+
 async function renderCatalogue() {
   const zone = document.getElementById("contenuOnglet");
   zone.innerHTML = "<div class='chargement'>" + t("chargement") + "</div>";
@@ -4222,6 +4283,9 @@ async function renderCatalogue() {
   // (voir PUT /api/:id/catalogue) pour un appel direct hors interface.
   const estGestionnaireCatalogue = moi.role === "marchand" || moi.role === "superadmin";
   const coutsVisibles = marchandActif.optionClientsCredit === true && estGestionnaireCatalogue; // Etape 90 : prix d'achat (marge) - proprietaire seul
+  let syn = { estSource: false, cibles: [] }; // Etape 102 : ce point est-il le catalogue maitre du groupe ?
+  if (estGestionnaireCatalogue) { try { syn = await api("/api/" + marchandActif.id + "/synchro"); } catch (e) { syn = { estSource: false, cibles: [] }; } }
+  const nbSansPrix = local.reduce((n, p) => n + (p.variantes || []).filter((v) => v.prixADefinir === true).length, 0);
 
   // La photo, elle, s'enregistre immediatement (upload direct vers le serveur), contrairement au reste
   // du catalogue qui reste local tant que "Enregistrer le catalogue" n'est pas cliqué — d'où la nécessité
@@ -4311,7 +4375,7 @@ async function renderCatalogue() {
             "<tr>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='couleur' value=\"" + esc(v.couleur) + "\" /></td>" +
               "<td><input data-p='" + pi + "' data-v='" + vi + "' data-champ='taille' value=\"" + esc(v.taille) + "\" /></td>" +
-              "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='prix' value='" + v.prix + "' /></td>" +
+              "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='prix' value='" + v.prix + "' />" + (v.prixADefinir === true ? "<br /><span class='prix-a-definir'>" + esc(t("syPrixADefinir")) + "</span>" : "") + "</td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='stockReel' step='" + (p.venteDecimale ? "any" : "1") + "' value='" + v.stockReel + "' class=\"" + (!p.stockIllimite && v.stockReel <= (v.seuilAlerte || 0) ? "alerte-stock" : "") + "\" /></td>" +
               "<td title=\"" + esc(t("titleStockVirtuel")) + "\">" + (p.stockIllimite ? "∞ " + t("stockIllimiteSymbole") : (v.stockVirtuel != null ? v.stockVirtuel : v.stockReel)) + "</td>" +
               "<td><input type='number' data-p='" + pi + "' data-v='" + vi + "' data-champ='seuilAlerte' value='" + (v.seuilAlerte || 0) + "' /></td>" +
@@ -4331,11 +4395,16 @@ async function renderCatalogue() {
             : "") +
         "</div>"
       ).join("") + (local.length ? "" : "<p>" + t("aucunArticle") + "</p>") + "</div>" +
+      (nbSansPrix ? "<p class='erreur' id='noteSansPrixVente'>" + esc(t("syNoteSansPrix", { n: nbSansPrix })) + "</p>" : "") +
+      (syn.estSource && syn.cibles.length ? "<p class='raison' id='noteSourceCatalogue'>" + esc(t("syNoteSource")) + "</p>" : "") +
       "<button id='btnAjouterProduit'>" + t("btnAjouterArticle") + "</button> " +
       "<button id='btnSauverCatalogue' class='principal'>" + t("btnEnregistrerCatalogue") + "</button>" +
+      (syn.estSource && syn.cibles.length ? " <button id='btnSynchroTout'>" + t("sySynchroBouton") + "</button>" : "") +
       "<div class='bloc-import-catalogue' style='margin-top:16px;'>" +
         "<input type='file' accept='.csv,text/csv' id='champFichierImportCatalogue' /> " +
         "<button id='btnImporterCatalogue'>" + t("btnImporterCatalogue") + "</button>" +
+        "<br /><label style='font-weight:400;'><input type='checkbox' id='champMajStock' /> " + esc(t("syMajStock")) + "</label>" +
+        "<br /><a href='/modele-catalogue.csv' download>" + esc(t("syModele")) + "</a>" +
       "</div>" +
       (catalogue.length
         ? "<div class='bloc-import-photos'>" +
@@ -4442,12 +4511,14 @@ async function renderCatalogue() {
       if (!fichier) { alert(t("alertChoisirFichierImport")); return; }
       const donnees = new FormData();
       donnees.append("fichier", fichier);
+      if (document.getElementById("champMajStock") && document.getElementById("champMajStock").checked) donnees.append("majStock", "1");
       btn.disabled = true;
       try {
         const reponse = await fetch("/api/" + marchandActif.id + "/catalogue/importer", { method: "POST", body: donnees });
         const j = await reponse.json();
         if (!reponse.ok) throw new Error(j.erreur || reponse.statusText);
         let message = t("msgImportResultat", { ajoutes: j.ajoutes });
+        if (j.stockMisAJour) message += t("syStockMaj", { n: j.stockMisAJour });
         if (j.doublonsIgnores && j.doublonsIgnores.length) {
           message += t("msgImportDoublons", { n: j.doublonsIgnores.length, noms: j.doublonsIgnores.join(", ") });
         }
@@ -4533,11 +4604,18 @@ async function renderCatalogue() {
     });
     document.getElementById("btnSauverCatalogue").onclick = async () => {
       try {
+        // Etape 102 : articles crees dans CE enregistrement (absents du catalogue charge) : proposes a la synchronisation si ce point est le catalogue maitre.
+        const nouveaux = local.filter((p) => !catalogue.some((c) => c.id === p.id));
         await api("/api/" + marchandActif.id + "/catalogue", { method: "PUT", body: JSON.stringify(local) });
         alert(t("alertCatalogueEnregistre"));
+        if (syn.estSource && syn.cibles.length && nouveaux.length) {
+          await synchroDialogue({ source: marchandActif.id, cibles: syn.cibles, productIds: nouveaux.map((p) => p.id), noms: nouveaux.map((p) => p.nom), titre: t("syTitreCreation"), aligner: false });
+        }
         renderCatalogue();
       } catch (e) { alert(t("erreurPrefixe") + e.message); }
     };
+    const btnSyn = document.getElementById("btnSynchroTout");
+    if (btnSyn) btnSyn.onclick = async () => { await synchroDialogue({ source: marchandActif.id, cibles: syn.cibles, productIds: null, noms: [], titre: t("syTitreTout"), aligner: true }); renderCatalogue(); };
   }
   redraw();
 }
@@ -8004,11 +8082,12 @@ async function renderTableauDeBord() {
       tuile("transferts", fmt(tr.recuPeriode.quantite), t("dashRecuPeriode"));
     tuiles += "</div>";
     const note = sp.valeurCout !== undefined && sp.sansPrixAchat > 0 ? "<p class='raison'>" + esc(t("dashSansPrixAchat", { n: sp.sansPrixAchat })) + "</p>" : "";
+    const noteVente = sp.sansPrixVente > 0 ? "<p class='erreur'>" + esc(t("syNoteSansPrix", { n: sp.sansPrixVente })) + "</p>" : "";
     const surveiller = "<h3>" + t("h3StockASurveiller") + "</h3>" + (d.stockASurveiller.length
       ? "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadSeuilAlerte") + "</th></tr>" +
         d.stockASurveiller.map((v) => "<tr class=\"" + (v.stockVirtuel <= 0 ? "alerte-stock" : "") + "\"><td>" + esc(v.produit) + "</td><td>" + esc(v.couleur) + "</td><td>" + esc(v.taille) + "</td><td>" + v.stockReel + "</td><td>" + v.seuil + "</td></tr>").join("") + "</table>"
       : "<p class='raison'>" + t("msgAucunArticleSousLeSeuil") + "</p>");
-    return "<p class='raison'>" + esc(t("dashEntrepotNote")) + "</p>" + bandeauRetardTransferts(d) + tuiles + note + tableBonsEnAttente(tr) + surveiller;
+    return "<p class='raison'>" + esc(t("dashEntrepotNote")) + "</p>" + bandeauRetardTransferts(d) + noteVente + tuiles + note + tableBonsEnAttente(tr) + surveiller;
   }
 
   function sectionDashboard(d, estCatalogue) {
@@ -8071,7 +8150,7 @@ async function renderTableauDeBord() {
   const carteCaisse = !posSeul ? "" : "<div class='tuile' style='margin:12px 0;'><div class='libelle' style='font-weight:700;'>" + esc(t("dashCaisseTitre")) + "</div><div>" +
     (sessionDash ? esc(t("dashCaisseOuverte", { u: sessionDash.caissier || "—", h: new Date(sessionDash.dateOuverture).toLocaleTimeString(localeCourante(), { hour: "2-digit", minute: "2-digit" }), f: (sessionDash.fondInitial || 0).toLocaleString(localeCourante()) })) : esc(t("dashCaisseFermee"))) +
     "</div><div style='margin-top:8px;'><a href='/caisse' target='_blank' rel='noopener'>" + esc(t("dashCaisseOuvrir")) + "</a></div></div>";
-  return carteCaisse + bandeauRetardTransferts(d) + tuiles + (estCatalogue && d.stockPoint && d.stockPoint.transferts && d.stockPoint.transferts.bonsEnAttente.length ? tableBonsEnAttente(d.stockPoint.transferts) : "") + sparkline + top + bas;
+  return carteCaisse + bandeauRetardTransferts(d) + (estCatalogue && d.stockPoint && d.stockPoint.sansPrixVente > 0 ? "<p class='erreur'>" + esc(t("syNoteSansPrix", { n: d.stockPoint.sansPrixVente })) + "</p>" : "") + tuiles + (estCatalogue && d.stockPoint && d.stockPoint.transferts && d.stockPoint.transferts.bonsEnAttente.length ? tableBonsEnAttente(d.stockPoint.transferts) : "") + sparkline + top + bas;
   }
 
   function sectionDashboardHeb(d) {
