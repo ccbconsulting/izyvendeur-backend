@@ -70,4 +70,44 @@ function rapport(m, variantes, du, au) {
   return { du, au, debutJournal, avantJournal: debutJournal === null || du < debutJournal, lignes, totaux: tot };
 }
 
-module.exports = { TYPES, assurer, cle, noter, rapport, arrondi3 };
+function norm(x) { return String(x == null ? "" : x).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim(); }
+
+// Valeur au cout de la fin de periode (reservee au proprietaire) : ajoutee a un rapport DEJA calcule.
+function ajouterValeurs(r) {
+  let tot = 0, connu = false;
+  r.lignes.forEach((l) => { if (l.prixAchat != null && Number.isFinite(l.prixAchat)) { l.valeurRestante = Math.round(l.restant * l.prixAchat); tot += l.valeurRestante; connu = true; } else l.valeurRestante = null; });
+  r.totaux.valeurRestante = connu ? tot : null;
+  r.totaux.sansPrixAchat = r.lignes.filter((l) => l.restant > 0 && l.valeurRestante === null).length;
+  return r;
+}
+
+// Vue consolidee d'un groupe de points : meme article = meme reference interne (sinon meme nom) + couleur + taille. Les transferts entre points restent
+// visibles (envoyes d'un cote, recus de l'autre) et s'annulent dans les totaux.  rapports : [{ id, nom, typePoint, rapport }].
+function consolider(rapports) {
+  const noms = new Map(); // cle -> ligne consolidee
+  const TOT = ["initial", "entree", "recu", "retour", "envoye", "vente", "ajust", "restant", "ecart"];
+  let du = null, au = null, debut = null, avant = false;
+  rapports.forEach((pt) => {
+    du = pt.rapport.du; au = pt.rapport.au;
+    if (pt.rapport.debutJournal && (debut === null || pt.rapport.debutJournal < debut)) debut = pt.rapport.debutJournal;
+    if (pt.rapport.avantJournal) avant = true;
+    pt.rapport.lignes.forEach((l) => {
+      const k = (norm(l.reference) || "n:" + norm(l.nom)) + "|" + norm(l.couleur) + "|" + norm(l.taille);
+      let c = noms.get(k);
+      if (!c) { c = { nom: l.nom, reference: l.reference, categorie: l.categorie, couleur: l.couleur, taille: l.taille, unite: l.unite, parPoint: {}, valeurRestante: 0, valeurConnue: false }; TOT.forEach((t) => { c[t] = 0; }); noms.set(k, c); }
+      TOT.forEach((t) => { c[t] = arrondi3(c[t] + l[t]); });
+      c.parPoint[pt.id] = arrondi3((c.parPoint[pt.id] || 0) + l.restant);
+      if (l.valeurRestante != null) { c.valeurRestante += l.valeurRestante; c.valeurConnue = true; }
+    });
+  });
+  const lignes = Array.from(noms.values());
+  lignes.forEach((c) => { if (!c.valeurConnue) c.valeurRestante = null; delete c.valeurConnue; });
+  lignes.sort((x, y) => (x.categorie || "").localeCompare(y.categorie || "") || x.nom.localeCompare(y.nom) || (x.couleur + x.taille).localeCompare(y.couleur + y.taille));
+  const totaux = {}; TOT.forEach((t) => { totaux[t] = arrondi3(lignes.reduce((s, l) => s + l[t], 0)); });
+  const vals = lignes.filter((l) => l.valeurRestante != null);
+  totaux.valeurRestante = vals.length ? vals.reduce((s, l) => s + l.valeurRestante, 0) : null;
+  totaux.sansPrixAchat = lignes.filter((l) => l.restant > 0 && l.valeurRestante === null).length;
+  return { du, au, debutJournal: debut, avantJournal: avant, points: rapports.map((p) => ({ id: p.id, nom: p.nom, typePoint: p.typePoint })), lignes, totaux };
+}
+
+module.exports = { TYPES, assurer, cle, noter, rapport, ajouterValeurs, consolider, arrondi3 };

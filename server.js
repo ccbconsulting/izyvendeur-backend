@@ -29,6 +29,7 @@ const consoMeta = require("./consoMeta"); // Etape 80 : estimation de la consomm
 const izyfacture = require("./izyfacture");
 const rapportCaisse = require("./rapportCaisse");
 const transferts = require("./transferts"); // Etape 95
+const mouvementsLib = require("./mouvements"); // Etape 100-101
 const remisesLib = require("./remises");
 const { creerMoteurFacturation, METHODES: METHODES_PAIEMENT, CATEGORIES_DEPENSE } = require("./facturation");
 const cryptoUtil = require("./crypto-util");
@@ -1855,8 +1856,17 @@ app.get("/api/:id/stock/rapport", protegerAcces, (req, res) => {
   if (entry.merchant.type !== "catalogue" || !entry.engine || !entry.engine.getRapportStock) return res.status(409).json({ erreur: "Le rapport de stock concerne les commerces de type catalogue." });
   const per = transferts.periode(req.query.du, req.query.au); if (per.erreur) return res.status(400).json({ erreur: per.erreur });
   if (Date.parse(per.au) - Date.parse(per.du) > 366 * 86400000) return res.status(400).json({ erreur: "Période trop longue (366 jours maximum)." });
+  const gest = estGestionnaireDuMarchand(req, req.params.id);
+  // Vue consolidee de TOUS les points du groupe (proprietaire / super-administrateur seulement).
+  if (req.query.groupe === "1") {
+    if (!gest) return res.status(403).json({ erreur: "La vue de tous les points est réservée au propriétaire." });
+    const principal = engines[principalDe(entry.merchant)];
+    const groupe = principal ? [principal].concat(pointsDe(principal.merchant.id)) : [entry];
+    const rapports = groupe.filter((e) => e.engine && e.engine.getRapportStock).map((e) => ({ id: e.merchant.id, nom: e.merchant.nom, typePoint: e.merchant.typePoint === "entrepot" ? "entrepot" : "point", rapport: mouvementsLib.ajouterValeurs(e.engine.getRapportStock(per.du, per.au)) }));
+    return res.json(mouvementsLib.consolider(rapports));
+  }
   const r = entry.engine.getRapportStock(per.du, per.au);
-  if (!estGestionnaireDuMarchand(req, req.params.id)) r.lignes.forEach((l) => { delete l.prixAchat; delete l.prix; });
+  if (gest) mouvementsLib.ajouterValeurs(r); else r.lignes.forEach((l) => { delete l.prixAchat; delete l.prix; });
   res.json(r);
 });
 
