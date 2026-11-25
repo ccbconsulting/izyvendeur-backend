@@ -48,6 +48,10 @@
   .tuile .valeur { font-size: 1.6em; font-weight: 700; color: #14213d; }
   .tuile .libelle { font-size: 0.85em; color: #6b7685; margin-top: 2px; }
   .tuile.avertissement { border-color: #e3a008; background: #fff8e6; }
+  .tuile.retard { border-color: #d92d20; background: #fef3f2; }
+  .tuile.retard .valeur { color: #b42318; }
+  .bandeau-retard { margin: 10px 0 14px; padding: 10px 14px; border: 2px solid #d92d20; border-left-width: 6px; border-radius: 8px; background: #fef3f2; color: #7a1a12; font-weight: 600; }
+  tr.bon-retard td { color: #b42318; font-weight: 600; }
   .tuile.cliquable { cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; }
   .tuile.cliquable:hover { box-shadow: 0 2px 8px rgba(20,33,61,0.12); border-color: #9aa7b8; }
   .tuile.cliquable:focus-visible { outline: 2px solid #14213d; outline-offset: 2px; }
@@ -1173,6 +1177,7 @@ const I18N = {
     libelleConvEnAttente: "Conversations en attente d'un humain",
     libelleArticlesSurveiller: "Articles à surveiller",
     libelleRuptures: "Ruptures de stock",
+    dashStockValeur: "Valeur du stock (au coût)", dashStockPieces: "Pièces en stock", dashSansPrixAchat: "{n} article(s) en stock sans prix d'achat : la valeur est incomplète.", dashARecevoir: "Bons à réceptionner", dashEnTransit: "Bons envoyés, en transit", dashEnvoyePeriode: "Pièces envoyées (période)", dashRecuPeriode: "Pièces reçues (période)", dashRetardBandeau: "{n} bon(s) de transfert en transit depuis plus de {h} h : à réceptionner ou à relancer.", dashBonsAttenteTitre: "Bons de transfert en transit", dashBonARecevoir: "À réceptionner, envoyé par {p}", dashBonEnvoye: "Envoyé à {p}, pas encore réceptionné", dashDepuisH: "depuis {h} h", dashAucunBon: "Aucun bon en transit.", dashEntrepotTitre: "Entrepôt", dashEntrepotNote: "Un entrepôt n'a ni caisse ni ventes : voici son stock et ses mouvements.",
     h3Activite7j: "Activité des 7 derniers jours",
     joursAbrev: ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
     h3ArticlesTop: "Articles les plus vendus",
@@ -2670,6 +2675,7 @@ const I18N = {
     libelleConvEnAttente: "Conversations waiting for a human",
     libelleArticlesSurveiller: "Items to watch",
     libelleRuptures: "Out-of-stock items",
+    dashStockValeur: "Stock value (at cost)", dashStockPieces: "Pieces in stock", dashSansPrixAchat: "{n} item(s) in stock without a purchase price: the value is incomplete.", dashARecevoir: "Vouchers to receive", dashEnTransit: "Vouchers sent, in transit", dashEnvoyePeriode: "Pieces sent (period)", dashRecuPeriode: "Pieces received (period)", dashRetardBandeau: "{n} transfer voucher(s) in transit for more than {h} h: receive or follow up.", dashBonsAttenteTitre: "Transfer vouchers in transit", dashBonARecevoir: "To receive, sent by {p}", dashBonEnvoye: "Sent to {p}, not received yet", dashDepuisH: "for {h} h", dashAucunBon: "No voucher in transit.", dashEntrepotTitre: "Warehouse", dashEntrepotNote: "A warehouse has no till and no sales: here are its stock and movements.",
     h3Activite7j: "Activity over the last 7 days",
     joursAbrev: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     h3ArticlesTop: "Best-selling items",
@@ -7937,25 +7943,65 @@ async function renderTableauDeBord() {
   function estOngletVisible(idOnglet) {
     return !!document.querySelector("#barreOnglets button[data-onglet='" + idOnglet + "']");
   }
-  function tuile(idOngletCible, valeurHtml, libelle, avertissement) {
+  function tuile(idOngletCible, valeurHtml, libelle, avertissement, retard) {
     const cliquable = idOngletCible && estOngletVisible(idOngletCible);
-    const classes = "tuile" + (avertissement ? " avertissement" : "") + (cliquable ? " cliquable" : "");
+    const classes = "tuile" + (retard ? " retard" : avertissement ? " avertissement" : "") + (cliquable ? " cliquable" : "");
     const attrs = cliquable
       ? " data-tuile-onglet='" + idOngletCible + "' tabindex='0' role='button'"
       : "";
     return "<div class='" + classes + "'" + attrs + "><div class='valeur'>" + valeurHtml + "</div><div class='libelle'>" + libelle + "</div></div>";
   }
 
+  // Etape 99 : bandeau rouge si des bons de transfert sont restes « en transit » plus de 48 h (a recevoir ou envoyes par ce point).
+  function bandeauRetardTransferts(d) {
+    const tr = d && d.stockPoint && d.stockPoint.transferts;
+    if (!tr) return "";
+    const n = (tr.aRecevoirEnRetard || 0) + (tr.enTransitEnRetard || 0);
+    return n > 0 ? "<div class='bandeau-retard'>" + esc(t("dashRetardBandeau", { n: n, h: tr.seuilRetardH })) + "</div>" : "";
+  }
+
+  function tableBonsEnAttente(tr) {
+    if (!tr) return "";
+    return "<h3>" + t("dashBonsAttenteTitre") + "</h3>" + (tr.bonsEnAttente.length
+      ? "<table class='table-donnees'><tr><th>" + t("trColNum") + "</th><th>" + t("trColTrajet") + "</th><th>" + t("colRelDepuis") + "</th></tr>" +
+        tr.bonsEnAttente.map((b) => "<tr class='" + (b.enRetard ? "bon-retard" : "") + "'><td>" + esc(b.id) + "</td><td>" + esc(t(b.sens === "a_recevoir" ? "dashBonARecevoir" : "dashBonEnvoye", { p: b.autre })) + "</td><td>" + esc(t("dashDepuisH", { h: b.heures })) + "</td></tr>").join("") + "</table>"
+      : "<p class='raison'>" + t("dashAucunBon") + "</p>");
+  }
+
+  // Etape 99 : tableau de bord d'un ENTREPOT (ni caisse ni ventes) : stock, alertes, bons a receptionner / en transit, mouvements de la periode.
+  function sectionDashboardEntrepot(d) {
+    const sp = d.stockPoint, tr = sp.transferts, fmt = (x) => Number(x || 0).toLocaleString(localeCourante());
+    let tuiles = "<div class='tuiles'>";
+    if (sp.valeurCout !== undefined) tuiles += tuile("inventaire", fmt(sp.valeurCout) + " FCFA", t("dashStockValeur"), sp.sansPrixAchat > 0);
+    tuiles += tuile("inventaire", fmt(sp.pieces), t("dashStockPieces")) +
+      tuile("inventaire", d.alertesStock, t("libelleArticlesSurveiller"), d.alertesStock) +
+      tuile("inventaire", d.ruptures, t("libelleRuptures"), d.ruptures);
+    if (tr) tuiles += tuile("transferts", tr.aRecevoir, t("dashARecevoir"), tr.aRecevoir > 0, tr.aRecevoirEnRetard > 0) +
+      tuile("transferts", tr.enTransit, t("dashEnTransit"), false, tr.enTransitEnRetard > 0) +
+      tuile("transferts", fmt(tr.envoyePeriode.quantite), t("dashEnvoyePeriode")) +
+      tuile("transferts", fmt(tr.recuPeriode.quantite), t("dashRecuPeriode"));
+    tuiles += "</div>";
+    const note = sp.valeurCout !== undefined && sp.sansPrixAchat > 0 ? "<p class='raison'>" + esc(t("dashSansPrixAchat", { n: sp.sansPrixAchat })) + "</p>" : "";
+    const surveiller = "<h3>" + t("h3StockASurveiller") + "</h3>" + (d.stockASurveiller.length
+      ? "<table class='table-donnees'><tr><th>" + t("theadArticleCourt") + "</th><th>" + t("theadCouleur") + "</th><th>" + t("theadTaille") + "</th><th>" + t("theadStockReel") + "</th><th>" + t("theadSeuilAlerte") + "</th></tr>" +
+        d.stockASurveiller.map((v) => "<tr class=\"" + (v.stockVirtuel <= 0 ? "alerte-stock" : "") + "\"><td>" + esc(v.produit) + "</td><td>" + esc(v.couleur) + "</td><td>" + esc(v.taille) + "</td><td>" + v.stockReel + "</td><td>" + v.seuil + "</td></tr>").join("") + "</table>"
+      : "<p class='raison'>" + t("msgAucunArticleSousLeSeuil") + "</p>");
+    return "<p class='raison'>" + esc(t("dashEntrepotNote")) + "</p>" + bandeauRetardTransferts(d) + tuiles + note + tableBonsEnAttente(tr) + surveiller;
+  }
+
   function sectionDashboard(d, estCatalogue) {
+  if (estCatalogue && d.stockPoint && d.stockPoint.typePoint === "entrepot") return sectionDashboardEntrepot(d);
   const maxSpark = Math.max(1, ...d.sparkline7j);
   let tuiles = "<div class='tuiles'>" +
     tuile(estCatalogue ? "commandes" : "rendezvous", d.commandesPeriode, estCatalogue ? t(posSeul ? "libelleVentesPeriodeDash" : "libelleCommandesPeriodeDash") : t("libelleRdvPeriodeDash")) +
     tuile(estCatalogue ? (posSeul ? "rapportcaisse" : "rapports") : "rendezvous", (d.caPeriode || 0).toLocaleString(localeCourante()) + " FCFA", t("libelleCaPeriodeDash")) +
-    (posSeul ? "" : tuile("conversations", d.conversationsEnAttente, t("libelleConvEnAttente"), d.conversationsEnAttente));
+    (posSeul || !estOngletVisible("conversations") ? "" : tuile("conversations", d.conversationsEnAttente, t("libelleConvEnAttente"), d.conversationsEnAttente));
   if (estCatalogue) {
     tuiles +=
       tuile("inventaire", d.alertesStock, t("libelleArticlesSurveiller"), d.alertesStock) +
       tuile("inventaire", d.ruptures, t("libelleRuptures"), d.ruptures);
+    const tr = d.stockPoint && d.stockPoint.transferts;
+    if (tr) tuiles += tuile("transferts", tr.aRecevoir, t("dashARecevoir"), tr.aRecevoir > 0, tr.aRecevoirEnRetard > 0) + tuile("transferts", tr.enTransit, t("dashEnTransit"), false, tr.enTransitEnRetard > 0);
   }
   tuiles += "</div>";
 
@@ -8003,7 +8049,7 @@ async function renderTableauDeBord() {
   const carteCaisse = !posSeul ? "" : "<div class='tuile' style='margin:12px 0;'><div class='libelle' style='font-weight:700;'>" + esc(t("dashCaisseTitre")) + "</div><div>" +
     (sessionDash ? esc(t("dashCaisseOuverte", { u: sessionDash.caissier || "—", h: new Date(sessionDash.dateOuverture).toLocaleTimeString(localeCourante(), { hour: "2-digit", minute: "2-digit" }), f: (sessionDash.fondInitial || 0).toLocaleString(localeCourante()) })) : esc(t("dashCaisseFermee"))) +
     "</div><div style='margin-top:8px;'><a href='/caisse' target='_blank' rel='noopener'>" + esc(t("dashCaisseOuvrir")) + "</a></div></div>";
-  return carteCaisse + tuiles + sparkline + top + bas;
+  return carteCaisse + bandeauRetardTransferts(d) + tuiles + (estCatalogue && d.stockPoint && d.stockPoint.transferts && d.stockPoint.transferts.bonsEnAttente.length ? tableBonsEnAttente(d.stockPoint.transferts) : "") + sparkline + top + bas;
   }
 
   function sectionDashboardHeb(d) {
