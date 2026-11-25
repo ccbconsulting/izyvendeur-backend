@@ -178,7 +178,7 @@
     <h3 style="margin-top:12px;"><span data-i="totalBilletage"></span> <span id="totOuv">0</span> FCFA</h3>
     <button id="btnOuvrir" class="vert" style="width:100%;" data-i="ouvrirCaisse"></button>
   </div>
-  <div style="margin-top:12px;display:flex;gap:8px;"><button id="ouvDeco" data-i="deconnexion"></button><button id="ouvRapport" data-i="mrBtn"></button><a href="/admin" style="align-self:center;" data-i="backOffice"></a></div>
+  <div style="margin-top:12px;display:flex;gap:8px;"><button id="ouvDeco" data-i="deconnexion"></button><button id="ouvRapport" data-i="mrBtn"></button><button id="ouvEntrees" class="cache" data-i="enBtn"></button><a href="/admin" style="align-self:center;" data-i="backOffice"></a></div>
 </div>
 
 <!-- Fermeture de caisse -->
@@ -212,6 +212,7 @@
     <button id="btnDernierTicket" data-i="dernierTicket"></button>
     <button id="btnChangerPoint" class="cache" data-i="chgPoint"></button>
     <button id="btnRapport" data-i="mrBtn"></button>
+    <button id="btnEntrees" class="cache" data-i="enBtn"></button>
     <button id="btnRetour" class="cache" data-i="rtBtn"></button>
     <button id="btnCloture" data-i="cloturer"></button>
     <a href="/admin" data-i="backOffice"></a>
@@ -275,6 +276,7 @@ const TXT = {
     paiementsElec: "Paiements hors espèces", especesDues: "Espèces à encaisser",
     remiseTitre: "Remise sur la vente", remisePourcent: "Pourcentage (%)", remiseMontant: "Montant (FCFA)", valeur: "Valeur", motif: "Motif de la remise", appliquer: "Appliquer", retirerRemise: "Retirer la remise", remiseLib: "Remise",
     venteOk: "Vente enregistrée", nouvelleVente: "Nouvelle vente", imprimer: "Imprimer le ticket", ticketNum: "Ticket {n}", date: "Date", caissier: "Caissier", merci: "Merci de votre visite", recu: "Reçu", monnaie: "Monnaie", paye: "Payé", qte: "Qté",
+    enBtn: "Entrées", enTitre: "Entrées à valider", enAucune: "Aucun transfert en attente de validation pour ce point.", enDe: "de", enEnvoye: "Envoyé", enRecu: "Reçu", enMotif: "Motif de l'écart (obligatoire si des quantités manquent)", enConfirmer: "Confirmer la réception", enOk: "Réception enregistrée : le stock a augmenté.", enMissing: "Un article de ce bon n'existe pas encore dans ce point : prévenez le propriétaire, qui doit le créer avant la réception.",
     mrBtn: "Mon rapport", mrTitre: "Mon rapport", mrPeriode: "Période", mrAujourdhui: "Aujourd'hui", mrHier: "Hier", mr7: "7 derniers jours", mr31: "31 derniers jours", mrPerso: "Dates au choix", mrDu: "Du", mrAu: "Au", mrAfficher: "Afficher", mrImprimer: "Imprimer / PDF", mrDuAu: "du {du} au {au}", mrLimite: "Vos ventes et encaissements seulement, sur 31 jours au maximum.", mrDetailAstuce: "Touchez une vente pour voir ses articles.", mrVentes: "Ventes", mrTotal: "Total encaissé", mrParMode: "Par mode de paiement", mrAnnulees: "Annulées", mrRetours: "Retours", mrSessions: "Ma caisse", mrFond: "Fond", mrEcart: "Écart", mrOuverte: "ouverte", mrFermee: "clôturée", mrAucune: "Aucune vente sur cette période.", mrMesVentes: "Mes ventes", mrRegul: "régularisation",
     rtBtn: "Retour", rtTitre: "Retour / remboursement", rtNote: "Choisissez la vente, indiquez les quantités rendues, le mode de remboursement et le motif. Les articles reviennent en stock.", rtNum: "N° de la vente (chiffres)", rtChercher: "Chercher", rtInvalide: "Indiquez le numéro de la vente (chiffres).", rtAnnulee: "Cette vente est annulée : aucun retour possible.", rtVendue: "Vendue", rtDeja: "Déjà rendue", rtARendre: "À rendre", rtMontant: "Montant", rtTotal: "À rembourser :", rtMode: "Mode de remboursement", rtRef: "Référence du remboursement", rtMotif: "Motif du retour", rtConfirmer: "Confirmer le retour", rtAucuneLigne: "Indiquez au moins une quantité à rendre.", rtMotifObl: "Indiquez le motif.", rtRefObl: "Indiquez la référence du remboursement.", rtFait: "Retour enregistré : {montant} à rembourser en {mode}. Les articles sont remis en stock.", rtCredit: "à crédit",
     sessionRemplacee: "Vous avez été connecté sur un autre appareil : cette session est fermée. Reconnectez-vous ici pour reprendre la main.",
@@ -300,6 +302,7 @@ const TXT = {
     paiementsElec: "Non-cash payments", especesDues: "Cash to collect",
     remiseTitre: "Discount on the sale", remisePourcent: "Percentage (%)", remiseMontant: "Amount (FCFA)", valeur: "Value", motif: "Reason for the discount", appliquer: "Apply", retirerRemise: "Remove the discount", remiseLib: "Discount",
     venteOk: "Sale recorded", nouvelleVente: "New sale", imprimer: "Print the receipt", ticketNum: "Receipt {n}", date: "Date", caissier: "Cashier", merci: "Thank you for your visit", recu: "Received", monnaie: "Change", paye: "Paid", qte: "Qty",
+    enBtn: "Receipts", enTitre: "Receipts to validate", enAucune: "No transfer waiting for validation at this point.", enDe: "from", enEnvoye: "Sent", enRecu: "Received", enMotif: "Reason for the discrepancy (required if quantities are missing)", enConfirmer: "Confirm receipt", enOk: "Receipt saved: stock has increased.", enMissing: "An item on this voucher does not exist at this point yet: tell the owner, who must create it before receipt.",
     mrBtn: "My report", mrTitre: "My report", mrPeriode: "Period", mrAujourdhui: "Today", mrHier: "Yesterday", mr7: "Last 7 days", mr31: "Last 31 days", mrPerso: "Custom dates", mrDu: "From", mrAu: "To", mrAfficher: "Show", mrImprimer: "Print / PDF", mrDuAu: "from {du} to {au}", mrLimite: "Your own sales and collections only, up to 31 days back.", mrDetailAstuce: "Tap a sale to see its items.", mrVentes: "Sales", mrTotal: "Total collected", mrParMode: "By payment method", mrAnnulees: "Cancelled", mrRetours: "Returns", mrSessions: "My till", mrFond: "Float", mrEcart: "Difference", mrOuverte: "open", mrFermee: "closed", mrAucune: "No sale today.", mrMesVentes: "My sales today", mrRegul: "adjustment",
     rtBtn: "Return", rtTitre: "Return / refund", rtNote: "Pick the sale, enter the quantities returned, the refund method and the reason. Items go back into stock.", rtNum: "Sale no. (digits)", rtChercher: "Search", rtInvalide: "Enter the sale number (digits).", rtAnnulee: "This sale is cancelled: no return possible.", rtVendue: "Sold", rtDeja: "Already returned", rtARendre: "To return", rtMontant: "Amount", rtTotal: "To refund:", rtMode: "Refund method", rtRef: "Refund reference", rtMotif: "Reason for the return", rtConfirmer: "Confirm the return", rtAucuneLigne: "Enter at least one quantity to return.", rtMotifObl: "Enter the reason.", rtRefObl: "Enter the refund reference.", rtFait: "Return saved: {montant} to refund by {mode}. The items are back in stock.", rtCredit: "on credit",
     sessionRemplacee: "You were signed in on another device: this session is closed. Sign in here to take over again.",
@@ -459,13 +462,16 @@ async function chargerVente() {
   afficherMode();
 }
 // Etape 93 : un employe qui n'a que « caisse » (et eventuellement « remises ») reste UNIQUEMENT sur la caisse : aucun lien vers /admin.
-function restreint() { const r = E.moi && E.moi.role === "employe" ? (E.moi.roles || []) : null; return !!(r && r.length && r.every((x) => x === "caisse" || x === "remises")); }
+function restreint() { const r = E.moi && E.moi.role === "employe" ? (E.moi.roles || []) : null; return !!(r && r.length && r.every((x) => x === "caisse" || x === "remises" || x === "entrees")); }
+function peutValiderEntrees() { return !!(E.moi && E.moi.role === "employe" && (E.moi.roles || []).indexOf("entrees") !== -1); } // Etape 100 : employe de caisse designe par le proprietaire
 function peutRetour() { return !!(E.moi && (E.moi.role !== "employe" || (E.moi.roles || []).indexOf("remises") !== -1)); }
 function appliquerRestriction() {
   Array.prototype.forEach.call(document.querySelectorAll("a[href='/admin']"), (a) => a.classList.toggle("cache", restreint()));
   const b = $("btnRetour"); if (b) b.classList.toggle("cache", !peutRetour() || HL.actif);
   const r = $("btnRapport"); if (r) r.classList.toggle("cache", HL.actif);
   const r2 = $("ouvRapport"); if (r2) r2.classList.toggle("cache", HL.actif);
+  const be = $("btnEntrees"); if (be) be.classList.toggle("cache", !peutValiderEntrees() || HL.actif); // Etape 100
+  const be2 = $("ouvEntrees"); if (be2) be2.classList.toggle("cache", !peutValiderEntrees() || HL.actif);
   // Etape 94 : un proprietaire (ou le super-administrateur) qui a plusieurs points peut en changer sans se deconnecter.
   const bp = $("btnChangerPoint"); if (bp) bp.classList.toggle("cache", !(E.dispo && E.dispo.length > 1) || HL.actif || (E.moi && E.moi.role === "employe"));
 }
@@ -1246,7 +1252,33 @@ function fenetreRetour() {
   }
   $("rtGo").onclick = chercher; $("rtNum").addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); chercher(); } });
 }
+// Etape 100 : l'employe de caisse designe par le proprietaire valide ici les transferts recus par son point (quantites reellement recues). Jamais de couts ni de creation d'article.
+async function fenetreEntrees() {
+  ouvrirFenetre("<h3>" + esc(t("enTitre")) + "</h3><p class='raison'>" + esc(t("chargement")) + "</p>");
+  let r;
+  try { r = await api("/api/" + ID() + "/transferts?statut=en_transit"); } catch (e) { if (e.statut === 401) { fermerFenetre(); return; } ouvrirFenetre("<h3>" + esc(t("enTitre")) + "</h3><p id='enErreur' style='color:var(--rouge);'>" + esc(e.message) + "</p><div style='margin-top:12px;'><button id='enX' class='principal'>" + esc(t("fermer")) + "</button></div>"); $("enX").onclick = fermerFenetre; return; }
+  const moi = E.marchand.id, loc = LANG === "en" ? "en-GB" : "fr-FR";
+  const bons = (r.bons || []).filter((b) => b.statut === "en_transit" && b.vers === moi);
+  const cartes = bons.map((b) => "<div class='carte' data-en-bon='" + esc(b.id) + "' style='margin:8px 0;'><strong>" + esc(b.id) + "</strong> — " + esc(t("enDe")) + " " + esc(b.deNom) + " · " + esc(new Date(b.creeLe).toLocaleString(loc, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })) +
+    "<table class='billetage' style='width:100%;margin-top:6px;'><tr><td></td><td style='text-align:right;'>" + esc(t("enEnvoye")) + "</td><td style='text-align:right;'>" + esc(t("enRecu")) + "</td></tr>" +
+    b.lignes.map((l) => "<tr><td>" + esc(l.nom) + (l.couleur || l.taille ? " <span class='raison'>" + esc([l.couleur, l.taille].filter(Boolean).join(" / ")) + "</span>" : "") + "</td><td style='text-align:right;'>" + esc(nombre(l.quantiteEnvoyee)) + "</td><td style='text-align:right;'><input type='number' min='0' step='any' class='enRecu' data-index='" + l.index + "' value='" + l.quantiteEnvoyee + "' style='width:80px;' /></td></tr>").join("") + "</table>" +
+    "<label class='raison'>" + esc(t("enMotif")) + "</label><input class='enMotif' maxlength='300' style='width:100%;box-sizing:border-box;' />" +
+    "<div class='enMsg' style='color:var(--rouge);margin-top:6px;display:none;'></div><div style='margin-top:8px;'><button class='principal enConfirmer' data-bon='" + esc(b.id) + "'>" + esc(t("enConfirmer")) + "</button></div></div>").join("");
+  ouvrirFenetre("<h3>" + esc(t("enTitre")) + "</h3>" + (bons.length ? cartes : "<p class='raison' id='enAucune'>" + esc(t("enAucune")) + "</p>") + "<div style='margin-top:12px;'><button id='enX' class='principal'>" + esc(t("fermer")) + "</button></div>");
+  $("enX").onclick = fermerFenetre;
+  Array.prototype.forEach.call(document.querySelectorAll(".enConfirmer"), (btn) => {
+    btn.onclick = async () => {
+      const carte = btn.closest("[data-en-bon]"), msg = carte.querySelector(".enMsg"); msg.style.display = "none";
+      const lignes = Array.prototype.map.call(carte.querySelectorAll(".enRecu"), (inp) => ({ index: Number(inp.dataset.index), quantiteRecue: Number(inp.value) }));
+      btn.disabled = true;
+      try { await api("/api/" + ID() + "/transferts/" + encodeURIComponent(btn.dataset.bon) + "/reception", { method: "POST", body: JSON.stringify({ lignes, motifEcart: carte.querySelector(".enMotif").value }) }); alert(t("enOk")); fenetreEntrees(); }
+      catch (e) { btn.disabled = false; msg.textContent = e.code === "article_manquant" ? t("enMissing") : e.message; msg.style.display = ""; }
+    };
+  });
+}
 $("btnRapport").onclick = () => fenetreMonRapport();
+$("btnEntrees").onclick = () => fenetreEntrees();
+$("ouvEntrees").onclick = () => fenetreEntrees();
 $("ouvRapport").onclick = () => fenetreMonRapport();
 $("btnChangerPoint").onclick = () => { if (E.panier && E.panier.length && !confirm(t("chgPointPanier"))) return; E.panier = []; choisirMarchand().catch((e) => erreur(e.message)); };
 $("btnRetour").onclick = fenetreRetour;
