@@ -2950,6 +2950,26 @@ function createCatalogEngine(merchantKey, options) {
     };
   }
 
+  // Etape 99 : synthese de stock d'un point (tableau de bord adapte : entrepot, bar). valeurCout / sansPrixAchat ne sont donnes
+  // qu'au proprietaire par la route (jamais a un magasinier ni a un employe).
+  function getSyntheseStock() {
+    if (!state) return null;
+    let nbArticles = 0, nbVariantes = 0, pieces = 0, valeurCout = 0, sansPrixAchat = 0;
+    state.catalog.forEach((p) => {
+      nbArticles++;
+      (p.variantes || []).forEach((v) => {
+        nbVariantes++;
+        const q = Number(v.stockReel) || 0;
+        pieces = arrondi3(pieces + q);
+        if (q <= 0) return;
+        const c = v.prixAchat;
+        if (c !== undefined && c !== null && c !== "" && Number.isFinite(Number(c)) && Number(c) >= 0) valeurCout += q * Number(c);
+        else sansPrixAchat++;
+      });
+    });
+    return { nbArticles, nbVariantes, pieces, valeurCout: Math.round(valeurCout), sansPrixAchat };
+  }
+
   // ---------------- Rapports (periode) ----------------
 
   function debutPeriode(periode, dateReference) {
@@ -4379,6 +4399,7 @@ function createCatalogEngine(merchantKey, options) {
     handleMessageSimulateur,
     resetSimulateur,
     getTableauDeBord,
+    getSyntheseStock,
     getRapportCommandes,
     listerInstantanesInventaire,
     enregistrerInstantaneInventaire,

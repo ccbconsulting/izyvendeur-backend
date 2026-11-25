@@ -5016,13 +5016,55 @@ app.get("/api/:id/conversations/historique/:telephone", protegerAcces, async (re
 // -- Tableau de bord : statistiques resumees (commun aux deux types). Permission employe requise :
 // "tableaudebord", independante de "parametres" depuis le 25 septembre 2026 (voir ROLES_EMPLOYE_VALIDES). --
 
+// Etape 99 : un bon « en transit » depuis plus de 48 h est signale en rouge sur les tableaux de bord de l'origine et de la destination.
+const SEUIL_TRANSIT_RETARD_H = 48;
+// Synthese stock + transferts d'UN point pour son tableau de bord. Aucune donnee de cout ni de contenu de bon n'en sort sauf, pour le
+// proprietaire seul, la valeur du stock au cout : un magasinier ou un employe ne recoit que des compteurs et des dates.
+function syntheseStockTransferts(req, entry, debutISO, finISO) {
+  if (!entry || entry.merchant.type !== "catalogue" || !entry.engine || typeof entry.engine.getSyntheseStock !== "function") return null;
+  const id = entry.merchant.id;
+  const gest = estGestionnaireDuMarchand(req, id);
+  const st = entry.engine.getSyntheseStock();
+  if (!st) return null;
+  const out = { typePoint: entry.merchant.typePoint === "entrepot" ? "entrepot" : "point", nbArticles: st.nbArticles, pieces: st.pieces };
+  if (gest) { out.valeurCout = st.valeurCout; out.sansPrixAchat = st.sansPrixAchat; }
+  const principal = engines[principalDe(entry.merchant)];
+  const store = principal && principal.engine && principal.engine.getTransferts ? principal.engine.getTransferts() : null;
+  const groupe = store ? [principal].concat(pointsDe(principal.merchant.id)) : [];
+  if (!store || groupe.length < 2) { out.transferts = null; return out; }
+  const nom = (pid) => { const e = groupe.find((x) => x.merchant.id === pid); return e ? e.merchant.nom : pid; };
+  const maintenant = Date.now();
+  const t = { aRecevoir: 0, aRecevoirEnRetard: 0, enTransit: 0, enTransitEnRetard: 0, envoyePeriode: { nbBons: 0, quantite: 0 }, recuPeriode: { nbBons: 0, quantite: 0 }, bonsEnAttente: [], seuilRetardH: SEUIL_TRANSIT_RETARD_H };
+  const d0 = debutISO ? Date.parse(debutISO) : null, d1 = finISO ? Date.parse(finISO) : null;
+  const dansPeriode = (iso) => { if (!iso || d0 === null || d1 === null) return false; const x = Date.parse(iso); return x >= d0 && x < d1; };
+  store.bons.forEach((b) => {
+    const sortant = b.de === id, entrant = b.vers === id;
+    if (!sortant && !entrant) return;
+    if (b.statut === "en_transit") {
+      const heures = Math.floor((maintenant - Date.parse(b.creeLe)) / 3600000);
+      const retard = heures >= SEUIL_TRANSIT_RETARD_H;
+      if (entrant) { t.aRecevoir++; if (retard) t.aRecevoirEnRetard++; } else { t.enTransit++; if (retard) t.enTransitEnRetard++; }
+      t.bonsEnAttente.push({ id: b.id, sens: entrant ? "a_recevoir" : "envoye", autre: nom(entrant ? b.de : b.vers), heures, enRetard: retard, nbLignes: b.lignes.length });
+    }
+    if (b.statut !== "annule" && sortant && dansPeriode(b.creeLe)) { t.envoyePeriode.nbBons++; t.envoyePeriode.quantite = arrondi3(t.envoyePeriode.quantite + b.lignes.reduce((s, l) => s + l.quantiteEnvoyee, 0)); }
+    if (b.statut === "recu" && entrant && dansPeriode(b.recuLe)) { t.recuPeriode.nbBons++; t.recuPeriode.quantite = arrondi3(t.recuPeriode.quantite + b.lignes.reduce((s, l) => s + (l.quantiteRecue || 0), 0)); }
+  });
+  t.bonsEnAttente.sort((a, b) => b.heures - a.heures);
+  t.bonsEnAttente = t.bonsEnAttente.slice(0, 8);
+  out.transferts = t;
+  return out;
+}
+const arrondi3 = (x) => Math.round(Number(x) * 1000) / 1000;
+
 app.get("/api/:id/tableau-de-bord", protegerAcces, (req, res) => {
   const entry = getMarchandAutorise(req, res, "tableaudebord"); if (!entry) return;
   const { periode, date } = req.query || {};
-  res.json(entry.engine.getTableauDeBord({
+  const r = entry.engine.getTableauDeBord({
     periode: periode ? String(periode) : "jour",
     dateReference: date ? new Date(String(date)) : new Date(),
-  }));
+  });
+  if (r && (!req.query.volet || req.query.volet === "catalogue")) { try { const s = syntheseStockTransferts(req, entry, r.debutISO, r.finISO); if (s) r.stockPoint = s; } catch (e) { console.error("Synthèse stock/transferts du tableau de bord :", e.message); } }
+  res.json(r);
 });
 
 // -- Simulateur WhatsApp : permet au marchand de tester le bot depuis l'interface admin,
