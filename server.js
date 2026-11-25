@@ -656,7 +656,7 @@ function motDePasseCorrespond(motDePasseFourni, motDePasseStocke) {
 // /api/:id/pos/vente plus bas) - marchand catalogue uniquement, et l'onglet lui-meme reste invisible tant
 // que le super-administrateur n'a pas debloque l'option payante "optionCaissePos" pour ce marchand (voir
 // PUT /api/marchands/:id/options-payantes), meme si l'employe a deja ce role.
-const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable", "remises", "preparation", "magasinier"]; // Etape 84 : « preparation » = espace de preparation d'un magasin (volet enseigne) ; Etape 95 : « magasinier » = envoie et recoit les transferts de stock de SON point
+const ROLES_EMPLOYE_VALIDES = ["catalogue", "commandes", "rendezvous", "conversations", "parametres", "tableaudebord", "rapports", "inventaire", "caisse", "facturation", "comptable", "remises", "preparation", "magasinier", "entrees"]; // Etape 100 : « entrees » = valide les transferts recus de SON point (jamais les couts) ; Etape 84 : « preparation » = espace de preparation d'un magasin (volet enseigne) ; Etape 95 : « magasinier » = envoie et recoit les transferts de stock de SON point
 
 // ---------------- Session de connexion /admin (29 septembre 2026) ----------------
 // Remplace l'authentification HTTP Basic (popup native du navigateur - aucune notion de "session" ni de
@@ -1051,6 +1051,7 @@ const LIBELLES_ACTIONS_AUDIT = {
   "POST /api/:id/pos/regularisation": "vente_caisse_regularisation_creee", // Etape 93
   "POST /api/:id/points": "point_vente_cree", // Etape 94
   "PUT /api/:id/point": "point_vente_modifie", // Etape 94
+  "POST /api/:id/entrees": "entree_fournisseur", // Etape 100
   "POST /api/:id/transferts": "transfert_envoye", // Etape 95
   "POST /api/:id/transferts/:bonId/reception": "transfert_recu",
   "POST /api/:id/transferts/:bonId/annulation": "transfert_annule",
@@ -1444,7 +1445,7 @@ app.post("/api/connexion", (req, res) => {
   let sid = null; let application = (req.body && req.body.application) === "caisse" ? "caisse" : "admin";
   // Un employe qui n'a que « caisse » (et eventuellement « remises ») n'a qu'UNE session, quelle que soit la page par laquelle il se connecte
   // (/admin le renvoie sur /caisse) : sinon deux telephones, l'un connecte via /admin et l'autre via /caisse, resteraient actifs ensemble.
-  if (auth.role === "employe" && Array.isArray(auth.roles) && auth.roles.indexOf("caisse") !== -1 && auth.roles.every((x) => x === "caisse" || x === "remises")) application = "caisse";
+  if (auth.role === "employe" && Array.isArray(auth.roles) && auth.roles.indexOf("caisse") !== -1 && auth.roles.every((x) => x === "caisse" || x === "remises" || x === "entrees")) application = "caisse";
   if (auth.role !== "superadmin") {
     const k = cleSessionUnique(auth.role, auth.merchantId, auth.adminUser, application);
     const avant = sessionsActives.get(k), remplace = !!avant && avant !== "-";
@@ -1757,7 +1758,7 @@ app.get("/api/:id/groupe/rapport", protegerAcces, (req, res) => {
 // Un transfert = un BON en deux temps : l'envoi retire aussitot la quantite du stock de l'origine (bon « en transit ») ; la reception, confirmee par le point de
 // destination avec les quantites REELLEMENT recues, ajoute au stock de la destination et enregistre les ecarts. Un bon n'est jamais modifie ni supprime : on le corrige
 // par un bon inverse. Les bons vivent dans l'etat du compte principal ; le magasinier d'un point ne voit que les bons de SON point, et jamais les couts.
-function gardeTransferts(req, res) {
+function gardeTransferts(req, res, opts) {
   if (!verifierPortee(req, res, req.params.id)) return null;
   const entry = engines[req.params.id];
   if (!entry) { res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id }); return null; }
@@ -1765,8 +1766,11 @@ function gardeTransferts(req, res) {
   if (!principal || !principal.engine || !principal.engine.getTransferts) { res.status(404).json({ erreur: "Compte principal introuvable." }); return null; }
   if (entry.merchant.type !== "catalogue" || !entry.engine || !entry.engine.stockPourTransfert) { res.status(409).json({ erreur: "Les transferts de stock concernent les commerces de type catalogue." }); return null; }
   const gest = estGestionnaireDuMarchand(req, req.params.id);
-  const mag = req.auth.role === "employe" && (req.auth.roles || []).indexOf("magasinier") !== -1 && req.auth.merchantId === req.params.id;
-  if (!gest && !mag) { res.status(403).json({ erreur: "Réservé au propriétaire ou au magasinier de ce point de vente." }); return null; }
+  const rolesEmp = req.auth.role === "employe" && req.auth.merchantId === req.params.id ? (req.auth.roles || []) : [];
+  const mag = rolesEmp.indexOf("magasinier") !== -1;
+  // Etape 100 : le role « entrees » (employe de caisse designe par le proprietaire) ne peut que LIRE les bons de son point et les RECEPTIONNER.
+  const rec = !!(opts && opts.accepteEntrees) && rolesEmp.indexOf("entrees") !== -1;
+  if (!gest && !mag && !rec) { res.status(403).json({ erreur: "Réservé au propriétaire ou au magasinier de ce point de vente." }); return null; }
   const pid = principal.merchant.id;
   const groupe = [principal].concat(pointsDe(pid));
   if (groupe.length < 2) { res.status(409).json({ erreur: "Il faut au moins deux points de vente (ou un entrepôt) pour faire un transfert." }); return null; }
@@ -1788,7 +1792,7 @@ app.get("/api/:id/transferts/articles", protegerAcces, (req, res) => {
 
 // Liste des bons : ceux de CE point (envoyes ou a recevoir) ; le proprietaire peut demander tout le groupe (?groupe=1).
 app.get("/api/:id/transferts", protegerAcces, (req, res) => {
-  const g = gardeTransferts(req, res); if (!g) return;
+  const g = gardeTransferts(req, res, { accepteEntrees: true }); if (!g) return;
   const tous = g.gest && req.query.groupe === "1";
   let bons = g.store.bons.filter((b) => tous || peutVoirBon(g, b));
   if (req.query.statut) bons = bons.filter((b) => b.statut === req.query.statut);
@@ -1798,6 +1802,62 @@ app.get("/api/:id/transferts", protegerAcces, (req, res) => {
   }
   bons = bons.slice().sort((a, b) => b.numero - a.numero).slice(0, 500);
   res.json({ point: req.params.id, aRecevoir: g.store.bons.filter((b) => b.statut === "en_transit" && b.vers === req.params.id).length, bons: bons.map((b) => vueBonPour(g, b)) });
+});
+
+// ---------------- Entrees fournisseur et journal des mouvements (Etape 100) ----------------
+// Une entree fournisseur = marchandise recue d'un fournisseur : PRIX D'ACHAT OBLIGATOIRE par ligne, stock augmente aussitot, jamais modifiee ensuite.
+// Proprietaire / super-administrateur et magasinier du point la saisissent ; l'employe « entrees » (caisse) ne fait que valider les transferts recus (route de reception).
+function gardeEntrees(req, res, ecriture) {
+  if (!verifierPortee(req, res, req.params.id)) return null;
+  const entry = engines[req.params.id];
+  if (!entry) { res.status(404).json({ erreur: "Marchand inconnu : " + req.params.id }); return null; }
+  const principal = engines[principalDe(entry.merchant)];
+  if (!principal || !principal.engine || !principal.engine.getTransferts) { res.status(404).json({ erreur: "Compte principal introuvable." }); return null; }
+  if (entry.merchant.type !== "catalogue" || !entry.engine || !entry.engine.appliquerEntreeFournisseur) { res.status(409).json({ erreur: "Les entrées de stock concernent les commerces de type catalogue." }); return null; }
+  const gest = estGestionnaireDuMarchand(req, req.params.id);
+  const rolesEmp = req.auth.role === "employe" && req.auth.merchantId === req.params.id ? (req.auth.roles || []) : [];
+  const mag = rolesEmp.indexOf("magasinier") !== -1;
+  const rec = !ecriture && rolesEmp.indexOf("entrees") !== -1;
+  if (!gest && !mag && !rec) { res.status(403).json({ erreur: "Réservé au propriétaire ou au magasinier de ce point de vente." }); return null; }
+  return { entry, principal, gest, store: principal.engine.getTransferts() };
+}
+
+app.get("/api/:id/entrees/articles", protegerAcces, (req, res) => {
+  const g = gardeEntrees(req, res, true); if (!g) return;
+  res.json(g.entry.engine.stockPourTransfert());
+});
+
+// Journal des entrees de CE point : entrees fournisseur + transferts recus (a valider / valides). Compteur « a valider » pour les badges.
+app.get("/api/:id/entrees", protegerAcces, (req, res) => {
+  const g = gardeEntrees(req, res, false); if (!g) return;
+  const id = req.params.id;
+  const nom = (pid) => { const e = engines[pid]; return e ? e.merchant.nom : pid; };
+  const fournisseur = g.store.entrees.filter((e) => e.point === id).sort((a, b) => b.numero - a.numero).slice(0, 300).map((e) => transferts.vueEntree(e, g.gest));
+  const transfertsRecus = g.store.bons.filter((b) => b.vers === id && b.statut !== "annule").sort((a, b) => b.numero - a.numero).slice(0, 300).map((b) => { const v = transferts.vueBon(b, g.gest); v.deNom = nom(b.de); v.versNom = nom(b.vers); return v; });
+  res.json({ point: id, aValider: transfertsRecus.filter((b) => b.statut === "en_transit").length, fournisseur, transferts: transfertsRecus, optionCouts: g.entry.merchant.optionClientsCredit === true });
+});
+
+app.post("/api/:id/entrees", protegerAcces, (req, res) => {
+  const g = gardeEntrees(req, res, true); if (!g) return;
+  if (g.entry.merchant.actif === false) return res.status(409).json({ erreur: "Ce point de vente est désactivé." });
+  const v = transferts.validerEntreeFournisseur(req.body); if (v.erreur) return res.status(400).json({ erreur: v.erreur, code: v.code, ligne: v.ligne });
+  const r = g.entry.engine.appliquerEntreeFournisseur(v.lignes, g.entry.merchant.optionClientsCredit === true);
+  if (r.erreur) return res.status(409).json({ erreur: r.erreur, code: r.code });
+  const e = transferts.creerEntree(g.store, { point: req.params.id, par: req.auth.adminUser, fournisseur: v.fournisseur, bonLivraison: v.bonLivraison, note: v.note, lignes: r.details });
+  g.principal.engine.enregistrerTransferts();
+  res.locals.audit = { detail: { entree: e.id, fournisseur: e.fournisseur, lignes: e.lignes.length, quantite: transferts.arrondi3(e.lignes.reduce((s, l) => s + l.quantite, 0)) } };
+  res.status(201).json(transferts.vueEntree(e, g.gest));
+});
+
+// Rapport de stock d'une periode (initial, entrees, transferts, ventes, corrections, restant) : proprietaire / superadmin / role « rapports ». Prix reserves au proprietaire.
+app.get("/api/:id/stock/rapport", protegerAcces, (req, res) => {
+  const entry = getMarchandAutorise(req, res, "rapports"); if (!entry) return;
+  if (entry.merchant.type !== "catalogue" || !entry.engine || !entry.engine.getRapportStock) return res.status(409).json({ erreur: "Le rapport de stock concerne les commerces de type catalogue." });
+  const per = transferts.periode(req.query.du, req.query.au); if (per.erreur) return res.status(400).json({ erreur: per.erreur });
+  if (Date.parse(per.au) - Date.parse(per.du) > 366 * 86400000) return res.status(400).json({ erreur: "Période trop longue (366 jours maximum)." });
+  const r = entry.engine.getRapportStock(per.du, per.au);
+  if (!estGestionnaireDuMarchand(req, req.params.id)) r.lignes.forEach((l) => { delete l.prixAchat; delete l.prix; });
+  res.json(r);
 });
 
 app.get("/api/:id/transferts/rapport", protegerAcces, (req, res) => {
@@ -1826,7 +1886,7 @@ app.post("/api/:id/transferts", protegerAcces, (req, res) => {
 });
 
 app.post("/api/:id/transferts/:bonId/reception", protegerAcces, (req, res) => {
-  const g = gardeTransferts(req, res); if (!g) return;
+  const g = gardeTransferts(req, res, { accepteEntrees: true }); if (!g) return;
   const bon = g.store.bons.find((b) => b.id === req.params.bonId);
   if (!bon || !peutVoirBon(g, bon)) return res.status(404).json({ erreur: "Bon introuvable." });
   if (bon.vers !== req.params.id) return res.status(403).json({ erreur: "Ce bon n'est pas destiné à ce point de vente : seul le point de destination le réceptionne." });
@@ -1990,7 +2050,7 @@ app.post("/api/:id/employes", protegerAcces, async (req, res) => {
   const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
   if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
   const rolesIncompatibles = rolesDemandes.filter((r) =>
-    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue)) || (r === "magasinier" && !entry.moteurs.catalogue)
+    (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue)) || ((r === "magasinier" || r === "entrees") && !entry.moteurs.catalogue)
   );
   if (rolesIncompatibles.length) {
     return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -2065,7 +2125,7 @@ app.put("/api/:id/employes/:employeId", protegerAcces, async (req, res) => {
       const rolesDemandes = Array.isArray(roles) ? roles.filter((r) => ROLES_EMPLOYE_VALIDES.indexOf(r) !== -1) : [];
       if (!rolesDemandes.length) return res.status(400).json({ erreur: "Au moins un rôle est requis." });
       const rolesIncompatibles = rolesDemandes.filter((r) =>
-        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue)) || (r === "magasinier" && !entry.moteurs.catalogue)
+        (r === "catalogue" && !entry.moteurs.catalogue) || (r === "rendezvous" && !entry.moteurs.service && !entry.moteurs.hebergement && !entry.moteurs.transport) || (r === "preparation" && !(entry.merchant.optionEnseigne === true && entry.moteurs.catalogue)) || ((r === "magasinier" || r === "entrees") && !entry.moteurs.catalogue)
       );
       if (rolesIncompatibles.length) {
         return res.status(400).json({ erreur: "Rôle(s) non compatible(s) avec le type de ce marchand : " + rolesIncompatibles.join(", ") + "." });
@@ -4390,7 +4450,17 @@ app.get("/api/:id/compteurs", protegerAcces, async (req, res) => {
       const maj = await db.updateMerchantFields(req.params.id, { reglagesNotif: base });
       if (maj) entry.merchant.reglagesNotif = maj.reglagesNotif;
     }
-    res.json(alertes.calculerCompteurs(entry, { gestionnaire: estGestionnaireDuMarchand(req, req.params.id), roles: req.auth.roles || [], magasinImpose: magasinImpose(req) }));
+    const compteurs = alertes.calculerCompteurs(entry, { gestionnaire: estGestionnaireDuMarchand(req, req.params.id), roles: req.auth.roles || [], magasinImpose: magasinImpose(req) });
+    // Etape 100 : pastille de l'onglet « Entrees » = transferts envoyes vers ce point et pas encore valides (proprietaire, magasinier ou employe « entrees » de CE point).
+    try {
+      const rolesEmp = req.auth.role === "employe" && req.auth.merchantId === req.params.id ? (req.auth.roles || []) : [];
+      if (entry.merchant.type === "catalogue" && (estGestionnaireDuMarchand(req, req.params.id) || rolesEmp.indexOf("magasinier") !== -1 || rolesEmp.indexOf("entrees") !== -1)) {
+        const principal = engines[principalDe(entry.merchant)];
+        const store = principal && principal.engine && principal.engine.getTransferts ? principal.engine.getTransferts() : null;
+        if (store) compteurs.entrees = store.bons.filter((b) => b.vers === req.params.id && b.statut === "en_transit").length;
+      }
+    } catch (e) { /* le compteur d'entrees n'est jamais bloquant */ }
+    res.json(compteurs);
   } catch (erreur) {
     console.error(`[${req.params.id}] Echec du calcul des compteurs :`, erreur);
     res.status(500).json({ erreur: "Compteurs indisponibles." });

@@ -13,6 +13,7 @@ const { PROD_KEYWORDS, DEFAULT_AUTO_CONFIRM_MESSAGE, DEFAULT_AUTO_CONFIRM_MESSAG
 const remisesLib = require("./remises");
 const venteGros = require("./venteGros");
 const transferts = require("./transferts"); // Etape 95
+const mouvementsLib = require("./mouvements"); // Etape 100 : journal des mouvements de stock
 const enseigne = require("./enseigne");
 const db = require("./db");
 const sessionsPersistantes = require("./sessionsPersistantes");
@@ -234,6 +235,7 @@ function createCatalogEngine(merchantKey, options) {
     if (!state.listeAttenteReassort) state.listeAttenteReassort = [];
     state.gros = venteGros.assurer(state.gros); // Etape 78
     state.enseigne = enseigne.assurer(state.enseigne); // Etape 84
+    state.mouvements = mouvementsLib.assurer(state.mouvements); // Etape 100
     state.transferts = transferts.assurer(state.transferts); // Etape 95 (bons de transfert : stockes dans l'etat du compte principal du groupe)
     // Retro-compatibilite (29 sept 2026) pour un marchand deja existant avant l'ajout des sessions de
     // caisse : jamais de migration forcee de son etat, juste des valeurs de depart s'il ne les a pas encore.
@@ -909,8 +911,10 @@ function createCatalogEngine(merchantKey, options) {
       // Etape 87 : les quantites deja RETOURNEES en caisse (order.retours) ont deja ete remises en stock : on ne les compte pas deux fois.
       const qty = arrondi3((it.quantite || 1) - quantiteRetourneeLigne(order, idx));
       if (qty <= 0) return;
+      const stockAvantStatut = variant.stockReel;
       if (newStatus === "Livrée" && oldStatus !== "Livrée") variant.stockReel = Math.max(0, arrondi3(variant.stockReel - qty));
       if (oldStatus === "Livrée" && newStatus !== "Livrée") variant.stockReel = arrondi3(variant.stockReel + qty);
+      if (variant.stockReel !== stockAvantStatut) noterMouvement(it.productId, variant, variant.stockReel < stockAvantStatut ? "vente" : "retour", stockAvantStatut);
     });
     order.statut = newStatus;
     if (newStatus === "Annulée") order.raisonAnnulation = raisonAnnulation || order.raisonAnnulation || null;
@@ -3170,6 +3174,18 @@ function createCatalogEngine(merchantKey, options) {
   // on exige un tableau ; la structure detaillee de chaque article est du ressort de l'appelant (API).
   function updateCatalog(newCatalog) {
     if (!state || !Array.isArray(newCatalog)) return null;
+    // Etape 100 : toute difference de stock introduite par une modification du catalogue (saisie, import, copie) est journalisee comme « correction ».
+    try {
+      const anciens = new Map();
+      state.catalog.forEach((p) => (p.variantes || []).forEach((v) => anciens.set(mouvementsLib.cle(p.id, v.couleur, v.taille), { p, v, stock: Number(v.stockReel) || 0 })));
+      const vus = new Set();
+      newCatalog.forEach((p) => (p.variantes || []).forEach((v) => {
+        const k = mouvementsLib.cle(p.id, v.couleur, v.taille); vus.add(k);
+        const av = anciens.has(k) ? anciens.get(k).stock : 0, ap = Number(v.stockReel) || 0;
+        if (ap !== av) noterMouvementP(p, v, "ajust", av, ap);
+      }));
+      anciens.forEach((o, k) => { if (!vus.has(k) && o.stock) noterMouvementP(o.p, o.v, "ajust", o.stock, 0); });
+    } catch (e) { console.error("[" + merchantKey + "] Journal des mouvements (correction du catalogue) :", e.message); }
     state.catalog = newCatalog;
     saveState();
     return state.catalog;
@@ -3570,7 +3586,7 @@ function createCatalogEngine(merchantKey, options) {
     }
 
     // Decremente reellement le stock, seulement maintenant que TOUTES les lignes ci-dessus sont validees.
-    items.forEach((it) => { it._variant.stockReel = Math.max(0, arrondi3(it._variant.stockReel - it.quantite)); });
+    items.forEach((it) => { const avantVente = it._variant.stockReel; it._variant.stockReel = Math.max(0, arrondi3(it._variant.stockReel - it.quantite)); noterMouvement(it.productId, it._variant, "vente", avantVente); });
 
     const itemsPublics = items.map((it) => ({ productId: it.productId, produit: it.produit, couleur: it.couleur, taille: it.taille, quantite: it.quantite, unite: it.unite, prixUnitaire: it.prixUnitaire, prixBrut: it.prixBrut, remiseLigne: it.remiseLigne, prix: it.prix, prixDetail: it.gros ? it.prixDetail : undefined }));
     const order = {
@@ -3687,7 +3703,7 @@ function createCatalogEngine(merchantKey, options) {
     const modeRetour = montantRetour - reductionCreance > 0 || !order.creance ? modeRemboursement : "credit";
     detail.forEach((d) => {
       const v = findVariant(d.productId, d.couleur, d.taille);
-      if (v) v.stockReel = arrondi3(v.stockReel + d.quantite); else d.sansRemiseEnStock = true; // article supprime du catalogue depuis la vente
+      if (v) { const avantRetour = v.stockReel; v.stockReel = arrondi3(v.stockReel + d.quantite); noterMouvement(d.productId, v, "retour", avantRetour); } else d.sansRemiseEnStock = true; // article supprime du catalogue depuis la vente
     });
     if (reductionCreance > 0) order.creance.reduit = (Number(order.creance.reduit) || 0) + reductionCreance;
     const retour = {
@@ -4210,6 +4226,55 @@ function createCatalogEngine(merchantKey, options) {
   function getCoutsVentes() { return state ? (state.coutsVentes || {}) : {}; }
 
   // ---------------- Etape 95 : transferts de stock entre points de vente - API pour server.js ----------------
+  // ---------------- Etape 100 : journal des mouvements de stock ----------------
+  // A appeler APRES avoir modifie v.stockReel ; `stockAvant` = valeur avant la modification. Le mouvement enregistre est le CHANGEMENT REEL (apres arrondi / plancher a 0).
+  function noterMouvementP(p, v, type, stockAvant, stockApres) {
+    if (!state || !p || p.stockIllimite) return;
+    const delta = arrondi3((stockApres === undefined ? Number(v.stockReel) || 0 : stockApres) - (Number(stockAvant) || 0));
+    if (!delta) return;
+    state.mouvements = mouvementsLib.assurer(state.mouvements);
+    mouvementsLib.noter(state.mouvements, transferts.jourCameroun(new Date().toISOString()), mouvementsLib.cle(p.id, v.couleur, v.taille),
+      { nom: p.nom, reference: p.reference || "", categorie: p.cat || "", couleur: v.couleur || "", taille: v.taille || "", unite: p.unite || "" }, type, delta, Number(stockAvant) || 0);
+  }
+  function noterMouvement(productId, v, type, stockAvant) {
+    if (!state) return;
+    noterMouvementP(state.catalog.filter((x) => x.id === productId)[0], v, type, stockAvant);
+  }
+  function variantesPourRapport() {
+    const l = [];
+    (state ? state.catalog : []).forEach((p) => {
+      if (p.stockIllimite) return;
+      (p.variantes || []).forEach((v) => l.push({ cle: mouvementsLib.cle(p.id, v.couleur, v.taille), nom: p.nom, reference: p.reference || "", categorie: p.cat || "", couleur: v.couleur || "", taille: v.taille || "", unite: p.unite || "", stock: Number(v.stockReel) || 0, prixAchat: v.prixAchat, prix: v.prix }));
+    });
+    return l;
+  }
+  function getRapportStock(du, au) {
+    if (!state) return null;
+    return mouvementsLib.rapport(mouvementsLib.assurer(state.mouvements), variantesPourRapport(), du, au);
+  }
+  // Entree fournisseur : verifie TOUT avant de toucher au stock. lignes : [{ productId, couleur, taille, quantite, prixAchat }]. Le cout moyen pondere de l'article est mis a jour si `avecCouts`.
+  function appliquerEntreeFournisseur(lignes, avecCouts) {
+    if (!state) return { erreur: "Marchand introuvable." };
+    const trouves = [];
+    for (const l of lignes) {
+      const p = state.catalog.filter((x) => x.id === l.productId)[0];
+      const v = p && (p.variantes || []).filter((x) => (x.couleur || "") === l.couleur && (x.taille || "") === l.taille)[0];
+      if (!p || !v) return { erreur: "Article introuvable dans ce point : " + l.productId + (l.couleur || l.taille ? " (" + [l.couleur, l.taille].filter(Boolean).join(" / ") + ")" : "") + ". Créez-le d'abord dans « Catalogue & stock ».", code: "article_introuvable" };
+      if (p.stockIllimite) return { erreur: "« " + p.nom + " » est à stock illimité : il n'a pas de quantité à enregistrer.", code: "stock_illimite" };
+      if (p.venteDecimale !== true && Math.abs(l.quantite - Math.round(l.quantite)) > 1e-9) return { erreur: "« " + p.nom + " » se reçoit par quantités entières.", code: "quantite_entiere" };
+      trouves.push([p, v, l]);
+    }
+    const details = trouves.map(([p, v, l]) => {
+      const avant = Number(v.stockReel) || 0;
+      if (avecCouts) { const nc = transferts.coutMoyen(avant, v.prixAchat, l.quantite, l.prixAchat); if (nc !== null) v.prixAchat = nc; }
+      v.stockReel = arrondi3(avant + l.quantite);
+      noterMouvementP(p, v, "entree", avant);
+      return { productId: p.id, nom: p.nom, reference: p.reference || "", categorie: p.cat || "", couleur: v.couleur || "", taille: v.taille || "", codeBarres: v.codeBarres || "", unite: p.unite || "", venteDecimale: p.venteDecimale === true, quantite: l.quantite, cout: l.prixAchat, stockAvant: avant, stockApres: v.stockReel };
+    });
+    saveState();
+    return { details };
+  }
+
   function getTransferts() { return state ? (state.transferts = transferts.assurer(state.transferts)) : null; }
   function enregistrerTransferts() { saveState(); }
   // Stock de ce point, pour composer un bon (articles a stock illimite exclus : ils n'ont pas de quantite a transferer).
@@ -4236,7 +4301,9 @@ function createCatalogEngine(merchantKey, options) {
       trouves.push([p, v, l]);
     }
     const details = trouves.map(([p, v, l]) => {
+      const avantEnvoi = v.stockReel;
       v.stockReel = Math.max(0, arrondi3(v.stockReel - l.quantite));
+      noterMouvementP(p, v, "envoye", avantEnvoi);
       const c = v.prixAchat;
       return { productId: p.id, nom: p.nom, reference: p.reference || "", categorie: p.cat || "", couleur: v.couleur || "", taille: v.taille || "", codeBarres: v.codeBarres || "", unite: p.unite || "", venteDecimale: p.venteDecimale === true, quantite: l.quantite, cout: c !== undefined && c !== null && c !== "" && Number.isFinite(Number(c)) && Number(c) >= 0 ? Number(c) : null, prixVenteOrigine: Number.isFinite(Number(v.prix)) ? Number(v.prix) : null };
     });
@@ -4262,19 +4329,22 @@ function createCatalogEngine(merchantKey, options) {
       if (t && t.variante) {
         const v = t.variante;
         if (avecCouts) { const nc = transferts.coutMoyen(v.stockReel, v.prixAchat, q, e.cout); if (nc !== null) v.prixAchat = nc; }
+        const avantRecu = v.stockReel;
         v.stockReel = arrondi3(v.stockReel + q);
+        noterMouvementP(t.produit, v, "recu", avantRecu);
         return;
       }
       const variante = { couleur: e.couleur || "", taille: e.taille || "", prix: Math.round(Number(e.prix)), stockReel: q, seuilAlerte: 1 };
       if (avecCouts && e.cout != null) variante.prixAchat = e.cout;
       const codePris = e.codeBarres && state.catalog.some((p) => (p.variantes || []).some((v) => v.codeBarres === e.codeBarres));
       if (e.codeBarres && !codePris) variante.codeBarres = e.codeBarres;
-      if (t && t.produit) t.produit.variantes.push(variante);
+      if (t && t.produit) { t.produit.variantes.push(variante); noterMouvementP(t.produit, variante, "recu", 0); }
       else {
         let id = e.productId || ("art-" + Date.now()); if (state.catalog.some((p) => p.id === id)) { let n = 2; while (state.catalog.some((p) => p.id === id + "-" + n)) n++; id = id + "-" + n; }
         const np = { id, nom: e.nom, cat: e.categorie || "", photos: [], variantes: [variante] };
         if (e.reference) np.reference = e.reference; if (e.unite) np.unite = e.unite; if (e.venteDecimale === true) np.venteDecimale = true;
         state.catalog.push(np);
+        noterMouvementP(np, variante, "recu", 0);
       }
       crees.push(e.index);
     });
@@ -4357,7 +4427,7 @@ function createCatalogEngine(merchantKey, options) {
   return {
     type: "catalogue",
     init,
-    getTransferts, enregistrerTransferts, stockPourTransfert, retirerStockTransfert, appliquerReceptionTransfert,
+    getRapportStock, appliquerEntreeFournisseur, getTransferts, enregistrerTransferts, stockPourTransfert, retirerStockTransfert, appliquerReceptionTransfert,
     getGros, enregistrerGros, definirReglesGros, importerReglesGros, definirConfigGros, definirCaisseGros, ajouterGrossiste, modifierGrossiste, retirerGrossiste, regenererCodeGrossiste,
     importerGrossistes, rechercherGrossisteCaisse, grossistePourVente, apercuPrixGros,
     balayerSessions: () => persistance.balayer(),

@@ -21,9 +21,62 @@ function assurer(d) {
   const x = d && typeof d === "object" ? d : {};
   if (!Array.isArray(x.bons)) x.bons = [];
   if (!Number.isInteger(x.prochain) || x.prochain < 1) x.prochain = x.bons.length + 1;
+  if (!Array.isArray(x.entrees)) x.entrees = []; // Etape 100 : entrees fournisseur (bons EN-0001...)
+  if (!Number.isInteger(x.prochainEntree) || x.prochainEntree < 1) x.prochainEntree = x.entrees.length + 1;
   return x;
 }
 function numeroBon(n) { return "TR-" + String(n).padStart(4, "0"); }
+function numeroEntree(n) { return "EN-" + String(n).padStart(4, "0"); }
+
+// Etape 100 - ENTREE FOURNISSEUR : marchandise recue d'un fournisseur. Le PRIX D'ACHAT de chaque ligne est OBLIGATOIRE. Une entree n'est jamais modifiee ni supprimee.
+// corps : { fournisseur, bonLivraison, note, lignes:[{ productId, couleur, taille, quantite, prixAchat }] } -> { entree:{...} } ou { erreur, code? }.
+function validerEntreeFournisseur(corps) {
+  const c = corps && typeof corps === "object" ? corps : {};
+  const fournisseur = String(c.fournisseur == null ? "" : c.fournisseur).replace(/\s+/g, " ").trim().slice(0, 80);
+  if (fournisseur.length < 2) return { erreur: "Indiquez le fournisseur (2 caractères minimum).", code: "fournisseur_requis" };
+  const bonLivraison = String(c.bonLivraison == null ? "" : c.bonLivraison).replace(/\s+/g, " ").trim().slice(0, 40);
+  const note = String(c.note == null ? "" : c.note).trim().slice(0, 300);
+  const lignes = c.lignes;
+  if (!Array.isArray(lignes) || !lignes.length) return { erreur: "Ajoutez au moins un article à l'entrée." };
+  if (lignes.length > MAX_LIGNES) return { erreur: "Une entrée ne peut pas dépasser " + MAX_LIGNES + " lignes." };
+  const fusion = new Map();
+  for (let i = 0; i < lignes.length; i++) {
+    const l = lignes[i];
+    if (!l || typeof l !== "object" || typeof l.productId !== "string" || !l.productId) return { erreur: "Ligne " + (i + 1) + " invalide : article manquant." };
+    const q = arrondi3(l.quantite);
+    if (!Number.isFinite(q) || q <= 0 || q > MAX_QUANTITE) return { erreur: "Ligne " + (i + 1) + " : quantité invalide (nombre positif attendu)." };
+    const brut = l.prixAchat;
+    const prix = brut === undefined || brut === null || (typeof brut === "string" && brut.trim() === "") ? NaN : Number(brut);
+    if (!Number.isFinite(prix) || prix < 0 || prix > 1e9) return { erreur: "Ligne " + (i + 1) + " : le prix d'achat est obligatoire (nombre supérieur ou égal à 0).", code: "prix_achat_requis", ligne: i };
+    const couleur = l.couleur == null ? "" : String(l.couleur), taille = l.taille == null ? "" : String(l.taille);
+    const k = l.productId + "|" + couleur + "|" + taille;
+    if (fusion.has(k)) { const f = fusion.get(k); const total = arrondi3(f.quantite + q); f.prixAchat = Math.round(((f.quantite * f.prixAchat + q * prix) / total) * 100) / 100; f.quantite = total; }
+    else fusion.set(k, { productId: l.productId, couleur, taille, quantite: q, prixAchat: Math.round(prix * 100) / 100 });
+  }
+  return { fournisseur, bonLivraison, note, lignes: Array.from(fusion.values()) };
+}
+
+function creerEntree(store, { point, par, fournisseur, bonLivraison, note, lignes }) {
+  const numero = store.prochainEntree++;
+  const e = {
+    id: numeroEntree(numero), numero, point, fournisseur, bonLivraison: bonLivraison || "", note: note || "", creeLe: new Date().toISOString(), creePar: par || "",
+    lignes: lignes.map((l, i) => ({
+      index: i, productId: l.productId, nom: l.nom, reference: l.reference || "", categorie: l.categorie || "", couleur: l.couleur || "", taille: l.taille || "",
+      codeBarres: l.codeBarres || "", unite: l.unite || "", venteDecimale: l.venteDecimale === true, quantite: l.quantite, cout: l.cout, stockAvant: l.stockAvant, stockApres: l.stockApres
+    }))
+  };
+  store.entrees.push(e);
+  return e;
+}
+function valeurEntree(e) { return Math.round(e.lignes.reduce((s, l) => s + (l.cout || 0) * l.quantite, 0)); }
+// Vue d'une entree : les couts (prix d'achat saisis) n'existent que pour le proprietaire / super-administrateur.
+function vueEntree(e, voirCouts) {
+  const c = JSON.parse(JSON.stringify(e));
+  c.nbLignes = c.lignes.length;
+  c.quantite = arrondi3(c.lignes.reduce((s, l) => s + l.quantite, 0));
+  if (voirCouts) c.valeur = valeurEntree(e); else c.lignes.forEach((l) => { delete l.cout; });
+  return c;
+}
 
 // Valide la demande d'envoi : [{productId, couleur, taille, quantite}] -> lignes fusionnees (meme article = une seule ligne).
 function validerLignesDemande(lignes) {
@@ -129,4 +182,4 @@ function rapportMouvements(bons, points, du, au) {
   return { points: points.map((p) => par[p.id]), total, nbBons: selection.length };
 }
 
-module.exports = { MAX_LIGNES, arrondi3, normaliser, assurer, numeroBon, validerLignesDemande, trouverArticle, coutMoyen, creerBon, vueBon, valeurBon, jourCameroun, periode, rapportMouvements };
+module.exports = { numeroEntree, validerEntreeFournisseur, creerEntree, vueEntree, valeurEntree, MAX_LIGNES, arrondi3, normaliser, assurer, numeroBon, validerLignesDemande, trouverArticle, coutMoyen, creerBon, vueBon, valeurBon, jourCameroun, periode, rapportMouvements };
